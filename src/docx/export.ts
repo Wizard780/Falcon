@@ -7,7 +7,8 @@ export const PSTYLE: Record<string, string | null> = {
   normal: null, pocket: 'Heading1', hat: 'Heading2', block: 'Heading3', tag: 'Heading4', analytic: 'Analytic', undertag: 'Undertag',
 };
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// characters XML 1.0 forbids (control codes, lone surrogates) are dropped so Word can always open the file
+const esc = (s: string) => s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const hex = (c: string) => {
   const m = c.trim().match(/^#?([0-9a-f]{6})$/i);
   if (m) return m[1].toUpperCase();

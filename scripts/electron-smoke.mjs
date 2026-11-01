@@ -2,7 +2,7 @@
 import { _electron as electron } from 'playwright';
 const app = await electron.launch({ args: ['.'], env: (({ ELECTRON_RUN_AS_NODE, ...rest }) => ({ ...rest, FALCON_HEADLESS: '1' }))(process.env) });
 const win = await app.firstWindow();
-win.on('pageerror', (e) => console.log('PAGEERR', e.message));
+win.on('pageerror', (e) => console.log('PAGEERR', e.message, e.stack?.split('\n').slice(0, 8).join(' | ')));
 await win.waitForSelector('.ProseMirror');
 await win.click('.ProseMirror');
 await win.keyboard.press('Meta+a'); await win.keyboard.press('Backspace');

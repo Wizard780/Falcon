@@ -11,6 +11,7 @@ export function moveByParagraph(dir: -1 | 1, extend: boolean): Command {
     const sel = state.selection;
     const $head = sel.$head;
     const doc = state.doc;
+    if ($head.depth < 1) return false; // select-all
     const idx = $head.index(0);
     let target: number;
     if (dir < 0) {
@@ -40,6 +41,7 @@ export function moveByParagraph(dir: -1 | 1, extend: boolean): Command {
 export function moveByHeading(dir: -1 | 1, extend: boolean): Command {
   return (state, dispatch) => {
     const doc = state.doc;
+    if (state.selection.$head.depth < 1) return false; // select-all
     const idx = state.selection.$head.index(0);
     let target = -1;
     if (dir > 0) {

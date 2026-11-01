@@ -1,8 +1,15 @@
-import { Plugin, TextSelection } from 'prosemirror-state';
+import { Plugin, TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { wordAt } from './commands';
 
 type Unit = 'char' | 'word' | 'para';
+
+/** A text selection whose ends are inside paragraphs, even when the click landed below the last line. */
+function textSel(state: EditorState, anchor: number, head: number) {
+  const doc = state.doc;
+  const clamp = (p: number) => Math.max(0, Math.min(p, doc.content.size));
+  return TextSelection.between(doc.resolve(clamp(anchor)), doc.resolve(clamp(head)));
+}
 type Span = { from: number; to: number };
 
 /**
@@ -36,7 +43,7 @@ export function wordSelection() {
                 head = edge(view, hit.pos, 'word', forward);
               }
             }
-            view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, a, head)));
+            view.dispatch(state.tr.setSelection(textSel(state, a, head)));
             view.focus();
             return true;
           }
@@ -80,7 +87,7 @@ function startDrag(view: EditorView, pos: number, unit: Unit, setUnit: (u: Unit)
   const select = (a: number, h: number) => {
     const cur = view.state.selection;
     if (cur.anchor === a && cur.head === h) return;
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, a, h)).setMeta('pointer', true));
+    view.dispatch(view.state.tr.setSelection(textSel(view.state, a, h)).setMeta('pointer', true));
   };
   select(first ? first.from : pos, first ? first.to : pos);
 

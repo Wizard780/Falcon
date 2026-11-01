@@ -14,6 +14,13 @@ import { openDocument, saveDocument, type DocMeta } from './files';
 import { clearFind, findInfo, setQuery, step } from '../editor/find';
 
 const AUTOSAVE_KEY = 'falcon.autosave.v1';
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+
+/** Crash-recovery copy of the open doc. Big files can exceed storage; then recovery is skipped, not the open. */
+function autosave(doc: PMNode): boolean {
+  try { localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(doc.toJSON())); return true; }
+  catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+}
 
 export function App() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -51,7 +58,7 @@ export function App() {
         window.clearTimeout(outlineTimer);
         outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
         window.clearTimeout(saveTimer);
-        saveTimer = window.setTimeout(() => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(v.state.doc.toJSON())), 800);
+        saveTimer = window.setTimeout(() => autosave(v.state.doc), 800);
       }
     }, doc);
     lastDoc.current = view.state.doc;
@@ -81,13 +88,17 @@ export function App() {
     setMeta(m);
     setDirty(false);
     setDocVersion((n) => n + 1);
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(doc.toJSON()));
+    autosave(doc);
     v.focus();
     setTick((t) => t + 1);
   }, []);
 
-  const fileNew = useCallback(() => replaceDoc(emptyDoc(), { name: 'Untitled' }), [replaceDoc]);
+  const dirtyRef = useRef(false);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  const okToDiscard = () => !dirtyRef.current || window.confirm('Discard unsaved changes?');
+  const fileNew = useCallback(() => { if (okToDiscard()) replaceDoc(emptyDoc(), { name: 'Untitled' }); }, [replaceDoc]);
   const fileOpen = useCallback(async () => {
+    if (!okToDiscard()) return;
     try {
       const r = await openDocument();
       if (r) { replaceDoc(r.doc, r.meta); flash(`Opened ${r.meta.name}`); }
@@ -95,16 +106,18 @@ export function App() {
   }, [replaceDoc, flash]);
   const fileSave = useCallback(async (as = false) => {
     const v = viewRef.current!;
+    const saved = v.state.doc;
     try {
-      const m = await saveDocument(v.state.doc, meta, as);
-      if (m) { setMeta(m); setDirty(false); flash(`Saved ${m.name}`); }
+      const m = await saveDocument(saved, meta, as);
+      // typing during the save keeps the doc marked unsaved
+      if (m) { setMeta(m); setDirty(v.state.doc !== saved); flash(`Saved ${m.name}`); }
     } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
   }, [meta, flash]);
 
   // app-level shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey; // Ctrl-N/O/F are caret keys on macOS
       if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); void fileSave(e.shiftKey); }
       else if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }
       else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); void fileOpen(); }
@@ -125,8 +138,9 @@ export function App() {
   const cur = view ? currentItem(outline, view.state.selection.from) : -1;
   const brush = view ? brushKey.getState(view.state)?.kind ?? null : null;
 
-  const jump = useCallback((item: OutlineItem) => {
+  const jump = useCallback((stale: OutlineItem, index: number) => {
     const v = viewRef.current!;
+    const item = buildOutline(v.state.doc)[index] ?? stale;
     v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, item.pos + 1)));
     const el = v.nodeDOM(item.pos) as HTMLElement | null;
     const sc = v.dom.closest('.f-scroll') as HTMLElement;
@@ -286,9 +300,11 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
 
 const SHADES = ['#D9D9D9', '#BFBFBF', '#F2F2F2', '#FFF2CC', '#FCE4D6', '#E2EFDA', '#DDEBF7', '#EDE7F6', '#FDE2E4', '#C6E0B4', '#BDD7EE', '#F8CBAD', '#FFE699', '#A9D08E', '#9BC2E6'];
 
-const OutlineRows = memo(function OutlineRows({ items, depth, cur, onJump }: { items: OutlineItem[]; depth: number; cur: number; onJump: (i: OutlineItem) => void }) {
-  const [folded, setFolded] = useState<Set<number>>(new Set());
-  const [opened, setOpened] = useState<Set<number>>(new Set());
+const OutlineRows = memo(function OutlineRows({ items, depth, cur, onJump }: { items: OutlineItem[]; depth: number; cur: number; onJump: (item: OutlineItem, index: number) => void }) {
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  const [opened, setOpened] = useState<Set<string>>(new Set());
+  // folds follow the heading (level + text), so typing above it doesn't move them to another heading
+  const keyOf = (item: OutlineItem) => `${item.level}:${item.text}`;
   useEffect(() => { setFolded(new Set()); setOpened(new Set()); }, [depth]);
   const rows: { item: OutlineItem; i: number; open: boolean }[] = [];
   let hideBelow = Infinity;
@@ -297,19 +313,20 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, onJump }: { i
     hideBelow = Infinity;
     const visibleByDepth = item.level <= depth;
     if (!visibleByDepth) return;
-    const open = item.hasKids && (folded.has(item.pos) ? false : item.level < depth || opened.has(item.pos));
+    const open = item.hasKids && (folded.has(keyOf(item)) ? false : item.level < depth || opened.has(keyOf(item)));
     rows.push({ item, i, open });
     if (!open) hideBelow = item.level;
   });
   const toggle = (item: OutlineItem, open: boolean) => {
-    if (open) { setFolded((s) => new Set(s).add(item.pos)); setOpened((s) => { const n = new Set(s); n.delete(item.pos); return n; }); }
-    else { setOpened((s) => new Set(s).add(item.pos)); setFolded((s) => { const n = new Set(s); n.delete(item.pos); return n; }); }
+    const k = keyOf(item);
+    if (open) { setFolded((s) => new Set(s).add(k)); setOpened((s) => { const n = new Set(s); n.delete(k); return n; }); }
+    else { setOpened((s) => new Set(s).add(k)); setFolded((s) => { const n = new Set(s); n.delete(k); return n; }); }
   };
   return (
     <div className="rows">
       {rows.map(({ item, i, open }) => (
         <div key={item.pos} className={`orow l${item.level}${i === cur ? ' cur' : ''}`} style={{ paddingLeft: 4 + (item.level - 1) * 14 }}
-          onMouseDown={(e) => { e.preventDefault(); onJump(item); }} onDoubleClick={() => item.hasKids && toggle(item, open)}>
+          onMouseDown={(e) => { e.preventDefault(); onJump(item, i); }} onDoubleClick={() => item.hasKids && toggle(item, open)}>
           <span className="tw" onMouseDown={(e) => { if (item.hasKids) { e.preventDefault(); e.stopPropagation(); toggle(item, open); } }}>
             {item.hasKids && <Icon name={open ? 'chevron' : 'chevronRight'} />}
           </span>

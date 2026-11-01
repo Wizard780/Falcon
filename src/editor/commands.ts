@@ -1,5 +1,5 @@
 import type { Mark, MarkType, Node as PMNode } from 'prosemirror-model';
-import { EditorState, TextSelection, type Command, type Transaction } from 'prosemirror-state';
+import { EditorState, Selection, TextSelection, type Command, type Transaction } from 'prosemirror-state';
 import { LEVEL, schema, type ParaStyle } from './schema';
 
 const M = schema.marks;
@@ -222,7 +222,8 @@ export function setParaStyle(style: ParaStyle): Command {
 
 /** The card (or heading section) around a position: index range of paragraphs in the doc. */
 export function cardAround(doc: PMNode, pos: number): { head: number; start: number; end: number } | null {
-  const idx = doc.resolve(Math.min(pos, doc.content.size)).index(0);
+  // a position at the very end of the doc (e.g. select-all) resolves past the last paragraph
+  const idx = Math.min(doc.resolve(Math.min(pos, doc.content.size)).index(0), doc.childCount - 1);
   let head = idx;
   while (head >= 0 && !isHeading(doc.child(head))) head--;
   if (head < 0) return null;
@@ -343,33 +344,35 @@ export function condense(mode: 'integrity' | 'merge' | 'pilcrows'): Command {
     if (!paras.length) return false;
 
     const tr = state.tr;
-    // collapse whitespace inside each paragraph (last to first so positions stay valid)
+    // collapse whitespace inside each paragraph; paragraphs last to first, and edits within one last to first,
+    // so every offset still points at the original text (line breaks count as one placeholder char)
     for (const [node, pos] of [...paras].reverse()) {
-      const text = node.textContent;
-      const re = /\s{2,}|\t| /g;
+      const text = node.textBetween(0, node.content.size, undefined, '\uFFFC');
       const edits: [number, number, string][] = [];
-      for (const m of text.matchAll(re)) edits.push([m.index!, m.index! + m[0].length, ' ']);
-      const lead = text.match(/^\s+/), trail = text.match(/\s+$/);
-      for (const [a, b, s] of edits.reverse()) {
-        const from = pos + 1 + a, to = pos + 1 + b;
-        if ((lead && a === 0) || (trail && b === text.length)) tr.delete(from, to);
-        else tr.insertText(s, from, to);
+      for (const m of text.matchAll(/[ \t\u00a0]{2,}|\t|\u00a0/g)) edits.push([m.index!, m.index! + m[0].length, ' ']);
+      const lead = text.match(/^[ \t\u00a0]+/), trail = text.match(/[ \t\u00a0]+$/);
+      if (lead) { const e = edits.find((x) => x[0] === 0); if (e) e[2] = ''; else edits.push([0, lead[0].length, '']); }
+      if (trail && trail.index! > 0) {
+        const e = edits.find((x) => x[1] === text.length);
+        if (e) e[2] = ''; else edits.push([trail.index!, text.length, '']);
       }
-      if (lead && !edits.some((e) => e[0] === 0)) tr.delete(pos + 1, pos + 1 + lead[0].length);
-      if (trail && !edits.some((e) => e[1] === text.length)) tr.delete(pos + 1 + text.length - trail[0].length, pos + 1 + text.length);
+      edits.sort((x, y) => y[0] - x[0]);
+      for (const [a, b, rep] of edits) {
+        const from = pos + 1 + a, to = pos + 1 + b;
+        rep ? tr.insertText(rep, from, to) : tr.delete(from, to);
+      }
     }
     if (mode !== 'integrity') {
-      // join consecutive paragraphs, last to first
+      // join consecutive paragraphs, last to first; never across a heading that sits between them
       const mapped = paras.map(([, pos]) => tr.mapping.map(pos));
       for (let i = mapped.length - 1; i > 0; i--) {
         const prevNode = tr.doc.nodeAt(mapped[i - 1]);
         const curNode = tr.doc.nodeAt(mapped[i]);
-        if (!prevNode || !curNode) continue;
-        const joinPos = mapped[i]; // boundary between the two paragraphs
+        if (!prevNode || !curNode || mapped[i - 1] + prevNode.nodeSize !== mapped[i]) continue;
         if (curNode.content.size === 0) { tr.delete(mapped[i], mapped[i] + curNode.nodeSize); continue; }
-        tr.join(joinPos);
+        tr.join(mapped[i]);
         const sep = mode === 'pilcrows' ? ' ¶ ' : ' ';
-        if (prevNode.content.size > 0) tr.insertText(sep, joinPos - 1);
+        if (prevNode.content.size > 0) tr.insertText(sep, mapped[i] - 1);
       }
     }
     return finish(state, tr, dispatch);
@@ -382,7 +385,10 @@ export const uncondense: Command = (state, dispatch) => {
   if (!r) return false;
   const hits: number[] = [];
   state.doc.nodesBetween(r.from, r.to, (node, pos) => {
-    if (node.isText) for (const m of node.text!.matchAll(/ ?¶ ?/g)) hits.push(pos + m.index!, m[0].length);
+    if (node.isText) for (const m of node.text!.matchAll(/ ?¶ ?/g)) {
+      const at = pos + m.index!;
+      if (at >= r.from && at + m[0].length <= r.to) hits.push(at, m[0].length);
+    }
     return true;
   });
   if (!hits.length) return false;
@@ -397,6 +403,7 @@ export const uncondense: Command = (state, dispatch) => {
 /** Alt-F8: copy the previous card's cite paragraph to the cursor. */
 export const copyPreviousCite: Command = (state, dispatch) => {
   const doc = state.doc;
+  if (state.selection.$from.depth < 1 || state.selection.$to.depth < 1) return false;
   const here = doc.resolve(state.selection.from).index(0);
   let tags = 0;
   for (let i = here; i >= 0; i--) {
@@ -427,9 +434,9 @@ export function insertPlainText(text: string): Command {
     if (lines.length === 1) {
       tr.replaceSelectionWith(schema.text(lines[0], marks), false);
     } else {
-      const { from, to } = state.selection;
-      tr.delete(from, to);
-      let pos = from;
+      // works for any selection, including select-all (whose ends sit outside every paragraph)
+      tr.deleteSelection();
+      let pos = tr.selection.$from.depth ? tr.selection.from : Selection.atStart(tr.doc).from;
       lines.forEach((line, i) => {
         if (i > 0) { tr.split(pos); pos += 2; tr.setNodeMarkup(pos - 1, undefined, { style: 'normal', indent: 0 }); }
         if (line) { tr.insertText(line, pos); pos += line.length; }
