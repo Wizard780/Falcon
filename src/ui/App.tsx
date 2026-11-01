@@ -12,6 +12,7 @@ import { selectionState } from './selection-state';
 import { Icon } from './icons';
 import { openDocument, saveDocument, type DocMeta } from './files';
 import { clearFind, findInfo, setQuery, step } from '../editor/find';
+import { isReading, toggleRead } from '../editor/read';
 
 const AUTOSAVE_KEY = 'falcon.autosave.v1';
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -183,6 +184,7 @@ export function App() {
         <button title="Open (⌘O)" onClick={() => void fileOpen()}><Icon name="folder" /></button>
         <button title="Save (⌘S)" onClick={() => void fileSave()}><Icon name="save" /></button>
         <button title="Outline" className={showOutline ? 'on' : ''} onClick={() => setShowOutline((s) => !s)}><Icon name="outline" /></button>
+        <button title={`Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'}): only what's read aloud, keyboard locked; Space drops a marker`} className={view && isReading(view.state) ? 'on' : ''} onClick={() => run(toggleRead)}><Icon name="eye" /></button>
         <div className="grow" />
       </nav>
 
@@ -224,6 +226,7 @@ export function App() {
         <span>Σ</span>
         <span>Doc: {words} · Reader 1: {mmss(words / 200)} · Reader 2: {mmss(words / 300)}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
         {brush && <span className="dirty">Paintbrush on · Esc to stop</span>}
+        {view && isReading(view.state) && <span className="dirty">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
         <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))}>−</button>
         <button className="zoom" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>

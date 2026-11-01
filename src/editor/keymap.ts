@@ -10,6 +10,7 @@ import {
 import { schema } from './schema';
 import { activeColors, pastePlainFromClipboard } from './host';
 import { moveByHeading, moveByParagraph, moveContainer } from './motion';
+import { toggleMarker, toggleRead } from './read';
 
 const M = schema.marks;
 const cardHead = (n: PMNode | null | undefined) => !!n && (n.attrs.style === 'tag' || n.attrs.style === 'analytic');
@@ -131,6 +132,8 @@ export const falconKeys: Record<string, Command> = {
   'Alt-ArrowDown': moveByParagraph(1, false),
   'Alt-Shift-ArrowUp': moveByParagraph(-1, true),
   'Alt-Shift-ArrowDown': moveByParagraph(1, true),
+  'Mod-Shift-d': toggleMarker,
+  'Mod-Shift-r': toggleRead,
   PageUp: moveByHeading(-1, false),
   PageDown: moveByHeading(1, false),
   'Shift-PageUp': moveByHeading(-1, true),

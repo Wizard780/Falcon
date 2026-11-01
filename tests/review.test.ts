@@ -51,3 +51,24 @@ describe('end-of-doc positions', () => {
     expect(cardAround(s.doc, s.doc.content.size)).toEqual({ head: 0, start: 1, end: 2 });
   });
 });
+
+describe('read mode', () => {
+  it('locks typing, shows only read text, and Space drops then removes a marker', async () => {
+    const { readKey, toggleRead, toggleMarker, isReading } = await import('../src/editor/read');
+    let s = make([['normal', 'loose'], ['tag', 'Tag'], ['normal', 'Smith 24 cite'], ['normal', 'body text here']]);
+    s = run(select(s, 'Smith 24'), K.F8);
+    s = run(select(s, 'text'), K.F11);
+    s = run(s, toggleRead);
+    expect(isReading(s)).toBe(true);
+    const cls = (d: unknown) => String((d as { type: { attrs: { class: string } } }).type.attrs.class);
+    const decos = readKey.getState(s)!.decos.find();
+    const text = (want: string) => decos.filter((d) => cls(d).split(' ').includes(want)).map((d) => s.doc.textBetween(d.from, d.to, '|')).sort();
+    expect(text('f-read-hidden')).toEqual([' cite', ' here', 'body ', 'loose'].sort());
+    expect(text('f-read-shown')).toEqual(['Smith 24', 'text']);
+    expect(text('f-read-gap')).toEqual([]); // 'body ' comes before the first shown run, so it needs no gap
+    s = run(caret(s, 'here'), toggleMarker);
+    expect(map(s)).toMatch(/body \[text\]\{highlight:yellow\} \[ Marked \d+:\d\d \]\{color\}here/);
+    s = run(caret(s, 'Marked', 2), toggleMarker);
+    expect(map(s).split('\n')[3]).toBe('normal: body [text]{highlight:yellow} here');
+  });
+});

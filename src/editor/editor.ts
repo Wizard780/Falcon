@@ -13,6 +13,7 @@ import { schema } from './schema';
 import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
+import { readPlugin } from './read';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -105,6 +106,7 @@ export function createState(doc: PMNode = emptyDoc()) {
   return EditorState.create({
     doc,
     plugins: [
+      readPlugin, // first, so its keyboard lock runs before the formatting keys
       multiSelectionPlugin,
       falconKeymap(),
       keymap(baseKeymap),
