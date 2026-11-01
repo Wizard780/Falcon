@@ -2,10 +2,12 @@
 // types and formats a card with the real keys, checks the result, and screenshots it.
 import { _electron as electron } from 'playwright';
 import fs from 'node:fs';
+import os from 'node:os';
 
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 const { ELECTRON_RUN_AS_NODE, ...env } = process.env; // set by some hosts; it turns Electron into plain Node
 const exe = process.env.FALCON_EXE;
+env.FALCON_USER_DATA = fs.mkdtempSync(`${os.tmpdir()}/falcon-smoke-`);
 const app = await electron.launch(exe ? { executablePath: exe, env: { ...env, FALCON_HEADLESS: '1' } } : { args: ['.'], env: { ...env, FALCON_HEADLESS: '1' } });
 const win = await app.firstWindow();
 const errors = [];
@@ -40,7 +42,7 @@ console.log(map, '\nplatform:', platform, '| bridge:', bridge, '| visible:', vis
 const want = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.exitCode = 1; } };
 // emphasis replaced the underline on "app"; highlight stays on "app"
 want(map === 'tag: Electron tag\nnormal: Body text in the [desktop ]{emphasis}[app]{emphasis+highlight:yellow}', `marks: ${JSON.stringify(map)}`);
-want(bridge === 'openFile,openPath,platform,readClipboardText,saveFile', 'preload bridge');
+want(bridge === 'onMenu,openFile,openPath,platform,readClipboardText,saveFile', 'preload bridge');
 want(homeAtLaunch && !homeAfterEsc, 'Home shows at launch and Esc closes it');
 want(strayOpen.startsWith('refused'), `openPath refuses files never picked: ${strayOpen}`);
 want(visible.every((v) => !v), 'window stayed hidden (checked before any CI-only capture)');
