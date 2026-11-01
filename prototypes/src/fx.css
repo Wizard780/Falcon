@@ -1,0 +1,64 @@
+/* Falcon top-panel prototype, round 2: everything is built from the picker's dark glass pill. */
+#cm-root #ribbon{display:none!important}
+#cm-root{--ribbon-height:var(--fx-h,56px)}
+#fx-bar{position:absolute;top:0;left:0;right:0;height:var(--fx-h,56px);z-index:250;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 16px;background:var(--pmd-c-surface);border-radius:10px 10px 0 0}
+#fx-bar:empty{display:none}
+
+.fx-p{position:relative;display:flex;align-items:center;gap:2px;padding:4px;border-radius:999px;background:rgba(10,10,10,.82);
+  -webkit-backdrop-filter:blur(12px) saturate(1.4);backdrop-filter:blur(12px) saturate(1.4);
+  box-shadow:0 0 0 1px rgba(255,255,255,.08) inset,0 8px 24px rgba(0,0,0,.24),0 2px 6px rgba(0,0,0,.12);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none}
+/* pills sitting in the top band keep only the hairline ring; a drop shadow there smudges the page below */
+#fx-bar .fx-p{box-shadow:0 0 0 1px rgba(255,255,255,.08) inset}
+.fx-p button{position:relative;z-index:1;display:flex;align-items:center;height:28px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:rgba(255,255,255,.55);font:inherit;cursor:pointer;white-space:nowrap;font-variant-numeric:tabular-nums;transition:color 150ms ease-out}
+.fx-p button:hover{color:rgba(255,255,255,.85)}
+.fx-p button:active{transform:scale(.97)}
+.fx-p button[data-on]{color:#fff}
+.fx-p button:focus-visible{outline:2px solid rgba(255,255,255,.4);outline-offset:2px}
+.fx-p .gap{width:10px;flex:none}
+.fx-p .note{padding:0 10px 0 6px;color:rgba(255,255,255,.55);white-space:nowrap;font-variant-numeric:tabular-nums}
+.fx-hl{position:absolute;top:4px;left:0;height:28px;border-radius:999px;background:rgba(255,255,255,.12);opacity:0;will-change:transform}
+.fx-p[data-ready] .fx-hl{transition:transform 250ms cubic-bezier(.23,1,.32,1),width 250ms cubic-bezier(.23,1,.32,1),opacity 150ms ease-out}
+
+/* Dock: one pill floating over the bottom of the page */
+.fx-dock{position:absolute;left:50%;bottom:calc(var(--status-bar-height,28px) + 20px);transform:translateX(-50%);z-index:260}
+/* Morph: one pill at the top that changes with what you're doing */
+.fx-morph{overflow:hidden}
+.fx-morph[data-ready]{transition:width 250ms cubic-bezier(.23,1,.32,1)}
+.fx-morph .set{display:flex;align-items:center;gap:2px;flex:none}
+.fx-morph .set[hidden]{display:none}
+.fx-swap{animation:fx-swap 200ms cubic-bezier(.23,1,.32,1) both}
+@keyframes fx-swap{from{opacity:0;transform:scale(.98)}}
+.fx-menu{position:absolute;z-index:270;flex-direction:column;align-items:stretch;padding:4px;border-radius:18px;opacity:0;transform:translateY(-4px) scale(.98);transform-origin:50% 0;pointer-events:none;transition:opacity 150ms ease-out,transform 200ms cubic-bezier(.23,1,.32,1)}
+.fx-menu.open{opacity:1;transform:none;pointer-events:auto}
+.fx-menu button{justify-content:space-between;gap:24px}
+
+.fx-in{animation:fx-in 220ms cubic-bezier(.23,1,.32,1) both}
+@keyframes fx-in{from{opacity:0;transform:translateY(-4px)}}
+.fx-dock.fx-in{animation-name:fx-in-up}
+@keyframes fx-in-up{from{opacity:0;transform:translate(-50%,6px)}to{transform:translate(-50%,0)}}
+
+/* command palette, same glass */
+.fx-pal{position:fixed;left:50%;top:14vh;width:560px;max-width:calc(100vw - 40px);z-index:2001;flex-direction:column;align-items:stretch;padding:6px;border-radius:20px;
+  transform:translateX(-50%) scale(.97);transform-origin:50% 0;opacity:0;transition:transform 200ms cubic-bezier(.23,1,.32,1),opacity 150ms ease-out}
+.fx-pal.open{transform:translateX(-50%) scale(1);opacity:1}
+.fx-pal input{height:40px;border:0;background:none;padding:0 14px;color:#fff;font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}
+.fx-pal input::placeholder{color:rgba(255,255,255,.55)}
+.fx-list{max-height:360px;overflow:auto;padding-top:4px}
+.fx-list::-webkit-scrollbar{width:0}
+.fx-row{display:flex;align-items:center;gap:16px;height:34px;padding:0 14px;border-radius:999px;color:rgba(255,255,255,.55);cursor:pointer}
+.fx-row[data-on]{background:rgba(255,255,255,.12);color:#fff}
+.fx-row .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fx-row .ds{white-space:nowrap;max-width:40%;overflow:hidden;text-overflow:ellipsis;color:rgba(255,255,255,.55)}
+.fx-empty{padding:16px 14px;color:rgba(255,255,255,.55)}
+.fx-scrim{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.3);opacity:0;transition:opacity 150ms ease-out}
+.fx-scrim.open{opacity:1}
+
+/* toast, same glass */
+.fx-toast{position:fixed;left:50%;bottom:120px;z-index:3000;padding:0 16px;height:36px;transform:translate(-50%,8px);opacity:0;pointer-events:none;color:#fff;
+  transition:transform 200ms cubic-bezier(.23,1,.32,1),opacity 150ms ease-out}
+.fx-toast.show{transform:translate(-50%,0);opacity:1}
+
+@media (prefers-reduced-motion:reduce){
+  .fx-in,.fx-swap,.fx-pal,.fx-menu,.fx-toast,.fx-scrim,.fx-p[data-ready] .fx-hl,.fx-morph[data-ready]{animation:none!important;transition:none!important}
+}

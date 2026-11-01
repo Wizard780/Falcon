@@ -1,0 +1,66 @@
+/* unslop pass (unslop by @heydamir, CC BY 4.0): one graphite ramp for all chrome, the 4px grid,
+   radius by size, and the current highlighter ink as the one accent. The document is the moment. */
+:root{
+  --u-deep:#0f0f10;--u-card:#19191b;--u-raised:#232325;--u-hover:rgba(237,237,237,.05);
+  --u-tx:#ededed;--u-tx2:#a1a1a6;--u-mut:#85858b;--u-top:inset 0 1px 0 rgba(255,255,255,.08);
+  --u-ease:cubic-bezier(.22,1,.36,1);--ink:#00e5ff;
+  --sb-bg:var(--u-deep);--sb-tx:var(--u-tx);--sb-mut:var(--u-mut);--sb-ease:var(--u-ease);
+}
+
+/* 2 color: chrome is one surface, so strip, bar, outline and status read as one frame around the page */
+#cm-root,#cm-root #fx-bar,#cm-root #status-bar{background:var(--u-deep)!important}
+#cm-root #status-bar{border:0!important;color:var(--u-mut);font-size:12px}
+.sb-act,.fs-b[data-on],.lv-hl,[class*="fxt-"] .b::after,[class*="fxt-"] .hl{background:var(--u-raised)!important;box-shadow:var(--u-top)!important}
+.sb-row:hover,.fs-b:hover,.sb-ico:hover{background:var(--u-hover)}
+.sb-search,.ol-q,.lv{background:var(--u-card)}
+.sb-search:hover{background:var(--u-raised)}
+
+/* files panel: a solid surface, no frosted glass; a small neutral shadow is its only depth */
+.rail-panel{background:var(--u-deep);-webkit-backdrop-filter:none;backdrop-filter:none;border-radius:20px;
+  box-shadow:0 8px 24px rgba(0,0,0,.16)}
+.olp.peek{box-shadow:0 8px 24px rgba(0,0,0,.16)}
+
+/* 1 spacing + 7 radius: rows 8 inside 12px of padding in a 20px panel; controls 8, keycaps 4 */
+.sb-row,.sb-act{border-radius:8px}
+.sb-search{height:36px;border-radius:8px;margin:0 12px 8px}
+.sb-search kbd{padding:0 4px;border-radius:4px;background:var(--u-raised);font-size:12px;line-height:20px;color:var(--u-tx2)}
+.fs-b,.sb-ico{border-radius:8px}
+.sb-label{padding:24px 10px 8px;font-size:12px;line-height:16px}
+.lv{padding:2px;border-radius:8px}
+.lv button,.lv-hl{border-radius:6px}
+.ol-head{padding:4px 0 8px}
+.olp-head{padding:0 12px 0 22px}
+
+/* 5 type: two weights, hierarchy from size and color, 12px mono for counts */
+.sb-name{font-size:16px;font-weight:500}
+.olp-name{font-size:14px;font-weight:500}
+.sb-row .ct{font-size:12px}
+.sb-row.ol{font-size:13px}
+.sb-row.ol.l1,.sb-row.ol.l2{font-weight:500}
+.sb-row.ol.l3{color:var(--u-tx2)}
+.sb-row.ol.l3[data-on]{color:var(--u-tx)}
+.sb-foot .nm{font-size:13px}
+.sb-foot .ct{font-size:12px}
+
+/* signature: what you are on is marked in the ink you are cutting with */
+.ol .sb-act::before,.olp .sb-act::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:1px;background:var(--ink)}
+.fs-b[data-on]{position:relative}
+.fs-b[data-on]::before{content:"";position:absolute;left:-10px;top:10px;bottom:10px;width:2px;border-radius:1px;background:var(--ink)}
+
+/* top bar: Send and the clock sit on the same two rows as the style grid */
+[class*="fxt-"] .b{border-radius:8px!important}
+.fxt-classic.r .end{display:grid!important;grid-template-rows:32px 32px;gap:4px;justify-items:stretch}
+.fxt-classic.r .end .b{width:100%}
+[class*="fxt-"] [data-t="speech"][data-on]{color:var(--ink)!important}
+
+/* strip icons line up with their rows in the files panel (positions set in side.js) */
+.fstrip{display:block;padding:0}
+.fstrip>*{position:absolute;left:10px}
+.fstrip>.sb-logo{left:18px}
+.fs-gap{display:none}
+
+/* 9 motion: one curve */
+.sb-row .chev,.rail-panel,.olp,.lv-hl{transition-timing-function:var(--u-ease)}
+
+/* Glass bar: a card step on the chrome instead of frosted glass with an outline; 16 outer, 8 padding, 8 inner */
+.fxt-glass .slab{background:var(--u-card)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;box-shadow:none!important}
