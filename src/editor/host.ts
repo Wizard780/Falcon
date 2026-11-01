@@ -15,6 +15,7 @@ export function setActiveColor(kind: 'highlight' | 'shading', color: string | nu
 type FalconBridge = {
   readClipboardText?: () => Promise<string>;
   openFile?: () => Promise<{ name: string; path: string; data: Uint8Array } | null>;
+  openPath?: (path: string) => Promise<{ name: string; path: string; data: Uint8Array }>;
   saveFile?: (opts: { path?: string; name: string; data: Uint8Array }) => Promise<{ path: string; name: string } | null>;
   platform?: string;
 };

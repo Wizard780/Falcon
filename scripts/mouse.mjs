@@ -7,6 +7,7 @@ const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: 1400, height: 900 } });
 await p.goto(url); await p.waitForTimeout(1500);
 if (which === 'cm') { await p.keyboard.press('Escape'); await p.getByText('New document', { exact: true }).first().click(); await p.waitForTimeout(1000); }
+else { await p.keyboard.press('Escape'); await p.waitForTimeout(400); } // close Home
 await p.locator('.ProseMirror').first().click();
 await p.keyboard.press(`${MOD}+a`); await p.keyboard.press('Backspace');
 await p.keyboard.type('The rapid expansion of artificial intelligence workloads has pushed utilities to their limits.');

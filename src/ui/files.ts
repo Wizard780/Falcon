@@ -15,6 +15,14 @@ export async function openDocument(): Promise<{ doc: PMNode; meta: DocMeta } | n
   return { doc, meta: { name: file.name.replace(/\.docx$/i, ''), path: file.path } };
 }
 
+/** Reopen a recent file by path (desktop only; the main process only allows files picked before). */
+export async function openPath(path: string): Promise<{ doc: PMNode; meta: DocMeta }> {
+  if (!bridge.openPath) throw new Error('Use Open to pick this file');
+  const file = await bridge.openPath(path);
+  const doc = await docxToDoc(file.data);
+  return { doc, meta: { name: file.name.replace(/\.docx$/i, ''), path: file.path } };
+}
+
 export async function saveDocument(doc: PMNode, meta: DocMeta, saveAs: boolean): Promise<DocMeta | null> {
   const data = await docToDocx(doc);
   const name = `${meta.name || 'Untitled'}.docx`;

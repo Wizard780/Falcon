@@ -10,6 +10,7 @@ const p = await b.newPage({ viewport: { width: 1400, height: 900 } });
 p.on('pageerror', e => console.log('PAGEERR', e.message));
 await p.goto(url); await p.waitForTimeout(1500);
 if (which === 'cm') { await p.keyboard.press('Escape'); await p.getByText('New document', { exact: true }).first().click(); await p.waitForTimeout(1000); }
+else { await p.keyboard.press('Escape'); await p.waitForTimeout(400); } // close Home
 
 const k = async (key, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.waitForTimeout(40); } };
 const t = s => p.keyboard.type(s, { delay: 3 });
