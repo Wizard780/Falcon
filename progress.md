@@ -27,16 +27,27 @@ CM is a reference only. Read its manual and run its behavior, but write Falcon's
 - Default body font is Calibri (Verbatim default), falling back to Carlito and Arial.
 
 ## Known differences from CM
-(fill in)
+- F5 (Hat) and Alt-F8 (copy previous cite): CM's web build can't use these keys in the browser, so the probe
+  shows a difference. Falcon does what CM's manual describes.
+- Ctrl/Cmd-click multi-range selection, read mode, numbering, comments, multi-doc workspace, collab, and AI aren't built yet.
+- Native drag-and-drop of selected text is off (CM's page drag also needs Mod-Shift-Alt).
 
-## Stages
-- [ ] scaffold (vite + react + PM + electron)
-- [ ] schema + commands + keymap → probe parity
-- [ ] chrome (toolbar, outline, status bar)
-- [ ] mouse selection
-- [ ] docx import/export
-- [ ] electron shell + CI
-- [ ] review + PR
+## Stages (results)
+- [x] scaffold: Vite + React + ProseMirror + Electron
+- [x] schema + commands + keymap: probe 48/50 cases match CM (the 2 left are the CM web-key limits above)
+- [x] chrome: two-row toolbar with style previews, docked outline (levels 1–4, counts), status bar with read times
+- [x] mouse selection: all 8 gestures in scripts/mouse.mjs match CM exactly
+- [x] docx import/export: 6 real Verbatim files (up to 17 MB, 10.8k paragraphs) round-trip exactly; python-docx reads the export
+- [x] electron shell: headless smoke test passes; packaged .app launches; saves limited to user-chosen .docx paths
+- [x] perf: 10.8k-paragraph file types at ~22ms dispatch-to-frame (tiny doc floor is 16.7ms), opens in ~3s
+- [x] find bar, heading jumps, card moving
+- [ ] subagent review, PR, CI green
+
+## Failed attempts
+- Electron in tests: ELECTRON_RUN_AS_NODE=1 is inherited from the host app here and turns Electron into Node. Scripts unset it.
+- Hidden Electron windows have no OS focus, so the browser's own caret keys (Shift-Arrow) do nothing in tests. The smoke test selects through the editor.
+- CM's Open uses showOpenFilePicker. The side-by-side script deletes it so CM falls back to a file input.
+- Leaving clicks inside a selection to the browser caused a late caret collapse after double-click. Now the editor handles every plain press.
 
 ## Next action
-Scaffold the app.
+Fix review findings, push, open the PR, watch CI.
