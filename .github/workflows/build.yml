@@ -55,6 +55,13 @@ jobs:
       - run: npx electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          # electron-builder skips signing on PR builds to protect certificates; the Mac
+          # signature is ad-hoc (no secrets), and an unsigned app opens as "damaged"
+          CSC_FOR_PULL_REQUEST: true
+      # an unsealed signature makes macOS call the downloaded app "damaged"
+      - name: Verify the Mac signature
+        if: runner.os == 'macOS'
+        run: codesign --verify --deep --strict --verbose=2 release/mac*/Falcon.app
       # launch the packaged app (hidden window), type and format a card with the real keys, and check it
       - name: Smoke test the packaged app
         shell: bash

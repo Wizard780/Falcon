@@ -1,6 +1,6 @@
 {
   "name": "falcon",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Falcon: a debate evidence editor",
   "main": "electron/main.cjs",
   "scripts": {
@@ -65,7 +65,9 @@
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "hardenedRuntime": false
     },
     "win": {
       "target": [
