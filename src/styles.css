@@ -121,3 +121,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .status .dirty { color: var(--chrome-text); }
 
 .toast { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); background: rgba(22,22,24,.96); color: var(--chrome-text); padding: 8px 14px; border-radius: 10px; font-size: 12.5px; box-shadow: 0 8px 30px rgba(0,0,0,.35); z-index: 60; }
+
+/* desktop: the window drags by the chrome; on macOS leave room for the traffic lights */
+.desktop .toolbar, .desktop .rail, .desktop .status { -webkit-app-region: drag; }
+.desktop button, .desktop .popover, .desktop .split, .desktop .size-ctl { -webkit-app-region: no-drag; }
+.desktop.mac .rail { padding-top: 44px; }
