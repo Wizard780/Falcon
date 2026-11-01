@@ -2,7 +2,7 @@ import { baseKeymap } from 'prosemirror-commands';
 import { dropCursor } from 'prosemirror-dropcursor';
 import { history } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
-import { DOMParser as PMDOMParser, type Node as PMNode } from 'prosemirror-model';
+import { DOMParser as PMDOMParser, Slice, type Node as PMNode } from 'prosemirror-model';
 import { EditorState, Plugin, PluginKey, TextSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { cardAround, paintColorMark } from './commands';
@@ -87,6 +87,12 @@ const selectionClasses = new Plugin({
 const pastePlugin = new Plugin({
   props: {
     transformPastedHTML: (html) => cleanPastedHTML(html),
+    // a pasted tag or heading keeps its style instead of melting into the line it lands on
+    transformPasted: (slice) => {
+      const first = slice.content.firstChild;
+      if (slice.openStart > 0 && first?.isTextblock && first.attrs.style !== 'normal') return new Slice(slice.content, 0, slice.openEnd);
+      return slice;
+    },
     handlePaste: (view, ev) => {
       if (!plainPasteArmed) return false;
       disarmPlainPaste();
