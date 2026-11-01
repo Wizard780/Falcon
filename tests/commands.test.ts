@@ -116,3 +116,26 @@ describe('shrink, case, condense', () => {
     expect(map(run(select(s0, 'one', 'three'), K['Alt-F3']))).toBe('tag: Tag\nnormal: cite\nnormal: one two three');
   });
 });
+
+describe('moving around and moving cards', () => {
+  const doc = () => make([['block', 'Block'], ['tag', 'Card A'], ['normal', 'a body'], ['tag', 'Card B'], ['normal', 'b body'], ['tag', 'Card C']]);
+  it('Mod-Alt-Down moves the card below its neighbor, cursor along', () => {
+    const s = run(caret(doc(), 'a body', 2), K['Mod-Alt-ArrowDown']);
+    expect(map(s)).toBe('block: Block\ntag: Card B\nnormal: b body\ntag: Card A\nnormal: a body\ntag: Card C');
+    expect(s.selection.$from.parent.textContent).toBe('a body');
+  });
+  it('Mod-Alt-Up moves it back', () => {
+    const s = run(caret(doc(), 'b body'), K['Mod-Alt-ArrowUp']);
+    expect(map(s)).toBe('block: Block\ntag: Card B\nnormal: b body\ntag: Card A\nnormal: a body\ntag: Card C');
+  });
+  it('a card does not move above its block', () => {
+    const s = run(caret(doc(), 'Card A'), K['Mod-Alt-ArrowUp']);
+    expect(map(s)).toBe(map(doc()));
+  });
+  it('PageDown/PageUp jump between headings', () => {
+    let s = run(caret(doc(), 'a body', 1), K.PageDown);
+    expect(s.selection.$from.parent.textContent).toBe('Card B');
+    s = run(s, K.PageUp);
+    expect(s.selection.$from.parent.textContent).toBe('Card A');
+  });
+});

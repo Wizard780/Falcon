@@ -11,6 +11,7 @@ import { buildOutline, currentItem, readWords, type OutlineItem } from '../edito
 import { selectionState } from './selection-state';
 import { Icon } from './icons';
 import { openDocument, saveDocument, type DocMeta } from './files';
+import { clearFind, findInfo, setQuery, step } from '../editor/find';
 
 const AUTOSAVE_KEY = 'falcon.autosave.v1';
 
@@ -25,6 +26,8 @@ export function App() {
   const [meta, setMeta] = useState<DocMeta>(() => JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' });
   const [dirty, setDirty] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const findRef = useRef<HTMLInputElement>(null);
   const lastDoc = useRef<PMNode | null>(null);
 
   const flash = useCallback((msg: string) => {
@@ -103,6 +106,7 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); void fileSave(e.shiftKey); }
+      else if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }
       else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); void fileOpen(); }
       else if (mod && e.key.toLowerCase() === 'n' && !e.shiftKey) { e.preventDefault(); fileNew(); }
       else if (mod && (e.key === '=' || e.key === '+') && !e.shiftKey) { e.preventDefault(); setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2))); }
@@ -170,6 +174,20 @@ export function App() {
       <div className="f-scroll" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); viewRef.current?.focus(); } }}>
         <div className="page"><div ref={mountRef} /></div>
       </div>
+      {findOpen && view && (
+        <div className="findbar">
+          <input ref={findRef} placeholder="Find" defaultValue={findInfo(view.state)?.query ?? ''}
+            onChange={(e) => setQuery(view, e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); step(view, e.shiftKey ? -1 : 1); }
+              else if (e.key === 'Escape') { e.preventDefault(); clearFind(view); setFindOpen(false); view.focus(); }
+            }} />
+          <span className="count">{(() => { const f = findInfo(view.state); return f && f.query ? (f.matches.length ? `${f.index + 1}/${f.matches.length}` : 'No results') : ''; })()}</span>
+          <button title="Previous (Shift-Enter)" onMouseDown={(e) => { e.preventDefault(); step(view, -1); }}><Icon name="chevronUp" /></button>
+          <button title="Next (Enter)" onMouseDown={(e) => { e.preventDefault(); step(view, 1); }}><Icon name="chevron" /></button>
+          <button title="Close (Esc)" onMouseDown={(e) => { e.preventDefault(); clearFind(view); setFindOpen(false); view.focus(); }}><Icon name="x" /></button>
+        </div>
+      )}
 
       <footer className="status">
         <span>Σ</span>

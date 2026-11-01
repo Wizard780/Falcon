@@ -9,7 +9,7 @@ import {
 } from './commands';
 import { schema } from './schema';
 import { activeColors, pastePlainFromClipboard } from './host';
-import { moveByParagraph } from './motion';
+import { moveByHeading, moveByParagraph, moveContainer } from './motion';
 
 const M = schema.marks;
 const cardHead = (n: PMNode | null | undefined) => !!n && (n.attrs.style === 'tag' || n.attrs.style === 'analytic');
@@ -131,6 +131,12 @@ export const falconKeys: Record<string, Command> = {
   'Alt-ArrowDown': moveByParagraph(1, false),
   'Alt-Shift-ArrowUp': moveByParagraph(-1, true),
   'Alt-Shift-ArrowDown': moveByParagraph(1, true),
+  PageUp: moveByHeading(-1, false),
+  PageDown: moveByHeading(1, false),
+  'Shift-PageUp': moveByHeading(-1, true),
+  'Shift-PageDown': moveByHeading(1, true),
+  'Mod-Alt-ArrowUp': moveContainer(-1),
+  'Mod-Alt-ArrowDown': moveContainer(1),
 };
 
 export const falconKeymap = () => keymap(falconKeys);

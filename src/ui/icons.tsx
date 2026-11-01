@@ -6,6 +6,7 @@ const PATHS: Record<string, string> = {
   x: 'M6 6l12 12M18 6 6 18',
   chevron: 'm6 9 6 6 6-6',
   chevronRight: 'm9 6 6 6-6 6',
+  chevronUp: 'm6 15 6-6 6 6',
   highlighter: 'm9 11-6 6v3h9l3-3M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4',
   bucket: 'M19 11 11 3 3 11l8 8 8-8zM3 11h16M21 15s-2 2.5-2 4a2 2 0 0 0 4 0c0-1.5-2-4-2-4z',
   falcon: 'M12 3 4 20l8-5 8 5z',

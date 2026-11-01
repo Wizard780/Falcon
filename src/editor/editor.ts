@@ -11,6 +11,7 @@ import { falconKeymap } from './keymap';
 import { wordSelection } from './mouse';
 import { schema } from './schema';
 import { cleanPastedHTML } from './paste';
+import { findPlugin } from './find';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -103,6 +104,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       pastePlugin,
       wordSelection(),
       currentCard,
+      findPlugin,
     ],
   });
 }

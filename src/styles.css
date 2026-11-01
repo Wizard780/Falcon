@@ -133,3 +133,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 /* the card the cursor is in gets a thin bar on its left */
 .f-cur-card { position: relative; }
 .f-cur-card::before { content: ''; position: absolute; left: -14px; top: 0; bottom: 0; width: 1px; background: #c8c8cc; }
+
+/* find */
+.findbar { position: fixed; top: 96px; right: 24px; z-index: 40; display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 12px; border-radius: 12px; background: rgba(22, 22, 24, .96); box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+.findbar input { width: 220px; background: transparent; border: 0; outline: none; color: var(--chrome-text); font: 13px var(--ui-font); }
+.findbar .count { font-family: var(--mono); font-size: 12px; color: var(--chrome-dim); min-width: 64px; text-align: right; padding-right: 6px; }
+.findbar button { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--chrome-dim); }
+.findbar button:hover { background: var(--chrome-hover); color: var(--chrome-text); }
+.f-find { background: rgba(255, 170, 0, 0.35); border-radius: 2px; }
+.f-find-cur { background: rgba(255, 120, 0, 0.7); }
