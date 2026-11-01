@@ -29,7 +29,7 @@ CM is a reference only. Read its manual and run its behavior, but write Falcon's
 ## Known differences from CM
 - F5 (Hat) and Alt-F8 (copy previous cite): CM's web build can't use these keys in the browser, so the probe
   shows a difference. Falcon does what CM's manual describes.
-- Ctrl/Cmd-click multi-range selection, read mode, numbering, comments, multi-doc workspace, collab, and AI aren't built yet.
+- Card numbering, comments, multi-doc workspace, collab, AI, and installer signing aren't built yet.
 - Native drag-and-drop of selected text is off (CM's page drag also needs Mod-Shift-Alt).
 
 ## Stages (results)
@@ -52,4 +52,4 @@ CM is a reference only. Read its manual and run its behavior, but write Falcon's
 - Leaving clicks inside a selection to the browser caused a late caret collapse after double-click. Now the editor handles every plain press.
 
 ## Next action
-Watch CI on the latest push. Next features by value: Ctrl/Cmd-click multi-range selection, read mode, smart paste from Word tested on a real Word clipboard.
+Merge PR #2. Next by value: smart paste from Word tested on a real Word clipboard, card numbering, send-to-speech.
