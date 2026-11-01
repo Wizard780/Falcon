@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Falcon — Round</title>
+<meta name="viewport" content="width=1440">
+<style>
+:root{--ui:-apple-system,"SF Pro Text","SF Pro",Inter,"Segoe UI",system-ui,sans-serif;--serif:"Times New Roman",Georgia,serif;--ease:cubic-bezier(.2,.8,.2,1)}
+[data-theme=dark]{--bg:#0d0e11;--panel:#14161a;--panel2:#1a1d22;--hover:#20242b;--line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.12);--text:#e7e8eb;--mute:#8a8f99;--faint:#5c616b;--accent:#7b87ff;--accentbg:rgba(123,135,255,.14);--amber:#f0b44c;--amberbg:rgba(240,180,76,.12);--green:#4fd18b;--red:#ff6b6b;--paper:#f6f4ee;--hl:#8ef1f1;--well:#0a0b0d;--shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35)}
+[data-theme=light]{--bg:#f2f2f4;--panel:#fff;--panel2:#f7f7f9;--hover:#efeff3;--line:rgba(0,0,0,.07);--line2:rgba(0,0,0,.12);--text:#17181c;--mute:#6b6f78;--faint:#a0a4ad;--accent:#4f5df0;--accentbg:rgba(79,93,240,.1);--amber:#c27c0e;--amberbg:rgba(194,124,14,.1);--green:#1f9d5b;--red:#e04444;--paper:#fff;--hl:#00ffff;--well:#e6e6ea;--shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.08)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font:13px/1.4 var(--ui);background:var(--bg);color:var(--text);overflow:hidden;-webkit-font-smoothing:antialiased;transition:background .2s var(--ease),color .2s var(--ease)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.app{display:grid;grid-template-rows:88px 1fr auto;height:100vh}
+/* top */
+.top{display:flex;align-items:center;gap:24px;padding:0 24px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{display:flex;align-items:center;gap:12px;min-width:280px}
+.logo{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#b06bff);display:grid;place-items:center;color:#fff;font-weight:700;box-shadow:0 4px 12px rgba(123,135,255,.35)}
+.rinfo b{display:block;font-size:13px;font-weight:600}
+.rinfo span{color:var(--mute);font-size:12px}
+.rinfo i{font-style:normal;color:var(--faint);margin:0 4px}
+.seg{position:relative;display:flex;background:var(--well);border:1px solid var(--line);border-radius:8px;padding:2px}
+.seg button{position:relative;z-index:1;padding:6px 16px;font-size:12px;font-weight:600;color:var(--mute);transition:color .18s var(--ease)}
+.seg button.on{color:#fff}
+.seg .pill{position:absolute;top:2px;bottom:2px;left:2px;width:calc(50% - 2px);border-radius:6px;background:var(--accent);box-shadow:0 2px 8px rgba(123,135,255,.4);transition:transform .2s var(--ease),background .2s}
+.seg.prep .pill{background:var(--hover);box-shadow:none}
+.seg.round .pill{transform:translateX(100%)}
+.seg.prep button.on{color:var(--text)}
+.timer{display:flex;align-items:center;gap:16px;padding:8px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);transition:opacity .2s}
+.prepmode .timer,.prepmode .preps{opacity:.45}
+.play{width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;transition:transform .15s var(--ease),background .2s}
+.play:hover{transform:scale(1.05)}
+.play.run{background:var(--red)}
+.tdisp{min-width:128px}
+.tlabel{font-size:11px;color:var(--mute);display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.live{width:6px;height:6px;border-radius:50%;background:var(--faint);transition:background .2s}
+.run-on .live{background:var(--red);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.3}}
+.tbig{font-size:40px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1}
+.tbig.warn{color:var(--amber)}.tbig.over{color:var(--red)}
+.presets{display:grid;grid-template-columns:repeat(4,auto);gap:4px}
+.chip{padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;color:var(--mute);border:1px solid var(--line);transition:all .15s var(--ease);font-variant-numeric:tabular-nums}
+.chip:hover{background:var(--hover);color:var(--text)}
+.chip.on{background:var(--accentbg);color:var(--accent);border-color:transparent}
+.chip small{font-weight:500;opacity:.7;margin-left:4px}
+.ghost{font-size:11px;color:var(--mute);padding:4px 8px;border-radius:6px;transition:background .15s}
+.ghost:hover{background:var(--hover);color:var(--text)}
+.preps{display:flex;flex-direction:column;gap:8px;width:280px;margin-left:auto}
+.prep{display:grid;grid-template-columns:40px 1fr 72px 52px;align-items:center;gap:8px;font-size:11px}
+.prep .who{font-weight:600;color:var(--mute)}
+.bar{height:6px;border-radius:3px;background:var(--well);overflow:hidden;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--green);border-radius:3px;transition:width .15s linear,background .2s}
+.prep.low .bar i{background:var(--amber)}
+.ptxt{font-variant-numeric:tabular-nums;color:var(--mute);text-align:right}
+.ptxt b{color:var(--text);font-weight:600}
+.pbtn{padding:3px 0;border-radius:6px;border:1px solid var(--line2);font-size:11px;font-weight:600;transition:all .15s var(--ease)}
+.pbtn:hover{background:var(--hover)}
+.prep.run .pbtn{background:var(--amber);color:#111;border-color:transparent}
+.icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--mute);border:1px solid var(--line);transition:all .15s}
+.icon:hover{background:var(--hover);color:var(--text)}
+/* main */
+.main{display:grid;grid-template-columns:208px 1fr 372px;min-height:0}
+.side{border-right:1px solid var(--line);background:var(--panel);padding:16px 8px;overflow:auto}
+.sh{font-size:11px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;padding:0 8px 8px}
+.file,.ol{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;color:var(--mute);font-size:12px;cursor:pointer;transition:background .15s,color .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file:hover,.ol:hover{background:var(--hover);color:var(--text)}
+.file.on{background:var(--hover);color:var(--text)}
+.file svg{flex:none;opacity:.6}
+.ol.l1{font-weight:700;color:var(--text)}.ol.l2{padding-left:16px;font-weight:600}.ol.l3{padding-left:24px}
+.gap{height:16px}
+.center{display:flex;flex-direction:column;min-height:0;background:var(--bg)}
+.dbar{display:flex;align-items:center;gap:12px;height:44px;padding:0 16px;border-bottom:1px solid var(--line);font-size:12px;color:var(--mute)}
+.dbar b{color:var(--text);font-weight:600}
+.lock{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--amberbg);color:var(--amber);font-size:11px;font-weight:600;margin-left:auto;transition:all .2s var(--ease)}
+.lock.edit{background:var(--accentbg);color:var(--accent)}
+.lock.nudge{animation:nudge .35s}
+@keyframes nudge{25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+.scroll{flex:1;overflow:auto;padding:24px 0 48px}
+.paper{width:704px;margin:0 auto;background:var(--paper);color:#111;padding:56px 72px 72px;border-radius:4px;box-shadow:var(--shadow);font-family:var(--serif);outline:none}
+.pocket{font-size:26px;font-weight:700;text-align:center;border:2px solid #111;padding:4px;margin-bottom:16px}
+.hat{font-size:21px;font-weight:700;text-align:center;margin:0 0 24px;text-decoration:underline double}
+.block{margin-bottom:32px}
+.bh{font-size:16.5px;font-weight:700;text-decoration:underline;text-align:center;margin-bottom:16px;cursor:grab;border-radius:4px;transition:background .15s}
+.bh:hover{background:rgba(123,135,255,.1)}
+.card{position:relative;border-radius:4px;transition:background .18s var(--ease),box-shadow .18s}
+.card:hover{background:rgba(0,0,0,.025)}
+.card .grip{position:absolute;left:-40px;top:2px;width:24px;height:24px;border-radius:6px;display:grid;place-items:center;color:#999;cursor:grab;opacity:0;transition:opacity .15s,background .15s;font-family:var(--ui);font-size:13px;letter-spacing:-2px}
+.card:hover .grip{opacity:1}.card .grip:hover{background:rgba(0,0,0,.06);color:#444}
+.card[data-in]::after{content:attr(data-in);position:absolute;right:-64px;top:4px;font:600 10px var(--ui);color:#4f5df0;background:rgba(79,93,240,.1);padding:2px 6px;border-radius:4px}
+.card.flash{animation:flash 1.6s var(--ease)}
+@keyframes flash{0%,60%{box-shadow:0 0 0 3px #f0b44c;background:rgba(240,180,76,.12)}}
+.tag{font-size:14.5px;font-weight:700;line-height:1.3;margin-bottom:4px}
+.cite{font-size:14.5px;margin-bottom:6px;line-height:1.3}
+.cite small{font-size:10px;font-weight:400}
+.body{font-size:9.5px;line-height:1.45;text-align:left}
+.body u{font-size:13.5px;text-underline-offset:2px}
+.body mark{background:var(--hl);color:inherit;padding:0 1px}
+.dragging{opacity:.4}
+/* speech */
+.speech{border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+.sphead{padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+.sptitle{display:flex;align-items:center;justify-content:space-between}
+.sptitle b{font-size:13px}
+.sptitle span{font-size:11px;color:var(--mute)}
+.est{display:flex;align-items:baseline;gap:8px;margin-top:12px}
+.est .big{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.est .wpm{font-size:12px;color:var(--mute);border-bottom:1px dashed var(--faint);cursor:pointer}
+.est .cnt{margin-left:auto;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.meter{height:4px;border-radius:2px;background:var(--well);margin-top:8px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent);transition:width .25s var(--ease)}
+.slist{flex:1;overflow:auto;padding:8px;transition:background .15s}
+.slist.over{background:var(--accentbg)}
+.sitem{display:flex;gap:8px;padding:8px;border-radius:8px;border:1px solid transparent;cursor:grab;transition:background .15s,border-color .15s,transform .18s var(--ease);animation:in .2s var(--ease)}
+@keyframes in{from{opacity:0;transform:translateY(-4px)}}
+.sitem:hover{background:var(--hover);border-color:var(--line)}
+.num{flex:none;width:20px;height:20px;border-radius:6px;background:var(--well);font-size:11px;font-weight:600;color:var(--mute);display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.sbody{flex:1;min-width:0}
+.sblock{font-size:10px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+.stag{font-size:12px;font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:2px 0}
+.smeta{font-size:11px;color:var(--mute);font-variant-numeric:tabular-nums}
+.smeta b{color:var(--text);font-weight:600}
+.smeta .w{color:var(--amber);font-weight:600}
+.x{flex:none;width:24px;height:24px;border-radius:6px;color:var(--faint);opacity:0;transition:all .15s;font-size:16px;line-height:1}
+.sitem:hover .x{opacity:1}.x:hover{background:var(--well);color:var(--red)}
+.ind{height:2px;background:var(--accent);border-radius:1px;margin:2px 8px;box-shadow:0 0 8px var(--accent)}
+.hint{margin:8px;padding:16px;border:1px dashed var(--line2);border-radius:8px;text-align:center;color:var(--faint);font-size:12px}
+.spfoot{padding:16px;border-top:1px solid var(--line)}
+.send{width:100%;height:48px;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 16px rgba(123,135,255,.35);transition:transform .15s var(--ease),filter .15s,opacity .2s}
+.send:hover{transform:translateY(-1px);filter:brightness(1.08)}
+.send:disabled{opacity:.4;pointer-events:none}
+.fn{font-size:11px;color:var(--faint);text-align:center;margin-top:8px}
+/* flow */
+.flow{border-top:1px solid var(--line);background:var(--panel)}
+.fhead{display:flex;align-items:center;gap:12px;height:36px;padding:0 16px;font-size:12px;cursor:pointer;user-select:none}
+.fhead b{font-weight:600}
+.fhead .chev{transition:transform .2s var(--ease);color:var(--mute)}
+.flow.closed .chev{transform:rotate(-90deg)}
+.fhead span{color:var(--faint);font-size:11px}
+.fbody{height:168px;overflow:hidden;transition:height .22s var(--ease)}
+.flow.closed .fbody{height:0}
+.fgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line);height:100%;border-top:1px solid var(--line)}
+.fcol{background:var(--panel);padding:8px;overflow:auto}
+.fcol h5{font-size:11px;font-weight:700;color:var(--mute);margin-bottom:8px;display:flex;justify-content:space-between}
+.fcol h5 em{font-style:normal;font-weight:500;color:var(--faint)}
+.fcol.aff h5{color:var(--accent)}
+.cell{font-size:11px;line-height:1.35;padding:4px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);margin-bottom:4px;transition:border-color .15s}
+.cell:hover{border-color:var(--line2)}
+.cell.flag{border-color:var(--amber);background:var(--amberbg)}
+.cell .badge{display:inline-block;margin-top:4px;font-size:10px;font-weight:700;color:var(--amber)}
+.cell.empty{color:var(--faint);border-style:dashed;background:none}
+/* modal */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center;opacity:0;pointer-events:none;transition:opacity .18s var(--ease);z-index:50}
+.scrim.open{opacity:1;pointer-events:auto}
+.modal{width:440px;background:var(--panel);border:1px solid var(--line2);border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.45);transform:translateY(8px) scale(.98);transition:transform .2s var(--ease)}
+.scrim.open .modal{transform:none}
+.mh{padding:16px 20px;border-bottom:1px solid var(--line)}
+.mh b{font-size:14px}.mh p{font-size:12px;color:var(--mute);margin-top:2px}
+.checks{padding:8px 12px}
+.chk{display:flex;align-items:flex-start;gap:12px;padding:8px;border-radius:8px;opacity:0;transform:translateY(4px);transition:all .2s var(--ease)}
+.chk.show{opacity:1;transform:none}
+.chk .st{flex:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700}
+.st.ok{background:rgba(79,209,139,.15);color:var(--green)}.st.warn{background:var(--amberbg);color:var(--amber)}.st.bad{background:rgba(255,107,107,.15);color:var(--red)}
+.chk b{font-size:13px;font-weight:600;display:block}
+.chk span{font-size:11px;color:var(--mute)}
+.jump{color:var(--amber);font-weight:600;font-size:11px;margin-top:2px;text-decoration:underline;text-underline-offset:2px}
+.mf{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px 16px}
+.btn{height:32px;padding:0 16px;border-radius:8px;font-weight:600;font-size:12px;border:1px solid var(--line2);transition:all .15s}
+.btn:hover{background:var(--hover)}
+.btn.pri{background:var(--accent);color:#fff;border-color:transparent}
+.btn.pri:hover{filter:brightness(1.08)}
+.toast{position:fixed;left:50%;bottom:56px;transform:translate(-50%,16px);opacity:0;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);transition:all .22s var(--ease);z-index:60;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast i{width:18px;height:18px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-style:normal;font-size:11px}
+.mocklabel{position:fixed;right:8px;bottom:4px;font-size:10px;color:var(--faint);z-index:70;pointer-events:none;letter-spacing:.02em}
+kbd{font:600 10px var(--ui);padding:1px 4px;border-radius:4px;border:1px solid var(--line2);color:var(--mute)}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--line2);border-radius:5px;border:3px solid transparent;background-clip:padding-box}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+<header class="top">
+  <div class="brand">
+    <div class="logo">F</div>
+    <div class="rinfo"><b>Glenbrooks R4 <i>·</i> AFF vs. Northview AK</b><span>Judge: Rivera <i>·</i> Room 4821 <i>·</i> Policy</span></div>
+  </div>
+  <div class="seg round" id="seg"><div class="pill"></div><button data-m="prep">Prep</button><button data-m="round" class="on">Round</button></div>
+  <div class="timer" id="timer">
+    <button class="play" id="play" title="Start/pause (Space)"><svg id="pico" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg></button>
+    <div class="tdisp"><div class="tlabel"><span class="live"></span><span id="tname">1AC · Aff</span></div><div class="tbig" id="tbig">8:00</div></div>
+    <div class="presets" id="presets"></div>
+    <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start"><button class="ghost" id="reset">Reset</button><span style="font-size:10px;color:var(--faint)"><kbd>Space</kbd> <kbd>R</kbd></span></div>
+  </div>
+  <div class="preps" id="preps">
+    <div class="prep" data-s="aff"><span class="who">Aff</span><div class="bar"><i></i></div><span class="ptxt"></span><button class="pbtn">Prep</button></div>
+    <div class="prep" data-s="neg"><span class="who">Neg</span><div class="bar"><i></i></div><span class="ptxt"></span><button class="pbtn">Prep</button></div>
+  </div>
+  <button class="icon" id="theme" title="Toggle theme"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 9.5A5.5 5.5 0 016.5 2.5a5.5 5.5 0 107 7z"/></svg></button>
+</header>
+
+<div class="main">
+  <aside class="side">
+    <div class="sh">Sources</div>
+    <div class="file on"><svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M3 5V3.5a3 3 0 016 0V5h.5a.5.5 0 01.5.5v5a.5.5 0 01-.5.5h-7a.5.5 0 01-.5-.5v-5a.5.5 0 01.5-.5zm1.5 0h3V3.5a1.5 1.5 0 00-3 0z"/></svg>Aff — DIB Adv.docx</div>
+    <div class="file"><svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M3 5V3.5a3 3 0 016 0V5h.5a.5.5 0 01.5.5v5a.5.5 0 01-.5.5h-7a.5.5 0 01-.5-.5v-5a.5.5 0 01.5-.5zm1.5 0h3V3.5a1.5 1.5 0 00-3 0z"/></svg>Aff — 2AC Frontlines.docx</div>
+    <div class="file"><svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M3 5V3.5a3 3 0 016 0V5h.5a.5.5 0 01.5.5v5a.5.5 0 01-.5.5h-7a.5.5 0 01-.5-.5v-5a.5.5 0 01.5-.5zm1.5 0h3V3.5a1.5 1.5 0 00-3 0z"/></svg>Aff — Answers to DPA CP.docx</div>
+    <div class="file"><svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M3 5V3.5a3 3 0 016 0V5h.5a.5.5 0 01.5.5v5a.5.5 0 01-.5.5h-7a.5.5 0 01-.5-.5v-5a.5.5 0 01.5-.5zm1.5 0h3V3.5a1.5 1.5 0 00-3 0z"/></svg>Northview — Disclosed 1NC.docx</div>
+    <div class="gap"></div>
+    <div class="sh">Outline</div>
+    <div id="outline"></div>
+  </aside>
+
+  <section class="center">
+    <div class="dbar"><b>Aff — DIB Adv.docx</b><span>· 5 cards · edited Aug 14</span><span class="lock" id="lock"><svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><path d="M3 5V3.5a3 3 0 016 0V5h.5a.5.5 0 01.5.5v5a.5.5 0 01-.5.5h-7a.5.5 0 01-.5-.5v-5a.5.5 0 01.5-.5zm1.5 0h3V3.5a1.5 1.5 0 00-3 0z"/></svg><span id="locktxt">Round lock: sources read-only</span></span></div>
+    <div class="scroll" id="scroll">
+      <article class="paper" id="paper">
+        <div class="pocket">1AC</div>
+        <div class="hat">DIB ADV</div>
+
+        <section class="block" data-name="Uniqueness">
+          <div class="bh" draggable="true">Uniqueness---1AC</div>
+          <div class="card" id="c1" draggable="true"><span class="grip">⋮⋮</span>
+            <div class="tag">Reshoring is stalling NOW. Data centers are outcompeting factories for grid capacity, and transformer lead times alone can disqualify a plant.</div>
+            <div class="cite"><b>Segers 26</b> <small>[Alexandra; July 9, 2026; General Manager, Tochi Advisors, 15+ years managing international projects including the design and construction of new manufacturing facilities; Area Development, "The New Rules of Industrial Site Selection" series, "Power Is the New Gatekeeper in Manufacturing Site Selection," https://www.areadevelopment.com/the-new-rules-of-industrial-site-selection/q2-2026/power-is-the-new-gatekeeper-in-manufacturing-site-selection.shtml; accessed 2026-08-14]</small></div>
+            <p class="body">SUMMARY, not verbatim --- Segers frames this as a reversal in how manufacturers pick a site: the old sequence solved for the labor market and incentives first and confirmed infrastructure last, as a formality. <u>That order has <mark>flipped</mark></u>. For large manufacturing projects today—<u><mark>auto plants, battery fabs, semiconductor</mark> facilities</u>—<u>the <mark>first question is</mark> no longer about workers or tax credits. It is about <mark>power</mark></u>. And <u>the second question is whether that power can actually be <mark>delivered within the project timeline</mark></u>. SUMMARY, not verbatim --- She sizes the input that can sink a project outright: equipment delivery alone can outlast a manufacturer's production ramp schedule. <u><mark>Transformer lead times</mark> currently <mark>run between 18 and 36 months</mark></u>. For a manufacturer planning an aggressive ramp to production, <u>that <mark>single constraint can be disqualifying</mark></u>. A site without a clear path to power—regardless of its other advantages—is a site that gets crossed off the list early. SUMMARY, not verbatim --- The piece reframes the competition itself: it is no longer manufacturer versus manufacturer for a site, it is manufacturer versus data center for the same finite grid capacity. Manufacturing projects are no longer competing only against other manufacturing projects. <u>They are <mark>competing with data centers</mark></u>—which <u>are <mark>proliferating rapidly</mark></u>, <u>require <mark>enormous power loads</mark></u>, and <u>are often prepared to <mark>move faster and pay more</mark></u>. In markets where grid capacity is limited, <u>a <mark>data center can absorb available infrastructure before a manufacturer's project clears</mark> due diligence</u>. SUMMARY, not verbatim --- The upshot is that readiness beats location: a community without a demonstrated utility hookup timeline does not lose to a better site, it loses to a quicker rival. Communities that understand this dynamic—and can demonstrate infrastructure readiness before they are needed—have a meaningful competitive advantage. <u>Those that cannot often <mark>lose projects</mark> not to a better location, but <mark>to a faster one</mark></u>. SUMMARY, not verbatim --- Her conclusion inverts the old checklist order: infrastructure has to be confirmed first, before workforce or incentives, because a power failure voids everything else about the site. For manufacturers, the implication is direct: infrastructure evaluation cannot wait until late in the process. It has to be the first serious conversation—because <u>if it fails, <mark>nothing else</mark> in the site profile <mark>matters</mark></u>. [Full passage: https://www.areadevelopment.com/the-new-rules-of-industrial-site-selection/q2-2026/power-is-the-new-gatekeeper-in-manufacturing-site-selection.shtml --- rehydrate before tournament use]</p>
+          </div>
+        </section>
+
+        <section class="block" data-name="Link">
+          <div class="bh" draggable="true">Link---1AC</div>
+          <div class="card" id="c2" draggable="true"><span class="grip">⋮⋮</span>
+            <div class="tag">Hyperscalers are buying out the grid equipment pipeline. GE Vernova's turbine backlog is booked years out, and data centers are already a fifth of its customers.</div>
+            <div class="cite"><b>Martucci 26</b> <small>[Brian; July 23, 2026; energy and environment journalist, contributor to Utility Dive, the Industry Dive trade publication covering the U.S. utility sector; Utility Dive, "GE Vernova gas turbine backlog climbs to 116 GW," https://www.utilitydive.com/news/ge-vernova-gas-turbine-backlog-climbs-to-116-gw/826039/]</small></div>
+            <p class="body">[GE Vernova, the largest U.S. gas turbine maker, reported second-quarter 2026 earnings on July 22. CEO Scott Strazik told investors] <u><mark>GE Vernova is taking reservations for 2031 deliveries now</mark></u> [, describing a customer base that increasingly includes data centers alongside traditional utilities.] [The company’s own investor materials, cited by Utility Dive, put the scale of that backlog in hard numbers:] <u><mark>116 GW</mark> Gas turbine order <mark>backlog</mark>, up from 100 GW in Q1 2026</u> [, on top of a companywide order backlog of $176 billion across all three of its business lines, up from $129 billion a year earlier.] [Strazik said] <u>GE Vernova <mark>expects</mark> its combined <mark>backlog</mark> of gas turbine orders and slot reservations <mark>to reach 125 GW by the end of the year</mark></u> [. The company shipped 3 GW of turbines and signed 20 GW of new orders and slot reservations in the quarter alone, more than half of it for the largest HA-class turbines.] [Strazik broke down who is doing the reserving:] <u>those customers are increasingly diverse, spanning about 100 entities in 26 countries. About 80% are “traditional” customers like utilities and <mark>20% are data center customers</mark></u> [, he said.] Like Siemens and Mitsubishi Heavy Industries, its…</p>
+          </div>
+        </section>
+
+        <section class="block" data-name="IL — Reshoring">
+          <div class="bh" draggable="true">Internal Link---Reshoring---1AC</div>
+          <div class="card" id="c3" draggable="true"><span class="grip">⋮⋮</span>
+            <div class="tag">Stalled reshoring guts the defense industrial base — munitions, shipbuilding, and microelectronics draw on the same commercial plants that can't get power.</div>
+            <div class="cite"><b>Okafor 26</b> <small>[Daniel; May 2026; Senior Fellow for defense-industrial policy; Industrial Readiness Review, "The Commercial Spine of Defense Production"]</small></div>
+            <p class="body">Defense planners have long treated the industrial base as a separate, protected sector. That assumption no longer holds. <u>The <mark>defense industrial base</mark> today <mark>is</mark> overwhelmingly <mark>the commercial base</mark></u>: the same foundries, battery lines, and machine shops that serve automakers also supply primes and their subcontractors. <u>When a <mark>commercial plant is never built, the defense supply chain loses capacity it was counting on</mark></u>, and there is no government-owned substitute waiting in reserve. <u>Every <mark>delayed fab and canceled battery line</mark> is <mark>a</mark> munitions or <mark>shipbuilding bottleneck</mark> in waiting</u>, because surge production depends on spare commercial capacity that can be redirected in a crisis.</p>
+          </div>
+        </section>
+
+        <section class="block" data-name="IL — Deterrence">
+          <div class="bh" draggable="true">Internal Link---Deterrence---1AC</div>
+          <div class="card" id="c4" draggable="true"><span class="grip">⋮⋮</span>
+            <div class="tag">A hollow industrial base signals the U.S. can't sustain a protracted fight — adversaries read production capacity as resolve.</div>
+            <div class="cite"><b>Brandt 25</b> <small>[Helena; November 2025; Professor of Security Studies; Strategic Studies Quarterly Review, "Deterrence by Production"]</small></div>
+            <p class="body">Deterrence is usually discussed in terms of forces in the field, but <u>adversaries also count factories. A state that cannot replace losses quickly signals that it cannot sustain a long war</u>, and <u>a rival who believes the conflict will be short has every incentive to strike first and present a fait accompli</u>. Production capacity is therefore not a logistics footnote; <u>it is a core component of credible deterrence</u>, and visible shortfalls invite precisely the gamble deterrence is meant to prevent.</p>
+          </div>
+        </section>
+
+        <section class="block" data-name="Impact">
+          <div class="bh" draggable="true">Impact---1AC</div>
+          <div class="card" id="c5" draggable="true"><span class="grip">⋮⋮</span>
+            <div class="tag">Deterrence failure in the Indo-Pacific escalates to great-power war.</div>
+            <div class="cite"><b>Lindqvist 26</b> <small>[Erik; March 2026; Senior Analyst, Pacific security program; Asia-Pacific Defense Review, "Windows of Vulnerability"]</small></div>
+            <p class="body">The most dangerous period is not when the balance of power is stable but when one side perceives a closing window. <u>If <mark>Beijing concludes</mark> that <mark>U.S. industry cannot</mark> resupply partners or <mark>replace</mark> its own <mark>losses</mark>, it <mark>may judge a quick move</mark> against Taiwan <mark>worth the risk</mark></u>. <u>A <mark>conflict</mark> of that kind would <mark>not stay contained</mark></u>: <u>with <mark>nuclear-armed powers</mark>, dense alliance commitments, and strikes on command-and-control networks, <mark>escalation</mark> pressures would be <mark>severe</mark></u>, and the margin for misjudgment would be thin.</p>
+          </div>
+        </section>
+      </article>
+    </div>
+  </section>
+
+  <aside class="speech">
+    <div class="sphead">
+      <div class="sptitle"><b>Speech column</b><span>1AC · 8:00 slot</span></div>
+      <div class="est"><span class="big" id="estT">≈ 0:00</span><span class="wpm" id="wpm" title="Click to change rate">at 290 wpm</span><span class="cnt" id="estC"></span></div>
+      <div class="meter"><i id="meter"></i></div>
+    </div>
+    <div class="slist" id="slist"></div>
+    <div class="spfoot">
+      <button class="send" id="send"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2L7 9M14 2l-4.5 12L7 9 2 6.5z"/></svg>Send to SpeechDrop</button>
+      <div class="fn">Room 4821 · Glenbrooks-R4-Aff-1AC.docx</div>
+    </div>
+  </aside>
+</div>
+
+<section class="flow" id="flow">
+  <div class="fhead" id="fhead"><svg class="chev" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg><b>Flow</b><span>DIB Adv · 1 drop flagged</span><span style="margin-left:auto">Click to collapse</span></div>
+  <div class="fbody"><div class="fgrid">
+    <div class="fcol aff"><h5>1AC <em>Aff</em></h5><div class="cell">Uq — reshoring stalls; DCs win grid race (Segers 26)</div><div class="cell">L — turbine backlog to 2031; 20% DC (Martucci 26)</div><div class="cell">IL — DIB runs on commercial plants</div><div class="cell">IL — hollow base → deterrence fails</div><div class="cell">I — Indo-Pacific war</div></div>
+    <div class="fcol"><h5>1NC <em>Neg</em></h5><div class="cell">Uq overstated — IRA fabs broke ground anyway</div><div class="cell flag">Grid expanding — FERC queue reform clears backlog by '27<br><span class="badge">⚠ dropped in 2AC</span></div><div class="cell">Defense has priority — DPA Title III</div><div class="cell">Deterrence resilient — alliances</div></div>
+    <div class="fcol aff"><h5>2AC <em>Aff</em></h5><div class="cell">Groundbreaking ≠ production — ramp timelines (Segers)</div><div class="cell">DPA can't make transformers — 18–36 mo lead</div><div class="cell">Alliances need U.S. output — Brandt</div></div>
+    <div class="fcol"><h5>2NR <em>Neg</em></h5><div class="cell">Extend FERC reform — conceded, kills uq</div><div class="cell">DPA solves — Title III funds transformers</div></div>
+    <div class="fcol aff"><h5>1AR <em>Aff</em></h5><div class="cell empty">—</div></div>
+    <div class="fcol aff"><h5>2AR <em>Aff</em></h5><div class="cell empty">—</div></div>
+  </div></div>
+</section>
+</div>
+
+<div class="scrim" id="scrim"><div class="modal">
+  <div class="mh"><b>Pre-send check</b><p>Verifying 1AC before it leaves your machine</p></div>
+  <div class="checks" id="checks"></div>
+  <div class="mf"><button class="btn" id="cancel">Cancel</button><button class="btn pri" id="confirm">Send</button></div>
+</div></div>
+<div class="toast" id="toast"><i>✓</i><span id="toastT"></span></div>
+<div class="mocklabel">Falcon mock B — Round</div>
+
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const fmt=s=>{s=Math.max(0,Math.ceil(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+const words=t=>t.trim().split(/\s+/).filter(Boolean).length;
+
+/* theme */
+$('#theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='light'?'dark':'light'};
+
+/* mode */
+const app=$('#app'),paper=$('#paper'),lock=$('#lock');
+$$('#seg button').forEach(b=>b.onclick=()=>{
+  const m=b.dataset.m;$('#seg').className='seg '+m;
+  $$('#seg button').forEach(x=>x.classList.toggle('on',x===b));
+  const prep=m==='prep';app.classList.toggle('prepmode',prep);
+  paper.contentEditable=prep;lock.classList.toggle('edit',prep);
+  $('#locktxt').textContent=prep?'Prep: sources editable':'Round lock: sources read-only';
+});
+paper.addEventListener('dblclick',()=>{if(paper.contentEditable!=='true'){lock.classList.remove('nudge');void lock.offsetWidth;lock.classList.add('nudge')}});
+
+/* timer */
+const P=[['1AC',480,'Aff'],['CX',180,'Cross-ex'],['1NC',480,'Neg'],['2AC',480,'Aff'],['1AR',300,'Aff'],['2NR',300,'Neg'],['2AR',300,'Aff']];
+let cur=P[0],tLeft=480,tRun=false;
+const prep={aff:{left:480,run:false},neg:{left:480,run:false}};
+$('#presets').innerHTML=P.map((p,i)=>`<button class="chip${i?'':' on'}" data-i="${i}">${p[0]}<small>${fmt(p[1])}</small></button>`).join('');
+$$('#presets .chip').forEach(c=>c.onclick=()=>{cur=P[c.dataset.i];tLeft=cur[1];setRun(false);$$('#presets .chip').forEach(x=>x.classList.toggle('on',x===c));paint()});
+function setRun(v){tRun=v;if(v)Object.values(prep).forEach(p=>p.run=false);$('#play').classList.toggle('run',v);$('#timer').classList.toggle('run-on',v);
+  $('#pico').innerHTML=v?'<path d="M4 3h3v10H4zM9 3h3v10H9z"/>':'<path d="M4 2.5v11l9-5.5z"/>';paint()}
+$('#play').onclick=()=>{if(tLeft<=0)tLeft=cur[1];setRun(!tRun)};
+$('#reset').onclick=()=>{tLeft=cur[1];setRun(false)};
+$$('.prep').forEach(el=>el.querySelector('.pbtn').onclick=()=>{
+  const s=el.dataset.s,p=prep[s];if(p.left<=0)return;
+  const on=!p.run;Object.values(prep).forEach(x=>x.run=false);p.run=on;if(on&&tRun)setRun(false);paint()});
+document.addEventListener('keydown',e=>{
+  const t=e.target;if(t.isContentEditable||/INPUT|TEXTAREA/.test(t.tagName))return;
+  if(e.code==='Space'){e.preventDefault();$('#play').click()}
+  else if(e.key==='r'||e.key==='R'){$('#reset').click()}
+  else if(e.key==='Escape')closeModal();
+});
+function paint(){
+  const tb=$('#tbig');tb.textContent=fmt(tLeft);
+  tb.className='tbig'+(tLeft<=0?' over':tLeft<=30?' warn':'');
+  $('#tname').textContent=cur[0]+' · '+cur[2];
+  $$('.prep').forEach(el=>{const p=prep[el.dataset.s];
+    el.querySelector('.bar i').style.width=(p.left/480*100)+'%';
+    el.querySelector('.ptxt').innerHTML=`<b>${fmt(p.left)}</b> · ${fmt(480-p.left)} used`;
+    el.classList.toggle('run',p.run);el.classList.toggle('low',p.left<=60);
+    el.querySelector('.pbtn').textContent=p.run?'Stop':p.left<=0?'Out':'Prep'});
+}
+let last=performance.now();
+setInterval(()=>{const n=performance.now(),d=(n-last)/1000;last=n;let ch=false;
+  if(tRun){tLeft-=d;ch=true;if(tLeft<=0){tLeft=0;setRun(false)}}
+  for(const p of Object.values(prep))if(p.run){p.left-=d;ch=true;if(p.left<=0){p.left=0;p.run=false}}
+  if(ch)paint()},100);
+paint();
+
+/* outline */
+$('#outline').innerHTML='<div class="ol l1" data-t="paper">1AC</div><div class="ol l2" data-t="paper">DIB ADV</div>'+
+  $$('.block').map(b=>`<div class="ol l3" data-t="${b.querySelector('.card').id}">${b.dataset.name}</div>`).join('');
+$$('.ol').forEach(o=>o.onclick=()=>document.getElementById(o.dataset.t).scrollIntoView({behavior:'smooth',block:o.dataset.t==='paper'?'start':'center'}));
+
+/* speech column */
+let speech=['c1','c2','c3','c4','c5'],wpm=290;
+const card=id=>document.getElementById(id);
+const hl=id=>words($$('#'+id+' mark').map(m=>m.textContent).join(' '));
+const tw=id=>words(card(id).querySelector('.tag').textContent);
+const author=id=>card(id).querySelector('.cite b').textContent;
+const blockOf=id=>card(id).closest('.block').dataset.name;
+const secs=id=>(hl(id)+tw(id)+2)/wpm*60;
+const list=$('#slist');
+function render(){
+  list.innerHTML=speech.map((id,i)=>{const h=hl(id);
+    return `<div class="sitem" draggable="true" data-i="${i}"><span class="num">${i+1}</span><div class="sbody"><div class="sblock">${blockOf(id)}</div><div class="stag">${card(id).querySelector('.tag').textContent}</div><div class="smeta"><b>${author(id)}</b> · ${h?h+' hl words · '+fmt(secs(id)):'<span class="w">⚠ no highlighting</span>'}</div></div><button class="x" data-i="${i}" title="Remove">×</button></div>`}).join('')+
+    `<div class="hint">${speech.length?'Drag more cards or block headings here':'Drag cards or block headings from the document'}</div>`;
+  const total=speech.reduce((a,id)=>a+secs(id),0),w=speech.reduce((a,id)=>a+hl(id)+tw(id)+2,0);
+  $('#estT').textContent='≈ '+fmt(total);$('#wpm').textContent='at '+wpm+' wpm';
+  $('#estC').textContent=speech.length+' cards · '+w.toLocaleString()+' words';
+  $('#meter').style.width=Math.min(100,total/480*100)+'%';
+  $('#send').disabled=!speech.length;
+  $$('.card').forEach(c=>{const i=speech.indexOf(c.id);i<0?c.removeAttribute('data-in'):c.dataset.in='In speech #'+(i+1)});
+}
+$('#wpm').onclick=()=>{wpm=wpm===290?320:wpm===320?250:290;render()};
+list.addEventListener('click',e=>{const x=e.target.closest('.x');if(x){speech.splice(+x.dataset.i,1);render()}});
+
+/* drag and drop */
+let drag=null;
+$$('.card').forEach(c=>{c.addEventListener('dragstart',e=>{if(e.target!==c)return;drag={t:'card',ids:[c.id]};e.dataTransfer.setData('text/plain',c.id);e.dataTransfer.effectAllowed='copy';c.classList.add('dragging')});
+  c.addEventListener('dragend',()=>{c.classList.remove('dragging');clearInd()})});
+$$('.bh').forEach(h=>{h.addEventListener('dragstart',e=>{e.stopPropagation();const ids=[...h.parentNode.querySelectorAll('.card')].map(c=>c.id);drag={t:'block',ids};e.dataTransfer.setData('text/plain',ids.join(','));e.dataTransfer.effectAllowed='copy'});h.addEventListener('dragend',clearInd)});
+list.addEventListener('dragstart',e=>{const it=e.target.closest('.sitem');if(!it)return;drag={t:'move',i:+it.dataset.i};e.dataTransfer.setData('text/plain','m');e.dataTransfer.effectAllowed='move';setTimeout(()=>it.classList.add('dragging'))});
+list.addEventListener('dragend',()=>{clearInd();render()});
+let ind=document.createElement('div');ind.className='ind';let dropAt=0;
+function clearInd(){ind.remove();list.classList.remove('over')}
+list.addEventListener('dragover',e=>{if(!drag)return;e.preventDefault();list.classList.add('over');
+  const items=$$('.sitem');dropAt=items.length;
+  for(let k=0;k<items.length;k++){const r=items[k].getBoundingClientRect();if(e.clientY<r.top+r.height/2){dropAt=k;break}}
+  const ref=items[dropAt]||list.querySelector('.hint');list.insertBefore(ind,ref)});
+list.addEventListener('dragleave',e=>{if(!list.contains(e.relatedTarget))clearInd()});
+list.addEventListener('drop',e=>{e.preventDefault();if(!drag)return;let at=dropAt;
+  if(drag.t==='move'){const [id]=speech.splice(drag.i,1);if(drag.i<at)at--;speech.splice(at,0,id)}
+  else{drag.ids.forEach(id=>{const ex=speech.indexOf(id);if(ex>-1){speech.splice(ex,1);if(ex<at)at--}});speech.splice(at,0,...drag.ids)}
+  drag=null;clearInd();render()});
+
+/* pre-send */
+const scrim=$('#scrim');let timers=[];
+function closeModal(){scrim.classList.remove('open');timers.forEach(clearTimeout)}
+$('#send').onclick=()=>{
+  const noHL=speech.filter(id=>!hl(id)),cited=speech.filter(id=>card(id).querySelector('.cite b')).length;
+  const rows=[
+    [cited===speech.length?'ok':'bad','All cites present',cited+'/'+speech.length+' cards have author, date & source'],
+    ['ok','No notes leaked','0 comments · 0 hidden prep notes · tracked changes clean'],
+    noHL.length?['warn',noHL.length+' card with no highlighting',noHL.map(id=>author(id)+' — '+blockOf(id)).join(', '),noHL[0]]:['ok','Every card highlighted','All '+speech.length+' cards have read text'],
+    ['ok','Filename','Glenbrooks-R4-Aff-1AC.docx']];
+  $('#checks').innerHTML=rows.map(r=>`<div class="chk"><span class="st ${r[0]}">${r[0]==='ok'?'✓':r[0]==='warn'?'!':'×'}</span><div><b>${r[1]}</b><span>${r[2]}</span>${r[3]?`<div><button class="jump" data-j="${r[3]}">Jump to card →</button></div>`:''}</div></div>`).join('');
+  $('#confirm').textContent=noHL.length?'Send anyway':'Send';
+  scrim.classList.add('open');timers.forEach(clearTimeout);
+  timers=$$('.chk').map((c,i)=>setTimeout(()=>c.classList.add('show'),120+i*140));
+};
+$('#checks').addEventListener('click',e=>{const j=e.target.closest('.jump');if(!j)return;closeModal();
+  const c=card(j.dataset.j);c.scrollIntoView({behavior:'smooth',block:'center'});c.classList.remove('flash');void c.offsetWidth;c.classList.add('flash')});
+$('#cancel').onclick=closeModal;
+scrim.addEventListener('click',e=>{if(e.target===scrim)closeModal()});
+let tt;$('#confirm').onclick=()=>{closeModal();$('#toastT').textContent='Sent to room 4821 · 1AC';const t=$('#toast');t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),3000)};
+
+/* flow */
+$('#fhead').onclick=()=>{const f=$('#flow');f.classList.toggle('closed');$('#fhead span:last-child').textContent=f.classList.contains('closed')?'Click to expand':'Click to collapse'};
+
+render();
+</script>
+</body>
+</html>
