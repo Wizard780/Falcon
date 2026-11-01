@@ -15,6 +15,28 @@ jobs:
       - run: npx tsc
       - run: npm test
 
+  # The editing mechanics compared with CardMirror's recorded behavior (tests/cardmirror), on each OS.
+  parity:
+    needs: test
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run build
+      - name: Keyboard and mouse parity with CardMirror
+        shell: bash
+        run: |
+          npx vite preview --port 5173 --strictPort &
+          npx wait-on tcp:5173
+          node scripts/probe.mjs falcon | tail -40
+          node scripts/mouse.mjs falcon | tail -1
+
   package:
     needs: test
     strategy:

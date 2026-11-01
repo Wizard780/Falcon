@@ -3,7 +3,8 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 const which = process.argv[2] || 'cm';
 const only = process.argv[3];
-const url = which === 'cm' ? 'http://localhost:5301/' : 'http://localhost:5173/';
+const url = which === 'cm' ? 'http://localhost:5301/' : (process.env.FALCON_URL || 'http://localhost:5173/');
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: 1400, height: 900 } });
 p.on('pageerror', e => console.log('PAGEERR', e.message));
@@ -78,7 +79,7 @@ const caretInfo = () => p.evaluate(() => { const s = getSelection(); return s.an
 
 async function reset() {
   await p.locator('.ProseMirror').first().click();
-  await k('Meta+a'); await k('Backspace'); await k('Backspace');
+  await k(`${MOD}+a`); await k('Backspace'); await k('Backspace');
 }
 const BODY = 'The rapid expansion of artificial intelligence workloads has pushed utilities to their limits.';
 async function card() {
@@ -102,7 +103,7 @@ const cases = {
   async f12OnHeading() { await card(); await sel('Grid tag'); await k('F12'); },
   async f11ThenTypeInside() { await card(); await sel('pushed utilities'); await k('F11'); await caret('utilities', 3); await t('XY'); },
   async typeAtEndOfUnderline() { await card(); await sel('pushed'); await k('F9'); await caret('pushed', 6); await t('ZZ'); },
-  async modUThenType() { await card(); await caret('their', 0); await k('Meta+u'); await t('new '); },
+  async modUThenType() { await card(); await caret('their', 0); await k(`${MOD}+u`); await t('new '); },
   async enterEndOfTag() { await t('Tag one'); await k('F7'); await k('Enter'); await t('body text'); },
   async enterMidTag() { await t('Tag one two'); await k('F7'); await caret('two', 0); await k('Enter'); },
   async enterStartOfTag() { await t('Tag one'); await k('F7'); await caret('Tag', 0); await k('Enter'); },
@@ -110,7 +111,7 @@ const cases = {
   async backspaceStartOfTagBlankAbove() { await t('para'); await k('Enter'); await k('Enter'); await t('Tag one'); await k('F7'); await caret('Tag', 0); await k('Backspace'); },
   async backspaceStartOfBody() { await card(); await caret('Smith', 0); await k('Backspace'); },
   async deleteEndOfTag() { await card(); await caret('here', 4); await k('Delete'); },
-  async headingKeysCycle() { await t('Line'); await k('F4'); await k('Enter'); await t('Hat'); await k('F5'); await k('Enter'); await t('Blk'); await k('F6'); await k('Enter'); await t('An'); await k('Meta+F7'); await k('Enter'); await t('under'); await k('Meta+F8'); },
+  async headingKeysCycle() { await t('Line'); await k('F4'); await k('Enter'); await t('Hat'); await k('F5'); await k('Enter'); await t('Blk'); await k('F6'); await k('Enter'); await t('An'); await k(`${MOD}+F7`); await k('Enter'); await t('under'); await k(`${MOD}+F8`); },
   async enterAfterPocket() { await t('Pocket'); await k('F4'); await k('Enter'); await t('next'); },
   async enterAfterBlock() { await t('Blk'); await k('F6'); await k('Enter'); await t('next'); },
   async enterAfterCite() { await card(); await caret('MIT', 3); await k('Enter'); await t('new'); },
@@ -119,9 +120,9 @@ const cases = {
   async f4OnTag() { await card(); await caret('Grid', 0); await k('F4'); },
   async f7OnTagReapply() { await card(); await caret('Grid', 0); await k('F7'); },
   async f8OnSelectionAcrossTag() { await card(); await sel('tag here', 'Smith'); await k('F8'); },
-  async boldInTag() { await card(); await sel('tag'); await k('Meta+b'); },
-  async shrink() { await card(); await sel('pushed utilities'); await k('F9'); await caret('rapid', 0); await k('Meta+8'); },
-  async shrink2() { await card(); await sel('pushed utilities'); await k('F9'); await caret('rapid', 0); await k('Meta+8'); await k('Meta+8'); },
+  async boldInTag() { await card(); await sel('tag'); await k(`${MOD}+b`); },
+  async shrink() { await card(); await sel('pushed utilities'); await k('F9'); await caret('rapid', 0); await k(`${MOD}+8`); },
+  async shrink2() { await card(); await sel('pushed utilities'); await k('F9'); await caret('rapid', 0); await k(`${MOD}+8`); await k(`${MOD}+8`); },
   async toggleCase() { await card(); await sel('rapid expansion'); await k('Shift+F3'); },
   async toggleCase2() { await card(); await sel('rapid expansion'); await k('Shift+F3'); await k('Shift+F3'); },
   async condense() { await t('Tag'); await k('F7'); await k('Enter'); await t('cite'); await k('Enter'); await t('one   two'); await k('Enter'); await t('three'); await k('Enter'); await t('four'); await sel('one', 'four'); await k('F3'); },
@@ -150,11 +151,17 @@ for (const [name, fn] of Object.entries(cases)) {
   console.log('### ' + name + '\n' + res[name]);
 }
 if (!only) fs.writeFileSync(`shots/probe-${which}.json`, JSON.stringify(res, null, 1));
-if (which !== 'cm' && fs.existsSync('shots/probe-cm.json')) {
-  const cm = JSON.parse(fs.readFileSync('shots/probe-cm.json', 'utf8'));
+// CardMirror's recorded results (its code can't live in this repo; its behavior can)
+const BASELINE = 'tests/cardmirror/probe.json';
+// keys CardMirror's web build can't receive (F5 is reload; Alt-F8 doesn't reach the page on macOS)
+const UNVERIFIABLE = ['headingKeysCycle', 'copyPrevCite'];
+if (which !== 'cm' && !only && fs.existsSync(BASELINE)) {
+  const cm = JSON.parse(fs.readFileSync(BASELINE, 'utf8'));
   const strip = s => (s || '').split('\n  caret:')[0];
   const diffs = Object.keys(res).filter(k => strip(res[k]) !== strip(cm[k]));
   console.log(`\n=== ${Object.keys(res).length - diffs.length}/${Object.keys(res).length} match CardMirror ===`);
   for (const d of diffs) console.log(`--- ${d}\nCM:\n${strip(cm[d])}\nFALCON:\n${strip(res[d])}`);
+  const unexpected = diffs.filter((d) => !UNVERIFIABLE.includes(d));
+  if (unexpected.length) { console.error('UNEXPECTED DIFFERENCES:', unexpected.join(', ')); process.exitCode = 1; }
 }
 await b.close();
