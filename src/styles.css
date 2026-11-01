@@ -30,7 +30,8 @@ svg { flex: none; }
 .fstrip .grow { flex: 1; }
 .fstrip svg, .olp svg, .home svg, .tools svg { width: 16px; height: 16px; }
 /* one button per open document: hover shows its name, x closes it */
-.fs-docs { display: flex; flex-direction: column; gap: 4px; padding-top: 12px; margin-top: 8px; }
+.fs-docs { flex: 0 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 12px 10px 4px; margin: 8px -10px 0; }
+.fs-docs::-webkit-scrollbar { width: 0; }
 .doc-row { position: relative; }
 .doc-row .dot { position: absolute; right: 7px; bottom: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--u-tx2); box-shadow: 0 0 0 2px var(--u-deep); }
 .doc-row[data-on] .dot { box-shadow: 0 0 0 2px var(--u-raised); }
@@ -368,3 +369,10 @@ button.b:active { transform: scale(.97); }
 .st-kbd { display: flex; gap: 6px; }
 .st-kbd kbd { min-width: 26px; height: 26px; padding: 0 7px; display: grid; place-items: center; border-radius: 6px; background: #26262a; box-shadow: var(--u-top); font: 12px var(--mono); color: var(--u-tx2); }
 .st .st-row:has(.st-kbd) { min-height: 48px; }
+
+/* narrow windows: the tools row takes the toolbar's left 280px, so the groups pack closer, and past that the bar scrolls sideways */
+@media (max-width: 1190px) {
+  .bar { gap: 12px; padding: 0 12px; }
+  .toolbar { overflow-x: auto; scrollbar-width: none; }
+  .toolbar::-webkit-scrollbar { display: none; }
+}

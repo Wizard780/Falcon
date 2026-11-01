@@ -409,12 +409,14 @@ export function App() {
 
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
+      <div className="covered" inert={settingsOpen}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} />
       <Tools outline={showOutline} reading={reading}
         onNew={fileNew} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
         onFind={openFind} onOutline={() => { setHomeOpen(false); setShowOutline((s) => !s); }}
         onRead={() => { setHomeOpen(false); run(toggleRead); }} />
+      </div>
 
       <div className="covered" inert={homeOpen || settingsOpen}>
       <Toolbar
@@ -485,6 +487,8 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
   // the hovered document's name, fixed beside the rail so the outline pane can't clip it
   const [tip, setTip] = useState<{ id: number; y: number } | null>(null);
   const tipDoc = tip && props.docs.find((d) => d.id === tip.id);
+  // opening or closing a file moves the rows under a still pointer
+  useEffect(() => setTip(null), [props.docs.length]);
   return (
     <nav className="fstrip" aria-label="Open documents">
       <button className="sb-logo" title={`Home (${MOD}T)`} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
