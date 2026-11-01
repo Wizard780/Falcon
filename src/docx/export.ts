@@ -18,24 +18,24 @@ const hex = (c: string) => {
 
 function rPr(marks: readonly Mark[]): string {
   const has = (n: string) => marks.find((m) => m.type.name === n);
-  let style = '';
-  if (has('emphasis')) style = 'Emphasis';
-  else if (has('underline')) style = 'StyleUnderline';
-  else if (has('cite')) style = 'Style13ptBold';
-  // cite + underline: the underline style wins the slot, and the cite look is added directly
+  // one character-style slot: cite keeps it and underline/emphasis are then written as direct formatting
+  const cite = !!has('cite');
+  const style = cite ? 'Style13ptBold' : has('emphasis') ? 'Emphasis' : has('underline') ? 'StyleUnderline' : '';
   const parts: string[] = [];
   if (style) parts.push(`<w:rStyle w:val="${style}"/>`);
-  if (has('bold') || (has('cite') && style !== 'Style13ptBold')) parts.push('<w:b/><w:bCs/>');
+  if (has('bold') || (cite && has('emphasis'))) parts.push('<w:b/><w:bCs/>');
   if (has('unbold')) parts.push('<w:b w:val="0"/><w:bCs w:val="0"/>');
   if (has('italic')) parts.push('<w:i/><w:iCs/>');
   if (has('strike')) parts.push('<w:strike/>');
   const color = has('color');
   if (color) parts.push(`<w:color w:val="${hex(color.attrs.color)}"/>`);
   const size = has('size');
-  const pt = size ? size.attrs.pt : has('cite') && style !== 'Style13ptBold' ? 13 : null;
+  const pt = size ? size.attrs.pt : null;
   if (pt) parts.push(`<w:sz w:val="${Math.round(pt * 2)}"/><w:szCs w:val="${Math.round(pt * 2)}"/>`);
   const hl = has('highlight');
   if (hl) parts.push(`<w:highlight w:val="${esc(hl.attrs.color)}"/>`);
+  if (cite && (has('underline') || has('emphasis'))) parts.push('<w:u w:val="single"/>');
+  if (cite && has('emphasis')) parts.push('<w:bdr w:val="single" w:sz="8" w:space="0" w:color="auto"/>');
   const shd = has('shading');
   if (shd) parts.push(`<w:shd w:val="clear" w:color="auto" w:fill="${hex(shd.attrs.color)}"/>`);
   if (has('sup')) parts.push('<w:vertAlign w:val="superscript"/>');

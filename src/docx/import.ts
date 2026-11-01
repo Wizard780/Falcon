@@ -5,7 +5,7 @@ import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const M = schema.marks;
 
-type StyleInfo = { name: string; basedOn?: string; type: string; outline?: number; rpr?: Element };
+type StyleInfo = { name: string; alias: string; basedOn?: string; type: string; outline?: number; rpr?: Element };
 
 const kids = (el: Element | null | undefined, name?: string) =>
   el ? Array.from(el.children).filter((c) => !name || c.localName === name) : [];
@@ -26,7 +26,9 @@ function readStyles(xml: string | undefined): Map<string, StyleInfo> {
     const ppr = kid(s, 'pPr');
     const ol = val(kid(ppr, 'outlineLvl'));
     map.set(id, {
-      name: `${val(kid(s, 'name')) ?? id} ${val(kid(s, 'aliases')) ?? ''}`.toLowerCase(),
+      name: (val(kid(s, 'name')) ?? id).toLowerCase(),
+      // alias lists in real files are long and messy ("heading 4" aliased "heading 2,Citation,..."), so only the first counts
+      alias: (val(kid(s, 'aliases')) ?? '').split(',')[0].trim().toLowerCase(),
       basedOn: val(kid(s, 'basedOn')) ?? undefined,
       type: s.getAttributeNS(W, 'type') ?? s.getAttribute('w:type') ?? '',
       outline: ol == null ? undefined : Number(ol),
@@ -48,15 +50,21 @@ function* chain(styles: Map<string, StyleInfo>, id: string | null) {
   }
 }
 
+const PARA_BY_ID: Record<string, ParaStyle> = { heading1: 'pocket', heading2: 'hat', heading3: 'block', heading4: 'tag', analytic: 'analytic', undertag: 'undertag' };
+function paraByName(n: string): ParaStyle | null {
+  if (/^analytic/.test(n)) return 'analytic';
+  if (/^undertag/.test(n)) return 'undertag';
+  if (/^heading ?1$|^pocket$/.test(n)) return 'pocket';
+  if (/^heading ?2$|^hat$/.test(n)) return 'hat';
+  if (/^heading ?3$|^block$/.test(n)) return 'block';
+  if (/^heading ?4$|^tag$/.test(n)) return 'tag';
+  return null;
+}
+
 function paraStyleOf(styles: Map<string, StyleInfo>, id: string | null, ppr: Element | undefined): ParaStyle {
   for (const [sid, s] of chain(styles, id)) {
-    const n = `${sid.toLowerCase()} ${s.name}`;
-    if (/analytic/.test(n)) return 'analytic';
-    if (/undertag/.test(n)) return 'undertag';
-    if (/heading ?1|pocket/.test(n)) return 'pocket';
-    if (/heading ?2|\bhat\b/.test(n)) return 'hat';
-    if (/heading ?3|\bblock\b/.test(n)) return 'block';
-    if (/heading ?4|\btag\b/.test(n)) return 'tag';
+    const hit = PARA_BY_ID[sid.toLowerCase()] ?? paraByName(s.name) ?? paraByName(s.alias);
+    if (hit) return hit;
     if (s.outline != null && s.outline <= 3) return (['pocket', 'hat', 'block', 'tag'] as const)[s.outline];
   }
   const ol = val(kid(ppr, 'outlineLvl'));
@@ -65,17 +73,24 @@ function paraStyleOf(styles: Map<string, StyleInfo>, id: string | null, ppr: Ele
 }
 
 type CharKind = 'cite' | 'underline' | 'emphasis' | null;
+const CHAR_BY_ID: Record<string, CharKind> = { style13ptbold: 'cite', cite: 'cite', styleunderline: 'underline', underline: 'underline', emphasis: 'emphasis' };
+function charByName(n: string): CharKind {
+  if (/^emphasis$/.test(n)) return 'emphasis';
+  if (/^(style )?underline/.test(n)) return 'underline';
+  if (/^cite$|^style 13 ?pt bold$/.test(n)) return 'cite';
+  return null;
+}
 function charStyleOf(styles: Map<string, StyleInfo>, id: string | null): CharKind {
   for (const [sid, s] of chain(styles, id)) {
-    const n = `${sid.toLowerCase()} ${s.name}`;
-    if (/emphasis/.test(n)) return 'emphasis';
-    if (/underline/.test(n)) return 'underline';
-    if (/cite|13 ?pt ?bold/.test(n)) return 'cite';
+    const hit = CHAR_BY_ID[sid.toLowerCase()] ?? charByName(s.name) ?? charByName(s.alias);
+    if (hit) return hit;
     // unknown custom style: judge by its look
     const r = s.rpr;
     if (r) {
-      if (kid(r, 'bdr') && on(kid(r, 'u'))) return 'emphasis';
-      if (on(kid(r, 'u')) && val(kid(r, 'u')) !== 'none') return 'underline';
+      const u = kid(r, 'u');
+      const uOn = !!u && val(u) !== 'none' && val(u) !== '0';
+      if (kid(r, 'bdr') && uOn) return 'emphasis';
+      if (uOn) return 'underline';
     }
   }
   return null;
@@ -94,12 +109,13 @@ function runMarks(styles: Map<string, StyleInfo>, rpr: Element | undefined, para
   }
   const u = kid(rpr, 'u');
   const uOn = !!u && val(u) !== 'none' && val(u) !== '0';
-  if (kind === 'emphasis' || (kid(rpr, 'bdr') && uOn && !kind)) marks.push(M.emphasis.create());
+  const emph = kind === 'emphasis' || (!!kid(rpr, 'bdr') && uOn && kind !== 'underline');
+  if (emph) marks.push(M.emphasis.create());
   else if (kind === 'underline' || uOn) marks.push(M.underline.create());
   if (kind === 'cite') marks.push(M.cite.create());
   const b = kid(rpr, 'b');
   if (b) {
-    const boldDefault = paraStyle !== 'normal' && paraStyle !== 'undertag' || kind === 'cite' || kind === 'emphasis';
+    const boldDefault = (paraStyle !== 'normal' && paraStyle !== 'undertag') || kind === 'cite' || emph;
     if (on(b) && !boldDefault) marks.push(M.bold.create());
     else if (!on(b) && boldDefault) marks.push(M.unbold.create());
   }
