@@ -331,6 +331,8 @@ export function App() {
       const mod = IS_MAC ? e.metaKey : e.ctrlKey; // Ctrl-N/O/F are caret keys on macOS
       // Settings is modal: only its own keys (Esc, Mod-,) get through
       if (settingsRef.current && !(e.key === 'Escape' || (mod && e.key === ','))) { if (mod) e.preventDefault(); return; }
+      // Esc in a filled Settings search clears the search before it closes Settings
+      if (e.key === 'Escape' && settingsRef.current && e.target instanceof HTMLInputElement && e.target.closest('.st-search') && e.target.value) return;
       const k = e.key.toLowerCase();
       if (mod && k === 's') { e.preventDefault(); void fileSave(e.shiftKey); }
       else if (mod && k === 'f') { e.preventDefault(); openFind(); }
@@ -407,10 +409,14 @@ export function App() {
 
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
-      <Rail home={homeOpen} outline={showOutline} reading={reading} settings={settingsOpen}
-        onHome={() => setHomeOpen((h) => !h)} onNew={fileNew} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
+      <div className="covered" inert={settingsOpen}>
+      <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
+        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} />
+      <Tools outline={showOutline} reading={reading}
+        onNew={fileNew} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
         onFind={openFind} onOutline={() => { setHomeOpen(false); setShowOutline((s) => !s); }}
-        onRead={() => { setHomeOpen(false); run(toggleRead); }} onSettings={() => setSettingsOpen((s) => !s)} />
+        onRead={() => { setHomeOpen(false); run(toggleRead); }} />
+      </div>
 
       <div className="covered" inert={homeOpen || settingsOpen}>
       <Toolbar
@@ -425,7 +431,7 @@ export function App() {
         speechSeconds={speechMin * 60}
       />
 
-      <OutlinePane docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
+      <OutlinePane active={activeId}
         shown={showOutline} items={outline} depth={depth} cur={cur}
         onDepth={setDepth} onJump={jump} onShow={setShowOutline} />
 
@@ -465,7 +471,8 @@ export function App() {
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)}
         zoom={zoom} onZoom={setZoom} speechMin={speechMin} onSpeechMin={setSpeechMin}
-        showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth} />
+        showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth}
+        highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} />
       <div className={`toast${toast ? ' show' : ''}`}>{toast}</div>
     </div>
   );
@@ -473,29 +480,58 @@ export function App() {
 
 const mmss = (min: number) => { const s = Math.round(min * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
-// ---------- the rail: a slim column of always-visible file and view buttons on the far left ----------
+// ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
-function Rail(props: { home: boolean; outline: boolean; reading: boolean; settings: boolean; onHome: () => void; onNew: () => void; onOpen: () => void; onSave: (as: boolean) => void; onFind: () => void; onOutline: () => void; onRead: () => void; onSettings: () => void }) {
+type DocRow = { id: number; name: string; path?: string; dirty: boolean };
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void }) {
+  // the hovered document's name, fixed beside the rail so the outline pane can't clip it
+  const [tip, setTip] = useState<{ id: number; y: number } | null>(null);
+  const tipDoc = tip && props.docs.find((d) => d.id === tip.id);
+  // opening or closing a file moves the rows under a still pointer
+  useEffect(() => setTip(null), [props.docs.length]);
+  return (
+    <nav className="fstrip" aria-label="Open documents">
+      <button className="sb-logo" title={`Home (${MOD}T)`} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
+      <div className="fs-docs" role="tablist" aria-label="Open documents">
+        {props.docs.map((d) => {
+          const on = d.id === props.active && !props.home;
+          return (
+            <div key={d.id} className="doc-row" data-on={on || undefined}
+              onPointerEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ id: d.id, y: r.top + r.height / 2 }); }}
+              onPointerLeave={() => setTip(null)}>
+              <button className="fs-b doc-nm" role="tab" aria-selected={on} aria-label={d.name} data-on={on || undefined}
+                onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
+                <SvgIcon name="doc" />{d.dirty && <i className="dot" aria-label="unsaved" />}
+              </button>
+              <button className="doc-x" title={`Close (${MOD}W)`} aria-label={`Close ${d.name}`} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
+            </div>
+          );
+        })}
+      </div>
+      {tipDoc && <div key={tipDoc.id} className="doc-tip" style={{ top: tip.y }} aria-hidden="true"><b>{tidy(tipDoc.name)}</b>{tipDoc.dirty && <small>Unsaved changes</small>}</div>}
+      <div className="grow" />
+      <button className="fs-b" title={`Settings (${MOD},)`} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /></button>
+    </nav>
+  );
+}
+
+// ---------- the tools: file and view buttons in a row above the outline ----------
+
+function Tools(props: { outline: boolean; reading: boolean; onNew: () => void; onOpen: () => void; onSave: (as: boolean) => void; onFind: () => void; onOutline: () => void; onRead: () => void }) {
   const b = (icon: string, title: string, onClick: (e: React.MouseEvent) => void, on = false) => (
-    <button className="fs-b" title={title} aria-label={title.replace(/ \(.*/, '')} data-on={on || undefined} onClick={onClick}><SvgIcon name={icon} /></button>
+    <button className="fs-b" title={title} aria-label={title.replace(/ \(.*/, '')} data-on={on || undefined} aria-pressed={on || undefined} onClick={onClick}><SvgIcon name={icon} /></button>
   );
   return (
-    <nav className="fstrip" aria-label="Files and views">
-      <button className="sb-logo" title={`Home (${MOD}T)`} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
-      <div className="fs-grp">
-        {b('plus', `New document (${MOD}N)`, props.onNew)}
-        {b('open', `Open… (${MOD}O)`, props.onOpen)}
-        {b('save', `Save (${MOD}S)`, (e) => props.onSave(e.shiftKey))}
-        {b('saveAs', `Save As… (${IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S'})`, () => props.onSave(true))}
-      </div>
-      <div className="fs-grp">
-        {b('search', `Find (${MOD}F)`, props.onFind)}
-        {b('list', `Outline (${MOD}\\)`, props.onOutline, props.outline)}
-        {b('eye', `Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'})`, props.onRead, props.reading)}
-      </div>
-      <div className="grow" />
-      {b('gear', `Settings (${MOD},)`, props.onSettings, props.settings)}
-    </nav>
+    <div className="tools" role="toolbar" aria-label="File and view">
+      {b('plus', `New document (${MOD}N)`, props.onNew)}
+      {b('open', `Open… (${MOD}O)`, props.onOpen)}
+      {b('save', `Save (${MOD}S)`, (e) => props.onSave(e.shiftKey))}
+      {b('saveAs', `Save As… (${IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S'})`, () => props.onSave(true))}
+      <span className="sep" />
+      {b('search', `Find (${MOD}F)`, props.onFind)}
+      {b('list', `Outline (${MOD}\\)`, props.onOutline, props.outline)}
+      {b('eye', `Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'})`, props.onRead, props.reading)}
+    </div>
   );
 }
 
@@ -649,8 +685,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
 
 // ---------- the outline: attached to the document, docked on the page's left edge ----------
 
-type DocRow = { id: number; name: string; path?: string; dirty: boolean };
-function OutlinePane(props: { docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; shown: boolean; items: OutlineItem[]; depth: number; cur: number; onDepth: (n: number) => void; onJump: (item: OutlineItem, index: number) => void; onShow: (s: boolean) => void }) {
+function OutlinePane(props: { active: number; shown: boolean; items: OutlineItem[]; depth: number; cur: number; onDepth: (n: number) => void; onJump: (item: OutlineItem, index: number) => void; onShow: (s: boolean) => void }) {
   const { shown, items, cur } = props;
   const [peek, setPeek] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
@@ -672,17 +707,7 @@ function OutlinePane(props: { docs: DocRow[]; active: number; onSwitch: (id: num
   return (
     <>
       <aside className={`olp${shown ? ' shown' : ''}${peek ? ' peek' : ''}`} aria-hidden={!open} onPointerEnter={peekOn} onPointerLeave={peekOff}>
-        <div className="olp-docs" role="tablist" aria-label="Open documents">
-          {props.docs.map((d) => (
-            <div key={d.id} className="doc-row" data-on={d.id === props.active || undefined}>
-              <button className="doc-nm" role="tab" aria-selected={d.id === props.active} title={d.path ?? d.name} onClick={() => props.onSwitch(d.id)}>
-                <SvgIcon name="doc" /><span>{tidy(d.name)}</span>{d.dirty && <i className="dot" aria-label="unsaved" />}
-              </button>
-              <button className="doc-x" title={`Close (${MOD}W)`} aria-label={`Close ${d.name}`} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
-            </div>
-          ))}
-          {!shown && <button className="olp-pin" onClick={() => props.onShow(true)}>Keep the outline open <kbd>{MOD}\</kbd></button>}
-        </div>
+        {!shown && <button className="olp-pin" onClick={() => props.onShow(true)}>Keep the outline open <kbd>{MOD}\</kbd></button>}
         <div className="sb-scroll">
           <div className="ol-head">
             <span className="sb-label">Outline</span>
