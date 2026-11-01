@@ -16,11 +16,16 @@ import { clearFind, findInfo, setQuery, step } from '../editor/find';
 const AUTOSAVE_KEY = 'falcon.autosave.v1';
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 
-/** Crash-recovery copy of the open doc. Big files can exceed storage; then recovery is skipped, not the open. */
+// Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
+const AUTOSAVE_MAX = 400_000;
+
+/** Crash-recovery copy of the open doc. Returns false when the doc is too big to keep a copy. */
 function autosave(doc: PMNode): boolean {
+  if (doc.content.size > AUTOSAVE_MAX) { localStorage.removeItem(AUTOSAVE_KEY); return false; }
   try { localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(doc.toJSON())); return true; }
   catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
 }
+const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 0));
 
 export function App() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -37,10 +42,18 @@ export function App() {
   const findRef = useRef<HTMLInputElement>(null);
   const lastDoc = useRef<PMNode | null>(null);
 
+  const warnedBig = useRef(false);
+  const warnBig = () => {
+    if (warnedBig.current) return;
+    warnedBig.current = true;
+    flashRef.current?.('This file is too big for crash recovery. Save often (⌘S).');
+  };
+  const flashRef = useRef<((m: string) => void) | null>(null);
   const flash = useCallback((msg: string) => {
     setToast(msg);
-    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 2200);
+    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), msg.includes('crash recovery') ? 6000 : 2200);
   }, []);
+  flashRef.current = flash;
 
   useEffect(() => {
     let doc: PMNode | undefined;
@@ -48,6 +61,8 @@ export function App() {
       const saved = localStorage.getItem(AUTOSAVE_KEY);
       if (saved) doc = PMNode.fromJSON(schema, JSON.parse(saved));
     } catch { /* corrupt autosave: start blank */ }
+    // a recovered doc isn't saved anywhere yet, so New/Open must ask before dropping it
+    if (doc && doc.textContent.trim()) setDirty(true);
     let saveTimer = 0, outlineTimer = 0;
     const view = createView(mountRef.current!, (v) => {
       setTick((t) => t + 1);
@@ -58,7 +73,7 @@ export function App() {
         window.clearTimeout(outlineTimer);
         outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
         window.clearTimeout(saveTimer);
-        saveTimer = window.setTimeout(() => autosave(v.state.doc), 800);
+        saveTimer = window.setTimeout(() => whenIdle(() => { if (!autosave(v.state.doc)) warnBig(); }), 800);
       }
     }, doc);
     lastDoc.current = view.state.doc;
@@ -88,9 +103,11 @@ export function App() {
     setMeta(m);
     setDirty(false);
     setDocVersion((n) => n + 1);
-    autosave(doc);
+    const backedUp = autosave(doc);
+    warnedBig.current = !backedUp; // the open message carries the warning
     v.focus();
     setTick((t) => t + 1);
+    return backedUp;
   }, []);
 
   const dirtyRef = useRef(false);
@@ -101,7 +118,7 @@ export function App() {
     if (!okToDiscard()) return;
     try {
       const r = await openDocument();
-      if (r) { replaceDoc(r.doc, r.meta); flash(`Opened ${r.meta.name}`); }
+      if (r) flash(replaceDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${IS_MAC ? '⌘S' : 'Ctrl+S'}).`);
     } catch (e) { flash(`Couldn't open: ${(e as Error).message}`); }
   }, [replaceDoc, flash]);
   const fileSave = useCallback(async (as = false) => {

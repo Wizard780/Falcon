@@ -74,6 +74,9 @@ ipcMain.handle('falcon:save-file', async (e, opts) => {
 
 function buildMenu() {
   const mac = process.platform === 'darwin';
+  // Windows/Linux: no menu bar. A visible one takes F10 (Emphasis) and Alt for itself, and
+  // Ctrl-C/X/V/A already work in the editor without menu roles.
+  if (!mac) { Menu.setApplicationMenu(null); return; }
   // Edit roles give Cmd/Ctrl-C/X/V/A to the editor; the editor handles its own undo, so no undo roles here.
   const template = [
     ...(mac ? [{ role: 'appMenu' }] : []),

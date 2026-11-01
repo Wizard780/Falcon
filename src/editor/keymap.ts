@@ -81,7 +81,7 @@ const enter: Command = chainCommands(createParagraphNear, liftEmptyBlock, (state
   if (!dispatch) return true;
   const pos = $f.after(1);
   const tr = state.tr.insert(pos, schema.nodes.paragraph.create({ style: 'normal', indent: 0 }));
-  dispatch(tr.setSelection(TextSelection.create(tr.doc, pos + 1)).scrollIntoView());
+  dispatch(tr.setSelection(TextSelection.create(tr.doc, pos + 1)).setStoredMarks([]).scrollIntoView());
   return true;
 });
 
