@@ -135,6 +135,8 @@ const cases = {
   async f9OnEmphasisSpaceSel() { await card(); await sel('pushed utilities to'); await k('F10'); await sel(' utilities '); await k('F9'); },
   async f9TrailingSpace() { await card(); await sel('pushed utilities '); await k('F9'); },
   async f12OnEmphasisPart() { await card(); await sel('pushed utilities to'); await k('F10'); await sel('utilities'); await k('F12'); },
+  // no pause between keys: catches races with layout or async UI work after Enter
+  async fastTypeAfterEnter() { await t('Tag'); await k('F7'); await p.keyboard.press('Enter'); await p.keyboard.type('Body', { delay: 0 }); await p.keyboard.press('Enter'); await p.keyboard.type('Next', { delay: 0 }); },
   async typeAfterTagEndThenEnterTwice() { await t('Tag'); await k('F7'); await k('Enter'); await k('Enter'); await t('x'); },
   async backspaceEmptyBelowTag() { await t('Tag'); await k('F7'); await k('Enter'); await k('Backspace'); await t('Z'); },
 };

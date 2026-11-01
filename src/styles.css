@@ -129,6 +129,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 
 /* big files: the browser skips layout and paint for paragraphs that are off screen */
 .ProseMirror > * { content-visibility: auto; contain-intrinsic-size: auto 1.3em; }
+.ProseMirror > .f-live { content-visibility: visible; }
 
 /* the card the cursor is in gets a thin bar on its left */
 .f-cur-card { position: relative; }

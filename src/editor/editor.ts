@@ -52,21 +52,29 @@ const brush = new Plugin<{ kind: 'highlight' | 'shading' | null }>({
   },
 });
 
-/** Marks the paragraphs of the card (tag/analytic and its body) that holds the cursor. */
-const currentCard = new Plugin({
+/**
+ * Two paragraph classes driven by the selection:
+ * - f-live on the paragraphs holding the cursor, which always lay out normally (the off-screen
+ *   layout skip in styles.css would otherwise misplace the caret in a just-created paragraph);
+ * - f-cur-card on the card (tag/analytic and its body) that holds the cursor, for the left bar.
+ */
+const selectionClasses = new Plugin({
   props: {
     decorations(state) {
       const doc = state.doc;
-      const c = cardAround(doc, state.selection.from);
-      if (!c) return null;
-      const head = doc.child(c.head);
-      if (head.attrs.style !== 'tag' && head.attrs.style !== 'analytic') return null;
       const decos: Decoration[] = [];
-      let pos = 0;
-      for (let i = 0; i < c.end; i++) {
-        const n = doc.child(i);
-        if (i >= c.head) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-cur-card' }));
-        pos += n.nodeSize;
+      const live = new Set<number>();
+      for (const $p of [state.selection.$anchor, state.selection.$head]) if ($p.depth >= 1) live.add($p.before(1));
+      for (const pos of live) decos.push(Decoration.node(pos, pos + doc.nodeAt(pos)!.nodeSize, { class: 'f-live' }));
+      const c = cardAround(doc, state.selection.head);
+      const head = c && doc.child(c.head);
+      if (c && head && (head.attrs.style === 'tag' || head.attrs.style === 'analytic')) {
+        let pos = 0;
+        for (let i = 0; i < c.end; i++) {
+          const n = doc.child(i);
+          if (i >= c.head) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-cur-card' }));
+          pos += n.nodeSize;
+        }
       }
       return DecorationSet.create(doc, decos);
     },
@@ -103,7 +111,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       brush,
       pastePlugin,
       wordSelection(),
-      currentCard,
+      selectionClasses,
       findPlugin,
     ],
   });
