@@ -5,6 +5,8 @@ const path = require('node:path');
 
 const DEV = process.env.FALCON_DEV === '1';
 const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a window
+// tests: a throwaway profile, so they never touch the user's recents, pens or crash-recovery copy
+if (process.env.FALCON_USER_DATA) app.setPath('userData', process.env.FALCON_USER_DATA);
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -32,6 +34,15 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
+  });
+  // the page blocks unloading while a doc is unsaved: ask, and close anyway if the user says so
+  win.webContents.on('will-prevent-unload', (e) => {
+    if (HEADLESS) { e.preventDefault(); return; }
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning', buttons: ['Close Without Saving', 'Cancel'], defaultId: 1, cancelId: 1,
+      message: 'Some documents have unsaved changes.', detail: 'Close Falcon anyway? Unsaved changes will be lost.',
+    });
+    if (choice === 0) e.preventDefault();
   });
   // the app is one page: block every navigation away from it
   win.webContents.on('will-navigate', (e, url) => {
@@ -102,9 +113,14 @@ function buildMenu() {
   // Windows/Linux: no menu bar. A visible one takes F10 (Emphasis) and Alt for itself, and
   // Ctrl-C/X/V/A already work in the editor without menu roles.
   if (!mac) { Menu.setApplicationMenu(null); return; }
+  // File items show their shortcuts but don't take the keys (registerAccelerator: false): the page
+  // already handles them, and a menu accelerator would swallow the key before the page sees it.
+  const send = (cmd) => (_item, win) => win?.webContents.send('falcon:menu', cmd);
+  const item = (label, accelerator, cmd) => ({ label, accelerator, registerAccelerator: false, click: send(cmd) });
   // Edit roles give Cmd/Ctrl-C/X/V/A to the editor; the editor handles its own undo, so no undo roles here.
   const template = [
-    ...(mac ? [{ role: 'appMenu' }] : []),
+    { role: 'appMenu', submenu: [{ role: 'about' }, { type: 'separator' }, item('Settings…', 'Cmd+,', 'settings'), { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+    { label: 'File', submenu: [item('New', 'Cmd+N', 'new'), item('Open…', 'Cmd+O', 'open'), { type: 'separator' }, item('Save', 'Cmd+S', 'save'), item('Save As…', 'Cmd+Shift+S', 'saveAs'), { type: 'separator' }, item('Close Document', 'Cmd+W', 'close')] },
     { label: 'Edit', submenu: [{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
     // no fullscreen/reload roles: their default keys (F11, F5, Ctrl-R) are formatting keys here
     ...(DEV ? [{ label: 'Dev', submenu: [{ role: 'reload', accelerator: 'CmdOrCtrl+Alt+R' }, { role: 'toggleDevTools' }] }] : []),

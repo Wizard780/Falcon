@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
-import { TextSelection } from 'prosemirror-state';
+import { TextSelection, type EditorState } from 'prosemirror-state';
 import { Node as PMNode } from 'prosemirror-model';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
 import { falconKeys } from '../editor/keymap';
@@ -15,20 +15,38 @@ import { openDocument, openPath, saveDocument, type DocMeta } from './files';
 import { clearFind, findInfo, setQuery, step } from '../editor/find';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
+import { Settings } from './Settings';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 
-const AUTOSAVE_KEY = 'falcon.autosave.v1';
+const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active }]: the open doc and every unsaved one
+const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could be open
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = IS_MAC ? '⌘' : 'Ctrl+';
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
 
-/** Crash-recovery copy of the open doc. Returns false when the doc is too big to keep a copy. */
-function autosave(doc: PMNode): boolean {
-  if (doc.content.size > AUTOSAVE_MAX) { localStorage.removeItem(AUTOSAVE_KEY); return false; }
-  try { localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(doc.toJSON())); return true; }
-  catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+type Backup = { meta: DocMeta; doc: PMNode; active: boolean };
+/** Crash-recovery copy of the open doc and every unsaved one. Docs too big to keep are left out;
+ *  returns false when the active doc was one of them. */
+function autosave(list: Backup[]): boolean {
+  const keep = list.filter((b) => b.doc.content.size <= AUTOSAVE_MAX);
+  const write = (l: Backup[]) => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(l.map((b) => ({ meta: b.meta, active: b.active, doc: b.doc.toJSON() }))));
+  try { write(keep); }
+  catch { // storage full: the active doc alone is the most useful copy
+    try { write(keep.filter((b) => b.active)); } catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+  }
+  localStorage.removeItem(OLD_AUTOSAVE_KEY);
+  return keep.some((b) => b.active);
+}
+function loadBackups(): Backup[] {
+  try {
+    const v2 = localStorage.getItem(AUTOSAVE_KEY);
+    if (v2) return (JSON.parse(v2) as { meta: DocMeta; doc: unknown; active: boolean }[]).map((b) => ({ ...b, doc: PMNode.fromJSON(schema, b.doc) }));
+    const v1 = localStorage.getItem(OLD_AUTOSAVE_KEY);
+    if (v1) return [{ meta: JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' }, doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
+  } catch { /* corrupt autosave: start blank */ }
+  return [];
 }
 const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 0));
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -63,6 +81,10 @@ function scrollToPos(view: EditorView, pos: number) {
   raf = requestAnimationFrame(step);
 }
 
+/** One open document. The active one lives in the editor view; the others keep their state (undo history included) here. */
+type OpenDoc = { id: number; meta: DocMeta; dirty: boolean; state: EditorState | null; scroll: number };
+let nextDocId = 2;
+
 export function App() {
   const mountRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -72,15 +94,24 @@ export function App() {
   const [showOutline, setShowOutline] = useState(() => localStorage.getItem('falcon.outline') !== 'off');
   const [depth, setDepth] = useState(() => Number(localStorage.getItem('falcon.depth')) || 3);
   const [zoom, setZoom] = useState(() => Number(localStorage.getItem('falcon.zoom')) || 1);
-  const [meta, setMeta] = useState<DocMeta>(() => JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' });
-  const [dirty, setDirty] = useState(false);
+  const [speechMin, setSpeechMin] = useState(() => Number(localStorage.getItem('falcon.speech')) || 8);
+  const [docs, setDocs] = useState<OpenDoc[]>(() => [{ id: 1, meta: JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' }, dirty: false, state: null, scroll: 0 }]);
+  const [activeId, setActiveId] = useState(1);
+  const activeRef = useRef(1);
+  const docsRef = useRef(docs);
+  docsRef.current = docs;
+  const active = docs.find((d) => d.id === activeId) ?? docs[0];
+  const meta = active.meta, dirty = active.dirty;
   const [toast, setToast] = useState<string | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [homeOpen, setHomeOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [recents, setRecents] = useState<Recent[]>(loadRecents);
   const [readTop, setReadTop] = useState(0); // doc position at the reading line (top of the page + 90px)
   const findRef = useRef<HTMLInputElement>(null);
   const lastDoc = useRef<PMNode | null>(null);
+
+  const patch = useCallback((id: number, p: Partial<OpenDoc>) => setDocs((ds) => ds.map((d) => (d.id === id ? { ...d, ...p } : d))), []);
 
   const warnedBig = useRef(false);
   const warnBig = () => {
@@ -95,25 +126,32 @@ export function App() {
   }, []);
   flashRef.current = flash;
 
+  /** Back up the active doc and every unsaved one (state is read from refs, so call it after renders). */
+  const backup = useCallback(() => autosave(docsRef.current.flatMap((d) => {
+    const isActive = d.id === activeRef.current;
+    const doc = isActive ? viewRef.current?.state.doc : d.state?.doc;
+    return doc && (isActive || d.dirty) ? [{ meta: d.meta, doc, active: isActive }] : [];
+  })), []);
+  const backupSoon = useRef(() => {});
   useEffect(() => {
-    let doc: PMNode | undefined;
-    try {
-      const saved = localStorage.getItem(AUTOSAVE_KEY);
-      if (saved) doc = PMNode.fromJSON(schema, JSON.parse(saved));
-    } catch { /* corrupt autosave: start blank */ }
-    // a recovered doc isn't saved anywhere yet, so New/Open must ask before dropping it
-    if (doc && doc.textContent.trim()) setDirty(true);
+    const backups = loadBackups();
+    const first = backups.find((b) => b.active) ?? backups[0];
+    const doc = first?.doc;
+    // recovered docs aren't saved anywhere yet, so closing them must ask first
+    const restored: OpenDoc[] = backups.map((b) => ({ id: b === first ? 1 : nextDocId++, meta: b.meta, dirty: b !== first || !!b.doc.textContent.trim(), state: b === first ? null : createState(b.doc), scroll: 0 }));
+    if (restored.length) setDocs(restored);
     let saveTimer = 0, outlineTimer = 0;
+    backupSoon.current = () => { window.clearTimeout(saveTimer); saveTimer = window.setTimeout(() => whenIdle(() => { if (!backup()) warnBig(); }), 800); };
     const view = createView(mountRef.current!, (v) => {
       setTick((t) => t + 1);
       if (v.state.doc !== lastDoc.current) {
         lastDoc.current = v.state.doc;
-        setDirty(true);
+        const id = activeRef.current;
+        setDocs((ds) => (ds.some((d) => d.id === id && !d.dirty) ? ds.map((d) => (d.id === id ? { ...d, dirty: true } : d)) : ds));
         // the outline and word count walk the whole doc: refresh them when typing pauses, not per keystroke
         window.clearTimeout(outlineTimer);
         outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
-        window.clearTimeout(saveTimer);
-        saveTimer = window.setTimeout(() => whenIdle(() => { if (!autosave(v.state.doc)) warnBig(); }), 800);
+        backupSoon.current();
       }
     }, doc);
     lastDoc.current = view.state.doc;
@@ -125,8 +163,17 @@ export function App() {
   useEffect(() => { document.documentElement.style.setProperty('--zoom', String(zoom)); localStorage.setItem('falcon.zoom', String(zoom)); }, [zoom]);
   useEffect(() => { localStorage.setItem('falcon.outline', showOutline ? 'on' : 'off'); }, [showOutline]);
   useEffect(() => { localStorage.setItem('falcon.depth', String(depth)); }, [depth]);
+  useEffect(() => { localStorage.setItem('falcon.speech', String(speechMin)); }, [speechMin]);
   useEffect(() => { localStorage.setItem('falcon.meta', JSON.stringify(meta)); }, [meta]);
   useEffect(() => { saveRecents(recents); }, [recents]);
+  // the list changed (switch, open, close, saved): refresh the crash-recovery copy once React has settled
+  useEffect(() => { if (viewRef.current) whenIdle(() => { backup(); }); }, [docs, activeId, backup]);
+  // quitting or closing the window with unsaved docs: the main process asks first
+  useEffect(() => {
+    const onUnload = (e: BeforeUnloadEvent) => { if (docsRef.current.some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ''; } };
+    addEventListener('beforeunload', onUnload);
+    return () => removeEventListener('beforeunload', onUnload);
+  }, []);
   const view = viewRef.current;
   // home covers the editor: the editor gives up the keyboard while it shows, and gets it back after
   const hasView = tick > 0;
@@ -143,88 +190,171 @@ export function App() {
     v.focus();
   }, []);
 
-  const replaceDoc = useCallback((doc: PMNode, m: DocMeta) => {
+  /** Put `state` in the editor as document `id`. The caller has already stashed the outgoing doc. */
+  const show = useCallback((id: number, state: EditorState, scroll: number) => {
     const v = viewRef.current!;
-    v.updateState(createState(doc));
+    stopScroll();
+    v.updateState(state);
     lastDoc.current = v.state.doc;
-    setMeta(m);
-    setDirty(false);
+    activeRef.current = id;
+    setActiveId(id);
     setDocVersion((n) => n + 1);
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-    const backedUp = autosave(doc);
+    if (scrollRef.current) scrollRef.current.scrollTop = scroll;
+    setFindOpen(false); // find state belongs to the outgoing doc
+    const backedUp = v.state.doc.content.size <= AUTOSAVE_MAX;
     warnedBig.current = !backedUp; // the open message carries the warning
     setHomeOpen(false);
     v.focus();
     setTick((t) => t + 1);
     return backedUp;
   }, []);
+  /** The outgoing doc, ready to stash: its state and where it was scrolled to. */
+  const stash = () => {
+    const v = viewRef.current!;
+    if (findInfo(v.state)) clearFind(v);
+    setFindOpen(false);
+    return { state: v.state, scroll: scrollRef.current?.scrollTop ?? 0 };
+  };
 
-  const dirtyRef = useRef(false);
-  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
-  const okToDiscard = () => !dirtyRef.current || window.confirm('Discard unsaved changes?');
+  const switchTo = useCallback((id: number) => {
+    if (id === activeRef.current) { setHomeOpen(false); viewRef.current?.focus(); return; }
+    const target = docsRef.current.find((d) => d.id === id);
+    if (!target?.state) return;
+    const out = stash(), cur = activeRef.current;
+    setDocs((ds) => ds.map((d) => (d.id === cur ? { ...d, ...out } : d.id === id ? { ...d, state: null } : d)));
+    show(id, target.state, target.scroll);
+  }, [show]);
+
+  /** A new tab for `doc`, after the current one. An untouched blank Untitled is replaced instead. */
+  const addDoc = useCallback((doc: PMNode, m: DocMeta) => {
+    const v = viewRef.current!;
+    const cur = docsRef.current.find((d) => d.id === activeRef.current)!;
+    const blank = !cur.dirty && !cur.meta.path && !v.state.doc.textContent.trim() && v.state.doc.childCount <= 1;
+    const id = blank ? cur.id : nextDocId++;
+    const fresh: OpenDoc = { id, meta: m, dirty: false, state: null, scroll: 0 };
+    if (blank) setDocs((ds) => ds.map((d) => (d.id === id ? fresh : d)));
+    else {
+      const out = stash();
+      setDocs((ds) => { const i = ds.findIndex((d) => d.id === cur.id); const n = ds.map((d) => (d.id === cur.id ? { ...d, ...out } : d)); n.splice(i + 1, 0, fresh); return n; });
+    }
+    return show(id, createState(doc), 0);
+  }, [show]);
+
+  const closeDoc = useCallback((id: number) => {
+    const list = docsRef.current, i = list.findIndex((d) => d.id === id);
+    const d = list[i];
+    if (!d) return;
+    if (d.dirty && !window.confirm(`Close ${d.meta.name || 'Untitled'} without saving?`)) return;
+    const rest = list.filter((x) => x.id !== id);
+    if (id !== activeRef.current) { setDocs(rest); return; }
+    if (!rest.length) {
+      const nid = nextDocId++;
+      setDocs([{ id: nid, meta: { name: 'Untitled' }, dirty: false, state: null, scroll: 0 }]);
+      show(nid, createState(emptyDoc()), 0);
+      setHomeOpen(true);
+      return;
+    }
+    const next = rest[Math.min(i, rest.length - 1)];
+    setDocs(rest.map((x) => (x.id === next.id ? { ...x, state: null } : x)));
+    show(next.id, next.state!, next.scroll);
+  }, [show]);
+
+  const cycle = useCallback((dir: 1 | -1) => {
+    const list = docsRef.current;
+    if (list.length < 2) return;
+    const i = list.findIndex((d) => d.id === activeRef.current);
+    switchTo(list[(i + dir + list.length) % list.length].id);
+  }, [switchTo]);
+
+  const openedPath = (p?: string) => (p ? docsRef.current.find((d) => d.meta.path === p) : undefined);
   const opened = useCallback((r: { doc: PMNode; meta: DocMeta }) => {
     setRecents((list) => noteRecent(list, r.doc, r.meta));
-    flash(replaceDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${MOD}S).`);
-  }, [replaceDoc, flash]);
-  const fileNew = useCallback(() => { if (okToDiscard()) replaceDoc(emptyDoc(), { name: 'Untitled' }); }, [replaceDoc]);
+    const already = openedPath(r.meta.path);
+    if (already) { switchTo(already.id); flash(`${r.meta.name} is already open`); return; }
+    flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${MOD}S).`);
+  }, [addDoc, switchTo, flash]);
+  const fileNew = useCallback(() => { addDoc(emptyDoc(), { name: 'Untitled' }); }, [addDoc]);
   const fileOpen = useCallback(async () => {
-    if (!okToDiscard()) return;
     try {
-      const before = viewRef.current?.state.doc;
       const r = await openDocument();
-      if (r && (viewRef.current?.state.doc === before || window.confirm('Discard unsaved changes?'))) opened(r);
+      if (r) opened(r);
     } catch (e) { flash(`Couldn't open: ${(e as Error).message}`); }
   }, [opened, flash]);
   const openRecent = useCallback(async (r: Recent) => {
-    if (r.path && r.path === meta.path) { setHomeOpen(false); return; }
+    const already = openedPath(r.path) ?? (!r.path ? docsRef.current.find((d) => !d.meta.path && d.meta.name === r.name) : undefined);
+    if (already) { switchTo(already.id); return; }
     if (!r.path || !bridge.openPath) { void fileOpen(); return; }
-    if (!okToDiscard()) return;
-    const before = viewRef.current?.state.doc;
-    try {
-      const got = await openPath(r.path);
-      // edits made while the file was loading need their own confirmation
-      if (viewRef.current?.state.doc !== before && !window.confirm('Discard unsaved changes?')) return;
-      opened(got);
-    } catch (e) { flash(`Couldn't open ${r.name}: ${(e as Error).message}`); }
-  }, [meta.path, opened, fileOpen, flash]);
+    try { opened(await openPath(r.path)); }
+    catch (e) { flash(`Couldn't open ${r.name}: ${(e as Error).message}`); }
+  }, [opened, fileOpen, switchTo, flash]);
   const fileSave = useCallback(async (as = false) => {
     const v = viewRef.current!;
+    const id = activeRef.current;
+    const d = docsRef.current.find((x) => x.id === id)!;
     const saved = v.state.doc;
     try {
-      const m = await saveDocument(saved, meta, as);
+      const m = await saveDocument(saved, d.meta, as);
+      if (!m) return;
       // typing during the save keeps the doc marked unsaved
-      if (m) { setMeta(m); setDirty(v.state.doc !== saved); setRecents((list) => noteRecent(list, saved, m)); flash(`Saved ${m.name}`); }
+      const now = activeRef.current === id ? viewRef.current!.state.doc : docsRef.current.find((x) => x.id === id)?.state?.doc;
+      patch(id, { meta: m, dirty: now !== saved });
+      setRecents((list) => noteRecent(list, saved, m));
+      flash(`Saved ${m.name}`);
     } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
-  }, [meta, flash]);
+  }, [patch, flash]);
 
   const openFind = useCallback(() => { setHomeOpen(false); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
+  const zoomBy = useCallback((d: number) => setZoom((z) => Math.max(0.5, Math.min(3, +(z + d).toFixed(2)))), []);
+
+  // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
+  const menuRef = useRef<(c: string) => void>(() => {});
+  // nothing swaps the document out behind Settings or during a read-mode speech
+  const locked = () => settingsRef.current || (!!viewRef.current && isReading(viewRef.current.state));
+  menuRef.current = (c) => {
+    if (c === 'settings') { setSettingsOpen(true); return; }
+    if (locked() && c !== 'save' && c !== 'saveAs') return;
+    if (c === 'new') fileNew(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
+    else if (c === 'saveAs') void fileSave(true); else if (c === 'close') closeDoc(activeRef.current); else if (c === 'settings') setSettingsOpen(true);
+  };
+  useEffect(() => bridge.onMenu?.((c) => menuRef.current(c)), []);
 
   // app-level shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Ctrl-Tab switches documents on every platform
+      if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); if (!locked()) cycle(e.shiftKey ? -1 : 1); return; }
       // AltGr arrives as Ctrl+Alt on Windows: those keys type characters (AltGr+ß is "\\"), never shortcuts
       if (e.altKey || e.getModifierState?.('AltGraph')) return;
       const v = viewRef.current;
       // read mode locks the keyboard: nothing that swaps the document out
-      if (v && isReading(v.state) && /^[not]$/i.test(e.key)) return;
+      if (v && isReading(v.state) && (/^[notw]$/i.test(e.key) || /^Bracket/.test(e.code))) return;
       const mod = IS_MAC ? e.metaKey : e.ctrlKey; // Ctrl-N/O/F are caret keys on macOS
+      // Settings is modal: only its own keys (Esc, Mod-,) get through
+      if (settingsRef.current && !(e.key === 'Escape' || (mod && e.key === ','))) { if (mod) e.preventDefault(); return; }
       const k = e.key.toLowerCase();
       if (mod && k === 's') { e.preventDefault(); void fileSave(e.shiftKey); }
       else if (mod && k === 'f') { e.preventDefault(); openFind(); }
       else if (mod && k === 'o') { e.preventDefault(); void fileOpen(); }
       else if (mod && k === 'n' && !e.shiftKey) { e.preventDefault(); fileNew(); }
+      else if (mod && k === 'w' && !e.shiftKey) { e.preventDefault(); closeDoc(activeRef.current); }
+      else if (mod && (e.code === 'BracketRight' || e.code === 'BracketLeft') && e.shiftKey) { e.preventDefault(); cycle(e.code === 'BracketRight' ? 1 : -1); }
       else if (mod && k === 't' && !e.shiftKey) { e.preventDefault(); setHomeOpen((h) => !h); }
+      else if (mod && e.key === ',') { e.preventDefault(); setSettingsOpen((s) => !s); }
       else if (mod && e.key === '\\') { e.preventDefault(); setShowOutline((s) => !s); }
+      else if (e.key === 'Escape' && settingsRef.current) { e.preventDefault(); e.stopPropagation(); setSettingsOpen(false); }
       else if (e.key === 'Escape' && homeRef.current) { e.preventDefault(); e.stopPropagation(); setHomeOpen(false); }
-      else if (mod && (e.key === '=' || e.key === '+') && !e.shiftKey) { e.preventDefault(); setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2))); }
-      else if (mod && e.key === '-') { e.preventDefault(); setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2))); }
+      else if (mod && (e.key === '=' || e.key === '+') && !e.shiftKey) { e.preventDefault(); zoomBy(0.1); }
+      else if (mod && e.key === '-') { e.preventDefault(); zoomBy(-0.1); }
       else if (mod && e.key === '0') { e.preventDefault(); setZoom(1); }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [fileSave, fileOpen, fileNew, openFind]);
+  }, [fileSave, fileOpen, fileNew, openFind, closeDoc, cycle, zoomBy]);
   const homeRef = useRef(homeOpen);
   homeRef.current = homeOpen;
+  const settingsRef = useRef(settingsOpen);
+  settingsRef.current = settingsOpen;
+  useEffect(() => { if (!settingsOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen]);
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -273,13 +403,16 @@ export function App() {
   const ink = activeColors.highlight === null ? '#00e5ff' : HIGHLIGHTS[activeColors.highlight] ?? activeColors.highlight;
   const reading = view ? isReading(view.state) : false;
   const name = meta.name || 'Untitled';
+  const docList = docs.map((d) => ({ id: d.id, name: d.meta.name || 'Untitled', path: d.meta.path, dirty: d.dirty }));
 
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
-      <Files inert={homeOpen} current={{ name, path: meta.path }} recents={recents}
-        onHome={() => setHomeOpen(true)} onSearch={openFind} onRecent={(r) => void openRecent(r)} onCurrent={() => setHomeOpen(false)} />
+      <Rail home={homeOpen} outline={showOutline} reading={reading} settings={settingsOpen}
+        onHome={() => setHomeOpen((h) => !h)} onNew={fileNew} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
+        onFind={openFind} onOutline={() => { setHomeOpen(false); setShowOutline((s) => !s); }}
+        onRead={() => { setHomeOpen(false); run(toggleRead); }} onSettings={() => setSettingsOpen((s) => !s)} />
 
-      <div className="covered" inert={homeOpen}>
+      <div className="covered" inert={homeOpen || settingsOpen}>
       <Toolbar
         sel={sel}
         run={run}
@@ -289,9 +422,11 @@ export function App() {
         flash={flash}
         reading={reading}
         onRead={() => run(toggleRead)}
+        speechSeconds={speechMin * 60}
       />
 
-      <OutlinePane name={name} dirty={dirty} shown={showOutline} items={outline} depth={depth} cur={cur}
+      <OutlinePane docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
+        shown={showOutline} items={outline} depth={depth} cur={cur}
         onDepth={setDepth} onJump={jump} onShow={setShowOutline} />
 
       <div ref={scrollRef} className="f-scroll" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); viewRef.current?.focus(); } }}>
@@ -319,15 +454,18 @@ export function App() {
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
-        <button title={`Zoom out (${MOD}−)`} onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))}>−</button>
+        <button title={`Zoom out (${MOD}−)`} onClick={() => zoomBy(-0.1)}>−</button>
         <button className="zoom" title={`Actual size (${MOD}0)`} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
-        <button title={`Zoom in (${MOD}+)`} onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))}>+</button>
+        <button title={`Zoom in (${MOD}+)`} onClick={() => zoomBy(0.1)}>+</button>
       </footer>
       </div>
 
       <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents}
         onNew={fileNew} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)}
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
+      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)}
+        zoom={zoom} onZoom={setZoom} speechMin={speechMin} onSpeechMin={setSpeechMin}
+        showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth} />
       <div className={`toast${toast ? ' show' : ''}`}>{toast}</div>
     </div>
   );
@@ -335,76 +473,43 @@ export function App() {
 
 const mmss = (min: number) => { const s = Math.round(min * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
-// ---------- files: a slim strip on the far left; hovering it slides the files panel out ----------
+// ---------- the rail: a slim column of always-visible file and view buttons on the far left ----------
 
-function Files(props: { inert: boolean; current: { name: string; path?: string }; recents: Recent[]; onHome: () => void; onSearch: () => void; onRecent: (r: Recent) => void; onCurrent: () => void }) {
-  const [open, setOpen] = useState(false);
-  const timer = useRef(0);
-  const stripRef = useRef<HTMLElement>(null);
-  const panelRef = useRef<HTMLElement>(null);
-  const others = props.recents.filter((r) => !(props.current.path ? r.path === props.current.path : !r.path && r.name === props.current.name)).slice(0, 8);
-  const enter = () => { clearTimeout(timer.current); setOpen(true); };
-  const leave = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(false), 180); };
-  const pick = (f: () => void) => () => { clearTimeout(timer.current); setOpen(false); f(); };
-
-  // each strip icon sits at the height of its row in the panel, so opening the panel reads as the strip widening
-  useLayoutEffect(() => {
-    const strip = stripRef.current!, panel = panelRef.current!;
-    const align = () => {
-      const mid = (el: Element | null) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
-      strip.querySelectorAll<HTMLElement>('[data-k]').forEach((b) => {
-        const y = mid(panel.querySelector(`[data-k="${b.dataset.k}"]`));
-        if (y !== null) b.style.top = `${Math.round(y - b.offsetHeight / 2)}px`;
-      });
-    };
-    align();
-    addEventListener('resize', align);
-    return () => removeEventListener('resize', align);
-  });
-
-  const row = (k: string, label: string, onClick: () => void, on = false) => (
-    <button key={k} className="sb-row" data-k={k} data-on={on || undefined} onClick={pick(onClick)}>
-      <span className="ic"><SvgIcon name="doc" /></span><span className="nm">{tidy(label)}</span>
-    </button>
+function Rail(props: { home: boolean; outline: boolean; reading: boolean; settings: boolean; onHome: () => void; onNew: () => void; onOpen: () => void; onSave: (as: boolean) => void; onFind: () => void; onOutline: () => void; onRead: () => void; onSettings: () => void }) {
+  const b = (icon: string, title: string, onClick: (e: React.MouseEvent) => void, on = false) => (
+    <button className="fs-b" title={title} aria-label={title.replace(/ \(.*/, '')} data-on={on || undefined} onClick={onClick}><SvgIcon name={icon} /></button>
   );
   return (
-    <>
-      <nav ref={stripRef} className="fstrip" aria-label="Files" onPointerEnter={enter} onPointerLeave={leave}>
-        <button className="sb-logo" data-k="logo" title={`Home (${MOD}T)`} onClick={pick(props.onHome)}><SvgIcon name="logo" /></button>
-        <button className="fs-b" data-k="search" title={`Find (${MOD}F)`} onClick={pick(props.onSearch)}><SvgIcon name="search" /></button>
-        <button className="fs-b" data-k="cur" data-on="" title={props.current.name} onClick={pick(props.onCurrent)}><SvgIcon name="doc" /></button>
-        {others.map((r, i) => <button key={i} className="fs-b" data-k={`r${i}`} title={r.name} onClick={pick(() => props.onRecent(r))}><SvgIcon name="doc" /></button>)}
-      </nav>
-      <aside ref={panelRef} inert={props.inert && !open} className={`rail-panel${open ? ' open' : ''}`} onPointerEnter={enter} onPointerLeave={leave} aria-hidden={!open}>
-        <div className="sb-head"><button className="sb-logo" data-k="logo" onClick={pick(props.onHome)}><SvgIcon name="logo" /></button><button className="sb-name" onClick={pick(props.onHome)}>Falcon</button></div>
-        <button className="sb-search" data-k="search" onClick={pick(props.onSearch)}><SvgIcon name="search" /><span>Find</span><kbd>{MOD}F</kbd></button>
-        <div className="sb-scroll">
-          <div className="sb-label">Open</div>
-          <div className="sb-list">{row('cur', props.current.name, props.onCurrent, true)}</div>
-          {others.length > 0 && <>
-            <div className="sb-label">Recent</div>
-            <div className="sb-list">{others.map((r, i) => (
-              <button key={i} className="sb-row" data-k={`r${i}`} onClick={pick(() => props.onRecent(r))} title={r.folder ? `${r.folder}/${r.name}` : r.name}>
-                <span className="ic"><SvgIcon name="doc" /></span><span className="nm">{tidy(r.name)}</span>{r.cards > 0 && <span className="ct">{r.cards}</span>}
-              </button>
-            ))}</div>
-          </>}
-        </div>
-      </aside>
-    </>
+    <nav className="fstrip" aria-label="Files and views">
+      <button className="sb-logo" title={`Home (${MOD}T)`} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
+      <div className="fs-grp">
+        {b('plus', `New document (${MOD}N)`, props.onNew)}
+        {b('open', `Open… (${MOD}O)`, props.onOpen)}
+        {b('save', `Save (${MOD}S)`, (e) => props.onSave(e.shiftKey))}
+        {b('saveAs', `Save As… (${IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S'})`, () => props.onSave(true))}
+      </div>
+      <div className="fs-grp">
+        {b('search', `Find (${MOD}F)`, props.onFind)}
+        {b('list', `Outline (${MOD}\\)`, props.onOutline, props.outline)}
+        {b('eye', `Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'})`, props.onRead, props.reading)}
+      </div>
+      <div className="grow" />
+      {b('gear', `Settings (${MOD},)`, props.onSettings, props.settings)}
+    </nav>
   );
 }
 
 // ---------- the top bar: the Classic layout, a two-row grid where each button previews its style ----------
 
 type SelState = ReturnType<typeof selectionState>;
-type PopKind = 'highlight' | 'shading' | 'font';
+type PopKind = 'highlight' | 'shading' | 'font' | 'size';
+const SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48];
 const SHADES = ['#D9D9D9', '#BFBFBF', '#F2F2F2', '#FFF2CC', '#FCE4D6', '#E2EFDA', '#DDEBF7', '#EDE7F6', '#FDE2E4', '#C6E0B4', '#BDD7EE', '#F8CBAD', '#FFE699', '#A9D08E', '#9BC2E6'];
 const FONT_COLORS: [string | null, string][] = [[null, 'Automatic'], ['#1F3864', 'Dark blue'], ['#385623', 'Dark green'], ['#C00000', 'Dark red'], ['#FF0000', 'Red']];
-const SPEECH_SECONDS = 8 * 60;
 
-function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; reading: boolean; onRead: () => void }) {
+function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; reading: boolean; onRead: () => void; speechSeconds: number }) {
   const { sel, run } = props;
+  const SPEECH_SECONDS = props.speechSeconds;
   const [pop, setPop] = useState<{ kind: PopKind; x: number; y: number; origin: number } | null>(null);
   const [fontColor, setFontColor] = useState<string | null>(() => localStorage.getItem('falcon.fontColor'));
   const popRef = useRef<HTMLDivElement>(null);
@@ -461,18 +566,20 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
 
   const STYLE_PT: Record<string, number> = { pocket: 26, hat: 22, block: 16, tag: 13, analytic: 13 };
   const fontSize = sel?.size ?? (sel?.marks.has('cite') ? 13 : STYLE_PT[sel?.style ?? ''] ?? null);
-  const bump = (d: number) => run((state, dispatch) => {
+  // with nothing selected the size applies to what you type next
+  const setSize = (pt: number) => run((state, dispatch) => {
     const { from, to, empty } = state.selection;
-    if (empty) return false;
-    const base = fontSize ?? 11;
-    const next = Math.max(4, Math.min(72, base + d));
-    dispatch?.(state.tr.addMark(from, to, schema.marks.size.create({ pt: next })));
+    const mark = schema.marks.size.create({ pt: Math.max(4, Math.min(72, pt)) });
+    dispatch?.(empty ? state.tr.addStoredMark(mark) : state.tr.addMark(from, to, mark));
     return true;
   });
+  const bump = (d: number) => setSize((fontSize ?? 11) + d);
 
   // the speech timer: click to start or pause, right-click to reset
   const [left, setLeft] = useState(SPEECH_SECONDS);
   const [running, setRunning] = useState(false);
+  // a new length from Settings resets an idle timer
+  useEffect(() => { if (!running) setLeft(SPEECH_SECONDS); }, [SPEECH_SECONDS]);
   useEffect(() => {
     if (!running) return;
     const t = window.setInterval(() => setLeft((s) => {
@@ -500,6 +607,8 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
           {pair('shading', <SvgIcon name="bucket" />, `Background color (${MOD}F11)`, () => props.onColor('shading'), swatch('shading'), props.brush === 'shading')}
           {pair('font', <b className="fa">A</b>, 'Font color', () => applyFont(fontColor), fontColor ?? '#ececee')}
           <button className="b sm" title={`Shrink card (${MOD}8)`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys['Mod-8']); }}>Shrink</button>
+          <button className="b fsz" data-pop="size" title="Font size" aria-label={`Font size ${fontSize ?? 11} pt`} aria-haspopup="menu" aria-expanded={pop?.kind === 'size'}
+            onMouseDown={(e) => { e.preventDefault(); openPop('size', e.currentTarget); }}>{fontSize ?? 11}<SvgIcon name="caret" /></button>
           <button className="b sz" title={`Bigger (${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(1); }}>A<SvgIcon name="up" /></button>
           <button className="b sz" title={`Smaller (${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(-1); }}>A<SvgIcon name="caret" /></button>
         </div>
@@ -513,8 +622,13 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
         </div>
       </div>
       {pop && (
-        <div ref={popRef} key={pop.kind} className="pop" role="menu" style={{ top: pop.y }}>
-          {pop.kind === 'font'
+        <div ref={popRef} key={pop.kind} className={`pop${pop.kind === 'size' ? ' sizes' : ''}`} role="menu" style={{ top: pop.y }}>
+          {pop.kind === 'size'
+            ? SIZES.map((n) => (
+              <button key={n} className="szi" role="menuitem" aria-current={(fontSize ?? 11) === n || undefined}
+                onMouseDown={(e) => { e.preventDefault(); setPop(null); setSize(n); }}>{n}</button>
+            ))
+            : pop.kind === 'font'
             ? FONT_COLORS.map(([c, n]) => (
               <button key={n} className="sw" role="menuitem" aria-label={n} title={n} aria-current={fontColor === c || undefined} style={{ background: c ?? '#222222' }}
                 onMouseDown={(e) => { e.preventDefault(); setFontColor(c); if (c) localStorage.setItem('falcon.fontColor', c); else localStorage.removeItem('falcon.fontColor'); setPop(null); applyFont(c); }} />
@@ -535,7 +649,8 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
 
 // ---------- the outline: attached to the document, docked on the page's left edge ----------
 
-function OutlinePane(props: { name: string; dirty: boolean; shown: boolean; items: OutlineItem[]; depth: number; cur: number; onDepth: (n: number) => void; onJump: (item: OutlineItem, index: number) => void; onShow: (s: boolean) => void }) {
+type DocRow = { id: number; name: string; path?: string; dirty: boolean };
+function OutlinePane(props: { docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; shown: boolean; items: OutlineItem[]; depth: number; cur: number; onDepth: (n: number) => void; onJump: (item: OutlineItem, index: number) => void; onShow: (s: boolean) => void }) {
   const { shown, items, cur } = props;
   const [peek, setPeek] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
@@ -557,9 +672,16 @@ function OutlinePane(props: { name: string; dirty: boolean; shown: boolean; item
   return (
     <>
       <aside className={`olp${shown ? ' shown' : ''}${peek ? ' peek' : ''}`} aria-hidden={!open} onPointerEnter={peekOn} onPointerLeave={peekOff}>
-        <div className="olp-head">
-          <span className="olp-name" title={props.name}>{tidy(props.name)}{props.dirty ? ' •' : ''}</span>
-          <button className="sb-ico" title={shown ? `Hide outline (${MOD}\\)` : `Keep the outline open (${MOD}\\)`} onClick={() => props.onShow(!shown)}><SvgIcon name={shown ? 'x' : 'plus'} /></button>
+        <div className="olp-docs" role="tablist" aria-label="Open documents">
+          {props.docs.map((d) => (
+            <div key={d.id} className="doc-row" data-on={d.id === props.active || undefined}>
+              <button className="doc-nm" role="tab" aria-selected={d.id === props.active} title={d.path ?? d.name} onClick={() => props.onSwitch(d.id)}>
+                <SvgIcon name="doc" /><span>{tidy(d.name)}</span>{d.dirty && <i className="dot" aria-label="unsaved" />}
+              </button>
+              <button className="doc-x" title={`Close (${MOD}W)`} aria-label={`Close ${d.name}`} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
+            </div>
+          ))}
+          {!shown && <button className="olp-pin" onClick={() => props.onShow(true)}>Keep the outline open <kbd>{MOD}\</kbd></button>}
         </div>
         <div className="sb-scroll">
           <div className="ol-head">
@@ -572,7 +694,7 @@ function OutlinePane(props: { name: string; dirty: boolean; shown: boolean; item
           </div>
           {query !== null && <input className="ol-q" autoFocus placeholder="Filter this outline" aria-label="Filter outline" spellCheck={false} value={query}
             onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setQuery(null); } }} />}
-          <OutlineRows items={items} depth={props.depth} cur={cur} query={(query ?? '').trim().toLowerCase()} onJump={props.onJump} visible={open} />
+          <OutlineRows key={props.active} items={items} depth={props.depth} cur={cur} query={(query ?? '').trim().toLowerCase()} onJump={props.onJump} visible={open} />
         </div>
       </aside>
       <div className={`olt${shown ? '' : ' shown'}`} title={`Show outline (${MOD}\\)`} onPointerEnter={peekOn} onPointerLeave={peekOff} onClick={() => props.onShow(true)}>
@@ -609,13 +731,18 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, query, onJump
 
   const rows: { item: OutlineItem; i: number; open: boolean }[] = [];
   let hideBelow = Infinity;
+  const parents: { level: number; byHand: boolean }[] = [];
   items.forEach((item, i) => {
     if (keep) { if (keep[i]) rows.push({ item, i, open: item.hasKids }); return; }
     if (item.level > hideBelow) return;
     hideBelow = Infinity;
-    if (item.level > depth) return;
-    const open = item.hasKids && (folded.has(keyOf(item)) ? false : item.level < depth || opened.has(keyOf(item)));
+    while (parents.length && parents[parents.length - 1].level >= item.level) parents.pop();
+    // past the depth, a heading shows only under one you opened by hand
+    if (item.level > depth && !parents[parents.length - 1]?.byHand) { hideBelow = item.level; return; }
+    const byHand = opened.has(keyOf(item));
+    const open = item.hasKids && (folded.has(keyOf(item)) ? false : item.level < depth || byHand);
     rows.push({ item, i, open });
+    parents.push({ level: item.level, byHand: open && item.level >= depth });
     if (!open) hideBelow = item.level;
   });
   const toggle = (item: OutlineItem, open: boolean) => {

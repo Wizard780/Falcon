@@ -17,6 +17,8 @@ type FalconBridge = {
   openFile?: () => Promise<{ name: string; path: string; data: Uint8Array } | null>;
   openPath?: (path: string) => Promise<{ name: string; path: string; data: Uint8Array }>;
   saveFile?: (opts: { path?: string; name: string; data: Uint8Array }) => Promise<{ path: string; name: string } | null>;
+  /** Mac File menu clicks ('new', 'open', 'save', 'saveAs', 'close', 'settings'). Returns an unsubscribe. */
+  onMenu?: (f: (cmd: string) => void) => () => void;
   platform?: string;
 };
 export const bridge: FalconBridge = (globalThis as unknown as { falcon?: FalconBridge }).falcon ?? {};

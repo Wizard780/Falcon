@@ -75,5 +75,23 @@ Failed attempts:
 - Native smooth scrollTo with a scrollend correction landed thousands of px short on big files (estimated heights
   from content-visibility). A rAF scroll that re-reads the target each frame lands exactly.
 
-## Next action
+## Stage: rail, several open docs, font size, Settings (2026-11-01, PR from rail-tabs-settings)
+User report (two scrawls): the hover files panel is gimmicky and can't open files; hiding the outline is hard to undo;
+at depth 3 a block's chevron didn't show its tags; no way to switch between open files; no font size readout; no settings;
+"can't save as". (Cmd-S did write the file: the edit was on disk. The missing piece was a visible Save / Save As.)
+Done means / results (scripts/ui-check.mjs, 20/20 ok):
+- [x] fixed rail: Home, New, Open, Save, Save As, Find, Outline, Read; Settings at the bottom. Hover panel removed.
+- [x] several open docs: Open adds a tab (a blank Untitled is replaced), list above the outline, x closes (asks if unsaved),
+      Ctrl-Tab / Mod-Shift-[ ] cycle, Mod-W closes; undo history and scroll kept per doc
+- [x] depth 3: a block's chevron shows its tags
+- [x] font size box (reads the selection, list of sizes); Settings (zoom, timer length, outline, shortcut list)
+- [x] Mac File menu (labels only: registerAccelerator false, the page handles the keys)
+- [x] crash recovery (falcon.autosave.v2) keeps every unsaved doc, not just the active one; quitting with unsaved docs asks
+- [x] Settings and read mode block doc-swapping keys and menu items
+- [x] probe 51/53, mouse 8/8, smoke OK, npm test + build OK
+Decisions:
+- Open files are listed in the outline pane, not a tab strip, so the toolbar keeps its two rows.
+- Tests run Electron with FALCON_USER_DATA (a temp profile). Before this the smoke test wrote into the user's real profile.
+
+
 Merge PR #2. Next by value: card numbering, send-to-speech, comments. Paste from a live Word clipboard once on a machine where opening Word is fine.
