@@ -117,6 +117,39 @@ r = await rows();
 want(r.length === 1 && r[0] === `*${base(b)}`, `closing the edited file asks, then leaves the other: ${JSON.stringify(r)}`);
 await page.screenshot({ path: `${shots}/6-after-close.png` });
 
+// behind Settings and in read mode, nothing swaps the document out
+await page.click('.fstrip [aria-label="New document"]');
+await page.waitForTimeout(150);
+await page.click('.fstrip [aria-label="Settings"]');
+await page.keyboard.press(`${mod}+w`);
+await page.keyboard.press('Control+Tab');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(150);
+r = await rows();
+want(r.length === 2 && r[1].startsWith('*'), `Settings blocks ${mod}+W and Ctrl-Tab: ${JSON.stringify(r)}`);
+await page.click('.fstrip [aria-label="Read mode"]');
+await page.keyboard.press('Control+Tab');
+await page.waitForTimeout(150);
+want((await rows())[1].startsWith('*'), 'read mode blocks Ctrl-Tab');
+await page.click('.fstrip [aria-label="Read mode"]');
+await page.keyboard.press(`${mod}+w`);
+await page.waitForTimeout(150);
+
+// crash recovery keeps an unsaved file even when another one is active
+await page.evaluate(() => { const v = window.__falconView; v.dispatch(v.state.tr.insertText('KEEPME', 1)); });
+await open(a);
+await page.waitForTimeout(1500); // the backup runs when idle
+page.on('dialog', (d) => d.accept()); // the unsaved-changes prompt on reload
+await page.reload();
+await page.waitForSelector('.ProseMirror');
+await page.waitForTimeout(300);
+r = await rows();
+await page.keyboard.press('Escape');
+await page.click(`.doc-row:has-text("${base(b)}") .doc-nm`);
+await page.waitForTimeout(150);
+const kept = await page.evaluate(() => window.__falconView.state.doc.textContent.slice(0, 6));
+want(r.length === 2 && kept === 'KEEPME', `after a reload both files come back, unsaved edit included: ${JSON.stringify(r)} ${kept}`);
+
 want(!errors.length, `no page errors ${errors.join(' | ')}`);
 console.log(results.join('\n'));
 await browser.close();

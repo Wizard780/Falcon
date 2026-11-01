@@ -35,6 +35,15 @@ function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  // the page blocks unloading while a doc is unsaved: ask, and close anyway if the user says so
+  win.webContents.on('will-prevent-unload', (e) => {
+    if (HEADLESS) { e.preventDefault(); return; }
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning', buttons: ['Close Without Saving', 'Cancel'], defaultId: 1, cancelId: 1,
+      message: 'Some documents have unsaved changes.', detail: 'Close Falcon anyway? Unsaved changes will be lost.',
+    });
+    if (choice === 0) e.preventDefault();
+  });
   // the app is one page: block every navigation away from it
   win.webContents.on('will-navigate', (e, url) => {
     if (url !== win.webContents.getURL()) e.preventDefault();

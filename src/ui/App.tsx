@@ -18,18 +18,35 @@ import { Home } from './Home';
 import { Settings } from './Settings';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 
-const AUTOSAVE_KEY = 'falcon.autosave.v1';
+const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active }]: the open doc and every unsaved one
+const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could be open
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = IS_MAC ? '⌘' : 'Ctrl+';
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
 
-/** Crash-recovery copy of the open doc. Returns false when the doc is too big to keep a copy. */
-function autosave(doc: PMNode): boolean {
-  if (doc.content.size > AUTOSAVE_MAX) { localStorage.removeItem(AUTOSAVE_KEY); return false; }
-  try { localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(doc.toJSON())); return true; }
-  catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+type Backup = { meta: DocMeta; doc: PMNode; active: boolean };
+/** Crash-recovery copy of the open doc and every unsaved one. Docs too big to keep are left out;
+ *  returns false when the active doc was one of them. */
+function autosave(list: Backup[]): boolean {
+  const keep = list.filter((b) => b.doc.content.size <= AUTOSAVE_MAX);
+  const write = (l: Backup[]) => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(l.map((b) => ({ meta: b.meta, active: b.active, doc: b.doc.toJSON() }))));
+  try { write(keep); }
+  catch { // storage full: the active doc alone is the most useful copy
+    try { write(keep.filter((b) => b.active)); } catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+  }
+  localStorage.removeItem(OLD_AUTOSAVE_KEY);
+  return keep.some((b) => b.active);
+}
+function loadBackups(): Backup[] {
+  try {
+    const v2 = localStorage.getItem(AUTOSAVE_KEY);
+    if (v2) return (JSON.parse(v2) as { meta: DocMeta; doc: unknown; active: boolean }[]).map((b) => ({ ...b, doc: PMNode.fromJSON(schema, b.doc) }));
+    const v1 = localStorage.getItem(OLD_AUTOSAVE_KEY);
+    if (v1) return [{ meta: JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' }, doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
+  } catch { /* corrupt autosave: start blank */ }
+  return [];
 }
 const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 0));
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -109,15 +126,22 @@ export function App() {
   }, []);
   flashRef.current = flash;
 
+  /** Back up the active doc and every unsaved one (state is read from refs, so call it after renders). */
+  const backup = useCallback(() => autosave(docsRef.current.flatMap((d) => {
+    const isActive = d.id === activeRef.current;
+    const doc = isActive ? viewRef.current?.state.doc : d.state?.doc;
+    return doc && (isActive || d.dirty) ? [{ meta: d.meta, doc, active: isActive }] : [];
+  })), []);
+  const backupSoon = useRef(() => {});
   useEffect(() => {
-    let doc: PMNode | undefined;
-    try {
-      const saved = localStorage.getItem(AUTOSAVE_KEY);
-      if (saved) doc = PMNode.fromJSON(schema, JSON.parse(saved));
-    } catch { /* corrupt autosave: start blank */ }
-    // a recovered doc isn't saved anywhere yet, so closing it must ask first
-    if (doc && doc.textContent.trim()) patch(1, { dirty: true });
+    const backups = loadBackups();
+    const first = backups.find((b) => b.active) ?? backups[0];
+    const doc = first?.doc;
+    // recovered docs aren't saved anywhere yet, so closing them must ask first
+    const restored: OpenDoc[] = backups.map((b) => ({ id: b === first ? 1 : nextDocId++, meta: b.meta, dirty: b !== first || !!b.doc.textContent.trim(), state: b === first ? null : createState(b.doc), scroll: 0 }));
+    if (restored.length) setDocs(restored);
     let saveTimer = 0, outlineTimer = 0;
+    backupSoon.current = () => { window.clearTimeout(saveTimer); saveTimer = window.setTimeout(() => whenIdle(() => { if (!backup()) warnBig(); }), 800); };
     const view = createView(mountRef.current!, (v) => {
       setTick((t) => t + 1);
       if (v.state.doc !== lastDoc.current) {
@@ -127,8 +151,7 @@ export function App() {
         // the outline and word count walk the whole doc: refresh them when typing pauses, not per keystroke
         window.clearTimeout(outlineTimer);
         outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
-        window.clearTimeout(saveTimer);
-        saveTimer = window.setTimeout(() => whenIdle(() => { if (!autosave(v.state.doc)) warnBig(); }), 800);
+        backupSoon.current();
       }
     }, doc);
     lastDoc.current = view.state.doc;
@@ -143,6 +166,14 @@ export function App() {
   useEffect(() => { localStorage.setItem('falcon.speech', String(speechMin)); }, [speechMin]);
   useEffect(() => { localStorage.setItem('falcon.meta', JSON.stringify(meta)); }, [meta]);
   useEffect(() => { saveRecents(recents); }, [recents]);
+  // the list changed (switch, open, close, saved): refresh the crash-recovery copy once React has settled
+  useEffect(() => { if (viewRef.current) whenIdle(() => { backup(); }); }, [docs, activeId, backup]);
+  // quitting or closing the window with unsaved docs: the main process asks first
+  useEffect(() => {
+    const onUnload = (e: BeforeUnloadEvent) => { if (docsRef.current.some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ''; } };
+    addEventListener('beforeunload', onUnload);
+    return () => removeEventListener('beforeunload', onUnload);
+  }, []);
   const view = viewRef.current;
   // home covers the editor: the editor gives up the keyboard while it shows, and gets it back after
   const hasView = tick > 0;
@@ -169,7 +200,8 @@ export function App() {
     setActiveId(id);
     setDocVersion((n) => n + 1);
     if (scrollRef.current) scrollRef.current.scrollTop = scroll;
-    const backedUp = autosave(v.state.doc);
+    setFindOpen(false); // find state belongs to the outgoing doc
+    const backedUp = v.state.doc.content.size <= AUTOSAVE_MAX;
     warnedBig.current = !backedUp; // the open message carries the warning
     setHomeOpen(false);
     v.focus();
@@ -276,7 +308,11 @@ export function App() {
 
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
+  // nothing swaps the document out behind Settings or during a read-mode speech
+  const locked = () => settingsRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
+    if (c === 'settings') { setSettingsOpen(true); return; }
+    if (locked() && c !== 'save' && c !== 'saveAs') return;
     if (c === 'new') fileNew(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
     else if (c === 'saveAs') void fileSave(true); else if (c === 'close') closeDoc(activeRef.current); else if (c === 'settings') setSettingsOpen(true);
   };
@@ -286,13 +322,15 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Ctrl-Tab switches documents on every platform
-      if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); cycle(e.shiftKey ? -1 : 1); return; }
+      if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); if (!locked()) cycle(e.shiftKey ? -1 : 1); return; }
       // AltGr arrives as Ctrl+Alt on Windows: those keys type characters (AltGr+ß is "\\"), never shortcuts
       if (e.altKey || e.getModifierState?.('AltGraph')) return;
       const v = viewRef.current;
       // read mode locks the keyboard: nothing that swaps the document out
-      if (v && isReading(v.state) && /^[notw]$/i.test(e.key)) return;
+      if (v && isReading(v.state) && (/^[notw]$/i.test(e.key) || /^Bracket/.test(e.code))) return;
       const mod = IS_MAC ? e.metaKey : e.ctrlKey; // Ctrl-N/O/F are caret keys on macOS
+      // Settings is modal: only its own keys (Esc, Mod-,) get through
+      if (settingsRef.current && !(e.key === 'Escape' || (mod && e.key === ','))) { if (mod) e.preventDefault(); return; }
       const k = e.key.toLowerCase();
       if (mod && k === 's') { e.preventDefault(); void fileSave(e.shiftKey); }
       else if (mod && k === 'f') { e.preventDefault(); openFind(); }
@@ -656,7 +694,7 @@ function OutlinePane(props: { docs: DocRow[]; active: number; onSwitch: (id: num
           </div>
           {query !== null && <input className="ol-q" autoFocus placeholder="Filter this outline" aria-label="Filter outline" spellCheck={false} value={query}
             onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setQuery(null); } }} />}
-          <OutlineRows items={items} depth={props.depth} cur={cur} query={(query ?? '').trim().toLowerCase()} onJump={props.onJump} visible={open} />
+          <OutlineRows key={props.active} items={items} depth={props.depth} cur={cur} query={(query ?? '').trim().toLowerCase()} onJump={props.onJump} visible={open} />
         </div>
       </aside>
       <div className={`olt${shown ? '' : ' shown'}`} title={`Show outline (${MOD}\\)`} onPointerEnter={peekOn} onPointerLeave={peekOff} onClick={() => props.onShow(true)}>
