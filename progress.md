@@ -95,3 +95,11 @@ Decisions:
 
 
 Merge PR #2. Next by value: card numbering, send-to-speech, comments. Paste from a live Word clipboard once on a machine where opening Word is fine.
+
+## Stage: tools row, files in the rail, prototype Settings (2026-11-01)
+User recording: move the rail's file/view buttons into a row above the outline, put open files back in the rail, and make Settings look like prototypes/falcon.html.
+- [x] `.tools` row (New, Open, Save, Save As | Find, Outline, Read) sits above the outline, level with the toolbar's second row and the logo
+- [x] rail: Home, one button per open doc (hover name, hover ×, middle-click closes, unsaved dot, scrolls past ~8 docs), Settings
+- [x] Settings: section nav with search (/), breadcrumb, Restore defaults, cards of rows; only settings that work (highlighter, zoom, outline, depth, speech length, keybindings)
+- [x] checks: ui-check 28/28, vitest 32 pass, electron smoke passes, review fixes (inert behind Settings, rail overflow, stale tooltip)
+- Note: the toolbar needs a ~1100px window to show in full; narrower, it packs closer and scrolls sideways.
