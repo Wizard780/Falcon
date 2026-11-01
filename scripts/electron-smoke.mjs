@@ -25,7 +25,10 @@ const platform = await win.evaluate(() => window.falcon?.platform);
 const visible = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.isVisible()));
 const menu = await app.evaluate(({ Menu }) => (Menu.getApplicationMenu()?.items ?? []).map((i) => i.label));
 fs.mkdirSync('shots', { recursive: true });
-await win.screenshot({ path: `shots/electron-${process.platform}.png` });
+// Windows doesn't paint hidden windows; on CI runners (no user to disturb) show it without focus to capture it
+if (process.env.CI) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.showInactive()));
+try { await win.screenshot({ path: `shots/electron-${process.platform}.png`, timeout: 15000 }); }
+catch (e) { console.error('screenshot failed:', e.message.split('\n')[0]); process.exitCode = 1; }
 await app.close();
 
 console.log(map, '\nplatform:', platform, '| bridge:', bridge, '| visible:', visible, '| menu:', menu);
@@ -33,6 +36,6 @@ const want = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.
 // emphasis replaced the underline on "app"; highlight stays on "app"
 want(map === 'tag: Electron tag\nnormal: Body text in the [desktop ]{emphasis}[app]{emphasis+highlight:yellow}', `marks: ${JSON.stringify(map)}`);
 want(bridge === 'openFile,platform,readClipboardText,saveFile', 'preload bridge');
-want(visible.every((v) => !v), 'window stayed hidden');
+want(visible.every((v) => !v), 'window stayed hidden (checked before any CI-only capture)');
 want(process.platform === 'darwin' || menu.length === 0, 'no menu bar on Windows/Linux (F10 and Alt belong to the editor)');
 want(!errors.length, `page errors: ${errors.join('; ')}`);

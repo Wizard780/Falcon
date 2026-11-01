@@ -133,6 +133,8 @@ const cases = {
   async f10TrailingSpace() { await card(); await sel('pushed utilities '); await k('F10'); },
   async f10LeadingSpace() { await card(); await sel(' pushed utilities'); await k('F10'); },
   async f9OnEmphasisSpaceSel() { await card(); await sel('pushed utilities to'); await k('F10'); await sel(' utilities '); await k('F9'); },
+  async f11TrailingSpace() { await card(); await sel(' pushed utilities '); await k('F11'); },
+  async f8TrailingSpace() { await card(); await sel('Smith 24, '); await k('F8'); },
   async f9TrailingSpace() { await card(); await sel('pushed utilities '); await k('F9'); },
   async f12OnEmphasisPart() { await card(); await sel('pushed utilities to'); await k('F10'); await sel('utilities'); await k('F12'); },
   // no pause between keys: catches races with layout or async UI work after Enter

@@ -143,3 +143,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .findbar button:hover { background: var(--chrome-hover); color: var(--chrome-text); }
 .f-find { background: rgba(255, 170, 0, 0.35); border-radius: 2px; }
 .f-find-cur { background: rgba(255, 120, 0, 0.7); }
+
+/* the extra stretches of a Ctrl/Cmd-click multi-selection */
+.f-multisel { background: rgba(80, 140, 255, 0.35); }

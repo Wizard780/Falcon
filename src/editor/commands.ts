@@ -151,7 +151,7 @@ export const applyEmphasis: Command = (state, dispatch) => {
 /** F11 / Mod-F11: toggle a color mark. `null` color is the "no color" pen, which strips the mark. */
 export function toggleColorMark(type: MarkType, color: string | null): Command {
   return (state, dispatch) => {
-    const ranges = targetRanges(state, 'none');
+    const ranges = trimRanges(state.doc, targetRanges(state, 'none'));
     if (!ranges.length) return false;
     const tr = state.tr;
     if (color === null) {
@@ -167,9 +167,10 @@ export function toggleColorMark(type: MarkType, color: string | null): Command {
 /** Paint (never toggle) a color: used by the paintbrush. */
 export function paintColorMark(type: MarkType, color: string | null, from: number, to: number): Command {
   return (state, dispatch) => {
-    if (from >= to) return false;
+    const [r] = trimRanges(state.doc, [{ from, to }]);
+    if (!r) return false;
     const tr = state.tr;
-    color === null ? tr.removeMark(from, to, type) : tr.addMark(from, to, type.create({ color }));
+    color === null ? tr.removeMark(r.from, r.to, type) : tr.addMark(r.from, r.to, type.create({ color }));
     return finish(state, tr, dispatch);
   };
 }
@@ -194,12 +195,15 @@ export const clearFormatting: Command = (state, dispatch) => {
 /** Paragraphs touched by the selection, as [node, pos] pairs. */
 export function selectedParas(state: EditorState): [PMNode, number][] {
   const out: [PMNode, number][] = [];
-  const { from, to } = state.selection;
-  state.doc.nodesBetween(from, to, (node, pos) => {
-    if (node.isTextblock) { out.push([node, pos]); return false; }
-    return true;
-  });
-  return out;
+  const seen = new Set<number>();
+  // every stretch of a multi-selection, not just the last one
+  for (const r of state.selection.ranges) {
+    state.doc.nodesBetween(r.$from.pos, r.$to.pos, (node, pos) => {
+      if (node.isTextblock) { if (!seen.has(pos)) { seen.add(pos); out.push([node, pos]); } return false; }
+      return true;
+    });
+  }
+  return out.sort((a, b) => a[1] - b[1]);
 }
 
 /** F4–F7, Mod-F7, Mod-F8: set the paragraph style. Re-applying a style resets indent and font-size overrides. */

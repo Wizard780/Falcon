@@ -12,6 +12,7 @@ import { wordSelection } from './mouse';
 import { schema } from './schema';
 import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
+import { multiSelectionPlugin } from './multi';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -104,6 +105,7 @@ export function createState(doc: PMNode = emptyDoc()) {
   return EditorState.create({
     doc,
     plugins: [
+      multiSelectionPlugin,
       falconKeymap(),
       keymap(baseKeymap),
       history({ newGroupDelay: 500 }),
