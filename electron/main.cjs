@@ -33,30 +33,38 @@ function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  // the app is one page: block every navigation away from it
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith('file:') && !url.startsWith('http://localhost:5173')) e.preventDefault();
+    if (url !== win.webContents.getURL()) e.preventDefault();
   });
   return win;
 }
 
 const DOCX = [{ name: 'Word documents', extensions: ['docx'] }];
+// The page can only save over files the user picked in a dialog this session, and only .docx.
+const userPaths = new Set();
 
 ipcMain.handle('falcon:read-clipboard-text', () => clipboard.readText());
 ipcMain.handle('falcon:open-file', async (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: DOCX });
   if (r.canceled || !r.filePaths[0]) return null;
-  const p = r.filePaths[0];
+  const p = path.resolve(r.filePaths[0]);
+  userPaths.add(p);
   return { name: path.basename(p), path: p, data: new Uint8Array(await fs.readFile(p)) };
 });
 ipcMain.handle('falcon:save-file', async (e, opts) => {
-  let p = opts && typeof opts.path === 'string' ? opts.path : null;
+  if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
+  let p = typeof opts.path === 'string' && userPaths.has(path.resolve(opts.path)) ? path.resolve(opts.path) : null;
   if (!p) {
     const win = BrowserWindow.fromWebContents(e.sender);
-    const r = await dialog.showSaveDialog(win, { defaultPath: opts.name, filters: DOCX });
+    const name = typeof opts.name === 'string' ? path.basename(opts.name) : 'Untitled.docx';
+    const r = await dialog.showSaveDialog(win, { defaultPath: name, filters: DOCX });
     if (r.canceled || !r.filePath) return null;
-    p = r.filePath.endsWith('.docx') ? r.filePath : `${r.filePath}.docx`;
+    p = path.resolve(r.filePath.toLowerCase().endsWith('.docx') ? r.filePath : `${r.filePath}.docx`);
+    userPaths.add(p);
   }
+  if (!p.toLowerCase().endsWith('.docx')) throw new Error('Falcon only saves .docx files');
   // write to a temp file first so a crash mid-save never truncates the real file
   const tmp = `${p}.falcon-tmp`;
   await fs.writeFile(tmp, Buffer.from(opts.data));
