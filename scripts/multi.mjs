@@ -6,6 +6,7 @@ const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: 1400, height: 900 } });
 await p.goto(which === 'cm' ? 'http://localhost:5301/' : (process.env.FALCON_URL || 'http://localhost:5173/')); await p.waitForTimeout(1500);
 if (which === 'cm') { await p.keyboard.press('Escape'); await p.getByText('New document', { exact: true }).first().click(); await p.waitForTimeout(1000); }
+else { await p.keyboard.press('Escape'); await p.waitForTimeout(400); } // close Home
 await p.locator('.ProseMirror').first().click();
 await p.keyboard.press(`${mod}+a`); await p.keyboard.press('Backspace');
 await p.keyboard.type('Grid tag'); await p.keyboard.press('F7'); await p.waitForTimeout(150); await p.keyboard.press('Enter'); await p.waitForTimeout(150);

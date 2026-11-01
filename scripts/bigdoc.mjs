@@ -4,7 +4,7 @@ const file = process.argv[2];
 const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: 1400, height: 900 } });
 p.on('pageerror', (e) => console.log('PAGEERR', e.message));
-await p.goto(process.env.FALCON_URL || 'http://localhost:5173/'); await p.waitForSelector('.ProseMirror');
+await p.goto(process.env.FALCON_URL || 'http://localhost:5173/'); await p.waitForSelector('.ProseMirror'); await p.keyboard.press('Escape'); await p.waitForTimeout(400); // close Home
 const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.keyboard.press('Meta+o')]);
 const t0 = Date.now();
 await chooser.setFiles(file);

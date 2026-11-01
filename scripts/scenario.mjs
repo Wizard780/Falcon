@@ -13,7 +13,7 @@ if (which === 'cm') {
   await p.keyboard.press('Escape');
   await p.getByText('New document', { exact: true }).first().click();
   await p.waitForTimeout(1000);
-}
+} else { await p.keyboard.press('Escape'); await p.waitForTimeout(400); } // close Home
 await p.locator('.ProseMirror').first().click();
 await p.keyboard.press(process.platform === 'darwin' ? 'Meta+a' : 'Control+a'); await p.keyboard.press('Backspace'); await p.keyboard.press('Backspace');
 const k = async (key, n=1) => { for (let i=0;i<n;i++) { await p.keyboard.press(key); await p.waitForTimeout(40); } };

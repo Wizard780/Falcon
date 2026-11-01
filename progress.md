@@ -51,5 +51,29 @@ CM is a reference only. Read its manual and run its behavior, but write Falcon's
 - Bisecting the 'oB' typing bug by commit was misleading: it was timing-dependent. A pause sweep (fails at 0ms, passes at 50ms) pointed at layout, not code.
 - Leaving clicks inside a selection to the browser caused a late caret collapse after double-click. Now the editor handles every plain press.
 
+## Stage: chrome matches the prototype; one v0.1.0 release (2026-11-01)
+User report: the first release didn't look like prototypes/falcon.html, the scrolling animations differed,
+and the Mac app opened as "damaged" without showing up in Privacy & Security.
+Done means:
+- Editor screen matches the prototype's editor screen (shots: /tmp/fcmp proto-doc vs app-doc): 56px file strip
+  with a hover files panel, docked outline (sliding lit pill, sliding 1-4 highlight, filter, hidden tick strip with peek, Cmd-\),
+  centered Classic two-row toolbar, graphite status bar.
+- Home at launch and on Cmd-T (date, beam title, matrix clock, New/Open, recents with peek and undoable Clear).
+- Scrolling: outline click scrolls smoothly; the lit row follows the scroll position, not the caret; the outline list follows it.
+- Parity unchanged: probe 51/53, mouse 8/8, Word paste OK; npm test and build pass; Electron smoke passes.
+- Mac DMG is ad-hoc signed and passes codesign deep strict verification (the 0.2.0 one wasn't: that was "damaged").
+- Old releases v0.1.0 and v0.2.0 deleted, and one new v0.1.0 published from the merge commit.
+Results:
+- [x] chrome + home ported from the prototype's own CSS/JS (side.css, unslop.css, home.css, top-api.js Classic, kit.js, beam.js)
+- [x] probe 51/53, mouse 8/8, paste OK, smoke OK (Home at launch, Esc closes, openPath refuses unpicked files)
+- [x] big file: scroll median frame 16.7ms with the outline tracking; jump to the last heading lands at 16px
+Decisions:
+- Toolbar keeps the prototype's grid; Send became Read (no send-to-speech yet), line weight became Shrink.
+- Recents reopen through a main-process list of dialog-picked paths (userData/recent-paths.json); nothing else is readable.
+- Home has no favorites, tournament line or speech-doc button: there's no real data behind them yet.
+Failed attempts:
+- Native smooth scrollTo with a scrollend correction landed thousands of px short on big files (estimated heights
+  from content-visibility). A rAF scroll that re-reads the target each frame lands exactly.
+
 ## Next action
 Merge PR #2. Next by value: card numbering, send-to-speech, comments. Paste from a live Word clipboard once on a machine where opening Word is fine.

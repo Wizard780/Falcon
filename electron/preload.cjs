@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld('falcon', {
   platform: process.platform,
   readClipboardText: () => ipcRenderer.invoke('falcon:read-clipboard-text'),
   openFile: () => ipcRenderer.invoke('falcon:open-file'),
+  openPath: (p) => ipcRenderer.invoke('falcon:open-path', p),
   saveFile: (opts) => ipcRenderer.invoke('falcon:save-file', opts),
 });

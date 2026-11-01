@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const html = fs.readFileSync('tests/fixtures/word-clipboard.html', 'utf8');
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const b = await chromium.launch(); const p = await b.newPage();
-await p.goto(process.env.FALCON_URL || 'http://localhost:5173/'); await p.waitForSelector('.ProseMirror');
+await p.goto(process.env.FALCON_URL || 'http://localhost:5173/'); await p.waitForSelector('.ProseMirror'); await p.keyboard.press('Escape'); await p.waitForTimeout(400); // close Home
 await p.locator('.ProseMirror').click(); await p.keyboard.press(`${MOD}+a`); await p.keyboard.press('Backspace');
 await p.evaluate((html) => {
   const dt = new DataTransfer();

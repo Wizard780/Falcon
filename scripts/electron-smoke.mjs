@@ -11,6 +11,11 @@ const win = await app.firstWindow();
 const errors = [];
 win.on('pageerror', (e) => errors.push(e.message));
 await win.waitForSelector('.ProseMirror');
+const homeAtLaunch = await win.evaluate(() => !!document.querySelector('.home.open'));
+await win.keyboard.press('Escape'); await win.waitForTimeout(400); // close Home
+const homeAfterEsc = await win.evaluate(() => !!document.querySelector('.home.open'));
+// reopening by path only works for files picked in a dialog before
+const strayOpen = await win.evaluate(() => window.falcon.openPath('/etc/hosts.docx').then(() => 'opened', (e) => 'refused: ' + e.message));
 await win.click('.ProseMirror');
 await win.keyboard.press(`${mod}+a`); await win.keyboard.press('Backspace');
 await win.keyboard.type('Electron tag'); await win.keyboard.press('F7'); await win.keyboard.press('Enter');
@@ -35,7 +40,9 @@ console.log(map, '\nplatform:', platform, '| bridge:', bridge, '| visible:', vis
 const want = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.exitCode = 1; } };
 // emphasis replaced the underline on "app"; highlight stays on "app"
 want(map === 'tag: Electron tag\nnormal: Body text in the [desktop ]{emphasis}[app]{emphasis+highlight:yellow}', `marks: ${JSON.stringify(map)}`);
-want(bridge === 'openFile,platform,readClipboardText,saveFile', 'preload bridge');
+want(bridge === 'openFile,openPath,platform,readClipboardText,saveFile', 'preload bridge');
+want(homeAtLaunch && !homeAfterEsc, 'Home shows at launch and Esc closes it');
+want(strayOpen.startsWith('refused'), `openPath refuses files never picked: ${strayOpen}`);
 want(visible.every((v) => !v), 'window stayed hidden (checked before any CI-only capture)');
 want(process.platform === 'darwin' || menu.length === 0, 'no menu bar on Windows/Linux (F10 and Alt belong to the editor)');
 want(!errors.length, `page errors: ${errors.join('; ')}`);

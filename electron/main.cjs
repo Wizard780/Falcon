@@ -43,6 +43,23 @@ function createWindow() {
 const DOCX = [{ name: 'Word documents', extensions: ['docx'] }];
 // The page can only save over files the user picked in a dialog this session, and only .docx.
 const userPaths = new Set();
+// Files picked in a dialog in earlier sessions, so Home and the files panel can reopen them.
+// Only paths in this list (and only .docx) can be opened without a dialog.
+const MAX_RECENT = 50;
+const recentFile = () => path.join(app.getPath('userData'), 'recent-paths.json');
+let recentPaths = null;
+async function loadRecent() {
+  if (recentPaths) return recentPaths;
+  try { recentPaths = JSON.parse(await fs.readFile(recentFile(), 'utf8')).filter((p) => typeof p === 'string'); }
+  catch { recentPaths = []; }
+  return recentPaths;
+}
+async function rememberPath(p) {
+  userPaths.add(p);
+  const list = await loadRecent();
+  recentPaths = [p, ...list.filter((x) => x !== p)].slice(0, MAX_RECENT);
+  try { await fs.writeFile(recentFile(), JSON.stringify(recentPaths)); } catch { /* recents are a convenience */ }
+}
 
 ipcMain.handle('falcon:read-clipboard-text', () => clipboard.readText());
 ipcMain.handle('falcon:open-file', async (e) => {
@@ -50,8 +67,16 @@ ipcMain.handle('falcon:open-file', async (e) => {
   const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: DOCX });
   if (r.canceled || !r.filePaths[0]) return null;
   const p = path.resolve(r.filePaths[0]);
-  userPaths.add(p);
+  await rememberPath(p);
   return { name: path.basename(p), path: p, data: new Uint8Array(await fs.readFile(p)) };
+});
+ipcMain.handle('falcon:open-path', async (_e, p) => {
+  if (typeof p !== 'string') throw new Error('bad open request');
+  const abs = path.resolve(p);
+  if (!abs.toLowerCase().endsWith('.docx') || !(await loadRecent()).includes(abs)) throw new Error('Open this file with Open first');
+  const data = new Uint8Array(await fs.readFile(abs));
+  await rememberPath(abs);
+  return { name: path.basename(abs), path: abs, data };
 });
 ipcMain.handle('falcon:save-file', async (e, opts) => {
   if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
@@ -62,7 +87,7 @@ ipcMain.handle('falcon:save-file', async (e, opts) => {
     const r = await dialog.showSaveDialog(win, { defaultPath: name, filters: DOCX });
     if (r.canceled || !r.filePath) return null;
     p = path.resolve(r.filePath.toLowerCase().endsWith('.docx') ? r.filePath : `${r.filePath}.docx`);
-    userPaths.add(p);
+    await rememberPath(p);
   }
   if (!p.toLowerCase().endsWith('.docx')) throw new Error('Falcon only saves .docx files');
   // write to a temp file first so a crash mid-save never truncates the real file
