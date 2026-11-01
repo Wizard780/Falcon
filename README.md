@@ -15,6 +15,12 @@ npm run dist             # build the installer for this OS (.dmg on Mac, .exe on
 
 CI (`.github/workflows/build.yml`) runs the tests, then builds the `.dmg` on macOS and the `.exe` on Windows.
 
+## Install on a Mac
+
+Falcon isn't signed with an Apple Developer ID yet, so the first launch is blocked.
+Drag Falcon to Applications, open it once, then go to System Settings > Privacy & Security and click **Open Anyway**.
+Or run `xattr -cr /Applications/Falcon.app` in Terminal, then open it normally.
+
 ## Keys
 
 | Key | Does |
