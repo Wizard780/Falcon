@@ -52,4 +52,4 @@ CM is a reference only. Read its manual and run its behavior, but write Falcon's
 - Leaving clicks inside a selection to the browser caused a late caret collapse after double-click. Now the editor handles every plain press.
 
 ## Next action
-Merge PR #2. Next by value: smart paste from Word tested on a real Word clipboard, card numbering, send-to-speech.
+Merge PR #2. Next by value: card numbering, send-to-speech, comments. Paste from a live Word clipboard once on a machine where opening Word is fine.
