@@ -4,8 +4,8 @@ import { history } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { DOMParser as PMDOMParser, type Node as PMNode } from 'prosemirror-model';
 import { EditorState, Plugin, PluginKey, TextSelection } from 'prosemirror-state';
-import { EditorView } from 'prosemirror-view';
-import { paintColorMark } from './commands';
+import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
+import { cardAround, paintColorMark } from './commands';
 import { activeColors, disarmPlainPaste, plainPasteArmed } from './host';
 import { falconKeymap } from './keymap';
 import { wordSelection } from './mouse';
@@ -51,6 +51,27 @@ const brush = new Plugin<{ kind: 'highlight' | 'shading' | null }>({
   },
 });
 
+/** Marks the paragraphs of the card (tag/analytic and its body) that holds the cursor. */
+const currentCard = new Plugin({
+  props: {
+    decorations(state) {
+      const doc = state.doc;
+      const c = cardAround(doc, state.selection.from);
+      if (!c) return null;
+      const head = doc.child(c.head);
+      if (head.attrs.style !== 'tag' && head.attrs.style !== 'analytic') return null;
+      const decos: Decoration[] = [];
+      let pos = 0;
+      for (let i = 0; i < c.end; i++) {
+        const n = doc.child(i);
+        if (i >= c.head) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-cur-card' }));
+        pos += n.nodeSize;
+      }
+      return DecorationSet.create(doc, decos);
+    },
+  },
+});
+
 /** Mod-V after a refused F2 pastes plain; Word/web HTML is cleaned of source styling. */
 const pastePlugin = new Plugin({
   props: {
@@ -81,6 +102,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       brush,
       pastePlugin,
       wordSelection(),
+      currentCard,
     ],
   });
 }

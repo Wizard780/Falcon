@@ -10,7 +10,7 @@
   --ink: #222222;
   --ui-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --doc-font: Calibri, Carlito, 'Helvetica Neue', Arial, sans-serif;
+  --doc-font: Calibri, Carlito, Arial, sans-serif;
   --zoom: 1;
 }
 
@@ -126,3 +126,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .desktop .toolbar, .desktop .rail, .desktop .status { -webkit-app-region: drag; }
 .desktop button, .desktop .popover, .desktop .split, .desktop .size-ctl { -webkit-app-region: no-drag; }
 .desktop.mac .rail { padding-top: 44px; }
+
+/* big files: the browser skips layout and paint for paragraphs that are off screen */
+.ProseMirror > * { content-visibility: auto; contain-intrinsic-size: auto 1.3em; }
+
+/* the card the cursor is in gets a thin bar on its left */
+.f-cur-card { position: relative; }
+.f-cur-card::before { content: ''; position: absolute; left: -14px; top: 0; bottom: 0; width: 1px; background: #c8c8cc; }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import { TextSelection } from 'prosemirror-state';
@@ -38,15 +38,17 @@ export function App() {
       const saved = localStorage.getItem(AUTOSAVE_KEY);
       if (saved) doc = PMNode.fromJSON(schema, JSON.parse(saved));
     } catch { /* corrupt autosave: start blank */ }
-    let timer = 0;
+    let saveTimer = 0, outlineTimer = 0;
     const view = createView(mountRef.current!, (v) => {
       setTick((t) => t + 1);
       if (v.state.doc !== lastDoc.current) {
         lastDoc.current = v.state.doc;
-        setDocVersion((n) => n + 1);
         setDirty(true);
-        window.clearTimeout(timer);
-        timer = window.setTimeout(() => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(v.state.doc.toJSON())), 800);
+        // the outline and word count walk the whole doc: refresh them when typing pauses, not per keystroke
+        window.clearTimeout(outlineTimer);
+        outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
+        window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(() => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(v.state.doc.toJSON())), 800);
       }
     }, doc);
     lastDoc.current = view.state.doc;
@@ -119,14 +121,14 @@ export function App() {
   const cur = view ? currentItem(outline, view.state.selection.from) : -1;
   const brush = view ? brushKey.getState(view.state)?.kind ?? null : null;
 
-  const jump = (item: OutlineItem) => {
+  const jump = useCallback((item: OutlineItem) => {
     const v = viewRef.current!;
     v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, item.pos + 1)));
     const el = v.nodeDOM(item.pos) as HTMLElement | null;
     const sc = v.dom.closest('.f-scroll') as HTMLElement;
     if (el && sc) sc.scrollTop = el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 24;
     v.focus();
-  };
+  }, []);
 
   const colorButton = (kind: 'highlight' | 'shading') => {
     const v = viewRef.current;
@@ -215,7 +217,8 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
       </span>
     );
   };
-  const fontSize = sel?.size ?? null;
+  const STYLE_PT: Record<string, number> = { pocket: 26, hat: 22, block: 16, tag: 13, analytic: 13 };
+  const fontSize = sel?.size ?? (sel?.marks.has('cite') ? 13 : STYLE_PT[sel?.style ?? ''] ?? null);
   const bump = (d: number) => run((state, dispatch) => {
     const { from, to, empty } = state.selection;
     if (empty) return false;
@@ -265,7 +268,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
 
 const SHADES = ['#D9D9D9', '#BFBFBF', '#F2F2F2', '#FFF2CC', '#FCE4D6', '#E2EFDA', '#DDEBF7', '#EDE7F6', '#FDE2E4', '#C6E0B4', '#BDD7EE', '#F8CBAD', '#FFE699', '#A9D08E', '#9BC2E6'];
 
-function OutlineRows({ items, depth, cur, onJump }: { items: OutlineItem[]; depth: number; cur: number; onJump: (i: OutlineItem) => void }) {
+const OutlineRows = memo(function OutlineRows({ items, depth, cur, onJump }: { items: OutlineItem[]; depth: number; cur: number; onJump: (i: OutlineItem) => void }) {
   const [folded, setFolded] = useState<Set<number>>(new Set());
   const [opened, setOpened] = useState<Set<number>>(new Set());
   useEffect(() => { setFolded(new Set()); setOpened(new Set()); }, [depth]);
@@ -298,4 +301,4 @@ function OutlineRows({ items, depth, cur, onJump }: { items: OutlineItem[]; dept
       ))}
     </div>
   );
-}
+});
