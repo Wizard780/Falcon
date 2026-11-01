@@ -23,7 +23,19 @@ async function shoot(which) {
     el?.scrollIntoView({ block: 'start' });
   }, needle);
   await p.waitForTimeout(500);
-  await p.screenshot({ path: `shots/side-${which}.png` });
+  if (process.env.READ) {
+    // enter read mode (CM: the eye button in its ribbon; Falcon: Mod-Shift-R), then try typing
+    if (which === 'cm') await p.locator('button[title*="ead mode" i], button[aria-label*="ead mode" i]').first().click();
+    else { await p.locator('.ProseMirror').click({ position: { x: 5, y: 5 } }); await p.keyboard.press('Meta+Shift+r'); }
+    await p.waitForTimeout(600);
+    const before = await p.evaluate(() => document.querySelector('.ProseMirror').textContent.length);
+    await p.keyboard.type('zzz'); await p.keyboard.press('Backspace'); await p.keyboard.press('F9');
+    const after = await p.evaluate(() => document.querySelector('.ProseMirror').textContent.length);
+    console.log(which, 'typing changed doc length by', after - before);
+    await p.evaluate((needle) => [...document.querySelectorAll('.ProseMirror h4')].find((e) => e.textContent.includes(needle))?.scrollIntoView({ block: 'start' }), needle);
+    await p.waitForTimeout(300);
+  }
+  await p.screenshot({ path: `shots/side-${which}${process.env.READ ? '-read' : ''}.png` });
   await p.close();
 }
 await shoot('cm');

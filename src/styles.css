@@ -129,6 +129,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 
 /* big files: the browser skips layout and paint for paragraphs that are off screen */
 .ProseMirror > * { content-visibility: auto; contain-intrinsic-size: auto 1.3em; }
+.ProseMirror > .f-live { content-visibility: visible; }
 
 /* the card the cursor is in gets a thin bar on its left */
 .f-cur-card { position: relative; }
@@ -142,3 +143,16 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .findbar button:hover { background: var(--chrome-hover); color: var(--chrome-text); }
 .f-find { background: rgba(255, 170, 0, 0.35); border-radius: 2px; }
 .f-find-cur { background: rgba(255, 120, 0, 0.7); }
+
+/* the extra stretches of a Ctrl/Cmd-click multi-selection */
+.f-multisel { background: rgba(80, 140, 255, 0.35); }
+
+/* read mode: only what gets read aloud */
+.f-read .f-read-hidden { display: none; }
+.f-read .f-read-gap { display: inline; font-size: 0; }
+.f-read .f-read-gap::after { content: ' '; font-size: 11pt; }
+.f-read p.f-read-flow { display: inline; }
+.f-read p.f-read-flow::after { content: ' '; }
+/* a styled run whose text is all hidden must not leave an empty box or underline behind */
+.f-read :is(p.f-normal, p.f-undertag) :is(.f-emphasis, .f-underline, .f-highlight, .f-shading, .f-cite, .f-size, strong, em):not(:has(.f-read-shown, .f-read-gap)) { display: none; }
+.f-read { caret-color: transparent; }

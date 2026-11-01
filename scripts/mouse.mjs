@@ -1,13 +1,14 @@
 // Mouse gestures against CardMirror (cm) or Falcon: reports the selected text after each.
 import { chromium } from 'playwright';
 const which = process.argv[2] || 'falcon';
-const url = which === 'cm' ? 'http://localhost:5301/' : 'http://localhost:5173/';
+const url = which === 'cm' ? 'http://localhost:5301/' : (process.env.FALCON_URL || 'http://localhost:5173/');
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: 1400, height: 900 } });
 await p.goto(url); await p.waitForTimeout(1500);
 if (which === 'cm') { await p.keyboard.press('Escape'); await p.getByText('New document', { exact: true }).first().click(); await p.waitForTimeout(1000); }
 await p.locator('.ProseMirror').first().click();
-await p.keyboard.press('Meta+a'); await p.keyboard.press('Backspace');
+await p.keyboard.press(`${MOD}+a`); await p.keyboard.press('Backspace');
 await p.keyboard.type('The rapid expansion of artificial intelligence workloads has pushed utilities to their limits.');
 await p.keyboard.press('Enter');
 await p.keyboard.type('Second paragraph of body text here.');
@@ -40,4 +41,11 @@ out.shiftClickAfterDouble = await selected();
 a = await box('rapid', 2); await p.mouse.click(a.x, a.y); await p.mouse.down(); await p.mouse.up();
 out.clickCaret = JSON.stringify(await selected());
 console.log(JSON.stringify(out, null, 1));
+if (which !== 'cm') {
+  const fs = await import('node:fs');
+  const cm = JSON.parse(fs.readFileSync('tests/cardmirror/mouse.json', 'utf8'));
+  const diffs = Object.keys(cm).filter((k) => cm[k] !== out[k]);
+  console.log(diffs.length ? `MOUSE DIFFERS from CardMirror: ${diffs.join(', ')}` : `mouse: all ${Object.keys(cm).length} gestures match CardMirror`);
+  if (diffs.length) process.exitCode = 1;
+}
 await b.close();

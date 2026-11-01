@@ -15,9 +15,34 @@ jobs:
       - run: npx tsc
       - run: npm test
 
+  # The editing mechanics compared with CardMirror's recorded behavior (tests/cardmirror), on each OS.
+  parity:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run build
+      - name: Keyboard and mouse parity with CardMirror
+        shell: bash
+        run: |
+          npx vite preview --port 5173 --strictPort &
+          npx wait-on tcp:5173
+          node scripts/probe.mjs falcon | tail -40
+          node scripts/mouse.mjs falcon | tail -1
+          node scripts/paste-word.mjs | tail -1
+
   package:
     needs: test
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -30,6 +55,17 @@ jobs:
       - run: npx electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      # launch the packaged app (hidden window), type and format a card with the real keys, and check it
+      - name: Smoke test the packaged app
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then exe="release/win-unpacked/Falcon.exe"; else exe="$(ls -d release/mac*/Falcon.app)/Contents/MacOS/Falcon"; fi
+          FALCON_EXE="$exe" node scripts/electron-smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.os }}
+          path: shots/electron-*.png
       - uses: actions/upload-artifact@v4
         with:
           name: falcon-${{ matrix.os }}

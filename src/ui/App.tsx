@@ -12,8 +12,21 @@ import { selectionState } from './selection-state';
 import { Icon } from './icons';
 import { openDocument, saveDocument, type DocMeta } from './files';
 import { clearFind, findInfo, setQuery, step } from '../editor/find';
+import { isReading, toggleRead } from '../editor/read';
 
 const AUTOSAVE_KEY = 'falcon.autosave.v1';
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+
+// Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
+const AUTOSAVE_MAX = 400_000;
+
+/** Crash-recovery copy of the open doc. Returns false when the doc is too big to keep a copy. */
+function autosave(doc: PMNode): boolean {
+  if (doc.content.size > AUTOSAVE_MAX) { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+  try { localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(doc.toJSON())); return true; }
+  catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+}
+const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 0));
 
 export function App() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -30,10 +43,18 @@ export function App() {
   const findRef = useRef<HTMLInputElement>(null);
   const lastDoc = useRef<PMNode | null>(null);
 
+  const warnedBig = useRef(false);
+  const warnBig = () => {
+    if (warnedBig.current) return;
+    warnedBig.current = true;
+    flashRef.current?.('This file is too big for crash recovery. Save often (⌘S).');
+  };
+  const flashRef = useRef<((m: string) => void) | null>(null);
   const flash = useCallback((msg: string) => {
     setToast(msg);
-    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 2200);
+    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), msg.includes('crash recovery') ? 6000 : 2200);
   }, []);
+  flashRef.current = flash;
 
   useEffect(() => {
     let doc: PMNode | undefined;
@@ -41,6 +62,8 @@ export function App() {
       const saved = localStorage.getItem(AUTOSAVE_KEY);
       if (saved) doc = PMNode.fromJSON(schema, JSON.parse(saved));
     } catch { /* corrupt autosave: start blank */ }
+    // a recovered doc isn't saved anywhere yet, so New/Open must ask before dropping it
+    if (doc && doc.textContent.trim()) setDirty(true);
     let saveTimer = 0, outlineTimer = 0;
     const view = createView(mountRef.current!, (v) => {
       setTick((t) => t + 1);
@@ -51,7 +74,7 @@ export function App() {
         window.clearTimeout(outlineTimer);
         outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
         window.clearTimeout(saveTimer);
-        saveTimer = window.setTimeout(() => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(v.state.doc.toJSON())), 800);
+        saveTimer = window.setTimeout(() => whenIdle(() => { if (!autosave(v.state.doc)) warnBig(); }), 800);
       }
     }, doc);
     lastDoc.current = view.state.doc;
@@ -81,30 +104,38 @@ export function App() {
     setMeta(m);
     setDirty(false);
     setDocVersion((n) => n + 1);
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(doc.toJSON()));
+    const backedUp = autosave(doc);
+    warnedBig.current = !backedUp; // the open message carries the warning
     v.focus();
     setTick((t) => t + 1);
+    return backedUp;
   }, []);
 
-  const fileNew = useCallback(() => replaceDoc(emptyDoc(), { name: 'Untitled' }), [replaceDoc]);
+  const dirtyRef = useRef(false);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  const okToDiscard = () => !dirtyRef.current || window.confirm('Discard unsaved changes?');
+  const fileNew = useCallback(() => { if (okToDiscard()) replaceDoc(emptyDoc(), { name: 'Untitled' }); }, [replaceDoc]);
   const fileOpen = useCallback(async () => {
+    if (!okToDiscard()) return;
     try {
       const r = await openDocument();
-      if (r) { replaceDoc(r.doc, r.meta); flash(`Opened ${r.meta.name}`); }
+      if (r) flash(replaceDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${IS_MAC ? '⌘S' : 'Ctrl+S'}).`);
     } catch (e) { flash(`Couldn't open: ${(e as Error).message}`); }
   }, [replaceDoc, flash]);
   const fileSave = useCallback(async (as = false) => {
     const v = viewRef.current!;
+    const saved = v.state.doc;
     try {
-      const m = await saveDocument(v.state.doc, meta, as);
-      if (m) { setMeta(m); setDirty(false); flash(`Saved ${m.name}`); }
+      const m = await saveDocument(saved, meta, as);
+      // typing during the save keeps the doc marked unsaved
+      if (m) { setMeta(m); setDirty(v.state.doc !== saved); flash(`Saved ${m.name}`); }
     } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
   }, [meta, flash]);
 
   // app-level shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey; // Ctrl-N/O/F are caret keys on macOS
       if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); void fileSave(e.shiftKey); }
       else if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }
       else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); void fileOpen(); }
@@ -125,8 +156,9 @@ export function App() {
   const cur = view ? currentItem(outline, view.state.selection.from) : -1;
   const brush = view ? brushKey.getState(view.state)?.kind ?? null : null;
 
-  const jump = useCallback((item: OutlineItem) => {
+  const jump = useCallback((stale: OutlineItem, index: number) => {
     const v = viewRef.current!;
+    const item = buildOutline(v.state.doc)[index] ?? stale;
     v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, item.pos + 1)));
     const el = v.nodeDOM(item.pos) as HTMLElement | null;
     const sc = v.dom.closest('.f-scroll') as HTMLElement;
@@ -152,6 +184,7 @@ export function App() {
         <button title="Open (⌘O)" onClick={() => void fileOpen()}><Icon name="folder" /></button>
         <button title="Save (⌘S)" onClick={() => void fileSave()}><Icon name="save" /></button>
         <button title="Outline" className={showOutline ? 'on' : ''} onClick={() => setShowOutline((s) => !s)}><Icon name="outline" /></button>
+        <button title={`Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'}): only what's read aloud, keyboard locked; Space drops a marker`} className={view && isReading(view.state) ? 'on' : ''} onClick={() => run(toggleRead)}><Icon name="eye" /></button>
         <div className="grow" />
       </nav>
 
@@ -193,6 +226,7 @@ export function App() {
         <span>Σ</span>
         <span>Doc: {words} · Reader 1: {mmss(words / 200)} · Reader 2: {mmss(words / 300)}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
         {brush && <span className="dirty">Paintbrush on · Esc to stop</span>}
+        {view && isReading(view.state) && <span className="dirty">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
         <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))}>−</button>
         <button className="zoom" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
@@ -286,9 +320,11 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
 
 const SHADES = ['#D9D9D9', '#BFBFBF', '#F2F2F2', '#FFF2CC', '#FCE4D6', '#E2EFDA', '#DDEBF7', '#EDE7F6', '#FDE2E4', '#C6E0B4', '#BDD7EE', '#F8CBAD', '#FFE699', '#A9D08E', '#9BC2E6'];
 
-const OutlineRows = memo(function OutlineRows({ items, depth, cur, onJump }: { items: OutlineItem[]; depth: number; cur: number; onJump: (i: OutlineItem) => void }) {
-  const [folded, setFolded] = useState<Set<number>>(new Set());
-  const [opened, setOpened] = useState<Set<number>>(new Set());
+const OutlineRows = memo(function OutlineRows({ items, depth, cur, onJump }: { items: OutlineItem[]; depth: number; cur: number; onJump: (item: OutlineItem, index: number) => void }) {
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  const [opened, setOpened] = useState<Set<string>>(new Set());
+  // folds follow the heading (level + text), so typing above it doesn't move them to another heading
+  const keyOf = (item: OutlineItem) => `${item.level}:${item.text}`;
   useEffect(() => { setFolded(new Set()); setOpened(new Set()); }, [depth]);
   const rows: { item: OutlineItem; i: number; open: boolean }[] = [];
   let hideBelow = Infinity;
@@ -297,19 +333,20 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, onJump }: { i
     hideBelow = Infinity;
     const visibleByDepth = item.level <= depth;
     if (!visibleByDepth) return;
-    const open = item.hasKids && (folded.has(item.pos) ? false : item.level < depth || opened.has(item.pos));
+    const open = item.hasKids && (folded.has(keyOf(item)) ? false : item.level < depth || opened.has(keyOf(item)));
     rows.push({ item, i, open });
     if (!open) hideBelow = item.level;
   });
   const toggle = (item: OutlineItem, open: boolean) => {
-    if (open) { setFolded((s) => new Set(s).add(item.pos)); setOpened((s) => { const n = new Set(s); n.delete(item.pos); return n; }); }
-    else { setOpened((s) => new Set(s).add(item.pos)); setFolded((s) => { const n = new Set(s); n.delete(item.pos); return n; }); }
+    const k = keyOf(item);
+    if (open) { setFolded((s) => new Set(s).add(k)); setOpened((s) => { const n = new Set(s); n.delete(k); return n; }); }
+    else { setOpened((s) => new Set(s).add(k)); setFolded((s) => { const n = new Set(s); n.delete(k); return n; }); }
   };
   return (
     <div className="rows">
       {rows.map(({ item, i, open }) => (
         <div key={item.pos} className={`orow l${item.level}${i === cur ? ' cur' : ''}`} style={{ paddingLeft: 4 + (item.level - 1) * 14 }}
-          onMouseDown={(e) => { e.preventDefault(); onJump(item); }} onDoubleClick={() => item.hasKids && toggle(item, open)}>
+          onMouseDown={(e) => { e.preventDefault(); onJump(item, i); }} onDoubleClick={() => item.hasKids && toggle(item, open)}>
           <span className="tw" onMouseDown={(e) => { if (item.hasKids) { e.preventDefault(); e.stopPropagation(); toggle(item, open); } }}>
             {item.hasKids && <Icon name={open ? 'chevron' : 'chevronRight'} />}
           </span>

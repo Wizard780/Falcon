@@ -2,7 +2,7 @@ import { baseKeymap } from 'prosemirror-commands';
 import { dropCursor } from 'prosemirror-dropcursor';
 import { history } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
-import { DOMParser as PMDOMParser, type Node as PMNode } from 'prosemirror-model';
+import { DOMParser as PMDOMParser, Slice, type Node as PMNode } from 'prosemirror-model';
 import { EditorState, Plugin, PluginKey, TextSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { cardAround, paintColorMark } from './commands';
@@ -12,6 +12,8 @@ import { wordSelection } from './mouse';
 import { schema } from './schema';
 import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
+import { multiSelectionPlugin } from './multi';
+import { readPlugin } from './read';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -52,21 +54,29 @@ const brush = new Plugin<{ kind: 'highlight' | 'shading' | null }>({
   },
 });
 
-/** Marks the paragraphs of the card (tag/analytic and its body) that holds the cursor. */
-const currentCard = new Plugin({
+/**
+ * Two paragraph classes driven by the selection:
+ * - f-live on the paragraphs holding the cursor, which always lay out normally (the off-screen
+ *   layout skip in styles.css would otherwise misplace the caret in a just-created paragraph);
+ * - f-cur-card on the card (tag/analytic and its body) that holds the cursor, for the left bar.
+ */
+const selectionClasses = new Plugin({
   props: {
     decorations(state) {
       const doc = state.doc;
-      const c = cardAround(doc, state.selection.from);
-      if (!c) return null;
-      const head = doc.child(c.head);
-      if (head.attrs.style !== 'tag' && head.attrs.style !== 'analytic') return null;
       const decos: Decoration[] = [];
-      let pos = 0;
-      for (let i = 0; i < c.end; i++) {
-        const n = doc.child(i);
-        if (i >= c.head) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-cur-card' }));
-        pos += n.nodeSize;
+      const live = new Set<number>();
+      for (const $p of [state.selection.$anchor, state.selection.$head]) if ($p.depth >= 1) live.add($p.before(1));
+      for (const pos of live) decos.push(Decoration.node(pos, pos + doc.nodeAt(pos)!.nodeSize, { class: 'f-live' }));
+      const c = cardAround(doc, state.selection.head);
+      const head = c && doc.child(c.head);
+      if (c && head && (head.attrs.style === 'tag' || head.attrs.style === 'analytic')) {
+        let pos = 0;
+        for (let i = 0; i < c.end; i++) {
+          const n = doc.child(i);
+          if (i >= c.head) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-cur-card' }));
+          pos += n.nodeSize;
+        }
       }
       return DecorationSet.create(doc, decos);
     },
@@ -77,6 +87,12 @@ const currentCard = new Plugin({
 const pastePlugin = new Plugin({
   props: {
     transformPastedHTML: (html) => cleanPastedHTML(html),
+    // a pasted tag or heading keeps its style instead of melting into the line it lands on
+    transformPasted: (slice) => {
+      const first = slice.content.firstChild;
+      if (slice.openStart > 0 && first?.isTextblock && first.attrs.style !== 'normal') return new Slice(slice.content, 0, slice.openEnd);
+      return slice;
+    },
     handlePaste: (view, ev) => {
       if (!plainPasteArmed) return false;
       disarmPlainPaste();
@@ -96,6 +112,8 @@ export function createState(doc: PMNode = emptyDoc()) {
   return EditorState.create({
     doc,
     plugins: [
+      readPlugin, // first, so its keyboard lock runs before the formatting keys
+      multiSelectionPlugin,
       falconKeymap(),
       keymap(baseKeymap),
       history({ newGroupDelay: 500 }),
@@ -103,7 +121,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       brush,
       pastePlugin,
       wordSelection(),
-      currentCard,
+      selectionClasses,
       findPlugin,
     ],
   });

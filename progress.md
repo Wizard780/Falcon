@@ -29,7 +29,7 @@ CM is a reference only. Read its manual and run its behavior, but write Falcon's
 ## Known differences from CM
 - F5 (Hat) and Alt-F8 (copy previous cite): CM's web build can't use these keys in the browser, so the probe
   shows a difference. Falcon does what CM's manual describes.
-- Ctrl/Cmd-click multi-range selection, read mode, numbering, comments, multi-doc workspace, collab, and AI aren't built yet.
+- Card numbering, comments, multi-doc workspace, collab, AI, and installer signing aren't built yet.
 - Native drag-and-drop of selected text is off (CM's page drag also needs Mod-Shift-Alt).
 
 ## Stages (results)
@@ -41,13 +41,15 @@ CM is a reference only. Read its manual and run its behavior, but write Falcon's
 - [x] electron shell: headless smoke test passes; packaged .app launches; saves limited to user-chosen .docx paths
 - [x] perf: 10.8k-paragraph file types at ~22ms dispatch-to-frame (tiny doc floor is 16.7ms), opens in ~3s
 - [x] find bar, heading jumps, card moving
-- [ ] subagent review, PR, CI green
+- [x] subagent review, PR #1 merged, CI green
+- [x] release v0.1.0 published (CI-built arm64 dmg + Windows NSIS exe): https://github.com/Wizard780/Falcon/releases/tag/v0.1.0
 
 ## Failed attempts
 - Electron in tests: ELECTRON_RUN_AS_NODE=1 is inherited from the host app here and turns Electron into Node. Scripts unset it.
 - Hidden Electron windows have no OS focus, so the browser's own caret keys (Shift-Arrow) do nothing in tests. The smoke test selects through the editor.
 - CM's Open uses showOpenFilePicker. The side-by-side script deletes it so CM falls back to a file input.
+- Bisecting the 'oB' typing bug by commit was misleading: it was timing-dependent. A pause sweep (fails at 0ms, passes at 50ms) pointed at layout, not code.
 - Leaving clicks inside a selection to the browser caused a late caret collapse after double-click. Now the editor handles every plain press.
 
 ## Next action
-Fix review findings, push, open the PR, watch CI.
+Merge PR #2. Next by value: card numbering, send-to-speech, comments. Paste from a live Word clipboard once on a machine where opening Word is fine.
