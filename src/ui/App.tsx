@@ -47,6 +47,7 @@ function scrollToPos(view: EditorView, pos: number) {
   const dur = Math.min(700, 300 + Math.abs(target() - from) / 20);
   let raf = 0, still = 0;
   const step = (now: number) => {
+    if (!el.isConnected) { stopScroll(); return; }
     const t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 3);
     const goal = target();
     sc.scrollTop = from + (goal - from) * e;
@@ -169,15 +170,22 @@ export function App() {
   const fileOpen = useCallback(async () => {
     if (!okToDiscard()) return;
     try {
+      const before = viewRef.current?.state.doc;
       const r = await openDocument();
-      if (r) opened(r);
+      if (r && (viewRef.current?.state.doc === before || window.confirm('Discard unsaved changes?'))) opened(r);
     } catch (e) { flash(`Couldn't open: ${(e as Error).message}`); }
   }, [opened, flash]);
   const openRecent = useCallback(async (r: Recent) => {
     if (r.path && r.path === meta.path) { setHomeOpen(false); return; }
     if (!r.path || !bridge.openPath) { void fileOpen(); return; }
     if (!okToDiscard()) return;
-    try { opened(await openPath(r.path)); } catch (e) { flash(`Couldn't open ${r.name}: ${(e as Error).message}`); }
+    const before = viewRef.current?.state.doc;
+    try {
+      const got = await openPath(r.path);
+      // edits made while the file was loading need their own confirmation
+      if (viewRef.current?.state.doc !== before && !window.confirm('Discard unsaved changes?')) return;
+      opened(got);
+    } catch (e) { flash(`Couldn't open ${r.name}: ${(e as Error).message}`); }
   }, [meta.path, opened, fileOpen, flash]);
   const fileSave = useCallback(async (as = false) => {
     const v = viewRef.current!;
@@ -194,6 +202,11 @@ export function App() {
   // app-level shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // AltGr arrives as Ctrl+Alt on Windows: those keys type characters (AltGr+ß is "\\"), never shortcuts
+      if (e.altKey || e.getModifierState?.('AltGraph')) return;
+      const v = viewRef.current;
+      // read mode locks the keyboard: nothing that swaps the document out
+      if (v && isReading(v.state) && /^[not]$/i.test(e.key)) return;
       const mod = IS_MAC ? e.metaKey : e.ctrlKey; // Ctrl-N/O/F are caret keys on macOS
       const k = e.key.toLowerCase();
       if (mod && k === 's') { e.preventDefault(); void fileSave(e.shiftKey); }
@@ -263,9 +276,10 @@ export function App() {
 
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
-      <Files current={{ name, path: meta.path }} recents={recents}
+      <Files inert={homeOpen} current={{ name, path: meta.path }} recents={recents}
         onHome={() => setHomeOpen(true)} onSearch={openFind} onRecent={(r) => void openRecent(r)} onCurrent={() => setHomeOpen(false)} />
 
+      <div className="covered" inert={homeOpen}>
       <Toolbar
         sel={sel}
         run={run}
@@ -309,10 +323,11 @@ export function App() {
         <button className="zoom" title={`Actual size (${MOD}0)`} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
         <button title={`Zoom in (${MOD}+)`} onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))}>+</button>
       </footer>
+      </div>
 
       <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents}
         onNew={fileNew} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)}
-        onClear={(keep) => setRecents(keep ?? [])} />
+        onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
       <div className={`toast${toast ? ' show' : ''}`}>{toast}</div>
     </div>
   );
@@ -322,7 +337,7 @@ const mmss = (min: number) => { const s = Math.round(min * 60); return `${Math.f
 
 // ---------- files: a slim strip on the far left; hovering it slides the files panel out ----------
 
-function Files(props: { current: { name: string; path?: string }; recents: Recent[]; onHome: () => void; onSearch: () => void; onRecent: (r: Recent) => void; onCurrent: () => void }) {
+function Files(props: { inert: boolean; current: { name: string; path?: string }; recents: Recent[]; onHome: () => void; onSearch: () => void; onRecent: (r: Recent) => void; onCurrent: () => void }) {
   const [open, setOpen] = useState(false);
   const timer = useRef(0);
   const stripRef = useRef<HTMLElement>(null);
@@ -360,7 +375,7 @@ function Files(props: { current: { name: string; path?: string }; recents: Recen
         <button className="fs-b" data-k="cur" data-on="" title={props.current.name} onClick={pick(props.onCurrent)}><SvgIcon name="doc" /></button>
         {others.map((r, i) => <button key={i} className="fs-b" data-k={`r${i}`} title={r.name} onClick={pick(() => props.onRecent(r))}><SvgIcon name="doc" /></button>)}
       </nav>
-      <aside ref={panelRef} className={`rail-panel${open ? ' open' : ''}`} onPointerEnter={enter} onPointerLeave={leave} aria-hidden={!open}>
+      <aside ref={panelRef} inert={props.inert && !open} className={`rail-panel${open ? ' open' : ''}`} onPointerEnter={enter} onPointerLeave={leave} aria-hidden={!open}>
         <div className="sb-head"><button className="sb-logo" data-k="logo" onClick={pick(props.onHome)}><SvgIcon name="logo" /></button><button className="sb-name" onClick={pick(props.onHome)}>Falcon</button></div>
         <button className="sb-search" data-k="search" onClick={pick(props.onSearch)}><SvgIcon name="search" /><span>Find</span><kbd>{MOD}F</kbd></button>
         <div className="sb-scroll">

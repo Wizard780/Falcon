@@ -290,3 +290,5 @@ button.b:active { transform: scale(.97); }
 
 .f-find { background: rgba(255, 170, 0, 0.35); border-radius: 2px; }
 .f-find-cur { background: rgba(255, 120, 0, 0.7); }
+.covered { display: contents; }
+.home:focus { outline: none; }

@@ -30,6 +30,7 @@ export function Home(props: {
   useEffect(() => {
     if (!open) return;
     scRef.current!.scrollTop = 0;
+    homeRef.current!.focus({ preventScroll: true }); // Tab starts inside Home, not in the covered editor
     const stops = [dots(bgRef.current!), clock(clockRef.current!)];
     let stopBeam = () => {};
     // wait a frame so the title has its final size before the beam measures it
@@ -69,7 +70,7 @@ export function Home(props: {
   const day = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const shown = undo ? [] : recents;
   return (
-    <section ref={homeRef} className={`home${open ? ' open' : ''}`} aria-label="Home" aria-hidden={!open} onPointerLeave={hidePeek}>
+    <section ref={homeRef} tabIndex={-1} className={`home${open ? ' open' : ''}`} aria-label="Home" aria-hidden={!open} onPointerLeave={hidePeek}>
       <div ref={bgRef} className="hm-bg" aria-hidden="true" />
       <div ref={scRef} className="hm-sc" onScroll={hidePeek}>
         <div className="hm-in">
