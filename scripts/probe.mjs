@@ -150,7 +150,7 @@ for (const [name, fn] of Object.entries(cases)) {
   catch (e) { res[name] = 'ERROR ' + e.message.split('\n')[0]; }
   console.log('### ' + name + '\n' + res[name]);
 }
-if (!only) fs.writeFileSync(`shots/probe-${which}.json`, JSON.stringify(res, null, 1));
+if (!only) { fs.mkdirSync('shots', { recursive: true }); fs.writeFileSync(`shots/probe-${which}.json`, JSON.stringify(res, null, 1)); }
 // CardMirror's recorded results (its code can't live in this repo; its behavior can)
 const BASELINE = 'tests/cardmirror/probe.json';
 // keys CardMirror's web build can't receive (F5 is reload; Alt-F8 doesn't reach the page on macOS)
