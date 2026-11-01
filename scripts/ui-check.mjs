@@ -19,15 +19,18 @@ await page.waitForTimeout(300);
 
 const results = [];
 const want = (ok, what) => { results.push(`${ok ? 'ok  ' : 'FAIL'} ${what}`); };
-const rows = () => page.$$eval('.doc-row', (r) => r.map((x) => (x.hasAttribute('data-on') ? '*' : '') + x.textContent.trim()));
+const rows = () => page.$$eval('.doc-row', (r) => r.map((x) => (x.hasAttribute('data-on') ? '*' : '') + x.querySelector('.doc-nm').getAttribute('aria-label')));
 const open = async (file) => {
-  const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('.fstrip [aria-label="Open…"]')]);
+  const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('.tools [aria-label="Open…"]')]);
   await fc.setFiles(file);
   await page.waitForFunction((n) => document.querySelectorAll('.doc-row').length >= n, 1);
   await page.waitForTimeout(400);
 };
 
-want(await page.$$eval('.fstrip button', (bs) => bs.map((x) => x.getAttribute('aria-label')).join(',')) === 'Home,New document,Open…,Save,Save As…,Find,Outline,Read mode,Settings', 'rail has Home, New, Open, Save, Save As, Find, Outline, Read, Settings');
+want(await page.$$eval('.tools button', (bs) => bs.map((x) => x.getAttribute('aria-label')).join(',')) === 'New document,Open…,Save,Save As…,Find,Outline,Read mode', 'tool row has New, Open, Save, Save As, Find, Outline, Read');
+want(await page.$$eval('.fstrip > button', (bs) => bs.map((x) => x.getAttribute('aria-label')).join(',')) === 'Home,Settings', 'rail has Home, the open files, Settings');
+{ const t = await page.$eval('.tools', (x) => { const r = x.getBoundingClientRect(), o = document.querySelector('.olp').getBoundingClientRect(); return r.bottom <= o.top && r.left >= o.left - 1 && r.right <= o.right + 1; });
+  want(t, 'tool row sits above the outline pane'); }
 await page.screenshot({ path: `${shots}/1-empty.png` });
 
 await open(a);
@@ -88,23 +91,45 @@ want(sz0 === '13' && sz1 === '18', `font size box shows 13 on a tag, then 18 aft
 // settings
 await page.click('.fstrip [aria-label="Settings"]');
 await page.waitForSelector('.st');
-await page.click('.st-step [aria-label="More time"]');
-want(await page.$eval('.b.timer', (x) => x.textContent) === '9:00', 'speech timer length follows Settings');
 await page.screenshot({ path: `${shots}/5-settings.png` });
+want(await page.$$eval('.st-navb', (x) => x.map((b) => b.textContent).join(',')) === 'Appearance,Editor,Keybindings,Speech and timers', 'Settings lists Appearance, Editor, Keybindings, Speech and timers');
+await page.click('.st-navb:has-text("Speech and timers")');
+await page.selectOption('select[aria-label="Speech length"]', '9');
+want(await page.$eval('.b.timer', (x) => x.textContent) === '9:00', 'speech timer length follows Settings');
+await page.click('.st-navb:has-text("Editor")');
+await page.click('.st [aria-label="Show outline pane"]');
+want(await page.$eval('.app', (x) => x.classList.contains('no-outline')), 'Settings switch hides the outline');
+await page.click('.st-seg button:has-text("2")');
+want(await page.$eval('.lv [data-lv="2"]', (x) => x.hasAttribute('data-on')), 'Settings depth sets the outline depth');
+await page.screenshot({ path: `${shots}/5b-settings-editor.png` });
+await page.click('.st-navb:has-text("Keybindings")');
+await page.screenshot({ path: `${shots}/5c-settings-keys.png` });
+await page.keyboard.press('/');
+await page.keyboard.type('zoom');
+want(await page.$$eval('.st-row .st-txt > span', (x) => x.map((e) => e.textContent).join(',')) === 'Zoom,Zoom in,Zoom out', `search finds the zoom rows: ${await page.$$eval('.st-row .st-txt > span', (x) => x.map((e) => e.textContent).join(','))}`);
+await page.screenshot({ path: `${shots}/5d-settings-search.png` });
+await page.keyboard.press('Escape'); // clears the search first
+want(!!(await page.$('.st')) && (await page.$eval('.st-search input', (x) => x.value)) === '', 'Esc in the search clears it and keeps Settings open');
+await page.click('.st-restore');
+await page.waitForTimeout(150);
+want(await page.$eval('.b.timer', (x) => x.textContent) === '8:00' && !(await page.$eval('.app', (x) => x.classList.contains('no-outline'))) && await page.$eval('.lv [data-lv="3"]', (x) => x.hasAttribute('data-on')),
+  'Restore defaults puts back 8:00, the outline, and depth 3');
+await page.click('.st-navb:has-text("Speech and timers")');
+await page.selectOption('select[aria-label="Speech length"]', '9');
 await page.keyboard.press('Escape');
 await page.waitForTimeout(100);
 want(!(await page.$('.st')), 'Esc closes Settings');
 
 // outline hide and back from the rail
-await page.click('.fstrip [aria-label="Outline"]');
+await page.click('.tools [aria-label="Outline"]');
 await page.waitForTimeout(300);
 const hidden = await page.$eval('.app', (x) => x.classList.contains('no-outline'));
-await page.click('.fstrip [aria-label="Outline"]');
+await page.click('.tools [aria-label="Outline"]');
 await page.waitForTimeout(300);
 want(hidden && !(await page.$eval('.app', (x) => x.classList.contains('no-outline'))), 'rail Outline button hides and brings back the outline');
 
 // new, then close
-await page.click('.fstrip [aria-label="New document"]');
+await page.click('.tools [aria-label="New document"]');
 await page.waitForTimeout(150);
 want((await rows()).length === 3, 'New adds a third document');
 await page.keyboard.press(`${mod}+w`);
@@ -118,7 +143,7 @@ want(r.length === 1 && r[0] === `*${base(b)}`, `closing the edited file asks, th
 await page.screenshot({ path: `${shots}/6-after-close.png` });
 
 // behind Settings and in read mode, nothing swaps the document out
-await page.click('.fstrip [aria-label="New document"]');
+await page.click('.tools [aria-label="New document"]');
 await page.waitForTimeout(150);
 await page.click('.fstrip [aria-label="Settings"]');
 await page.keyboard.press(`${mod}+w`);
@@ -127,11 +152,11 @@ await page.keyboard.press('Escape');
 await page.waitForTimeout(150);
 r = await rows();
 want(r.length === 2 && r[1].startsWith('*'), `Settings blocks ${mod}+W and Ctrl-Tab: ${JSON.stringify(r)}`);
-await page.click('.fstrip [aria-label="Read mode"]');
+await page.click('.tools [aria-label="Read mode"]');
 await page.keyboard.press('Control+Tab');
 await page.waitForTimeout(150);
 want((await rows())[1].startsWith('*'), 'read mode blocks Ctrl-Tab');
-await page.click('.fstrip [aria-label="Read mode"]');
+await page.click('.tools [aria-label="Read mode"]');
 await page.keyboard.press(`${mod}+w`);
 await page.waitForTimeout(150);
 
@@ -145,7 +170,7 @@ await page.waitForSelector('.ProseMirror');
 await page.waitForTimeout(300);
 r = await rows();
 await page.keyboard.press('Escape');
-await page.click(`.doc-row:has-text("${base(b)}") .doc-nm`);
+await page.click(`.doc-nm[aria-label*="${base(b)}"]`);
 await page.waitForTimeout(150);
 const kept = await page.evaluate(() => window.__falconView.state.doc.textContent.slice(0, 6));
 want(r.length === 2 && kept === 'KEEPME', `after a reload both files come back, unsaved edit included: ${JSON.stringify(r)} ${kept}`);
