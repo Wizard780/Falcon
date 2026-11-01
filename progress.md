@@ -48,7 +48,8 @@ CM is a reference only. Read its manual and run its behavior, but write Falcon's
 - Electron in tests: ELECTRON_RUN_AS_NODE=1 is inherited from the host app here and turns Electron into Node. Scripts unset it.
 - Hidden Electron windows have no OS focus, so the browser's own caret keys (Shift-Arrow) do nothing in tests. The smoke test selects through the editor.
 - CM's Open uses showOpenFilePicker. The side-by-side script deletes it so CM falls back to a file input.
+- Bisecting the 'oB' typing bug by commit was misleading: it was timing-dependent. A pause sweep (fails at 0ms, passes at 50ms) pointed at layout, not code.
 - Leaving clicks inside a selection to the browser caused a late caret collapse after double-click. Now the editor handles every plain press.
 
 ## Next action
-Fix review findings, push, open the PR, watch CI.
+Watch CI on the latest push. Next features by value: Ctrl/Cmd-click multi-range selection, read mode, smart paste from Word tested on a real Word clipboard.
