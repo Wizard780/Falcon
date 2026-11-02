@@ -6,6 +6,10 @@ import '@fontsource/carlito/400.css';
 import '@fontsource/carlito/700.css';
 import '@fontsource/carlito/400-italic.css';
 import '@fontsource/carlito/700-italic.css';
+import '@fontsource-variable/geist';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/figtree';
+import './ui/fonts/fonts.css';
 import './styles.css';
 import { bridge } from './editor/host';
 
