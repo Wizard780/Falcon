@@ -45,9 +45,10 @@ const P16: Record<string, string> = {
   undo: '<path d="M3.5 3.5v3h3"/><path d="M3.8 6.5A5 5 0 1 1 3 9"/>',
   gear: '<circle cx="8" cy="8" r="2"/><path d="M6.9 1.8h2.2l.4 1.7 1.1.6 1.7-.5 1.1 1.9-1.3 1.2v1.2l1.3 1.2-1.1 1.9-1.7-.5-1.1.6-.4 1.7H6.9l-.4-1.7-1.1-.6-1.7.5-1.1-1.9 1.3-1.2V7.4L2.6 6.2l1.1-1.9 1.7.5 1.1-.6z"/>',
 };
-const LOGO = 'M2.5 14.5c3.2-.6 5.6-2.6 6.8-6.2L10.6 3l1.1 4.4c.9 3.6 3 5.9 5.8 6.9-3.2.9-5.6.4-7.2-1.1-1.5 1.4-4.2 2.1-7.8 1.3z';
+// the Head mark (logo/build-brand.mjs makes every other brand asset from the same path)
+const LOGO = 'M12 57V36A24 24 0 0 1 36 12H42C50.5 12 56 18 56 26C56 30.5 54 33.5 50.5 35.5C51 31.5 49 29 45.5 29H41C37 29 34.5 32 34.5 36V57ZM39 17.5A3.5 3.5 0 1 0 39 24.5A3.5 3.5 0 1 0 39 17.5Z';
 
 export function SvgIcon({ name }: { name: string }) {
-  if (name === 'logo') return <svg viewBox="0 0 20 20" aria-hidden="true"><path d={LOGO} fill="currentColor" /></svg>;
+  if (name === 'logo') return <svg viewBox="12 12 44 45" aria-hidden="true"><path d={LOGO} fill="currentColor" fillRule="evenodd" /></svg>;
   return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: P16[name] }} />;
 }
