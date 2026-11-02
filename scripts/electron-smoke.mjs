@@ -70,13 +70,32 @@ fs.mkdirSync('shots', { recursive: true });
 if (process.env.CI) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.showInactive()));
 try { await win.screenshot({ path: `shots/electron-${process.platform}.png`, timeout: 15000 }); }
 catch (e) { console.error('screenshot failed:', e.message.split('\n')[0]); process.exitCode = 1; }
+// closing with an unsaved doc asks in Falcon's own dialog: Cancel keeps the window, the other button closes it
+const winCount = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+const tryClose = () => app.evaluate(({ BrowserWindow }) => { globalThis.falconSkipUnloadGuard = false; BrowserWindow.getAllWindows()[0].close(); });
+await tryClose();
+const askTitle = await win.waitForSelector('.cf', { timeout: 5000 }).then(() => win.$eval('.cf h2', (h) => h.textContent), () => null);
+await win.waitForTimeout(400); // let the dialog finish fading in
+await win.screenshot({ path: `shots/electron-confirm-${process.platform}.png`, timeout: 15000 }).catch(() => {});
+await win.click('.cf button:not(.cf-ok)');
+await win.waitForTimeout(300);
+const keptAfterCancel = (await winCount()) === 1 && !(await win.$('.cf'));
+await tryClose();
+await win.waitForSelector('.cf', { timeout: 5000 }).catch(() => {});
+const closedNow = new Promise((ok) => win.once('close', () => ok(true)));
+await win.click('.cf-ok').catch(() => {});
+const closedAfterOk = await Promise.race([closedNow, new Promise((ok) => setTimeout(() => ok(false), 5000))]);
+if (!closedAfterOk) await app.evaluate(() => { globalThis.falconSkipUnloadGuard = true; }); // never hang on a dialog left up
 await app.close();
 
 console.log(map, '\nplatform:', platform, '| bridge:', bridge, '| visible:', visible, '| menu:', menu);
 const want = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.exitCode = 1; } };
 // emphasis replaced the underline on "app"; highlight stays on "app"
 want(map === 'tag: Electron tag\nnormal: Body text in the [desktop ]{emphasis}[app]{emphasis+highlight:yellow}', `marks: ${JSON.stringify(map)}`);
-want(bridge === 'onMenu,openFile,openPath,platform,readClipboardText,saveFile', 'preload bridge');
+want(bridge === 'forceClose,onConfirmClose,onMenu,openFile,openPath,platform,readClipboardText,saveFile', `preload bridge: ${bridge}`);
+want(askTitle === 'Close Falcon without saving?', `closing with an unsaved doc asks in Falcon's dialog: ${askTitle}`);
+want(keptAfterCancel, 'Cancel keeps the window open');
+want(closedAfterOk, 'Close Without Saving closes the window');
 want(homeAtLaunch && !homeAfterEsc, 'Home shows at launch and Esc closes it');
 want(strayOpen.startsWith('refused'), `openPath refuses files never picked: ${strayOpen}`);
 want(visible.every((v) => !v), 'window stayed hidden (checked before any CI-only capture)');

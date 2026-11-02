@@ -6,6 +6,8 @@ const path = require('node:path');
 const DEV = process.env.FALCON_DEV === '1';
 const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a window
 // tests: a throwaway profile, so they never touch the user's recents, pens or crash-recovery copy
+// tests: closing never waits on the unsaved-docs question (the smoke test turns this off to check it)
+globalThis.falconSkipUnloadGuard = HEADLESS;
 if (process.env.FALCON_USER_DATA) app.setPath('userData', process.env.FALCON_USER_DATA);
 
 function createWindow() {
@@ -35,14 +37,15 @@ function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
-  // the page blocks unloading while a doc is unsaved: ask, and close anyway if the user says so
+  // the page blocks unloading while a doc is unsaved: the close stops here, and the page asks in its own
+  // dialog. If the user says close anyway, the page sends falcon:force-close and the next try goes through.
   win.webContents.on('will-prevent-unload', (e) => {
-    if (HEADLESS) { e.preventDefault(); return; }
-    const choice = dialog.showMessageBoxSync(win, {
-      type: 'warning', buttons: ['Close Without Saving', 'Cancel'], defaultId: 1, cancelId: 1,
-      message: 'Some documents have unsaved changes.', detail: 'Close Falcon anyway? Unsaved changes will be lost.',
-    });
-    if (choice === 0) e.preventDefault();
+    if (globalThis.falconSkipUnloadGuard || win.falconForceClose) { e.preventDefault(); return; }
+    // the question shows in the window: bring it forward, or a quit from the Dock would look like it did nothing
+    if (win.isMinimized()) win.restore();
+    if (!HEADLESS) { win.show(); win.focus(); }
+    win.webContents.send('falcon:confirm-close', quitting);
+    quitting = false; // a cancelled quit is over; a confirmed one quits again
   });
   // the app is one page: block every navigation away from it
   win.webContents.on('will-navigate', (e, url) => {
@@ -68,6 +71,15 @@ async function rememberPath(p) {
   recentPaths = [p, ...list.filter((x) => x !== p)].slice(0, MAX_RECENT);
   try { await fs.writeFile(recentFile(), JSON.stringify(recentPaths)); } catch { /* recents are a convenience */ }
 }
+
+let quitting = false; // the window is closing because the app is quitting (Cmd-Q), not just the window
+app.on('before-quit', () => { quitting = true; });
+ipcMain.on('falcon:force-close', (e, quit) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win) return;
+  win.falconForceClose = true;
+  if (quit) app.quit(); else win.close();
+});
 
 ipcMain.handle('falcon:read-clipboard-text', () => clipboard.readText());
 ipcMain.handle('falcon:open-file', async (e) => {

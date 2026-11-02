@@ -137,9 +137,16 @@ want((await rows()).length === 3, 'New adds a third document');
 await page.keyboard.press(`${mod}+w`);
 await page.waitForTimeout(150);
 want((await rows()).length === 2, `${mod}+W closes the blank one`);
-page.once('dialog', (d) => d.accept());
 await page.hover('.doc-row:nth-child(1)'); await page.waitForTimeout(300);
-await page.click('.files-r:nth-child(1) .files-x'); // the edited one asks first
+await page.click('.files-r:nth-child(1) .files-x'); // the edited one asks first, in Falcon's dialog
+await page.waitForSelector('.cf'); await page.waitForTimeout(300);
+await page.screenshot({ path: `${shots}/6-confirm-close.png` });
+await page.keyboard.press('Escape'); // Esc cancels
+await page.waitForTimeout(200);
+want((await rows()).length === 2 && !(await page.$('.cf')), 'Esc in the close warning keeps the file open');
+await page.hover('.doc-row:nth-child(1)'); await page.waitForTimeout(300);
+await page.click('.files-r:nth-child(1) .files-x');
+await page.click('.cf-ok');
 await page.mouse.move(900, 600, { steps: 5 }); await page.waitForTimeout(400);
 await page.waitForTimeout(150);
 r = await rows();
