@@ -434,11 +434,16 @@ export function App() {
       if (mode !== 'asis') { flash(`Saved ${MODE_NAME[mode]} ${m.name}`); return; }
       // typing during the save keeps the doc marked unsaved
       const now = activeRef.current === id ? viewRef.current!.state.doc : docsRef.current.find((x) => x.id === id)?.state?.doc;
+      // another tab on this file would overwrite it on Save: close it if clean, else keep its edits but unbind it
+      for (const o of docsRef.current) {
+        if (o.id === id || !m.path || o.meta.path !== m.path) continue;
+        if (o.dirty) patch(o.id, { meta: { name: o.meta.name } }); else dropDoc(o.id);
+      }
       patch(id, { meta: m, dirty: now !== saved });
       setRecents((list) => noteRecent(list, saved, m));
       flash(`Saved ${m.name}`);
     } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
-  }, [patch, flash]);
+  }, [patch, flash, dropDoc]);
   /** Save writes the open file; Save As opens the dialog, which calls `saveCopy`. */
   const fileSave = useCallback(async (as = false) => {
     const d = docsRef.current.find((x) => x.id === activeRef.current)!;
