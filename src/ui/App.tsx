@@ -503,32 +503,53 @@ const mmss = (min: number) => { const s = Math.round(min * 60); return `${Math.f
 
 type DocRow = { id: number; name: string; path?: string; dirty: boolean };
 function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void }) {
-  // the hovered document grows into a pill with its name, fixed so the outline pane can't clip it
-  const [tip, setTip] = useState<{ id: number; x: number; y: number } | null>(null);
-  const tipDoc = tip && props.docs.find((d) => d.id === tip.id);
-  // opening or closing a file moves the rows under a still pointer
-  useEffect(() => setTip(null), [props.docs.length]);
+  // hovering the file icons slides the files panel out beside the rail, its rows level with the
+  // icons, so it reads as the rail widening to show every name
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState({ head: 0, list: 0 });
+  const timer = useRef(0);
+  const logo = useRef<HTMLButtonElement>(null), strip = useRef<HTMLDivElement>(null), list = useRef<HTMLDivElement>(null);
+  const show = () => {
+    clearTimeout(timer.current);
+    if (open) return;
+    // the panel sits 8px from the window's top
+    setAt({ head: logo.current!.getBoundingClientRect().top - 8, list: strip.current!.getBoundingClientRect().top - 8 });
+    setOpen(true);
+  };
+  const hide = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(false), 180); };
+  useEffect(() => () => clearTimeout(timer.current), []);
+  // both lists scroll together, so each row stays level with its icon
+  useLayoutEffect(() => { if (open && list.current && strip.current) list.current.scrollTop = strip.current.scrollTop; }, [open, props.docs.length]);
+  const isOn = (d: DocRow) => d.id === props.active && !props.home;
   return (
     <nav className="fstrip" aria-label="Open documents">
-      <button className="sb-logo" title={`Home (${MOD}T): recent files and new documents`} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
-      <div className="fs-docs" role="tablist" aria-label="Open documents" onScroll={() => setTip(null)}>
-        {props.docs.map((d) => {
-          const on = d.id === props.active && !props.home;
-          return (
-            <div key={d.id} className="doc-row" data-on={on || undefined}
-              onPointerEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ id: d.id, x: r.left, y: r.top }); }}
-              onPointerLeave={() => setTip(null)}>
-              <button className="fs-b doc-nm" role="tab" aria-selected={on} aria-label={d.name} data-on={on || undefined}
-                onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
-                <SvgIcon name="doc" />{d.dirty && <i className="dot" aria-label="unsaved" />}
-              </button>
-              <button className="doc-x" title={`Close (${MOD}W): close this file`} aria-label={`Close ${d.name}`} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
-            </div>
-          );
-        })}
+      <button ref={logo} className="sb-logo" title={`Home (${MOD}T): recent files and new documents`} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
+      <div ref={strip} className="fs-docs" role="tablist" aria-label="Open documents" onPointerEnter={show} onPointerLeave={hide}
+        onScroll={(e) => { if (list.current) list.current.scrollTop = e.currentTarget.scrollTop; }}>
+        {props.docs.map((d) => (
+          <div key={d.id} className="doc-row" data-on={isOn(d) || undefined}>
+            <button className="fs-b doc-nm" role="tab" aria-selected={isOn(d)} aria-label={d.name} data-on={isOn(d) || undefined}
+              onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
+              <SvgIcon name="doc" />{d.dirty && <i className="dot" aria-label="unsaved" />}
+            </button>
+          </div>
+        ))}
       </div>
-      {tipDoc && <div key={tipDoc.id} className="doc-tip" data-on={(tipDoc.id === props.active && !props.home) || undefined} style={{ left: tip.x, top: tip.y }} aria-hidden="true">
-        <span className="ic"><SvgIcon name="doc" /></span><b>{tidy(tipDoc.name)}</b>{tipDoc.dirty && <small>Unsaved</small>}</div>}
+      {/* mouse-only: the tabs in the rail are what the keyboard and screen readers use */}
+      <aside className="files" data-open={open || undefined} aria-hidden="true" onPointerEnter={show} onPointerLeave={hide}>
+        <div className="files-h" style={{ top: at.head }}><b>Falcon</b><span>{props.docs.length} open</span></div>
+        <div ref={list} className="files-l" style={{ top: at.list }}
+          onScroll={(e) => { if (strip.current) strip.current.scrollTop = e.currentTarget.scrollTop; }}>
+          {props.docs.map((d) => (
+            <div key={d.id} className="files-r" data-on={isOn(d) || undefined}>
+              <button tabIndex={-1} className="files-b" onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
+                <SvgIcon name="doc" /><span className="nm">{tidy(d.name)}</span>{d.dirty && <i className="dot" />}
+              </button>
+              <button tabIndex={-1} className="files-x" title={`Close (${MOD}W): close this file`} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
+            </div>
+          ))}
+        </div>
+      </aside>
       <div className="grow" />
       <button className="fs-b" title={`Settings (${MOD},): highlight color, speech time, keys and more`} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /></button>
     </nav>

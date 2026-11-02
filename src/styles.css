@@ -29,25 +29,37 @@ svg { flex: none; }
 .desktop.mac .fstrip { padding-top: 46px; }
 .fstrip .grow { flex: 1; }
 .fstrip svg, .olp svg, .home svg, .tools svg { width: 16px; height: 16px; }
-/* one button per open document: hover shows its name, x closes it */
+/* one button per open document: hovering them opens the files panel */
 .fs-docs { flex: 0 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 12px 10px 4px; margin: 8px -10px 0; }
 .fs-docs::-webkit-scrollbar { width: 0; }
 .doc-row { position: relative; }
 .doc-row .dot { position: absolute; right: 7px; bottom: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--u-tx2); box-shadow: 0 0 0 2px var(--u-deep); }
 .doc-row[data-on] .dot { box-shadow: 0 0 0 2px var(--u-raised); }
-.doc-x { position: absolute; top: -4px; right: -4px; width: 16px; height: 16px; display: grid; place-items: center; border-radius: 50%; background: var(--u-raised); color: var(--u-tx2); box-shadow: 0 0 0 2px var(--u-deep); cursor: pointer;
-  opacity: 0; transform: scale(.8); transition: opacity 120ms ease-out, transform 120ms ease-out, color 120ms ease-out; }
-.fstrip .doc-x svg { width: 10px; height: 10px; }
-.doc-row:hover .doc-x, .doc-x:focus-visible { opacity: 1; transform: none; }
-.doc-x:hover { color: var(--u-tx); background: #3a3a3f; }
-.doc-tip { position: fixed; z-index: 1; height: 36px; display: flex; align-items: center; gap: 2px; max-width: 340px; padding-right: 14px; border-radius: 8px;
-  background: var(--u-raised); box-shadow: var(--u-top), 0 8px 24px rgba(0, 0, 0, .35); font-size: 13px; color: var(--u-tx); pointer-events: none;
-  animation: pill-out 220ms 60ms var(--u-ease) both; }
-.doc-tip .ic { flex: none; width: 36px; height: 36px; display: grid; place-items: center; }
-.doc-tip b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.doc-tip small { flex: none; margin-left: 8px; font-size: 11.5px; color: var(--u-mut); }
-.doc-row .doc-x { z-index: 2; }
-@keyframes pill-out { from { clip-path: inset(0 calc(100% - 36px) 0 0 round 8px); } to { clip-path: inset(0 0 0 0 round 8px); } }
+/* the files panel: hovering the file icons slides it out beside the rail, every row level with its icon */
+.files { position: fixed; z-index: 1; top: 8px; bottom: 8px; left: calc(var(--strip-w) + 4px); width: 280px; border-radius: 20px; background: var(--u-deep);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05), 0 8px 24px rgba(0, 0, 0, .35); color: var(--u-tx); font-size: 14px;
+  opacity: 0; transform: translateX(-8px); pointer-events: none; transition: opacity 150ms ease-out, transform 220ms var(--u-ease); }
+.files[data-open] { opacity: 1; transform: none; pointer-events: auto; }
+.files-h { position: absolute; left: 22px; right: 22px; height: 36px; display: flex; align-items: center; justify-content: space-between; }
+.files-h b { font-size: 16px; font-weight: 500; }
+.files-h span { font: 12px var(--mono); color: var(--u-mut); }
+/* same 12px top padding, 36px rows and 4px gaps as the icons in .fs-docs */
+.files-l { position: absolute; left: 0; right: 0; bottom: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 12px 12px 4px; }
+.files-l::-webkit-scrollbar { width: 0; }
+.files-r { position: relative; flex: none; }
+.files-b { width: 100%; height: 36px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 8px; color: var(--u-tx); text-align: left; cursor: pointer; transition: background 150ms ease-out; }
+.files-b svg { color: var(--u-mut); }
+.files-b:hover { background: var(--u-hover); }
+.files-r[data-on] .files-b { background: var(--u-raised); box-shadow: var(--u-top); }
+.files-r[data-on] .files-b svg { color: var(--u-tx); }
+.files-b .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.files-b .dot { flex: none; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--u-tx2); }
+.files-x { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--u-mut); cursor: pointer;
+  opacity: 0; transition: opacity 120ms ease-out, background 120ms ease-out, color 120ms ease-out; }
+.files .files-x svg { width: 12px; height: 12px; }
+.files-r:hover .files-x { opacity: 1; }
+.files-r:hover .dot { opacity: 0; }
+.files-x:hover { color: var(--u-tx); background: #3a3a3f; }
 /* the tooltip every button shares: name, key, and what it does */
 .tip { position: fixed; z-index: 3000; max-width: 280px; padding: 7px 10px; border-radius: 8px; background: var(--u-raised); color: var(--u-tx); box-shadow: var(--u-top), 0 8px 24px rgba(0, 0, 0, .35);
   font-size: 12.5px; line-height: 1.35; pointer-events: none; animation: tip-in 120ms ease-out both; }
@@ -256,13 +268,14 @@ button.b:active { transform: scale(.97); }
 
 @media (prefers-reduced-motion: reduce) {
   .olp, .lv-hl, .sb-list[data-ready] .sb-act, .sb-row.ol .tw svg, .b, .b::before, .b::after, .pop, .pop *, .toast, .home, .home.open, .hm-peek, .hm-undo { transition: none !important; }
-  .tip, .doc-tip { animation: none !important; }
+  .tip { animation: none !important; }
+  .files { transition: none !important; }
   button.b:active { transform: none; }
 }
 
 /* desktop: the window drags by the chrome; on macOS the strip and panel start below the traffic lights */
 .desktop .toolbar, .desktop .fstrip, .desktop .tools, .desktop .status { -webkit-app-region: drag; }
-.desktop button, .desktop .pop, .desktop input { -webkit-app-region: no-drag; }
+.desktop button, .desktop .pop, .desktop input, .desktop .files { -webkit-app-region: no-drag; }
 /* page */
 .page { zoom: var(--zoom); padding: 36px 20px 50vh 30px; color: var(--doc-ink); }
 .ProseMirror { outline: none; font-family: var(--doc-font); font-size: 11pt; line-height: 1.2; white-space: pre-wrap; word-wrap: break-word; caret-color: #000; min-height: 60vh; }

@@ -58,6 +58,8 @@ want((await rows())[1].startsWith('*'), 'Ctrl-Tab goes to the next document');
 
 // outline: at depth 3, a block's chevron shows its tags (in the first file, which has blocks with tags)
 await page.click('.doc-row:nth-child(1) .doc-nm');
+// the files panel opened by hovering the rail closes once the pointer leaves it
+await page.mouse.move(900, 600, { steps: 5 }); await page.waitForTimeout(400);
 await page.click('.lv [data-lv="3"]');
 await page.waitForTimeout(150);
 const before = await page.$$eval('.sb-row.ol.l4', (x) => x.length);
@@ -136,7 +138,9 @@ await page.keyboard.press(`${mod}+w`);
 await page.waitForTimeout(150);
 want((await rows()).length === 2, `${mod}+W closes the blank one`);
 page.once('dialog', (d) => d.accept());
-await page.click('.doc-row:nth-child(1) .doc-x'); // the edited one asks first
+await page.hover('.doc-row:nth-child(1)'); await page.waitForTimeout(300);
+await page.click('.files-r:nth-child(1) .files-x'); // the edited one asks first
+await page.mouse.move(900, 600, { steps: 5 }); await page.waitForTimeout(400);
 await page.waitForTimeout(150);
 r = await rows();
 want(r.length === 1 && r[0] === `*${base(b)}`, `closing the edited file asks, then leaves the other: ${JSON.stringify(r)}`);
