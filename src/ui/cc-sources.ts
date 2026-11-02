@@ -142,6 +142,7 @@ export type SettingDef = { id: string; label: string; page: string; hint?: strin
 
 const PENS: [string, string][] = [['yellow', 'Yellow'], ['green', 'Green'], ['cyan', 'Cyan'], ['magenta', 'Magenta'], ['lightGray', 'Gray']];
 const FONTS: [string, string][] = [['calibri', 'Calibri'], ['arial', 'Arial'], ['verdana', 'Verdana'], ['georgia', 'Georgia'], ['times', 'Times New Roman'], ['comic', 'Comic Sans']];
+const UI_FONTS: [string, string][] = [['system', 'System'], ['geist', 'Geist'], ['inter', 'Inter'], ['switzer', 'Switzer'], ['figtree', 'Figtree'], ['halden', 'Halden']]; // Settings.tsx UI_FONTS
 const STYLES: [string, string][] = [['normal', 'Normal text'], ['pocket', 'Pocket'], ['hat', 'Hat'], ['block', 'Block'], ['tag', 'Tag'], ['analytic', 'Analytic'], ['undertag', 'Undertag']];
 const range = (from: number, to: number, step: number, unit: (n: number) => string): [number, string][] =>
   Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => [from + i * step, unit(from + i * step)]);
@@ -177,6 +178,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     pick(P.newName, 'Name new files', 'general', (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), 'What an Untitled document is called when you first save it.'),
     // Appearance
     pick(P.theme, 'Theme', 'appearance', themes, 'The colors of Falcon and the page.'),
+    pick(P.uiFont, 'Interface font', 'appearance', UI_FONTS, 'Menus, tooltips, Settings and the top bar.'),
     pick(P.paper, 'Document paper', 'appearance', [['theme', 'Theme'], ['white', 'White'], ['dark', 'Dark']], 'Dark to read at night in any theme.'),
     { id: 'app.highlight', label: 'Highlighter', page: 'appearance', hint: 'Your highlight color.', options: PENS, get: () => ctx.highlight ?? '', set: (v) => ctx.setHighlight(v as string) },
     { id: 'app.zoom', label: 'Zoom', page: 'appearance', hint: 'How big the page is.', options: [...range(50, 200, 10, (n) => `${n}%`), [250, '250%'], [300, '300%']],
@@ -189,6 +191,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.cardBar, 'Mark the current card', 'appearance', 'A thin line beside the card the cursor is in.'),
     tog(P.reduceMotion, 'Reduce motion', 'appearance', 'Turn off animations.'),
     // Editor
+    tog(P.spellcheck, 'Check spelling', 'editor', 'Misspelled words get a red underline.'),
     { id: 'app.outline', label: 'Show outline pane', page: 'editor', get: () => ctx.showOutline, set: (v) => ctx.setShowOutline(v as boolean) },
     { id: 'app.depth', label: 'Outline depth', page: 'editor', options: [[1, '1'], [2, '2'], [3, '3'], [4, '4']], get: () => ctx.depth, set: (v) => ctx.setDepth(v as number) },
     pick(P.openDepth, 'Depth for opened files', 'editor', [[0, 'Keep'], [1, '1'], [2, '2'], [3, '3'], [4, '4']]),
@@ -215,7 +218,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: P.emphasisBox.key, label: 'Emphasis look', page: 'formatting', query: 'Emphasis', options: [['box', 'Bold and box'], ['bold', 'Bold only']],
       get: () => (pref(P.emphasisBox) ? 'box' : 'bold'), set: (v) => setPref(P.emphasisBox, v === 'box') },
     pick(P.shrinkMin, 'Shrink down to', 'formatting', [[4, '4 pt'], [6, '6 pt'], [8, '8 pt']], 'The smallest size Shrink steps down to.', 'Unread text'),
-    pick(P.font, 'Font', 'formatting', FONTS),
+    pick(P.font, 'Editor font', 'formatting', FONTS),
     pick(P.lineHeight, 'Line spacing', 'formatting', [['1', '1.0'], ['1.2', '1.2'], ['1.5', '1.5'], ['2', '2.0']]),
     tog(P.pocketBox, 'Box around pockets', 'formatting'),
     pick(P.hatLine, 'Hat underline', 'formatting', [['double', 'Double'], ['single', 'Single']]),
