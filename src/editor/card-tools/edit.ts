@@ -48,7 +48,7 @@ export const extractUndertag: Command = editing((state, dispatch) => {
   const sel = state.selection;
   if (sel.empty || sel.$from.depth < 1) return false;
   const card = cardAt(state.doc, sel.from);
-  if (!card || state.doc.child(card.head).attrs.style !== 'tag') return false;
+  if (!card || state.doc.child(card.head).attrs.style !== 'tag' || sel.to > posOf(state.doc, card.end)) return false;
   const raw = state.doc.textBetween(sel.from, sel.to, ' ', ' ').replace(/\s+/g, ' ').trim();
   if (!raw) return false;
   if (!dispatch) return true;

@@ -40,10 +40,12 @@ export function cardAt(doc: PMNode, pos: number) {
 export function bodySelection(state: EditorState) {
   const { $from, $to, empty } = state.selection;
   if (empty || $from.depth < 1 || $to.depth < 1) return null;
+  // nothing but a paragraph break (Shift-Right on an empty line) selects no text to work on
+  if (!state.doc.textBetween($from.pos, $to.pos).trim()) return null;
   const card = cardAt(state.doc, $from.pos);
   if (!card) return null;
-  const first = $from.index(0);
-  // a selection ending at the very start of a paragraph doesn't take that paragraph
+  // a selection starting at the very end of a paragraph, or ending at the very start of one, doesn't take it
+  const first = $from.parentOffset === $from.parent.content.size && $from.index(0) < $to.index(0) ? $from.index(0) + 1 : $from.index(0);
   const last = $to.parentOffset === 0 && $to.index(0) > first ? $to.index(0) - 1 : $to.index(0);
   if (first < card.start || last >= card.end) return null;
   for (let i = first; i <= last; i++) {

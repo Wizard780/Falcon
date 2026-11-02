@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { undo } from 'prosemirror-history';
-import type { EditorState } from 'prosemirror-state';
+import { TextSelection, type EditorState } from 'prosemirror-state';
 import { falconKeys as K } from '../src/editor/keymap';
 import { CARD_TOOLS } from '../src/editor/card-tools';
 import { schema } from '../src/editor/schema';
@@ -9,7 +9,7 @@ import {
   backgroundToHighlight, condenseWithWarning, extractCard, extractUndertag, highlightToBackground, lockHighlighting, nearestHighlight,
 } from '../src/editor/card-tools/edit';
 import { referenceHTML, referenceNodes } from '../src/editor/card-tools/reference';
-import { caret, make, map, run, select } from './helpers';
+import { at, caret, make, map, run, select } from './helpers';
 
 const M = schema.marks;
 const card = () => make([
@@ -86,6 +86,19 @@ describe('Condense With Warning', () => {
     unchanged(select(card(), 'last', 'Other'), cmd);
     unchanged(select(card(), 'Block'), cmd);
     unchanged(reading(select(card(), 'First')), cmd);
+  });
+  it('ignores a paragraph the selection only grazes, and a selection of just a line break', () => {
+    const s = card();
+    const end = at(s, 'para  of text.', 'para  of text.'.length), next = at(s, 'Third');
+    const grazed = s.apply(s.tr.setSelection(TextSelection.create(s.doc, end, at(s, 'Second', 6))));
+    expect(lines(run(grazed, condenseWithWarning(false))).slice(4, 7)).toEqual([
+      'normal: [PARAGRAPH INTEGRITY PAUSES]', 'normal: Second para here.', 'normal: [PARAGRAPH INTEGRITY RESUMES]',
+    ]);
+    unchanged(s.apply(s.tr.setSelection(TextSelection.create(s.doc, next - 2, next))), condenseWithWarning(false));
+    const blank = make([['tag', 'T'], ['normal', 'Cite'], ['normal', 'One'], ['normal', ''], ['normal', 'Two']]);
+    const e = at(blank, 'One', 3) + 2;
+    unchanged(blank.apply(blank.tr.setSelection(TextSelection.create(blank.doc, e, e + 2))), condenseWithWarning(false));
+    unchanged(blank.apply(blank.tr.setSelection(TextSelection.create(blank.doc, e, e + 2))), extractCard);
   });
   it('survives a .docx round trip as plain text', async () => {
     const { docToDocx } = await import('../src/docx/export');
