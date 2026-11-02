@@ -1,5 +1,6 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { LEVEL, type ParaStyle } from './schema';
+import { norm } from './find';
 
 export type OutlineItem = { pos: number; level: number; text: string; style: ParaStyle; cards: number; hasKids: boolean };
 
@@ -50,3 +51,32 @@ export function readWords(doc: PMNode): number {
   return n;
 }
 const count = (s: string) => (s.match(/[\p{L}\p{N}][\p{L}\p{N}'’.-]*/gu) ?? []).length;
+
+/**
+ * Outline search: the rows whose heading text contains the query, limited to one level when `level`
+ * isn't 0. With `content`, a heading also matches when text under it does, and the hit goes to the
+ * heading of the chosen level that holds it (with no level, the nearest heading). Case and curly
+ * quotes don't matter. Row indices, in order.
+ */
+export function searchOutline(items: OutlineItem[], doc: PMNode, query: string, level: number, content: boolean): number[] {
+  const q = norm(query);
+  if (!q) return [];
+  const hits = new Set<number>();
+  items.forEach((it, i) => { if ((!level || it.level === level) && norm(it.text).includes(q)) hits.add(i); });
+  if (content) {
+    let h = -1;
+    const stack: { i: number; lv: number }[] = [];
+    doc.forEach((node) => {
+      const lv = LEVEL[node.attrs.style as ParaStyle];
+      if (lv) {
+        if (++h >= items.length) return;
+        while (stack.length && stack[stack.length - 1].lv >= lv) stack.pop();
+        stack.push({ i: h, lv });
+        if (!level || lv === level) return; // its own text was checked above
+      }
+      const t = level ? stack.find((s) => s.lv === level)?.i : stack[stack.length - 1]?.i;
+      if (t !== undefined && !hits.has(t) && norm(node.textContent).includes(q)) hits.add(t);
+    });
+  }
+  return [...hits].sort((a, b) => a - b);
+}

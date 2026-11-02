@@ -76,15 +76,15 @@ export const findOrderSetting: SettingSpec = {
   hint: 'By type: headings first, then tags, analytics, undertags, cites, then card text.',
 };
 export const outlineHideSetting: SettingSpec = {
-  section: 'Outline', label: 'Outline search hides non-matches', key: 'falcon.outline.hideNonMatches', kind: 'toggle', default: true,
+  section: 'Outline search', label: 'Outline search hides non-matches', key: 'falcon.outline.hideNonMatches', kind: 'toggle', default: true,
   hint: 'Off: the full outline stays and matches are lit.',
 };
 export const outlineContentSetting: SettingSpec = {
-  section: 'Outline', label: 'Outline search looks in card text', key: 'falcon.outline.searchContent', kind: 'toggle', default: false,
+  section: 'Outline search', label: 'Outline search looks in card text', key: 'falcon.outline.searchContent', kind: 'toggle', default: false,
   hint: 'A heading matches when the text under it does.',
 };
 export const outlineLevelSetting: SettingSpec = {
-  section: 'Outline', label: 'Outline search level', key: 'falcon.outline.searchLevel', kind: 'choice', default: 'all',
+  section: 'Outline search', label: 'Outline search level', key: 'falcon.outline.searchLevel', kind: 'choice', default: 'all',
   options: [['all', 'All'], ['1', 'Pockets'], ['2', 'Hats'], ['3', 'Blocks'], ['4', 'Tags']],
 };
 export const navSettings: SettingSpec[] = [findOrderSetting, outlineHideSetting, outlineContentSetting, outlineLevelSetting];

@@ -128,7 +128,7 @@ function dragView(view: EditorView) {
 
   return {
     // the doc changed under the grip: it comes back on the next mouse move
-    update(_v: EditorView, prev: { doc: unknown }) { if (!dragging && prev.doc !== view.state.doc) hideGrip(); },
+    update(_v: EditorView, prev: { doc: unknown }) { if (!dragging && head >= 0 && prev.doc !== view.state.doc) hideGrip(); },
     destroy() { view.dom.removeEventListener('mousemove', onMove); grip.remove(); line.remove(); },
   };
 }

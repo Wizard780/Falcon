@@ -1,5 +1,6 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { Plugin, PluginKey, type Command, type EditorState, type Transaction } from 'prosemirror-state';
+import { ReplaceStep } from 'prosemirror-transform';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { headAtCursor, levelOf } from './sections';
 
@@ -16,7 +17,9 @@ import { headAtCursor, levelOf } from './sections';
  */
 export type Role = 'number' | 'sub';
 export type NumMark = { role?: Role; flip?: boolean };
-type NumState = { marks: Map<number, NumMark>; decos: DecorationSet; outline: string[] };
+/** `win`: the stretch of the doc (positions) whose cards get drawn numbers; null for all of it. */
+type Win = [number, number] | null;
+type NumState = { marks: Map<number, NumMark>; decos: DecorationSet; outline: string[]; win: Win };
 
 export const numberingKey = new PluginKey<NumState>('numbering');
 
@@ -27,65 +30,128 @@ export function letters(n: number): string {
   return s;
 }
 
-/** One pass over the top-level paragraphs: page decorations, and a label per outline row. */
-export function compute(doc: PMNode, marks: Map<number, NumMark>, prev: string[] = []): NumState {
-  if (!marks.size) return { marks, decos: DecorationSet.empty, outline: prev.length ? [] : prev };
+/**
+ * One pass over the top-level paragraphs: a label per outline row, and the page decorations. When
+ * the labels came out the same and `mapped` (the old decorations carried through the edit) is given,
+ * that is used instead of building new ones, so typing doesn't redraw every numbered card.
+ * Only the cards inside `win` (around what's on screen) are drawn: ProseMirror checks every
+ * paragraph against every top-level decoration on each update, so thousands would slow typing.
+ */
+export function compute(doc: PMNode, marks: Map<number, NumMark>, prev: string[] = [], win: Win = null, mapped?: DecorationSet): NumState {
+  if (!marks.size) return { marks, decos: DecorationSet.empty, outline: prev.length ? [] : prev, win };
+  const shown = (pos: number) => !win || (pos >= win[0] && pos <= win[1]);
   const decos: Decoration[] = [];
   const outline: string[] = [];
+  const used = new Map<number, NumMark>();
   let num = 0, sub = 0;
   doc.forEach((node, pos) => {
     const lv = levelOf(node);
     if (!lv) return;
     const m = marks.get(pos);
+    if (m) used.set(pos, m);
     let label = '';
     if (lv <= 2) num = sub = 0;
     else if (lv === 3) {
-      if (m?.flip) decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-num-cont': '' }));
+      if (m?.flip && shown(pos)) decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-num-cont': '' }));
       else num = sub = 0;
     } else {
       if (m?.flip) num = sub = 0;
       if (m?.role === 'number') { num++; sub = 0; label = `${num}.`; }
       else if (m?.role === 'sub') { sub++; label = `${letters(sub)}.`; }
-      if (label) decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-num': label, class: m!.role === 'sub' ? 'f-num-sub' : 'f-num' }));
+      if (label && shown(pos)) decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-num': label, class: m!.role === 'sub' ? 'f-num-sub' : 'f-num' }));
     }
     outline.push(label);
   });
   // the outline re-renders only when a label actually changed
   const same = outline.length === prev.length && outline.every((l, i) => l === prev[i]);
-  return { marks, decos: DecorationSet.create(doc, decos), outline: same ? prev : outline };
+  // marks whose heading stopped being one are dropped
+  const kept = used.size === marks.size ? marks : used;
+  return { marks: kept, decos: same && mapped ? mapped : DecorationSet.create(doc, decos), outline: same ? prev : outline, win };
 }
 
 /** Carry each mark to where its heading went. A moved heading (cut out and put back in) is the same
- *  node object, so it's found again by identity; a restyled one by its level and text. */
-function remap(marks: Map<number, NumMark>, tr: Transaction, oldDoc: PMNode): Map<number, NumMark> {
+ *  node object, so it's found again by identity; a restyled one by its level and text. `shifted`:
+ *  every heading simply moved along (nothing was cut out or restyled). */
+function remap(marks: Map<number, NumMark>, tr: Transaction, oldDoc: PMNode): { marks: Map<number, NumMark>; shifted: boolean } {
   const out = new Map<number, NumMark>();
   const lost = new Map<PMNode, NumMark>();
   const doc = tr.doc;
-  const top = (p: number) => p < doc.content.size && doc.resolve(p).depth === 0;
   for (const [pos, m] of marks) {
+    const r = tr.mapping.mapResult(pos, 1);
+    if (!r.deleted) { out.set(r.pos, m); continue; } // the usual case, typing: no lookups
     const old = oldDoc.nodeAt(pos);
     if (!old) continue;
-    const r = tr.mapping.mapResult(pos, 1);
-    const node = top(r.pos) ? doc.nodeAt(r.pos) : null;
-    if (node && (r.deleted ? levelOf(node) === levelOf(old) && node.textContent === old.textContent : levelOf(node) >= 3)) out.set(r.pos, m);
+    const node = r.pos < doc.content.size && doc.resolve(r.pos).depth === 0 ? doc.nodeAt(r.pos) : null;
+    if (node && levelOf(node) === levelOf(old) && node.textContent === old.textContent) out.set(r.pos, m);
     else lost.set(old, m);
   }
   if (lost.size) doc.forEach((n, p) => { const m = lost.get(n); if (m && !out.has(p)) out.set(p, m); });
-  return out;
+  // what's still missing was deleted: remember it by node, so undo brings the number back
+  for (const [n, m] of lost) ghosts.set(n, m);
+  const revived = revive(tr, out);
+  return { marks: out, shifted: out.size === marks.size && !lost.size && !revived };
+}
+
+/** Deleted headings, by node: putting the same node back (undo) restores its mark. */
+const ghosts = new WeakMap<PMNode, NumMark>();
+/** Look for remembered headings among the whole paragraphs this transaction inserted. Cheap: only
+ *  the inserted paragraphs are looked at. */
+function revive(tr: Transaction, out: Map<number, NumMark>): boolean {
+  let found = false;
+  tr.steps.forEach((step, i) => {
+    if (!(step instanceof ReplaceStep) || step.slice.openStart || !step.slice.content.childCount) return;
+    const after = tr.mapping.slice(i + 1);
+    step.slice.content.forEach((n, o) => {
+      const m = ghosts.get(n);
+      if (!m) return;
+      const p = after.map(step.from + o, 1);
+      if (tr.doc.nodeAt(p) === n && !out.has(p)) { out.set(p, m); found = true; }
+    });
+  });
+  return found;
 }
 
 export const numberingPlugin = new Plugin<NumState>({
   key: numberingKey,
   state: {
-    init: () => ({ marks: new Map(), decos: DecorationSet.empty, outline: [] }),
+    init: () => ({ marks: new Map(), decos: DecorationSet.empty, outline: [], win: null }),
     apply(tr, prev, oldState) {
-      const meta = tr.getMeta(numberingKey) as Map<number, NumMark> | undefined;
-      if (!meta && !(tr.docChanged && prev.marks.size)) return prev;
-      const marks = meta ?? remap(prev.marks, tr, oldState.doc);
-      return compute(tr.doc, marks, prev.outline);
+      const meta = tr.getMeta(numberingKey) as Map<number, NumMark> | { win: Win } | undefined;
+      const win: Win = prev.win && tr.docChanged ? [tr.mapping.map(prev.win[0]), tr.mapping.map(prev.win[1])] : prev.win;
+      if (meta instanceof Map) return compute(tr.doc, meta, prev.outline, win);
+      if (meta) return prev.marks.size ? compute(tr.doc, prev.marks, prev.outline, meta.win) : { ...prev, win: meta.win };
+      if (!tr.docChanged) return prev;
+      if (!prev.marks.size) { const back = new Map<number, NumMark>(); return revive(tr, back) ? compute(tr.doc, back, prev.outline, win) : { ...prev, win }; }
+      const { marks, shifted } = remap(prev.marks, tr, oldState.doc);
+      // the old decorations still fit when no paragraph was added or removed and every heading only shifted
+      const fits = shifted && tr.doc.childCount === oldState.doc.childCount;
+      return compute(tr.doc, marks, prev.outline, win, fits ? prev.decos.map(tr.mapping, tr.doc) : undefined);
     },
   },
   props: { decorations: (state) => numberingKey.getState(state)?.decos },
+  // keep the drawn stretch around the screen as it scrolls
+  view(view) {
+    const sc = view.dom.closest('.f-scroll');
+    let raf = 0;
+    const check = () => {
+      raf = 0;
+      const st = numberingKey.getState(view.state);
+      if (!st?.marks.size || !sc || !view.dom.isConnected) return;
+      const r = sc.getBoundingClientRect(), left = view.dom.getBoundingClientRect().left + 4;
+      const a = view.posAtCoords({ left, top: r.top + 2 })?.pos ?? 0;
+      const b = view.posAtCoords({ left, top: r.bottom - 2 })?.pos ?? view.state.doc.content.size;
+      const span = Math.max(b - a, 25000); // positions: a few dozen cards either side
+      const w = st.win;
+      if (w && a - span / 2 >= w[0] && b + span / 2 <= w[1]) return;
+      view.dispatch(view.state.tr.setMeta(numberingKey, { win: [a - 2 * span, b + 2 * span] }).setMeta('addToHistory', false));
+    };
+    const soon = () => { if (!raf) raf = requestAnimationFrame(check); };
+    sc?.addEventListener('scroll', soon, { passive: true });
+    return {
+      update(v, prevState) { if (numberingKey.getState(v.state) !== numberingKey.getState(prevState)) soon(); },
+      destroy() { sc?.removeEventListener('scroll', soon); cancelAnimationFrame(raf); },
+    };
+  },
 });
 
 /** The number shown on each outline row (by row index), '' for none. */

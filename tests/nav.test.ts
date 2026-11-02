@@ -6,6 +6,7 @@ import { alphabetize, canDrop, deleteSections, gotoStyle, moveSections, sectionA
 import { compute, letters, numberMarks, outlineNumbers, toggleRestart, toggleRole, setNavScope } from '../src/editor/nav/numbering';
 import { navKeys } from '../src/editor/nav-keys';
 import type { ParaStyle } from '../src/editor/schema';
+import { buildOutline, searchOutline } from '../src/editor/outline';
 
 const DOC: [ParaStyle, string][] = [
   ['block', 'B1'], ['tag', 'T1'], ['normal', 'b1'], ['tag', 'T2'], ['normal', 'b2'],
@@ -164,6 +165,17 @@ describe('numbering', () => {
     expect(labels(s)).toBe(',1.,2.,3.,4.,,,');
   });
 
+  it('a deleted card gets its number back on undo; a card turned into text loses it', () => {
+    let s = run(select(make(NUM), 'T1', 'T4'), toggleRole('number'));
+    s = s.apply(deleteSections(s, [pos(s, 'T2')])!);
+    expect(labels(s)).toBe(',1.,2.,3.,,,');
+    s = run(s, undo);
+    expect(labels(s)).toBe(',1.,2.,3.,4.,,,');
+    s = s.apply(s.tr.setNodeMarkup(pos(s, 'T3'), undefined, { style: 'normal', indent: 0 }));
+    expect(labels(s)).toBe(',1.,2.,3.,,,');
+    expect(numberMarks(s).size).toBe(3);
+  });
+
   it('acts on the outline selection when there is one', () => {
     let s = caret(make(NUM), 'T1');
     setNavScope(() => [pos(s, 'T5'), pos(s, 'T6'), pos(s, 'B2')]);
@@ -175,5 +187,22 @@ describe('numbering', () => {
   it('no marks, no cost', () => {
     const s = make(NUM);
     expect(compute(s.doc, new Map()).outline).toEqual([]);
+  });
+});
+
+describe('outline search', () => {
+  const S: [ParaStyle, string][] = [['block', 'Nuclear war'], ['tag', 'Warming bad'], ['normal', 'the “NUCLEAR” option'], ['block', 'Econ'], ['tag', 'Trade'], ['analytic', 'nuclear winter']];
+  const rows = (s: EditorState) => buildOutline(s.doc);
+  it('matches heading text, ignoring case and curly quotes, at one level or all', () => {
+    const s = make(S);
+    expect(searchOutline(rows(s), s.doc, 'NUCLEAR', 0, false)).toEqual([0, 4]);
+    expect(searchOutline(rows(s), s.doc, 'nuclear', 3, false)).toEqual([0]);
+    expect(searchOutline(rows(s), s.doc, '"nuclear"', 0, false)).toEqual([]);
+  });
+  it('with card text, a hit goes to the heading of the chosen level that holds it', () => {
+    const s = make(S);
+    expect(searchOutline(rows(s), s.doc, '"nuclear"', 0, true)).toEqual([1]);
+    expect(searchOutline(rows(s), s.doc, 'option', 3, true)).toEqual([0]);
+    expect(searchOutline(rows(s), s.doc, 'winter', 3, true)).toEqual([2]);
   });
 });
