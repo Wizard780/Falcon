@@ -171,7 +171,7 @@ if (part('appearance')) {
   want((await css(p, '.f-scroll', 'backgroundColor')) === 'rgb(30, 30, 32)' && (await css(p, '.ProseMirror p', 'color')) === 'rgb(230, 230, 230)', 'Dark page: dark page, light text');
   want((await css(p, '.f-shading', 'color')) === 'rgb(17, 17, 17)', 'Dark page: shaded text keeps dark ink');
   await p.screenshot({ path: `${shots}/settings-check-dark.png` });
-  await seg(p, 'Document paper', 'White');
+  await seg(p, 'Document paper', 'Theme');
   await seg(p, 'Text width', 'Narrow');
   want((await css(p, '.page', 'maxWidth')) === '680px', 'Text width Narrow caps the text at 680px');
   await seg(p, 'Margins', 'Wide');

@@ -89,6 +89,18 @@ const bridge = await win.evaluate(() => Object.keys(window.falcon || {}).sort().
 const platform = await win.evaluate(() => window.falcon?.platform);
 const visible = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.isVisible()));
 const menu = await app.evaluate(({ Menu }) => (Menu.getApplicationMenu()?.items ?? []).map((i) => i.label));
+// a theme change reaches the window: its background and the next launch's (userData/theme.json) follow it
+await win.click('.fstrip [aria-label="Settings"]');
+await win.click('[aria-label="Settings sections"] button:has-text("Appearance")');
+await win.click('[aria-label="Theme"] [role=radio][aria-label="Light"]');
+await new Promise((ok) => setTimeout(ok, 300));
+const winBg = await app.evaluate(({ BrowserWindow, nativeTheme }) => [BrowserWindow.getAllWindows()[0].getBackgroundColor(), nativeTheme.themeSource]);
+const themeFile = (() => { try { return JSON.parse(fs.readFileSync(path.join(env.FALCON_USER_DATA, 'theme.json'), 'utf8')); } catch { return null; } })();
+await win.click('[aria-label="Theme"] [role=radio][aria-label="System"]');
+await new Promise((ok) => setTimeout(ok, 300));
+const systemSource = await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource);
+await win.click('[aria-label="Theme"] [role=radio][aria-label="Dark"]');
+await win.click('[aria-label="Close settings"]');
 fs.mkdirSync('shots', { recursive: true });
 // Windows doesn't paint hidden windows; on CI runners (no user to disturb) show it without focus to capture it
 if (process.env.CI) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.showInactive()));
@@ -116,11 +128,14 @@ console.log(map, '\nplatform:', platform, '| bridge:', bridge, '| visible:', vis
 const want = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.exitCode = 1; } };
 // emphasis replaced the underline on "app"; highlight stays on "app"
 want(map === 'tag: Electron tag\nnormal: Body text in the [desktop ]{emphasis}[app]{emphasis+highlight:yellow}', `marks: ${JSON.stringify(map)}`);
-want(bridge === 'addIndexFolder,forceClose,indexFolders,indexedFiles,onConfirmClose,onMenu,openFile,openPath,platform,readClipboardText,removeIndexFolder,saveFile', `preload bridge: ${bridge}`);
+want(bridge === 'addIndexFolder,forceClose,indexFolders,indexedFiles,onConfirmClose,onMenu,openFile,openPath,platform,readClipboardText,removeIndexFolder,saveFile,setTheme', `preload bridge: ${bridge}`);
 want(folderRow, 'Settings > File search > Add folder lists the folder with its file count');
 want(indexed.join() === 'Zebra Counterplan.docx', `indexed files are the allowed folder's .docx files: ${indexed}`);
 want(outsideOpen.startsWith('refused'), `openPath refuses a .docx outside the allowed folders: ${outsideOpen}`);
 want(openedByPalette && paletteGone, 'Cmd-K, typing and Enter opens the indexed file and closes the palette');
+want(winBg[0].toLowerCase() === '#f4f4f5' && winBg[1] === 'light', `the Light theme sets the window background and native theme: ${winBg}`);
+want(systemSource === 'system', `System leaves the native theme on the OS setting, so the page can follow it: ${systemSource}`);
+want(themeFile?.bg === '#f4f4f5' && themeFile?.dark === false, `and is kept for the next launch: ${JSON.stringify(themeFile)}`);
 want(askTitle === 'Close Falcon without saving?', `closing with an unsaved doc asks in Falcon's dialog: ${askTitle}`);
 want(keptAfterCancel, 'Cancel keeps the window open');
 want(closedAfterOk, 'Close Without Saving closes the window');

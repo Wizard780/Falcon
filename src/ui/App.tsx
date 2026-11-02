@@ -895,7 +895,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
         <div className="g">
           {pair('highlight', <SvgIcon name="pen" />, 'Highlight (F11): highlight the selection. With nothing selected, turns on a paintbrush', () => props.onColor('highlight'), swatch('highlight'), props.brush === 'highlight')}
           {pair('shading', <SvgIcon name="bucket" />, `Background color (${MOD}F11): shade the selection`, () => props.onColor('shading'), swatch('shading'), props.brush === 'shading')}
-          {pair('font', <b className="fa">A</b>, 'Font color: color the selection\'s text', () => applyFont(fontColor), fontColor ?? '#ececee')}
+          {pair('font', <b className="fa">A</b>, 'Font color: color the selection\'s text', () => applyFont(fontColor), fontColor ?? 'var(--u-tx)')}
           <button className="b sm" title={`Shrink (${MOD}8): make the text you don't read smaller. Press again to shrink more`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys['Mod-8']); }}>Shrink</button>
           <button className="b fsz" data-pop="size" title="Font size: pick a size for the selection" aria-label={`Font size ${fontSize ?? 11} pt`} aria-haspopup="menu" aria-expanded={pop?.kind === 'size'}
             onMouseDown={(e) => { e.preventDefault(); openPop('size', e.currentTarget); }}>{fontSize ?? 11}<SvgIcon name="caret" /></button>

@@ -9,6 +9,7 @@ import { readSetting, type SettingSpec } from '../editor/tools';
 import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
 import { newFileName } from './files';
 import { bridge, type IndexFolder } from '../editor/host';
+import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
 import './settings.css';
 
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -72,7 +73,7 @@ function applyDisplay() {
   root.dataset.caret = pref(P.caret);
   root.dataset.sel = pref(P.selection);
   const cls: [string, boolean][] = [
-    ['page-dark', pref(P.pageDark)], ['cite-plain', !pref(P.citeBold)], ['emph-nobox', !pref(P.emphasisBox)], ['pocket-nobox', !pref(P.pocketBox)],
+    ['cite-plain', !pref(P.citeBold)], ['emph-nobox', !pref(P.emphasisBox)], ['pocket-nobox', !pref(P.pocketBox)],
     ['hat-single', pref(P.hatLine) === 'single'], ['shade-dots', pref(P.shadingDots)], ['no-card-bar', !pref(P.cardBar)], ['reduce-motion', pref(P.reduceMotion)],
   ];
   for (const [c, on] of cls) root.classList.toggle(c, on);
@@ -94,8 +95,18 @@ type Props = {
   depth: number; onDepth: (d: number) => void;
   highlight: string | null; onHighlight: (c: string) => void;
 };
-type Row = { label: string; hint?: string; preview?: ReactNode; control: ReactNode; path?: boolean };
+type Row = { label: string; hint?: string; preview?: ReactNode; control: ReactNode; path?: boolean; wide?: boolean };
 type Page = { id: string; title: string; icon: string; group?: string; sections: [string, Row[]][] };
+
+/** A theme in miniature: its chrome around a strip of its paper, with a few lines of each one's text. */
+function ThemeLook({ t }: { t: Theme }) {
+  return (
+    <span className="st-look" style={{ background: t.bg }}>
+      <i style={{ background: t.text }} /><i style={{ background: t.text }} />
+      <b style={{ background: t.paper }}><i style={{ background: t.paperInk }} /><i style={{ background: t.paperInk }} /><i style={{ background: t.paperInk }} /></b>
+    </span>
+  );
+}
 
 /** Settings, laid out like the prototype's: a section list on the left, cards of rows on the right. */
 export function Settings(props: Props) {
@@ -175,6 +186,30 @@ export function Settings(props: Props) {
     .map((sec): [string, Row[]] => [sec, FEATURE_SETTINGS.filter((x) => x.section === sec).map(specRow)]);
   const keys = (k: string) => <span className="st-kbd">{keyChips(k).map((c, i) => <kbd key={i}>{c}</kbd>)}</span>;
   const prep = pref(P.prepMin);
+
+  // themes: a tile per theme, each a small picture of it; a custom theme's colors and name edit in place
+  const themeId = pref(P.theme);
+  const current = resolveTheme(themeId);
+  const custom = customThemes().find((t) => t.id === themeId);
+  const shownId = themeId === SYSTEM ? SYSTEM : current.id; // a deleted theme's id shows Dark, its fallback, as checked
+  const paperDark = document.documentElement.classList.contains('page-dark');
+  const themeTiles: [string, string, ReactNode][] = [
+    [SYSTEM, 'System', <span className="st-thp sys"><ThemeLook t={resolveTheme('dark')} /><ThemeLook t={resolveTheme('light')} /></span>],
+    ...[...PRESETS, ...customThemes()].map((t): [string, string, ReactNode] => [t.id, t.name, <span className="st-thp"><ThemeLook t={t} /></span>]),
+  ];
+  const themeColor = (t: Theme, k: 'bg' | 'text' | 'paper' | 'paperInk', label: string, hint: string): Row => ({
+    label, hint, control: <input type="color" className="st-color" aria-label={label} value={t[k]} onChange={(e) => updateCustomTheme(t.id, { [k]: e.target.value })} />,
+  });
+  const customRows = (t: Theme): Row[] => [
+    { label: 'Theme name', control: <input className="st-text" aria-label="Theme name" spellCheck={false} value={t.name} maxLength={40}
+      onChange={(e) => updateCustomTheme(t.id, { name: e.target.value })} onBlur={(e) => { if (!e.target.value.trim()) updateCustomTheme(t.id, { name: 'My theme' }); }} /> },
+    themeColor(t, 'bg', 'Background', 'The bars, rail, outline and panels. Their lighter and darker shades follow from it.'),
+    themeColor(t, 'text', 'Text', 'Labels and icons. Dim text and lines are this, faded into the background.'),
+    themeColor(t, 'paper', 'Paper', 'The page behind the document.'),
+    themeColor(t, 'paperInk', 'Paper text', 'Text on the page that has no color of its own.'),
+    { label: 'Delete theme', hint: isDark(t.bg) ? 'Goes back to Dark.' : 'Goes back to Light.', control: (
+      <button className="st-btn" onClick={() => { setPref(P.theme, isDark(t.bg) ? 'dark' : 'light'); deleteCustomTheme(t.id); }}>Delete</button>) },
+  ];
   const profile = (speech: number, prepMin: number) => () => { props.onSpeechMin(speech); setPref(P.prepMin, prepMin); };
 
   const pages: Page[] = [
@@ -212,8 +247,21 @@ export function Settings(props: Props) {
     ] },
     { id: 'appearance', title: 'Appearance', icon: 'contrast', sections: [
       ['Theme', [
-        { label: 'Document paper', hint: 'Dark to read at night. The saved file stays black on white.', control:
-          seg('Document paper', [['White', !pref(P.pageDark), () => setPref(P.pageDark, false)], ['Dark', pref(P.pageDark), () => setPref(P.pageDark, true)]]) },
+        { label: 'Theme', hint: 'The colors of Falcon and the page. + makes your own, starting from the one you have on.', wide: true, control: (
+          <span className="st-themes" role="radiogroup" aria-label="Theme">
+            {themeTiles.map(([id, name, look]) => (
+              <button key={id} className="st-th" role="radio" aria-checked={shownId === id} aria-label={name} title={name} onClick={() => setPref(P.theme, id)}>
+                {look}<span>{name}</span>
+              </button>
+            ))}
+            <button className="st-th add" aria-label="New theme" title={`New theme, starting from ${current.name}`}
+              onClick={() => setPref(P.theme, addCustomTheme(current).id)}>
+              <span className="st-thp"><SvgIcon name="plus" /></span><span>New theme</span>
+            </button>
+          </span>) },
+        ...(custom ? customRows(custom) : []),
+        { label: 'Document paper', hint: 'Dark to read at night in any theme. The saved file stays black on white.', control:
+          seg('Document paper', (['theme', 'white', 'dark'] as const).map((o) => [{ theme: 'Theme', white: 'White', dark: 'Dark' }[o], pref(P.paper) === o, () => setPref(P.paper, o)])) },
         { label: 'Highlighter', hint: 'Your highlight color, also used for the current location in the outline.', control: (
           <span className="st-pens" role="radiogroup" aria-label="Highlighter">
             {PENS.map((p) => <button key={p} role="radio" aria-checked={props.highlight === p} aria-label={PEN_NAMES[p]} title={PEN_NAMES[p]}
@@ -294,8 +342,8 @@ export function Settings(props: Props) {
         tog(P.pocketBox, 'Box around pockets', 'Draw the box around pocket headings.'),
         pick(P.hatLine, 'Hat underline', 'Hats are underlined twice, or once.', [['double', 'Double'], ['single', 'Single']]),
         tog(P.citeBold, 'Bold cites', 'Off shows cites at normal weight.'),
-        color(P.colorAnalytic, 'Analytic color', 'The color analytics show in.', pref(P.pageDark) ? '#8aa4d6' : '#1f3f8a'),
-        color(P.colorUndertag, 'Undertag color', 'The color undertags show in.', pref(P.pageDark) ? '#8fae7a' : '#2a6a3a'),
+        color(P.colorAnalytic, 'Analytic color', 'The color analytics show in.', paperDark ? '#8aa4d6' : '#1f3f8a'),
+        color(P.colorUndertag, 'Undertag color', 'The color undertags show in.', paperDark ? '#8fae7a' : '#2a6a3a'),
         tog(P.shadingDots, 'Dots on background color', 'A faint dot pattern, so background color can be told from highlighting.'),
       ]],
     ] },
@@ -377,7 +425,7 @@ export function Settings(props: Props) {
                 <h3>{title}</h3>
                 <div className="st-card">
                   {rows.map((r) => (
-                    <div key={r.path ? r.hint : r.label} className="st-row">
+                    <div key={r.path ? r.hint : r.label} className={`st-row${r.wide ? ' wide' : ''}`}>
                       <div className="st-txt"><span>{r.label}</span>{r.hint && (r.path ? <small className="path"><span dir="ltr">{r.hint}</span></small> : <small>{r.hint}</small>)}</div>
                       {r.preview}
                       {r.control}
