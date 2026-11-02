@@ -33,8 +33,9 @@ export function Palette(props: {
     return () => { live = false; };
   }, [open]);
 
-  const all = useMemo(() => collectHits(props.docs, props.recents, files), [props.docs, props.recents, files]);
-  const hits = useMemo(() => rankHits(query ? all : all.filter((h) => h.kind !== 'file'), query), [all, query]);
+  // hooks run before the `if (!open)` below, and App renders on every transaction: closed, rank nothing
+  const all = useMemo(() => (open ? collectHits(props.docs, props.recents, files) : []), [open, props.docs, props.recents, files]);
+  const hits = useMemo(() => (open ? rankHits(query ? all : all.filter((h) => h.kind !== 'file'), query) : []), [open, all, query]);
   const cur = Math.min(at, hits.length - 1);
   useEffect(() => { listRef.current?.querySelector('[data-on]')?.scrollIntoView({ block: 'nearest' }); }, [cur, hits]);
   if (!open) return null;
