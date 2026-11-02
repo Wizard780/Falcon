@@ -123,6 +123,12 @@ want(again.length === 2 && again[1].label === SPEECH && (await speechMap()) === 
 await f.shot('fresh-speech-doc');
 
 await goto('seed');
+await caretIn('Warming Block');
+await page.evaluate(() => document.querySelector('.ProseMirror').dispatchEvent(new KeyboardEvent('keydown', { key: '~', ctrlKey: true, altKey: true, modifierAltGraph: true, bubbles: true, cancelable: true })));
+await page.waitForTimeout(300);
+want((await speechMap()) === `${CARD1}\n${BLOCK2}`, 'an AltGr ~ (German Windows layout: Ctrl+Alt held) sends too');
+
+await goto('seed');
 await page.keyboard.press(`${MOD}+n`);
 await page.waitForTimeout(300);
 await page.click(`.tools [aria-label="Speech doc"]`);

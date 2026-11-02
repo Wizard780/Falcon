@@ -391,7 +391,7 @@ export function App() {
       const now = isView ? viewRef.current?.state : docsRef.current.find((d) => d.id === id)?.state;
       if (!now) return;
       if (now.doc !== next.doc) { flash(`${speechName} has changed since. Undo it there with ${MOD}Z.`); return; }
-      undo(now, (tr) => { if (isView) viewRef.current!.dispatch(tr); else patch(id, { state: now.apply(tr) }); });
+      undo(now, (tr) => { if (isView) viewRef.current!.dispatch(tr); else patch(id, { state: now.apply(tr), dirty: true }); });
     };
     flash(`Sent “${sent.label}” to ${speechName}`, { label: 'Undo', run: takeBack });
   }, [flash, patch]);
@@ -421,6 +421,12 @@ export function App() {
       if (askRef.current) { if (e.ctrlKey || e.metaKey) e.preventDefault(); return; }
       // Ctrl-Tab switches documents on every platform
       if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); if (!locked()) cycle(e.shiftKey ? -1 : 1); return; }
+      // ~ sends to the speech doc, so the page can never type one (AltGr layouts too: their ~ arrives with Ctrl+Alt held). Boxes with their own text field keep it.
+      if (e.key === '~' && (!e.ctrlKey || e.getModifierState?.('AltGraph')) && !e.metaKey && !settingsRef.current && !e.isComposing && !homeRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
+        e.preventDefault(); e.stopPropagation();
+        if (!e.repeat) sendToSpeech();
+        return;
+      }
       // AltGr arrives as Ctrl+Alt on Windows: those keys type characters (AltGr+ß is "\\"), never shortcuts
       if (e.altKey || e.getModifierState?.('AltGraph')) return;
       const v = viewRef.current;
@@ -429,12 +435,6 @@ export function App() {
       const mod = IS_MAC ? e.metaKey : e.ctrlKey; // Ctrl-N/O/F are caret keys on macOS
       // Settings is modal: only its own keys (Esc, Mod-,) get through
       if (settingsRef.current && !(e.key === 'Escape' || (mod && e.key === ','))) { if (mod) e.preventDefault(); return; }
-      // ~ sends to the speech doc, so the page can never type one. Boxes with their own text field keep it.
-      if (e.key === '~' && !e.ctrlKey && !e.metaKey && !e.isComposing && !homeRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(v && isReading(v.state))) {
-        e.preventDefault(); e.stopPropagation();
-        if (!e.repeat) sendToSpeech();
-        return;
-      }
       // Esc in a filled Settings search clears the search before it closes Settings
       if (e.key === 'Escape' && settingsRef.current && e.target instanceof HTMLInputElement && e.target.closest('.st-search') && e.target.value) return;
       const k = e.key.toLowerCase();

@@ -37,7 +37,8 @@ export function sendContent(state: EditorState): { content: Fragment; label: str
   return { content: Fragment.from(paras), label: text.length > LABEL_MAX ? `${text.slice(0, LABEL_MAX - 1).trimEnd()}…` : text };
 }
 
-/** Insert after the paragraph holding the caret (a blank one is replaced) and leave the caret at the end, so the next send lands below. */
+/** Insert after the paragraph holding the caret and leave the caret at the end, so the next send lands below.
+ *  An empty speech doc's one blank line is replaced; any other blank line is a separator and stays. */
 export function insertIntoSpeech(state: EditorState, content: Fragment): Transaction {
   const { doc } = state;
   const i = Math.min(state.selection.$to.index(0), doc.childCount - 1);
@@ -45,7 +46,7 @@ export function insertIntoSpeech(state: EditorState, content: Fragment): Transac
   for (let k = 0; k < i; k++) start += doc.child(k).nodeSize;
   const para = doc.child(i);
   const tr = closeHistory(state.tr); // each send is its own undo step, even two in quick succession
-  const blank = !para.content.size;
+  const blank = doc.childCount === 1 && !para.content.size;
   if (blank) tr.replaceWith(start, start + para.nodeSize, content);
   else tr.insert(start + para.nodeSize, content);
   const end = start + (blank ? 0 : para.nodeSize) + content.size;

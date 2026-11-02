@@ -118,12 +118,11 @@ describe('landing in the speech doc', () => {
     speech = send(select(file(), 'Body three'), speech);
     expect(lines(speech)).toEqual(['tag: Tag two', 'normal: Body three', ...CARD_TWO.slice(1), ...CARD_ONE]);
   });
-  it('a blank line under the caret is replaced instead of left behind', () => {
-    let speech = send(caret(file(), 'Tag two', 2));
-    speech = speech.apply(speech.tr.insert(speech.doc.content.size, schema.node('paragraph')));
-    speech = speech.apply(speech.tr.setSelection(TextSelection.create(speech.doc, speech.doc.content.size - 1)));
-    speech = send(caret(file(), 'Tag one', 2), speech);
-    expect(lines(speech)).toEqual([...CARD_TWO, ...CARD_ONE]);
+  it('the blank line that ends a sent card stays between it and the next send', () => {
+    const spaced = () => make([['tag', 'Tag one'], ['normal', 'Body one'], ['normal', ''], ['tag', 'Tag two'], ['normal', 'Body two'], ['normal', '']]);
+    let speech = send(caret(spaced(), 'Tag one', 2));
+    speech = send(caret(spaced(), 'Tag two', 2), speech);
+    expect(lines(speech)).toEqual(['tag: Tag one', 'normal: Body one', 'normal: ', 'tag: Tag two', 'normal: Body two', 'normal: ']);
   });
   it('undo takes back just the last send, even when two come in quick succession', () => {
     let speech = send(caret(file(), 'Tag two', 2));
