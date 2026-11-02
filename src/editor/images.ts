@@ -150,12 +150,14 @@ class ImageView implements NodeView {
   private startResize(e: PointerEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const startX = e.clientX, startW = this.box.getBoundingClientRect().width, max = this.maxWidth(), ratio = this.ratio();
+    // the page is CSS-zoomed: the pointer moves in screen pixels, the width is set in page pixels
+    const startX = e.clientX, startW = this.box.offsetWidth, max = this.maxWidth(), ratio = this.ratio();
+    const zoom = this.box.getBoundingClientRect().width / startW || 1;
     let w = startW;
     this.dom.classList.add('f-img-resizing');
     this.handle.setPointerCapture?.(e.pointerId);
     const move = (ev: PointerEvent) => {
-      w = Math.max(MIN_PX, Math.min(max, startW + ev.clientX - startX));
+      w = Math.max(MIN_PX, Math.min(max, startW + (ev.clientX - startX) / zoom));
       this.box.style.width = `${w}px`;
       this.box.style.aspectRatio = `${1} / ${ratio}`;
       this.label.textContent = `${Math.round(w)} × ${Math.round(w * ratio)}`;
