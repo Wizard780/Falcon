@@ -161,7 +161,11 @@ class NoteEditor {
   /** What the little editor holds, as a footnote's content: text and line breaks only. */
   private innerJson(): FootnoteContent {
     const json: FootnoteContent = [];
-    this.inner?.state.doc.firstChild!.forEach((n) => { if (n.isText || n.type.name === 'hard_break') json.push(n.toJSON() as FootnoteContent[number]); });
+    // a paste can split the little editor into paragraphs: the note keeps them all, a line break between each
+    this.inner?.state.doc.forEach((p, _o, i) => {
+      if (i > 0) json.push({ type: 'hard_break' });
+      p.forEach((n) => { if (n.isText || n.type.name === 'hard_break') json.push(n.toJSON() as FootnoteContent[number]); });
+    });
     return json;
   }
   update() {
