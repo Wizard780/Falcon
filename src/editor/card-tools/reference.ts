@@ -14,12 +14,12 @@ export const refHeading: SettingSpec = {
 export const refShrink: SettingSpec = {
   section: 'Card tools', kind: 'choice', default: '3', key: 'falcon.reference.shrink',
   label: 'Create Reference makes the text smaller by',
-  options: [['0', 'Nothing'], ['1', '1 pt'], ['2', '2 pt'], ['3', '3 pt'], ['4', '4 pt']],
+  options: [['0', 'None'], ['1', '1 pt'], ['2', '2 pt'], ['3', '3 pt'], ['4', '4 pt']],
 };
 export const refHighlights: SettingSpec = {
   section: 'Card tools', kind: 'choice', default: 'shading', key: 'falcon.reference.highlights',
-  label: 'In a reference, highlights become',
-  options: [['shading', 'Gray background'], ['convert', 'Background in the same color'], ['keep', 'Highlights'], ['remove', 'Nothing']],
+  label: 'Create Reference turns highlights into', hint: 'Same color: a background in each highlight\'s own color',
+  options: [['shading', 'Gray background'], ['convert', 'Same color'], ['keep', 'Highlights'], ['remove', 'Nothing']],
 };
 
 /** The cite-marked words of the card's cite line, like "SMITH 24". */
