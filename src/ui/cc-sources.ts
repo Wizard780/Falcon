@@ -235,6 +235,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
       get: () => (ctx.speechMin === 8 && prep === 8 ? 'hs' : ctx.speechMin === 9 && prep === 10 ? 'college' : ''),
       set: (v) => { ctx.setSpeechMin(v === 'hs' ? 8 : 9); setPref(P.prepMin, v === 'hs' ? 8 : 10); } },
     { id: 'app.speech', label: 'Speech length', page: 'speech', options: range(1, 30, 1, min), get: () => ctx.speechMin, set: (v) => ctx.setSpeechMin(v as number) },
+    tog(P.showSend, 'Send button', 'speech', 'A Send button beside Read in the top bar.'),
     tog(P.showPrep, 'Prep timer', 'speech', 'A prep clock beside the speech timer.'),
     pick(P.prepMin, 'Prep time', 'speech', range(1, 15, 1, min)),
     pick(P.wpm1, 'Reader 1', 'speech', range(150, 425, 25, (n) => `${n} wpm`), 'Words per minute for the first read time.'),

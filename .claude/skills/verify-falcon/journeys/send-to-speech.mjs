@@ -26,6 +26,8 @@ const toast = async () => (await page.textContent('.toast')).trim();
 const speechMap = async () => { await goto(SPEECH); return f.markMap(); };
 const caretPara = () => page.evaluate(() => window.__falconView.state.selection.$head.parent.textContent);
 
+const sendBtn = () => page.locator('.bar .end button.b', { hasText: /^Send$/ });
+want((await sendBtn().count()) === 0, 'no Send button in the top bar by default');
 await caretIn('Global');
 await send();
 const after = await rows();
@@ -179,4 +181,26 @@ const srcClean = !(await f.markMap()).includes('~');
 const now = await untitled();
 want(srcClean && now !== sentBefore && now.endsWith(CARD1), `and ~ sends instead: ${JSON.stringify(now.slice(-60))}`);
 await f.shot('tilde-sends-after-rebind');
+
+// Settings > Speech and timers > Send button brings the button back, and clicking it sends
+await page.click('.fstrip [aria-label="Settings"]');
+await page.waitForTimeout(250);
+await page.click('[aria-label="Settings sections"] button:has-text("Speech and timers")');
+await page.waitForTimeout(150);
+const sendToggle = page.locator('[aria-label="Send button"]').first();
+want((await sendToggle.getAttribute('aria-checked')) === 'false', `the Send button setting starts off: ${await sendToggle.getAttribute('aria-checked')}`);
+await sendToggle.click();
+await page.waitForTimeout(150);
+await f.shot('settings-send-button-on');
+await page.click('[aria-label="Close settings"]');
+await page.waitForTimeout(200);
+await goto('seed');
+want((await sendBtn().count()) === 1, 'turned on, the Send button is back beside Read');
+await f.shot('send-button-shown');
+const beforeClick = await untitled();
+await goto('seed');
+await caretIn('Warming Block');
+await sendBtn().click();
+await page.waitForTimeout(300);
+want((await untitled()).length > beforeClick.length && (await untitled()).endsWith(BLOCK2), 'clicking it sends');
 await f.done();

@@ -1130,7 +1130,9 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
             onContextMenu={(e) => { e.preventDefault(); setRunning(false); setLeft(SPEECH_SECONDS); }}>
             {clock(left)}
           </button>
-          <button className="b" title={titled('Send to speech', 'sendToSpeech', 'copy the selection, or the card or section at the caret, into the speech doc. The file isn\'t changed. Change the key in Settings > Keybindings')} onMouseDown={(e) => { e.preventDefault(); props.onSend(); }}>Send</button>
+          {pref(P.showSend) && (
+            <button className="b" title={titled('Send to speech', 'sendToSpeech', 'copy the selection, or the card or section at the caret, into the speech doc. The file isn\'t changed. Change the key in Settings > Keybindings')} onMouseDown={(e) => { e.preventDefault(); props.onSend(); }}>Send</button>
+          )}
           {showPrep && (
             <button className={`b timer prep${low(prepRunning, prepLeft)}`} data-on={prepRunning || undefined} title="Prep timer: click to start or pause. Right-click to reset"
               onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (prepLeft === 0) setPrepLeft(PREP_SECONDS); setPrepRunning((r) => !r); } }}
