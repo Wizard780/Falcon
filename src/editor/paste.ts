@@ -22,7 +22,27 @@ export function cleanPastedHTML(html: string, smart = pref(P.smartPaste)): strin
   }
   // Word's own shell, not a stray mso- property (Falcon's copies carry mso-highlight for Word)
   const word = smart && /urn:schemas-microsoft-com|mso-style|class="?Mso/.test(html);
-  return emit(doc, blocks(doc.body, smart, word), smart);
+  const list = blocks(doc.body, smart, word);
+  if (smart && /docs-internal-guid/.test(html)) list.forEach(headingBySize);
+  return emit(doc, list, smart);
+}
+
+/**
+ * Google Docs often loses Verbatim's heading styles and keeps only the look: a pocket is a
+ * paragraph of 26pt bold, a tag one of 13pt bold. A whole paragraph at one heading size that
+ * starts bold takes that heading; any unbolded words in it stay unbolded.
+ */
+function headingBySize(b: Item) {
+  if (isTable(b) || b.style !== 'normal') return;
+  const runs = b.runs.filter((r) => r.text && /\S/.test(r.text));
+  const pt = runs[0]?.pt;
+  if (!pt || !runs[0].bold || runs.some((r) => r.pt !== pt)) return;
+  const sizes: [ParaStyle, number][] = [['pocket', pref(P.szPocket)], ['hat', pref(P.szHat)], ['block', pref(P.szBlock)], ['tag', pref(P.szTag)]];
+  const hit = sizes.find(([, size]) => Math.abs(size - pt) < 0.25);
+  if (!hit) return;
+  b.style = hit[0];
+  b.heading = true;
+  for (const r of runs) if (r.bold === false) r.unbold = true;
 }
 
 /** Falcon's paragraph classes: every copy of ours has at least one. */

@@ -111,6 +111,31 @@ describe('paste in', () => {
       'normal: [AI has ]{size:8pt}[pushed utilities]{highlight:yellow+underline}[ to the limit]{emphasis+highlight:cyan} today',
     ]);
   });
+  it('Google Docs: headings that lost their style are matched by font size', () => {
+    const span = (text: string, pt: number, weight = 700) => `<span style="font-size:${pt}pt;font-family:Calibri,sans-serif;font-weight:${weight};">${text}</span>`;
+    const p = (...spans: string[]) => `<p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;">${spans.join('')}</p>`;
+    const html = '<meta charset="utf-8"><b style="font-weight:normal;" id="docs-internal-guid-9f8e7d6c">'
+      + p(span('Pocket', 26)) + p(span('Hat', 22)) + p(span('Block', 16))
+      + p(span('Data centers cause ', 13), span('blackouts', 13, 400))
+      + p(span('Smith 24', 13), span(', Professor', 11, 400))
+      + p(span('Bold card text', 11))
+      + '</b>';
+    expect(paste(html).split('\n')).toEqual([
+      'pocket: Pocket',
+      'hat: Hat',
+      'block: Block',
+      'tag: Data centers cause [blackouts]{unbold}',
+      'normal: [Smith 24]{cite}, Professor',
+      'normal: [Bold card text]{bold}',
+    ]);
+  });
+  it('Google Docs: heading sizes follow the Settings sizes', () => {
+    setPref(P.szTag, 14);
+    try {
+      const html = '<b style="font-weight:normal;" id="docs-internal-guid-1"><p><span style="font-size:14pt;font-weight:700;">Tag at 14</span></p></b>';
+      expect(paste(html)).toBe('tag: Tag at 14');
+    } finally { setPref(P.szTag, 13); }
+  });
   it('Gmail: rgb() colors and px sizes, no classes', () => {
     const html = '<div dir="ltr"><div><span style="font-weight:bold;font-size:17.3333px">Smith 24</span> says</div>'
       + '<div><span style="text-decoration:underline;background-color:rgb(255, 255, 0)">lit</span> and <span style="text-decoration:underline;border:1px solid rgb(34, 34, 34);font-weight:bold">boxed</span></div></div>';
