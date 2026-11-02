@@ -1,5 +1,5 @@
-// Hover behavior: every button's tooltip, the hidden outline staying hidden, and a doc in the rail
-// growing into a pill with its name. Usage: vite preview on :5190, then
+// Hover behavior: every button's tooltip, the hidden outline staying hidden, and the rail's doc
+// icons opening the files panel. Usage: vite preview on :5190, then
 //   node scripts/hover-check.mjs <a.docx> <b.docx> [shots dir]
 import { chromium } from 'playwright';
 
@@ -83,28 +83,43 @@ await page.click('.tools [aria-label="Outline"]');
 await page.waitForTimeout(400);
 want(await page.$eval('.olp', (x) => getComputedStyle(x).opacity === '1'), 'outline button brings it back');
 
-// a doc in the rail grows into a pill with its name
+// hovering the doc icons slides the files panel out: every open file by name, each row level with its icon
 await page.mouse.move(700, 600);
 await page.waitForTimeout(300);
+const panelOpen = () => page.$eval('.files', (x) => x.hasAttribute('data-open') && getComputedStyle(x).pointerEvents === 'auto');
+want(!(await panelOpen()), 'files panel closed at rest');
+await page.screenshot({ path: `${shots}/4-rail-rest.png`, clip: { x: 0, y: 0, width: 520, height: 300 } });
 const rows = await page.$$('.doc-row');
 const r0 = await rows[0].boundingBox();
-await page.mouse.move(r0.x + r0.width / 2 - 6, r0.y + r0.height / 2 + 6);
-await page.waitForTimeout(120);
-await page.screenshot({ path: `${shots}/4-pill-mid.png`, clip: { x: 0, y: 0, width: 520, height: 260 } });
+await page.mouse.move(r0.x + r0.width / 2, r0.y + r0.height / 2);
+await page.waitForTimeout(80);
+await page.screenshot({ path: `${shots}/5-panel-mid.png`, clip: { x: 0, y: 0, width: 520, height: 300 } });
 await page.waitForTimeout(300);
-const pill = await page.$eval('.doc-tip', (x) => ({ text: x.innerText.trim(), left: x.getBoundingClientRect().left, top: x.getBoundingClientRect().top, w: x.getBoundingClientRect().width })).catch(() => null);
-want(pill?.text.startsWith(base(a).slice(0, 12)), `hovered doc shows its name: ${pill?.text}`);
-want(pill && Math.abs(pill.left - r0.x) < 1 && Math.abs(pill.top - r0.y) < 1 && pill.w > r0.width + 40, `the pill grows out of the doc button itself: ${JSON.stringify(pill)} vs ${JSON.stringify(r0)}`);
-await page.screenshot({ path: `${shots}/5-pill.png`, clip: { x: 0, y: 0, width: 520, height: 260 } });
-const r1 = await rows[1].boundingBox();
-await page.mouse.move(r1.x + r1.width / 2 - 6, r1.y + r1.height / 2 + 6);
-await page.waitForTimeout(400);
-const pill2 = await page.$eval('.doc-tip', (x) => x.innerText.trim()).catch(() => null);
-want(pill2?.startsWith(base(b).slice(0, 12)), `second doc shows its own name: ${pill2}`);
+want(await panelOpen(), 'hovering a doc icon opens the files panel');
+const names = await page.$$eval('.files-r .nm', (xs) => xs.map((x) => x.textContent));
+want(names.length === 2 && names[0].startsWith(base(a).slice(0, 12)) && names[1].startsWith(base(b).slice(0, 12)), `panel lists every open file by name: ${JSON.stringify(names)}`);
+const level = await page.evaluate(() => {
+  const icons = [...document.querySelectorAll('.doc-row')].map((x) => x.getBoundingClientRect());
+  const rs = [...document.querySelectorAll('.files-r')].map((x) => x.getBoundingClientRect());
+  return icons.map((r, i) => Math.abs(r.top - rs[i].top));
+});
+want(level.every((d) => d < 1), `each panel row is level with its icon: ${JSON.stringify(level)}`);
+const on = await page.$eval('.files-r[data-on] .nm', (x) => x.textContent).catch(() => null);
+want(on?.startsWith(base(b).slice(0, 12)), `the open file is lit: ${on}`);
+await page.screenshot({ path: `${shots}/6-panel.png`, clip: { x: 0, y: 0, width: 520, height: 300 } });
+// the pointer can cross from the rail into the panel and click a file there
+const p0 = await page.$('.files-r >> nth=0');
+const pb = await p0.boundingBox();
+await page.mouse.move(pb.x + 60, pb.y + pb.height / 2, { steps: 8 });
+await page.waitForTimeout(250);
+want(await panelOpen(), 'panel stays open while the pointer moves into it');
+await page.mouse.click(pb.x + 60, pb.y + pb.height / 2);
+await page.waitForTimeout(250);
+const on2 = await page.$eval('.files-r[data-on] .nm', (x) => x.textContent).catch(() => null);
+want(on2?.startsWith(base(a).slice(0, 12)), `clicking a row switches to that file: ${on2}`);
 await page.mouse.move(700, 600);
-await page.waitForTimeout(200);
-want(await page.$('.doc-tip') === null, 'pill goes away when the pointer leaves');
-
+await page.waitForTimeout(400);
+want(!(await panelOpen()), 'panel closes when the pointer leaves');
 want(errors.length === 0, `no page errors ${errors.join(' | ')}`);
 console.log(results.join('\n'));
 await browser.close();
