@@ -40,7 +40,7 @@ const brush = new Plugin<{ kind: 'highlight' | 'shading' | null }>({
     handleDOMEvents: {
       mouseup: (view, ev) => {
         const kind = brushKey.getState(view.state)?.kind;
-        if (!kind) return false;
+        if (!kind || isReading(view.state)) return false;
         // let the selection settle, then paint it
         setTimeout(() => {
           const { from, to, empty } = view.state.selection;

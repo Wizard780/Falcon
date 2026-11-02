@@ -2,6 +2,7 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
 import { closeHistory } from 'prosemirror-history';
 import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
+import { isReading } from './read';
 
 /** Where a match sits: 0 pocket/hat/block, 1 tag, 2 analytic, 3 undertag, 4 cite line, 5 anything else. */
 type Match = { from: number; to: number; cat: number };
@@ -111,7 +112,7 @@ function reveal(view: EditorView) {
 export function replaceOne(view: EditorView, text: string) {
   const st = findKey.getState(view.state);
   const m = current(st);
-  if (!st || !m) return;
+  if (!st || !m || isReading(view.state)) return;
   const tr = text ? view.state.tr.insertText(text, m.from, m.to) : view.state.tr.delete(m.from, m.to);
   view.dispatch(tr);
   // the next match is the first one past the replacement, in the same order
@@ -125,7 +126,7 @@ export function replaceOne(view: EditorView, text: string) {
 /** Replace every match, as one undo step. Returns how many were replaced. */
 export function replaceAll(view: EditorView, text: string): number {
   const st = findKey.getState(view.state);
-  if (!st || !st.matches.length) return 0;
+  if (!st || !st.matches.length || isReading(view.state)) return 0;
   const tr = closeHistory(view.state.tr);
   for (const m of [...st.matches].reverse()) {
     if (text) tr.insertText(text, m.from, m.to); else tr.delete(m.from, m.to);
