@@ -206,3 +206,18 @@ describe('moving around and moving cards', () => {
     expect(s.selection.$from.parent.textContent).toBe('Card A');
   });
 });
+
+describe('analytic (Mod-F7) over imported run color', () => {
+  const navy = () => {
+    const s = make([['tag', 'Switch sides solves'], ['normal', 'body']]);
+    const end = 1 + 'Switch sides solves'.length;
+    return s.apply(s.tr.addMark(1, end, schema.marks.color.create({ color: '#1F3864' })));
+  };
+  it('drops the inline color so the Settings analytic color shows', () => {
+    expect(map(navy()).split('\n')[0]).toBe('tag: [Switch sides solves]{color}');
+    expect(map(run(caret(navy(), 'sides', 1), K['Mod-F7'])).split('\n')[0]).toBe('analytic: Switch sides solves');
+  });
+  it('keeps inline color when the line becomes a hat', () => {
+    expect(map(run(caret(navy(), 'sides', 1), K.F5)).split('\n')[0]).toBe('hat: [Switch sides solves]{color}');
+  });
+});
