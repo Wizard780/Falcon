@@ -214,8 +214,9 @@ export const imagePlugin = new Plugin<readonly string[]>({
   // the pictures a paste or drop just brought in: only those are fetched, never the ones a file was opened with
   state: {
     init: () => NONE,
-    apply: (tr) => {
-      if (!/^(paste|drop)$/.test(tr.getMeta('uiEvent') ?? '')) return NONE;
+    apply: (tr, pending) => {
+      // a plugin's follow-up to the paste (the table plugin adding a paragraph after a table) keeps the list for the view
+      if (!/^(paste|drop)$/.test(tr.getMeta('uiEvent') ?? '')) return tr.getMeta('appendedTransaction') ? pending : NONE;
       const srcs = new Set<string>();
       for (const step of tr.steps) {
         if (step instanceof ReplaceStep || step instanceof ReplaceAroundStep) {
