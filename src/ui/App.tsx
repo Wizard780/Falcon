@@ -401,13 +401,18 @@ export function App() {
       if (r) opened(r);
     } catch (e) { flash(`Couldn't open: ${(e as Error).message}`); }
   }, [opened, flash]);
+  /** Opening `path` failed (moved, deleted): say so, and stop listing it in the recents. */
+  const openFailed = useCallback((name: string, path: string, e: unknown) => {
+    setRecents((list) => list.filter((r) => r.path !== path));
+    flash(`Couldn't open ${name}: ${(e as Error).message}`);
+  }, [flash]);
   const openRecent = useCallback(async (r: Recent) => {
     const already = openedPath(r.path) ?? (!r.path ? docsRef.current.find((d) => !d.meta.path && d.meta.name === r.name) : undefined);
     if (already) { switchTo(already.id); return; }
     if (!r.path || !bridge.openPath) { void fileOpen(); return; }
     try { opened(await openPath(r.path)); }
-    catch (e) { flash(`Couldn't open ${r.name}: ${(e as Error).message}`); }
-  }, [opened, fileOpen, switchTo, flash]);
+    catch (e) { openFailed(r.name, r.path, e); }
+  }, [opened, fileOpen, switchTo, openFailed]);
   // Cmd-K: an open doc switches to it; anything else opens by path (indexed folders and recents are allowed)
   const openHit = useCallback(async (h: FileHit) => {
     setHomeOpen(false);
@@ -416,8 +421,8 @@ export function App() {
     if (already) { switchTo(already.id); return; }
     if (!h.path || !bridge.openPath) { void fileOpen(); return; }
     try { opened(await openPath(h.path)); }
-    catch (e) { flash(`Couldn't open ${h.name}: ${(e as Error).message}`); }
-  }, [opened, fileOpen, switchTo, flash]);
+    catch (e) { openFailed(h.name, h.path, e); }
+  }, [opened, fileOpen, switchTo, openFailed]);
   /**
    * Write the active doc. As-Is is the document itself, so the open file takes its new name and path;
    * Send, Read and Marked docs are copies and the open file stays as it was.
