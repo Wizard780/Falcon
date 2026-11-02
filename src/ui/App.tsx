@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
@@ -14,13 +14,11 @@ import { buildOutline, currentItem, readWords, type OutlineItem } from '../edito
 import { toggleColorMark } from '../editor/commands';
 import { fontSizeOf, setFontSize } from '../editor/font-size';
 import { FONT_COLORS } from './swatches';
-import { TIMER_EVENT, type TimerRequest } from './cc-sources';
+import { TIMER_EVENT, type TimerRequest } from './timer-event';
 import { insertIntoSpeech, sendContent } from '../editor/speech';
 import { selectionState } from './selection-state';
 import { SvgIcon } from './icons';
 import { newFileName, openDocument, openPath, saveDocument, type DocMeta } from './files';
-import { Palette } from './Palette';
-import { CommandCenter } from './CommandCenter';
 import type { Ctx } from './cc-sources';
 import type { FileHit } from './file-search';
 import { clearFind, findInfo, requestFind, setQuery as setFindQuery } from '../editor/find';
@@ -28,7 +26,7 @@ import { readSetting } from '../editor/tools';
 import { findOrderSetting } from '../editor/nav-keys';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
-import { Settings } from './Settings';
+import './display'; // the display settings (fonts, sizes, root classes) apply at startup
 import { Confirm, nameList, type Ask } from './Confirm';
 import { SaveAs } from './SaveAs';
 import { copyName, docForMode, type SaveMode } from '../editor/save-modes';
@@ -44,6 +42,25 @@ import { P, onPrefs, pref } from '../editor/prefs';
 import { track, type DocSource } from './analytics';
 import { readJson, safeSet } from './storage';
 import { reducedMotion } from './motion';
+
+// Settings, the command center and file search load the first time they open (and in the background once the
+// app is up), so the first screen downloads and starts less code; so does the .docx code (files.ts)
+function later<T extends { open: boolean }>(load: () => Promise<ComponentType<T>>) {
+  let C: ComponentType<T> | null = null, loading: Promise<void> | null = null;
+  const preload = () => (loading ??= load().then((c) => { C = c; }));
+  /** Mounts the component the first time `open` is true, and keeps it after (its closing animation needs it). */
+  function Later(props: T) {
+    const ever = useRef(false), [, loaded] = useState(0);
+    if (props.open) ever.current = true;
+    useEffect(() => { if (ever.current && !C) void preload().then(() => loaded((n) => n + 1)); });
+    return ever.current && C ? <C {...props} /> : null;
+  }
+  return Object.assign(Later, { preload });
+}
+const Settings = later(() => import('./Settings').then((m) => m.Settings));
+const CommandCenter = later(() => import('./CommandCenter').then((m) => m.CommandCenter));
+const Palette = later(() => import('./Palette').then((m) => m.Palette));
+export const prefetch = () => Promise.all([Settings.preload(), CommandCenter.preload(), Palette.preload(), import('../docx/import'), import('../docx/export')]);
 
 const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
 const MODE_PREFIX = { send: P.prefixSend, read: P.prefixRead, marked: P.prefixMarked };
@@ -716,7 +733,7 @@ export function App() {
   // ---- settings that act on the app (the rest act through CSS or in the editor) ----
   const [, setPrefTick] = useState(0);
   useEffect(() => onPrefs(() => setPrefTick((t) => t + 1)), []); // redraw: word-count speeds, recents, the timer
-  useEffect(() => { track('app_opened'); }, []);
+  useEffect(() => { track('app_opened'); whenIdle(() => void prefetch()); }, []);
   // Opens by path run one at a time: two at once both read the tab list before either adds its tab,
   // and one is lost (or the same file opens twice). Last session's files and OS opens share the queue.
   const pathQueue = useRef(Promise.resolve());
