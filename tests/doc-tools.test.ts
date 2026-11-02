@@ -3,7 +3,8 @@ import { undo } from 'prosemirror-history';
 import { TextSelection } from 'prosemirror-state';
 import { docToDocx } from '../src/docx/export';
 import { docxToDoc } from '../src/docx/import';
-import { falconKeys as K } from '../src/editor/keymap';
+import { commandOf, falconKeys as K } from '../src/editor/keymap';
+import { createView } from '../src/editor/editor';
 import { DOC_TOOLS, analyticsToTags, selectSimilar, standardize } from '../src/editor/doc-tools';
 import { fixFormattingGaps } from '../src/editor/doc-tools/gaps';
 import { findUrls, linkUrls, removeHyperlinks } from '../src/editor/doc-tools/links';
@@ -11,7 +12,7 @@ import { MultiSelection } from '../src/editor/multi';
 import { toggleRead } from '../src/editor/read';
 import { schema } from '../src/editor/schema';
 import { activeColors } from '../src/editor/host';
-import { caret, make, map, run, select } from './helpers';
+import { at, caret, make, map, run, select } from './helpers';
 
 const M = schema.marks;
 const line = (s: ReturnType<typeof make>, i: number) => map(s).split('\n')[i];
@@ -78,6 +79,15 @@ describe('automatic gap bridging', () => {
     let s = run(select(body(), 'Tag'), K.F11);
     s = run(select(s, 'one'), K.F11);
     expect(line(s, 0)).toBe('tag: [Tag]{highlight:yellow} [one]{highlight:yellow}');
+  });
+  it('Clear formatting never bridges, from the toolbar or from F12', () => {
+    const underlined = () => run(select(make([['normal', 'aaa bbb ccc']]), 'aaa bbb ccc'), K.F9);
+    const toolbar = run(select(underlined(), 'bbb'), commandOf('clear'));
+    const view = createView(document.createElement('div'), () => {}, underlined().doc);
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at(view.state, 'bbb'), at(view.state, 'bbb', 3))));
+    view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'F12', bubbles: true, cancelable: true }));
+    expect(map(view.state)).toBe('normal: [aaa ]{underline}bbb[ ccc]{underline}');
+    expect(map(toolbar)).toBe(map(view.state));
   });
   it('leaves undo alone', () => {
     let s = run(select(body(), 'alpha'), K.F9);
