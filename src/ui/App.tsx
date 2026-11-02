@@ -412,10 +412,6 @@ export function App() {
       <div className="covered" inert={settingsOpen}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} />
-      <Tools outline={showOutline} reading={reading}
-        onNew={fileNew} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
-        onFind={openFind} onOutline={() => { setHomeOpen(false); setShowOutline((s) => !s); }}
-        onRead={() => { setHomeOpen(false); run(toggleRead); }} />
       </div>
 
       <div className="covered" inert={homeOpen || settingsOpen}>
@@ -430,6 +426,18 @@ export function App() {
         onRead={() => run(toggleRead)}
         speechSeconds={speechMin * 60}
       />
+      </div>
+
+      {/* After the toolbar on purpose: Electron applies drag regions in document order, so the toolbar's
+          drag area (which runs under these buttons) would swallow their clicks if they came first. */}
+      <div className="covered" inert={settingsOpen}>
+      <Tools outline={showOutline} reading={reading}
+        onNew={fileNew} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
+        onFind={openFind} onOutline={() => { setHomeOpen(false); setShowOutline((s) => !s); }}
+        onRead={() => { setHomeOpen(false); run(toggleRead); }} />
+      </div>
+
+      <div className="covered" inert={homeOpen || settingsOpen}>
 
       <OutlinePane active={activeId}
         shown={showOutline} items={outline} depth={depth} cur={cur}

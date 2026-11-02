@@ -52,7 +52,7 @@ function createWindow() {
 }
 
 const DOCX = [{ name: 'Word documents', extensions: ['docx'] }];
-// The page can only save over files the user picked in a dialog this session, and only .docx.
+// Files picked in a dialog this session. The page can only save over these or the recent list, and only .docx.
 const userPaths = new Set();
 // Files picked in a dialog in earlier sessions, so Home and the files panel can reopen them.
 // Only paths in this list (and only .docx) can be opened without a dialog.
@@ -91,7 +91,10 @@ ipcMain.handle('falcon:open-path', async (_e, p) => {
 });
 ipcMain.handle('falcon:save-file', async (e, opts) => {
   if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
-  let p = typeof opts.path === 'string' && userPaths.has(path.resolve(opts.path)) ? path.resolve(opts.path) : null;
+  // Save writes in place to any file the user picked before, this run or an earlier one (a document
+  // restored after a relaunch keeps its path, but userPaths starts empty).
+  const asked = typeof opts.path === 'string' ? path.resolve(opts.path) : null;
+  let p = asked && (userPaths.has(asked) || (await loadRecent()).includes(asked)) ? asked : null;
   if (!p) {
     const win = BrowserWindow.fromWebContents(e.sender);
     const name = typeof opts.name === 'string' ? path.basename(opts.name) : 'Untitled.docx';

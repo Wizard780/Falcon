@@ -8,6 +8,10 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 const { ELECTRON_RUN_AS_NODE, ...env } = process.env; // set by some hosts; it turns Electron into plain Node
 const exe = process.env.FALCON_EXE;
 env.FALCON_USER_DATA = fs.mkdtempSync(`${os.tmpdir()}/falcon-smoke-`);
+// a file picked in an earlier session: Save must write it in place, with no dialog
+const keptDoc = `${env.FALCON_USER_DATA}/Kept.docx`;
+fs.writeFileSync(keptDoc, 'old');
+fs.writeFileSync(`${env.FALCON_USER_DATA}/recent-paths.json`, JSON.stringify([keptDoc]));
 const app = await electron.launch(exe ? { executablePath: exe, env: { ...env, FALCON_HEADLESS: '1' } } : { args: ['.'], env: { ...env, FALCON_HEADLESS: '1' } });
 const win = await app.firstWindow();
 const errors = [];
@@ -27,6 +31,20 @@ const selectLast = (n) => win.evaluate((n) => { const v = window.__falconView; c
 await selectLast(3); await win.keyboard.press('F9'); await win.keyboard.press('F11');
 await selectLast(11); await win.keyboard.press('F10');
 const map = await win.evaluate(() => window.__falconMarkMap());
+// Electron builds the window's drag region in document order: drag elements add, no-drag ones cut.
+// Replay that and list any visible button whose center ends up draggable (a click there moves the window).
+const dragged = await win.evaluate(() => {
+  const ops = [...document.querySelectorAll('*')].map((el) => ({ el, r: el.getBoundingClientRect(), a: getComputedStyle(el).getPropertyValue('-webkit-app-region').trim() }))
+    .filter((o) => (o.a === 'drag' || o.a === 'no-drag') && o.r.width && o.r.height);
+  const inDrag = (x, y) => ops.reduce((d, o) => (x >= o.r.left && x < o.r.right && y >= o.r.top && y < o.r.bottom ? o.a === 'drag' : d), false);
+  return [...document.querySelectorAll('button')].filter((b) => b.getClientRects().length && !b.closest('[inert]'))
+    .filter((b) => { const r = b.getBoundingClientRect(); return inDrag(r.left + r.width / 2, r.top + r.height / 2); })
+    .map((b) => b.getAttribute('aria-label') || b.textContent.trim());
+});
+const savedInPlace = await win.evaluate((p) => Promise.race([
+  window.falcon.saveFile({ path: p, name: 'Kept.docx', data: new Uint8Array([80, 75]) }).then((r) => r?.path ?? 'null'),
+  new Promise((ok) => setTimeout(() => ok('dialog'), 3000)),
+]), keptDoc);
 const bridge = await win.evaluate(() => Object.keys(window.falcon || {}).sort().join(','));
 const platform = await win.evaluate(() => window.falcon?.platform);
 const visible = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.isVisible()));
@@ -47,4 +65,6 @@ want(homeAtLaunch && !homeAfterEsc, 'Home shows at launch and Esc closes it');
 want(strayOpen.startsWith('refused'), `openPath refuses files never picked: ${strayOpen}`);
 want(visible.every((v) => !v), 'window stayed hidden (checked before any CI-only capture)');
 want(process.platform === 'darwin' || menu.length === 0, 'no menu bar on Windows/Linux (F10 and Alt belong to the editor)');
+want(!dragged.length, `buttons under a window-drag region (clicks would be dead): ${dragged.join(', ')}`);
+want(savedInPlace === keptDoc && fs.readFileSync(keptDoc, 'utf8') === 'PK', `Save writes a file picked in an earlier session in place: ${savedInPlace}`);
 want(!errors.length, `page errors: ${errors.join('; ')}`);
