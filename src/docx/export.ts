@@ -87,10 +87,11 @@ const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpeg', 
 const EMU_PX = 9525; // 914400 EMU per inch, 96 px per inch
 
 function bytesOf(dataUrl: string): { bytes: Uint8Array; ext: string } | null {
-  const m = dataUrl.match(/^data:([\w/.+-]+);base64,(.*)$/s);
-  const ext = m && EXT[m[1].toLowerCase()];
+  const m = dataUrl.match(/^data:([\w/.+-]+)(?:;[^,;]*)*;base64,(.*)$/s);
+  const ext = m && EXT[m[1].toLowerCase().replace(/^image\/jpg$/, 'image/jpeg')];
   if (!m || !ext) return null;
-  const bin = atob(m[2]);
+  let bin: string;
+  try { bin = atob(m[2].replace(/\s/g, '')); } catch { return null; } // bad data: that picture is left out, the save goes on
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return { bytes, ext };
