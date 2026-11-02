@@ -72,7 +72,7 @@ export const readPlugin = new Plugin<{ on: boolean; decos: DecorationSet }>({
       if (!readKey.getState(view.state)?.on) return false;
       const mod = ev.metaKey || ev.ctrlKey;
       if (ev.key === ' ' || ev.key === 'Enter') { toggleMarker(view.state, view.dispatch); return true; }
-      if (mod && ev.shiftKey && ev.key.toLowerCase() === 'd') return false; // handled by the keymap
+      if (mod && ev.shiftKey && /^[dr]$/i.test(ev.key)) return false; // marker and read mode: handled by the keymap
       if (/^(Arrow|Page|Home|End|Escape|Shift|Control|Alt|Meta)/.test(ev.key)) return false;
       if (mod && /^[acf]$/i.test(ev.key)) return false;
       return true;
