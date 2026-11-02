@@ -1,0 +1,127 @@
+#!/usr/bin/env node
+// Launch, check, drive and tear down a Falcon instance for verification.
+//   falcon-verify launch [--no-build] [--port N]   build dist/, start vite preview, wait until the editor renders
+//   falcon-verify doctor [RUN]                     read-only: is this instance worth driving?
+//   falcon-verify run [RUN] <script.mjs> [args]    run a Playwright drive script against RUN
+//   falcon-verify cleanup [RUN]                    stop what launch started; keep the evidence
+//   falcon-verify list                             runs under /tmp/falcon-verify and whether they are up
+// RUN defaults to the newest run. State lives in /tmp/falcon-verify/<RUN>/; evidence in <RUN>/evidence/.
+import { spawn, execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import net from 'node:net';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const SKILL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const REPO = path.resolve(SKILL, '../../..');
+const ROOT = '/tmp/falcon-verify';
+const [cmd, ...rest] = process.argv.slice(2);
+
+const die = (m) => { console.error(`falcon-verify: ${m}`); process.exit(1); };
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const git = (...a) => execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim();
+const runs = () => (fs.existsSync(ROOT) ? fs.readdirSync(ROOT).filter((d) => fs.existsSync(`${ROOT}/${d}/state.json`)).sort() : []);
+const load = (id) => {
+  id ||= runs().at(-1);
+  if (!id) die('no runs; start one with: falcon-verify launch');
+  const f = `${ROOT}/${id}/state.json`;
+  if (!fs.existsSync(f)) die(`no run ${id}`);
+  return JSON.parse(fs.readFileSync(f, 'utf8'));
+};
+const freePort = () => new Promise((res) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
+const portOwner = (port) => { try { return Number(execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], { encoding: 'utf8' }).split('\n')[0]); } catch { return null; } };
+// vite preview runs as a child of npx/node: the listener's pid may be a descendant of the one we spawned
+const descends = (pid, root) => { for (let p = pid, i = 0; p > 1 && i < 10; i++) { if (p === root) return true; p = Number(execFileSync('ps', ['-o', 'ppid=', '-p', String(p)], { encoding: 'utf8' }).trim() || 0); } return false; };
+
+// Usable means the editor mounted, not just that the port answers.
+async function editorReady(url, timeoutMs) {
+  const { chromium } = await import(path.join(REPO, 'node_modules/playwright/index.mjs'));
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(url, { timeout: timeoutMs });
+    await page.waitForSelector('.ProseMirror', { timeout: timeoutMs });
+    const title = await page.title();
+    return { ok: true, title, errors };
+  } catch (e) { return { ok: false, error: e.message.split('\n')[0] }; } finally { await browser.close(); }
+}
+
+async function launch() {
+  const port = rest.includes('--port') ? Number(rest[rest.indexOf('--port') + 1]) : await freePort();
+  if (portOwner(port)) die(`port ${port} is already taken; pick another or omit --port`);
+  const id = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '') + '-' + port;
+  const dir = `${ROOT}/${id}`;
+  fs.mkdirSync(`${dir}/evidence`, { recursive: true });
+  fs.mkdirSync(`${dir}/scratch`, { recursive: true });
+  if (!rest.includes('--no-build')) {
+    console.log('building dist/ (npm run build)…');
+    try { execFileSync('npm', ['run', 'build'], { cwd: REPO, stdio: ['ignore', fs.openSync(`${dir}/build.log`, 'w'), fs.openSync(`${dir}/build.log`, 'a')] }); }
+    catch { die(`build failed, see ${dir}/build.log`); }
+  } else if (!fs.existsSync(`${REPO}/dist/index.html`)) die('--no-build but dist/index.html is missing');
+  const log = fs.openSync(`${dir}/server.log`, 'w');
+  const child = spawn(path.join(REPO, 'node_modules/.bin/vite'), ['preview', '--port', String(port), '--strictPort', '--host', '127.0.0.1'], { cwd: REPO, detached: true, stdio: ['ignore', log, log] });
+  child.unref();
+  const url = `http://127.0.0.1:${port}/`;
+  const state = { id, pid: child.pid, port, url, repo: REPO, commit: git('rev-parse', '--short', 'HEAD'), dirty: git('status', '--porcelain', '--untracked-files=no') !== '', distBuiltAt: fs.statSync(`${REPO}/dist/index.html`).mtime.toISOString(), dir };
+  fs.writeFileSync(`${dir}/state.json`, JSON.stringify(state, null, 2));
+  const r = await editorReady(url, 30000);
+  if (!r.ok) die(`editor never rendered at ${url}: ${r.error}. Server log: ${dir}/server.log. Run: falcon-verify cleanup ${id}`);
+  console.log(`READY ${id}\n  url       ${url}\n  pid       ${child.pid}\n  commit    ${state.commit}${state.dirty ? ' (+uncommitted changes)' : ''}\n  evidence  ${dir}/evidence`);
+}
+
+async function doctor() {
+  const s = load(rest[0]);
+  const checks = [];
+  const want = (ok, what) => checks.push(`${ok ? 'ok  ' : 'FAIL'} ${what}`);
+  want(alive(s.pid), `server process ${s.pid} is running`);
+  const owner = portOwner(s.port);
+  want(owner && descends(owner, s.pid), `port ${s.port} is held by our server (listener pid ${owner ?? 'none'})`);
+  const head = git('rev-parse', '--short', 'HEAD');
+  want(head === s.commit, `repo HEAD ${head} matches the launched build ${s.commit}`);
+  const built = fs.existsSync(`${s.repo}/dist/index.html`) ? fs.statSync(`${s.repo}/dist/index.html`).mtime.toISOString() : 'missing';
+  want(built === s.distBuiltAt, `dist/ is the build this run served (${built})`);
+  const newer = execFileSync('find', [`${s.repo}/src`, '-newer', `${s.repo}/dist/index.html`, '-type', 'f'], { encoding: 'utf8' }).trim();
+  want(!newer, newer ? `src/ has edits newer than dist/ (relaunch to test them): ${newer.split('\n').slice(0, 3).join(', ')}` : 'no src/ edits newer than dist/');
+  const r = await editorReady(s.url, 15000);
+  want(r.ok && r.title === 'Falcon' && !r.errors.length, r.ok ? `editor renders at ${s.url} (title "${r.title}", ${r.errors.length} page errors)` : `editor does not render: ${r.error}`);
+  console.log(`run ${s.id}\n` + checks.join('\n'));
+  if (checks.some((c) => c.startsWith('FAIL'))) process.exit(1);
+}
+
+function run() {
+  let id;
+  if (rest[0] && !rest[0].endsWith('.mjs')) id = rest.shift();
+  const s = load(id);
+  const [script, ...args] = rest;
+  if (!script) die('usage: falcon-verify run [RUN] <script.mjs> [args]');
+  const env = { ...process.env, FALCON_URL: s.url, FALCON_RUN: s.id, FALCON_EVIDENCE: `${s.dir}/evidence`, FALCON_SCRATCH: `${s.dir}/scratch`, FALCON_SKILL: SKILL };
+  delete env.ELECTRON_RUN_AS_NODE; // some hosts set it; it turns Electron into plain Node
+  const r = spawn(process.execPath, [path.resolve(script), ...args], { stdio: 'inherit', env, cwd: s.repo });
+  r.on('exit', (code) => process.exit(code ?? 1));
+}
+
+function cleanup() {
+  const s = load(rest[0]);
+  if (alive(s.pid)) { try { process.kill(-s.pid, 'SIGTERM'); } catch { process.kill(s.pid, 'SIGTERM'); } }
+  fs.rmSync(`${s.dir}/scratch`, { recursive: true, force: true });
+  fs.renameSync(`${s.dir}/state.json`, `${s.dir}/state.stopped.json`);
+  const n = fs.existsSync(`${s.dir}/evidence`) ? fs.readdirSync(`${s.dir}/evidence`, { recursive: true }).length : 0;
+  console.log(`stopped ${s.id} (pid ${s.pid}); evidence kept: ${s.dir}/evidence (${n} entries)`);
+}
+
+function list() {
+  const all = fs.existsSync(ROOT) ? fs.readdirSync(ROOT).sort() : [];
+  for (const id of all) {
+    const f = ['state.json', 'state.stopped.json'].map((n) => `${ROOT}/${id}/${n}`).find((x) => fs.existsSync(x));
+    if (!f) continue;
+    const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+    const st = f.endsWith('stopped.json') ? 'stopped' : alive(s.pid) ? 'up     ' : 'down   ';
+    console.log(`${id}  ${st}  ${s.url}  ${s.commit}  evidence: ${s.dir}/evidence`);
+  }
+}
+
+const cmds = { launch, doctor, run, cleanup, list };
+if (!cmds[cmd]) die('usage: falcon-verify launch|doctor|run|cleanup|list (see the header of this file)');
+await cmds[cmd]();

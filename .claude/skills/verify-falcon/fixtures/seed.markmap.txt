@@ -1,0 +1,9 @@
+pocket: Seed Pocket
+hat: Seed Hat
+block: Economy Block
+tag: Growth is slowing
+normal: [Smith 24]{cite}
+normal: Global [growth will fall to ]{underline}[two percent]{highlight:yellow+underline} next year.
+block: Warming Block
+tag: Warming is real
+normal: Temperatures rose again. The needle finds this line.
