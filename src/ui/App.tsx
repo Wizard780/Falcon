@@ -33,6 +33,7 @@ import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 import { P, onPrefs, pref } from '../editor/prefs';
+import { safeSet } from './storage';
 
 const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty, speech }]: the open doc and every unsaved one
@@ -262,10 +263,10 @@ export function App() {
     return () => view.destroy();
   }, []);
 
-  useEffect(() => { document.documentElement.style.setProperty('--zoom', String(zoom)); localStorage.setItem('falcon.zoom', String(zoom)); }, [zoom]);
-  useEffect(() => { localStorage.setItem('falcon.outline', showOutline ? 'on' : 'off'); }, [showOutline]);
-  useEffect(() => { localStorage.setItem('falcon.depth', String(depth)); }, [depth]);
-  useEffect(() => { localStorage.setItem('falcon.speech', String(speechMin)); }, [speechMin]);
+  useEffect(() => { document.documentElement.style.setProperty('--zoom', String(zoom)); safeSet('falcon.zoom', String(zoom)); }, [zoom]);
+  useEffect(() => { safeSet('falcon.outline', showOutline ? 'on' : 'off'); }, [showOutline]);
+  useEffect(() => { safeSet('falcon.depth', String(depth)); }, [depth]);
+  useEffect(() => { safeSet('falcon.speech', String(speechMin)); }, [speechMin]);
   useEffect(() => { saveRecents(recents); }, [recents]);
   // the list changed (switch, open, close, saved): refresh the crash-recovery copy once React has settled
   useEffect(() => { if (viewRef.current) whenIdle(() => { backup(); }); }, [docs, activeId, speechId, backup]);
@@ -661,7 +662,7 @@ export function App() {
   }, [hasView]); // eslint-disable-line react-hooks/exhaustive-deps
   // files double-clicked in Finder/Explorer (or Open With): open each, or switch to it if it's already open
   useEffect(() => (hasView ? bridge.onOpenPaths?.((ps) => queueRef.current(ps, false)) : undefined), [hasView]);
-  useEffect(() => { localStorage.setItem('falcon.session', JSON.stringify(docs.flatMap((d) => (d.meta.path ? [d.meta.path] : [])))); }, [docs]);
+  useEffect(() => { safeSet('falcon.session', JSON.stringify(docs.flatMap((d) => (d.meta.path ? [d.meta.path] : [])))); }, [docs]);
   // Ctrl/Cmd + scroll wheel or trackpad pinch zooms, in the same 10% steps
   useEffect(() => {
     let acc = 0;
@@ -1030,7 +1031,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
             : pop.kind === 'font'
             ? FONT_COLORS.map(([c, n]) => (
               <button key={n} className="sw" role="menuitem" aria-label={n} title={n} aria-current={fontColor === c || undefined} style={{ background: c ?? '#222222' }}
-                onMouseDown={(e) => { e.preventDefault(); setFontColor(c); if (c) localStorage.setItem('falcon.fontColor', c); else localStorage.removeItem('falcon.fontColor'); setPop(null); applyFont(c); }} />
+                onMouseDown={(e) => { e.preventDefault(); setFontColor(c); if (c) safeSet('falcon.fontColor', c); else localStorage.removeItem('falcon.fontColor'); setPop(null); applyFont(c); }} />
             ))
             : <>
               <button className="sw none" role="menuitem" aria-label={pop.kind === 'highlight' ? 'No highlight' : 'No background'} title={pop.kind === 'highlight' ? 'No highlight' : 'No background'}

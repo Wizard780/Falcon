@@ -1,5 +1,6 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { buildOutline } from '../editor/outline';
+import { safeSet } from './storage';
 // the most Settings lets Home show; Home shows the first `Recent files` of them
 const MAX = 24;
 
@@ -19,7 +20,7 @@ export function loadRecents(): Recent[] {
   try { return JSON.parse(localStorage.getItem(KEY) ?? '[]') as Recent[]; } catch { return []; }
 }
 export function saveRecents(list: Recent[]) {
-  localStorage.setItem(KEY, JSON.stringify(list.slice(0, MAX)));
+  safeSet(KEY, JSON.stringify(list.slice(0, MAX)));
 }
 
 const same = (a: Recent, b: { name: string; path?: string }) => (a.path && b.path ? a.path === b.path : !a.path && !b.path && a.name === b.name);

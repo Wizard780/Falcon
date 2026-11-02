@@ -11,12 +11,13 @@ import { readSetting, type SettingSpec } from '../editor/tools';
 import { outlineContentSetting, outlineHideSetting, outlineLevelSetting } from '../editor/nav-keys';
 import { SvgIcon } from './icons';
 import { tidy } from './recents';
+import { safeSet } from './storage';
 import './outline.css';
 
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const modKey = (e: { metaKey: boolean; ctrlKey: boolean }) => (IS_MAC ? e.metaKey : e.ctrlKey);
-const save = (spec: SettingSpec, v: string | boolean) => localStorage.setItem(spec.key, typeof v === 'boolean' ? (v ? 'on' : 'off') : v);
+const save = (spec: SettingSpec, v: string | boolean) => safeSet(spec.key, typeof v === 'boolean' ? (v ? 'on' : 'off') : v);
 
 type Props = {
   active: number; shown: boolean; items: OutlineItem[]; depth: number; cur: number;
