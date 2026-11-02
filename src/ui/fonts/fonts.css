@@ -1,0 +1,6 @@
+/* Interface fonts bundled with Falcon (Settings > Appearance > Interface font). Geist, Inter and Figtree come from
+   @fontsource-variable (main.tsx). A face only downloads when the chosen --ui-font uses it. */
+/* Halden: SIL Open Font License 1.1, The Halden Project Authors (github.com/Luffixos/fontzz) */
+@font-face { font-family: 'Halden'; src: url('./halden.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+/* Switzer by the Indian Type Foundry, from Fontshare under the ITF Free Font License (fontshare.com/terms) */
+@font-face { font-family: 'Switzer'; src: url('./switzer.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }

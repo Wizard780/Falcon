@@ -29,6 +29,7 @@ export const P = {
   textWidth: def<'full' | 'wide' | 'narrow'>('textWidth', 'full'),
   margins: def<'narrow' | 'normal' | 'wide'>('margins', 'normal'),
   font: def('font', 'calibri'),
+  uiFont: def('uiFont', 'system'), // the chrome's font (Settings.tsx UI_FONTS); `font` is the document's
   lineHeight: def('lineHeight', '1.2'),
   szNormal: def('sz.normal', 11),
   szPocket: def('sz.pocket', 26),
