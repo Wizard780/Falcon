@@ -117,6 +117,25 @@ describe('shrink, case, condense', () => {
   });
 });
 
+describe('the cite line, for condense and Alt-F8', () => {
+  it('condense leaves the cite alone after an undertag or a blank line, and keeps it in a one-paragraph card', () => {
+    const under = make([['tag', 'Tag'], ['undertag', 'my note'], ['normal', 'Smith 24'], ['normal', 'one'], ['normal', 'two']]);
+    expect(map(run(caret(under, 'two', 1), K['Alt-F3']))).toBe('tag: Tag\nundertag: my note\nnormal: Smith 24\nnormal: one two');
+    const blank = make([['tag', 'Tag'], ['normal', ''], ['normal', 'Smith 24'], ['normal', 'one'], ['normal', 'two']]);
+    expect(map(run(caret(blank, 'two', 1), K['Alt-F3']))).toBe('tag: Tag\nnormal: \nnormal: Smith 24\nnormal: one two');
+    expect(map(run(caret(make([['tag', 'Tag'], ['normal', 'one   two']]), 'two'), K.F3))).toBe('tag: Tag\nnormal: one two');
+  });
+  it('condense merges an analytic\'s body, which has no cite line', () => {
+    const s0 = make([['analytic', 'An'], ['normal', 'one'], ['normal', 'two']]);
+    expect(map(run(caret(s0, 'two', 1), K['Alt-F3']))).toBe('analytic: An\nnormal: one two');
+  });
+  it('Alt-F8 copies the cite, not the undertag above it', () => {
+    const s0 = make([['tag', 'Prev'], ['undertag', 'my note'], ['normal', 'Smith 24'], ['normal', 'body'], ['tag', 'New'], ['normal', '']]);
+    const s = run(s0.apply(s0.tr.setSelection(Selection.atEnd(s0.doc))), K['Alt-F8']);
+    expect(map(s).split('\n').slice(4)).toEqual(['tag: New', 'normal: Smith 24']);
+  });
+});
+
 describe('moving around and moving cards', () => {
   const doc = () => make([['block', 'Block'], ['tag', 'Card A'], ['normal', 'a body'], ['tag', 'Card B'], ['normal', 'b body'], ['tag', 'Card C']]);
   it('Mod-Alt-Down moves the card below its neighbor, cursor along', () => {
