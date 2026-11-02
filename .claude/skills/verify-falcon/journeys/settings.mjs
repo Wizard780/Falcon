@@ -7,7 +7,7 @@ await f.open(SEED);
 await page.click('.fstrip [aria-label="Settings"]');
 await page.waitForTimeout(300);
 const panes = await page.$$eval('[aria-label="Settings sections"] button', (b) => b.map((x) => x.textContent.trim()));
-want(JSON.stringify(panes) === JSON.stringify(['General', 'Appearance', 'Editor', 'Formatting', 'Keybindings', 'Speech and timers']), `six panes: ${panes.join(', ')}`);
+want(JSON.stringify(panes) === JSON.stringify(['General', 'File search', 'Appearance', 'Editor', 'Formatting', 'Keybindings', 'Speech and timers']), `seven panes: ${panes.join(', ')}`);
 await page.click('[aria-label="Settings sections"] button:has-text("Appearance")');
 await page.click('[aria-label="Highlighter"] [role=radio][aria-label="Green"]');
 await page.waitForTimeout(200);
