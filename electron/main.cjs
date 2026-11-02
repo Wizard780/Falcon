@@ -233,8 +233,13 @@ ipcMain.handle('falcon:save-file', async (e, opts) => {
   if (!p.toLowerCase().endsWith('.docx')) throw new Error('Falcon only saves .docx files');
   // write to a temp file first so a crash mid-save never truncates the real file
   const tmp = `${p}.falcon-tmp`;
-  await fs.writeFile(tmp, Buffer.from(opts.data));
-  await fs.rename(tmp, p);
+  try {
+    await fs.writeFile(tmp, Buffer.from(opts.data));
+    await fs.rename(tmp, p);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
   return { path: p, name: path.basename(p) };
 });
 
