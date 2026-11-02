@@ -1,7 +1,7 @@
 /**
  * What the command center lists: every command (each key binding, the fixed keys, the toolbar's extras),
- * every setting with its choices, and the headings and cards in the open file. Files and the card
- * library are a separate source, added beside these when file search grows into it.
+ * every setting with its choices, the headings and cards in the open file, and .docx files (the ones
+ * Cmd-K finds). The card library is a separate source, added beside these later.
  */
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
@@ -24,6 +24,8 @@ import { PRESETS, SYSTEM, customThemes } from './theme';
 import { newFileName } from './files';
 import { FONT_COLORS } from './swatches';
 import type { Arg, Entry, Option } from './command-center';
+import type { FileHit } from './file-search';
+import type { Recent } from './recents';
 
 /** What the command center needs from the app to act. */
 export type Ctx = {
@@ -44,6 +46,10 @@ export type Ctx = {
   jump: (i: number) => void; peek: (i: number) => void;
   find: (text: string, replace: boolean) => void;
   openSettings: (page: string, query?: string) => void;
+  /** open docs and recent files (the command center adds the indexed folders' files), and how to open one */
+  docs?: { id: number; name: string; path?: string }[];
+  recents?: Recent[];
+  openFile?: (h: FileHit) => void;
 };
 
 /** The clocks live in the toolbar; the command center asks them through an event. */
@@ -57,7 +63,7 @@ export const PAGES: Record<string, string> = {
 
 // ---------- commands ----------
 
-// finding files is file search's job (Cmd-K), so it isn't listed here
+// Search files would only open the other box: files are rows here already
 const HIDDEN = new Set(['search', 'commands']);
 const NOT_COMMANDS = new Set(['New line', 'Delete back', 'Delete forward']);
 /** Words people search for that the label doesn't say. */
@@ -314,3 +320,15 @@ export function textEntries(ctx: Ctx, text: string): Entry[] {
   ];
 }
 
+
+// ---------- files ----------
+
+const KIND_NAME = { open: 'Open', recent: 'Recent', file: '', cmd: '' };
+/** .docx files as DOCX rows: picking one switches to it when it's open, or opens it. */
+export function fileEntries(ctx: Ctx, hits: FileHit[]): Entry[] {
+  return hits.map((h): Entry => ({
+    key: `file:${h.path ?? h.key}`, source: 'file', label: h.name, badge: 'DOCX',
+    group: h.kind === 'file' ? h.folder || 'Files' : KIND_NAME[h.kind], keywords: `${h.folder} docx file`,
+    hint: h.path, run: () => { ctx.openFile?.(h); },
+  }));
+}

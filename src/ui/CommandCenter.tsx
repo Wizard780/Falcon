@@ -2,17 +2,21 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { redo, undo } from 'prosemirror-history';
 import { IS_MAC, keyParts } from '../editor/keybinds';
 import { PREFIXES, loadRecent, matchRanges, noteRecent, parseArgs, parseQuery, rank, type Entry, type SourceId } from './command-center';
-import { argEntries, commandEntries, headingEntries, settingEntries, textEntries, type Ctx } from './cc-sources';
+import { argEntries, commandEntries, fileEntries, headingEntries, settingEntries, textEntries, type Ctx } from './cc-sources';
+import { collectHits } from './file-search';
+import { bridge, type IndexedFile } from '../editor/host';
 import { SvgIcon } from './icons';
 import './command-center.css';
 
-const SOURCE_NAME: Record<SourceId, string> = { arg: '', cmd: 'Commands', set: 'Settings', doc: 'In this file', help: 'Help' };
-const BADGE: Record<SourceId, string> = { arg: 'GO', cmd: 'CMD', set: 'SET', doc: '', help: '?' };
+const SOURCE_NAME: Record<SourceId, string> = { arg: '', cmd: 'Commands', set: 'Settings', doc: 'In this file', file: 'Files', help: 'Help' };
+const BADGE: Record<SourceId, string> = { arg: 'GO', cmd: 'CMD', set: 'SET', doc: '', file: 'DOCX', help: '?' };
 const badgeOf = (e: Entry) => e.badge ?? (e.key === 'find' || e.key === 'replace' ? 'FIND' : BADGE[e.source]);
 // like CardMirror: 50 rows at a time, arrowing past the end shows the next 50
 const PAGE = 50;
 // mixed in with commands and settings, the file's headings take at most this many rows
 const DOC_CAP = 8;
+// and files at most this many (an indexed folder can hold thousands); f then a space lists them all
+const FILE_CAP = 10;
 
 type Row = { e: Entry; head?: string };
 
@@ -46,6 +50,8 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
   const actRef = useRef<HTMLSpanElement>(null);
   const [ready, setReady] = useState(false);
   const restore = useRef<(() => void) | null>(null);
+  // .docx files in the folders Settings > File search allows (desktop only)
+  const [indexed, setIndexed] = useState<IndexedFile[]>([]);
   const peeked = useRef(false);
 
   useEffect(() => {
@@ -54,6 +60,8 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     peeked.current = false;
     restore.current = props.saveScroll();
     inputRef.current?.focus();
+    let live = true;
+    void bridge.indexedFiles?.().then((f) => live && setIndexed(f), () => {});
     // centered over the page, like CardMirror centers it over the active pane
     const fit = () => {
       const r = document.querySelector('.f-scroll')?.getBoundingClientRect();
@@ -62,7 +70,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     };
     fit();
     addEventListener('resize', fit);
-    return () => removeEventListener('resize', fit);
+    return () => { live = false; removeEventListener('resize', fit); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -72,6 +80,10 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const base = useMemo(() => (open ? [...commandEntries(ctx), ...settingEntries(ctx)] : []), [open, ctx, tick]);
   const recent = useMemo(() => (open ? loadRecent() : []), [open, tick]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const hits = useMemo(() => (open ? collectHits(ctx.docs ?? [], ctx.recents ?? [], indexed) : []), [open, ctx.docs?.length, ctx.recents, indexed]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const files = useMemo(() => fileEntries(ctx, hits), [hits]);
 
   const { source, text } = parseQuery(query);
   const typed = !!text.trim();
@@ -88,9 +100,12 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     const pool = source === 'cmd' ? base.filter((e) => e.source === 'cmd' || e.badge === 'TOG' || e.badge === 'CYC')
       : source === 'set' ? base.filter((e) => e.source === 'set')
       : source === 'doc' ? headings
-      : [...base, ...headings];
+      : source === 'file' ? files
+      : [...base, ...headings, ...files];
     if (!typed) {
       if (source === 'doc') return pool.map((e) => ({ e }));
+      // f alone: what's open and what you opened lately (the folders' files show once you type)
+      if (source === 'file') return files.filter((e, i) => hits[i].kind !== 'file').map((e, i, all) => ({ e, head: e.group !== all[i - 1]?.group ? e.group : undefined }));
       // nothing typed and no prefix: just what you ran lately (CardMirror shows nothing here)
       if (!source) {
         const byKey = new Map(pool.map((e) => [e.key, e]));
@@ -106,12 +121,13 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
       return out;
     }
     const args = !source || source === 'cmd' || source === 'doc' ? argEntries(ctx, parseArgs(text)) : [];
-    let docs = 0;
-    const ranked = rank(pool, text, recent, 300).filter((e) => e.source !== 'doc' || source === 'doc' || ++docs <= DOC_CAP);
+    let docs = 0, fs = 0;
+    const ranked = rank(pool, text, recent, 300).filter((e) => source
+      || (e.source === 'doc' ? ++docs <= DOC_CAP : e.source === 'file' ? ++fs <= FILE_CAP : true));
     const tail = !source || source === 'doc' ? textEntries(ctx, text) : [];
     return [...args, ...ranked, ...tail].map((e) => ({ e }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sub, query, base, headings, recent]);
+  }, [open, sub, query, base, headings, files, recent]);
 
   const shown = rows.slice(0, limit);
   const cur = Math.max(0, Math.min(at, shown.length - 1));
@@ -154,7 +170,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     if (!e) return;
     if (e.fill !== undefined) { if (e.fill) { setQuery(e.fill); setAt(0); } inputRef.current?.focus(); return; }
     if (!e.run) return;
-    if (e.source === 'cmd' || e.source === 'set') noteRecent(sub ? sub.entry.key : e.key);
+    if (e.source === 'cmd' || e.source === 'set' || e.source === 'file') noteRecent(sub ? sub.entry.key : e.key);
     if (!stay) close(e.source === 'doc' || e.source === 'arg');
     const did = e.run();
     if (did === false) props.flash(e.can && !e.can() ? `${e.label}: nothing to do here` : `${e.label} didn't change anything`);
@@ -198,7 +214,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     return out;
   };
   // the hint strip says what each key does for the row you're on
-  const verb = (e: Entry) => e.fill !== undefined ? 'type it' : e.badge === 'TOG' ? 'toggle' : e.badge === 'CYC' ? 'cycle' : e.source === 'doc' || e.source === 'arg' ? 'go' : 'run';
+  const verb = (e: Entry) => e.fill !== undefined ? 'type it' : e.badge === 'TOG' ? 'toggle' : e.badge === 'CYC' ? 'cycle' : e.source === 'doc' || e.source === 'arg' ? 'go' : e.source === 'file' ? 'open' : 'run';
   const hints: [string, string][] = [];
   if (row) {
     hints.push(['↵', verb(row)]);

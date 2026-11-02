@@ -1,11 +1,11 @@
 # Command center
 
-A user presses Mod-Shift-Space (CardMirror's Search Everything key) and gets a bar low over the page with results above the box and a hint strip under it. One box runs any command, flips any setting (Toggle rows) or steps it to its next value (Cycle rows), sets values typed as text (`zoom 150`, `14pt`, `card 12`), and jumps to any heading or card in the open file, cards also by their cite. File search and the card library are not in it: Cmd-K owns files.
+A user presses Mod-Shift-Space (CardMirror's Search Everything key) and gets a bar low over the page with results above the box and a hint strip under it. One box runs any command, flips any setting (Toggle rows) or steps it to its next value (Cycle rows), sets values typed as text (`zoom 150`, `14pt`, `card 12`), and jumps to any heading or card in the open file, cards also by their cite. It also opens .docx files as DOCX rows: open docs, recent files and (desktop) the folders Settings > File search allows, the same files Cmd-K finds. The card library is not in it yet.
 
 ## Sub-features
 
 - `open` Mod-Shift-Space opens it with focus in the box, and closes it again. An empty box shows the prompt line and recent rows only.
-- `prefix` `c ` commands plus Toggle and Cycle rows, `s ` settings, `h ` (or `#`) headings in this file, `?` help. With a prefix and nothing typed, it browses the whole source, 50 rows at a time.
+- `prefix` `c ` commands plus Toggle and Cycle rows, `s ` settings, `h ` (or `#`) headings in this file, `f ` files (with nothing typed: what's open and recent), `?` help. With a prefix and nothing typed, it browses the whole source, 50 rows at a time.
 - `run` Enter runs the row and closes. Shift-Enter runs it and keeps the box open. Mod-Z and Mod-Shift-Z undo and redo the document from the box.
 - `settings` Toggle rows flip on Enter, Cycle rows step to the next choice and say `Now → Next`, Tab (or →) lists a Cycle row's choices, typing a choice (`light`) lists `Theme: Light` directly.
 - `doc` heading rows show a CardMirror badge (POC HAT BLK TAG ANL). Arrowing onto one scrolls the page there, Enter moves the caret there, and Esc puts the page back where it was.
