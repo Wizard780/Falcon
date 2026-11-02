@@ -13,9 +13,9 @@ import { SvgIcon } from './icons';
 import { tidy } from './recents';
 import { safeSet } from './storage';
 import { reducedMotion } from './motion';
+import { IS_MAC } from '../editor/keybinds';
 import './outline.css';
 
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const modKey = (e: { metaKey: boolean; ctrlKey: boolean }) => (IS_MAC ? e.metaKey : e.ctrlKey);
 const save = (spec: SettingSpec, v: string | boolean) => safeSet(spec.key, typeof v === 'boolean' ? (v ? 'on' : 'off') : v);
 

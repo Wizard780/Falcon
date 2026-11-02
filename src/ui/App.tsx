@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
@@ -13,7 +13,7 @@ import { buildOutline, currentItem, readWords, type OutlineItem } from '../edito
 import { toggleColorMark } from '../editor/commands';
 import { insertIntoSpeech, sendContent } from '../editor/speech';
 import { selectionState } from './selection-state';
-import { Icon, SvgIcon } from './icons';
+import { SvgIcon } from './icons';
 import { newFileName, openDocument, openPath, saveDocument, type DocMeta } from './files';
 import { Palette } from './Palette';
 import type { FileHit } from './file-search';
@@ -735,7 +735,7 @@ export function App() {
 
       <footer className="status">
         <span>Σ</span>
-        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {mmss(words / pref(P.wpm1))} · Reader 2: {mmss(words / pref(P.wpm2))}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
+        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {clock((words / pref(P.wpm1)) * 60)} · Reader 2: {clock((words / pref(P.wpm2)) * 60)}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
@@ -783,7 +783,8 @@ function beep() {
   } catch { /* no audio device */ }
 }
 
-const mmss = (min: number) => { const s = Math.round(min * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+/** Seconds as m:ss. */
+const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 // ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
@@ -982,7 +983,6 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   };
   useEffect(() => countdown(running, setRunning, setLeft, 'Time is up'), [running]);
   useEffect(() => countdown(prepRunning, setPrepRunning, setPrepLeft, 'Prep is up'), [prepRunning]);
-  const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   const low = (on: boolean, s: number) => (on && s <= pref(P.lowTime) ? ' low' : '');
 
   return (

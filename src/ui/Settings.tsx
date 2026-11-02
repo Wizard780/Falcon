@@ -121,13 +121,6 @@ export function Settings(props: Props) {
       <SvgIcon name="chev" />
     </span>
   );
-  const stepper = (label: string, value: number, show: string, less: () => void, more: () => void) => (
-    <span className="st-step" role="group" aria-label={label}>
-      <button aria-label={`Less ${label.toLowerCase()}`} onClick={less}>−</button>
-      <output>{show}</output>
-      <button aria-label={`More ${label.toLowerCase()}`} onClick={more}>+</button>
-    </span>
-  );
 
   // rows for Falcon's own settings (prefs.ts): each control reads and writes its pref
   const tog = (p: Pref<boolean>, label: string, hint: string): Row => ({ label, hint, control: toggle(label, pref(p), (on) => setPref(p, on)) });
