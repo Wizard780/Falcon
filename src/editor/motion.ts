@@ -30,7 +30,10 @@ export function moveByParagraph(dir: -1 | 1, extend: boolean): Command {
       else target = $head.end(1);
     }
     if (dispatch) {
-      const s = extend ? TextSelection.create(doc, sel.anchor, target) : Selection.near(doc.resolve(target));
+      // the edge of a table is no text position: selecting over one ends in the cell text at that edge
+      const s = extend
+        ? TextSelection.create(doc, sel.anchor, Selection.findFrom(doc.resolve(target), -dir, true)?.head ?? target)
+        : Selection.near(doc.resolve(target));
       dispatch(state.tr.setSelection(s).scrollIntoView());
     }
     return true;
@@ -91,7 +94,8 @@ export function moveContainer(dir: -1 | 1): Command {
     if (dir < 0) { tr.delete(from, to); tr.insert(insertAt, slice.content); }
     else { tr.insert(insertAt, slice.content); tr.delete(from, to); }
     const newStart = dir < 0 ? insertAt : insertAt - (to - from);
-    tr.setSelection(TextSelection.create(tr.doc, Math.min(newStart + offset, tr.doc.content.size - 1)));
+    // after a table (a gap cursor) is no text position: the cursor goes back into the table, staying in the card
+    tr.setSelection(Selection.near(tr.doc.resolve(Math.min(newStart + offset, tr.doc.content.size - 1)), -1));
     dispatch(tr.scrollIntoView());
     return true;
   };

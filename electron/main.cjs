@@ -214,7 +214,7 @@ ipcMain.handle('falcon:dict-remove', async (e, w) => {
   return (await dictWords(e)).filter((x) => x !== w); // the list can lag the removal by a moment
 });
 ipcMain.handle('falcon:index-files', () => index().files());
-ipcMain.handle('falcon:save-file', async (e, opts) => {
+async function saveFile(e, opts) {
   if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
   // Save writes straight into the document's own file, wherever it lives, as long as it's still there.
   // A file that was moved or deleted gets Save As, opened in its old folder (writing to the stale path
@@ -233,9 +233,22 @@ ipcMain.handle('falcon:save-file', async (e, opts) => {
   if (!p.toLowerCase().endsWith('.docx')) throw new Error('Falcon only saves .docx files');
   // write to a temp file first so a crash mid-save never truncates the real file
   const tmp = `${p}.falcon-tmp`;
-  await fs.writeFile(tmp, Buffer.from(opts.data));
-  await fs.rename(tmp, p);
+  try {
+    await fs.writeFile(tmp, Buffer.from(opts.data));
+    await fs.rename(tmp, p);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
   return { path: p, name: path.basename(p) };
+}
+// Saves run one at a time, in the order asked: a quick second save of a file can't mix its bytes into the first
+// one's temp file, or finish first and be overwritten by the older copy.
+let saving = Promise.resolve();
+ipcMain.handle('falcon:save-file', (e, opts) => {
+  const turn = saving.then(() => saveFile(e, opts));
+  saving = turn.catch(() => {});
+  return turn;
 });
 
 // "Mod-Shift-s" (a keymap name, as Settings saves it) as an Electron accelerator, "Cmd+Shift+S"

@@ -5,8 +5,7 @@ import { copySlice } from './nav/clipboard';
 import { numberingPlugin, toggleRestart, toggleRole } from './nav/numbering';
 import { pageDragPlugin } from './nav/page-drag';
 import { requestFind } from './find';
-
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+import { IS_MAC } from './keybinds';
 
 /** Select / copy / delete the card or heading section at the cursor (the heading and everything under it). */
 const selectCurrentHeading: Command = (state, dispatch) => {

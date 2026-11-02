@@ -3,8 +3,7 @@ import type { EditorView } from 'prosemirror-view';
 import { wordAt } from './commands';
 import { MultiSelection, spansOf, type Span as MSpan } from './multi';
 import { CellSelection, acrossCells } from './tables';
-
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+import { IS_MAC } from './keybinds';
 
 type Unit = 'char' | 'word' | 'para';
 
@@ -33,7 +32,7 @@ export function wordSelection() {
           if (e.button !== 0 || e.altKey) return false;
           // a picture or footnote reference is selected whole by a click (ProseMirror's own node selection)
           if ((e.target as HTMLElement).closest?.('.f-img, .f-footnote, .f-notes')) return false;
-          const addKey = isMac ? e.metaKey : e.ctrlKey;
+          const addKey = IS_MAC ? e.metaKey : e.ctrlKey;
           if ((e.metaKey || e.ctrlKey) && !addKey) return false;
           const hit = view.posAtCoords({ left: e.clientX, top: e.clientY });
           if (!hit) return false;

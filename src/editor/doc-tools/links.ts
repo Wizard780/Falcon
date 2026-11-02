@@ -2,10 +2,10 @@ import { Plugin, type Command } from 'prosemirror-state';
 import { schema } from '../schema';
 import { isReading } from '../read';
 import { scopeOf } from './gaps';
+import { IS_MAC } from '../keybinds';
 import './links.css';
 
 const link = schema.marks.link;
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 /**
  * Web addresses in text: http(s):// or www. up to the next space, angle bracket or quote. Sentence punctuation
@@ -69,7 +69,7 @@ export const linkClickPlugin = new Plugin({
     handleDOMEvents: {
       mousedown: (_view, ev) => {
         const e = ev as MouseEvent;
-        if (e.button !== 0 || e.shiftKey || e.altKey || !(isMac ? e.metaKey : e.ctrlKey)) return false;
+        if (e.button !== 0 || e.shiftKey || e.altKey || !(IS_MAC ? e.metaKey : e.ctrlKey)) return false;
         const href = (e.target as HTMLElement).closest?.('a.f-link')?.getAttribute('data-href');
         if (!href || !/^https?:\/\//i.test(href)) return false;
         e.preventDefault();

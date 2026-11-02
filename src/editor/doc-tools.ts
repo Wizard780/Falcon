@@ -1,12 +1,12 @@
 import type { MarkType, Node as PMNode } from 'prosemirror-model';
 import type { Command, Plugin } from 'prosemirror-state';
-import { cardAround, selectedParas } from './commands';
+import { NO_BRIDGE, cardAround, selectedParas } from './commands';
 import { activeColors } from './host';
 import { MultiSelection, spansOf, type Span } from './multi';
 import { isReading } from './read';
 import { schema } from './schema';
 import { readSetting, type SettingSpec, type ToolSection } from './tools';
-import { NO_BRIDGE, autoBridgePlugin, autoBridgeSetting, fixFormattingGaps, gapClassSetting, scopeOf } from './doc-tools/gaps';
+import { autoBridgePlugin, autoBridgeSetting, fixFormattingGaps, gapClassSetting, scopeOf } from './doc-tools/gaps';
 import { linkClickPlugin, linkUrls, removeHyperlinks } from './doc-tools/links';
 import { insertTable } from './tables';
 import { insertPicture } from './images';

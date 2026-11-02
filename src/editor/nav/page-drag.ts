@@ -2,6 +2,7 @@ import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
 import { cardAround } from '../commands';
 import { isReading } from '../read';
+import { IS_MAC } from '../keybinds';
 import { levelOf, moveSections, sectionAt, type Section } from './sections';
 
 /**
@@ -10,7 +11,6 @@ import { levelOf, moveSections, sectionAt, type Section } from './sections';
  * (a card among cards, a block among blocks). Alt-drag on macOS, Ctrl-drag elsewhere, copies.
  */
 const key = new PluginKey<Section | null>('page-drag');
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 export const copyModifier = (e: { altKey: boolean; ctrlKey: boolean }) => (IS_MAC ? e.altKey : e.ctrlKey);
 
 const GRIP = '<svg viewBox="0 0 10 16" width="10" height="16" aria-hidden="true"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg>';

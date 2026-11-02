@@ -73,6 +73,9 @@ function paraStyleOf(styles: Map<string, StyleInfo>, id: string | null, ppr: Ele
   return 'normal';
 }
 
+/** Each paragraph style's own size in points, as styles.ts writes it. */
+const STYLE_PT: Record<ParaStyle, number> = { normal: 11, undertag: 11, pocket: 26, hat: 22, block: 16, tag: 13, analytic: 13 };
+
 type CharKind = 'cite' | 'underline' | 'emphasis' | null;
 const CHAR_BY_ID: Record<string, CharKind> = { style13ptbold: 'cite', cite: 'cite', styleunderline: 'underline', underline: 'underline', emphasis: 'emphasis' };
 function charByName(n: string): CharKind {
@@ -143,8 +146,8 @@ function runMarks(styles: Map<string, StyleInfo>, rpr: Element | undefined, para
   const sz = Number(val(kid(rpr, 'sz')));
   if (sz) {
     const pt = sz / 2;
-    const natural = paraStyle === 'normal' || paraStyle === 'undertag' ? (kind === 'cite' ? 13 : 11) : null;
-    if (natural !== null && pt !== natural) marks.push(M.size.create({ pt }));
+    const natural = kind === 'cite' ? 13 : STYLE_PT[paraStyle]; // cite text is 13pt in any paragraph
+    if (pt !== natural) marks.push(M.size.create({ pt }));
   }
   const va = val(kid(rpr, 'vertAlign'));
   if (va === 'superscript') marks.push(M.sup.create());
@@ -302,7 +305,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
           // links to a web address (through the relationships file); links to a bookmark in the file stay plain text
           const href = rels.links.get(c.getAttributeNS(R, 'id') ?? c.getAttribute('r:id') ?? '');
           readRuns(c, href ? M.link.create({ href }) : link);
-        } else if (ln === 'smartTag' || ln === 'ins' || ln === 'fldSimple' || ln === 'customXml' || ln === 'sdtContent') {
+        } else if (ln === 'smartTag' || ln === 'ins' || ln === 'moveTo' || ln === 'dir' || ln === 'bdo' || ln === 'fldSimple' || ln === 'customXml' || ln === 'sdtContent') {
           readRuns(c, link);
         } else if (ln === 'sdt') {
           readRuns(kid(c, 'sdtContent') ?? c, link);
@@ -359,6 +362,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
     for (const tr of rowEls) {
       const header = !!kid(kid(tr, 'trPr'), 'tblHeader');
       const row: Cell[] = [];
+      let covered = false; // a row made only of merged-down cells has no cells of its own, but it is still a row
       let col = Number(val(kid(kid(tr, 'trPr'), 'gridBefore')) ?? 0) || 0;
       const cellEls: Element[] = [];
       const collectCells = (el: Element) => { for (const c of kids(el)) { if (c.localName === 'tc') cellEls.push(c); else if (c.localName === 'sdt' || c.localName === 'customXml') collectCells(kid(c, 'sdtContent') ?? c); } };
@@ -370,6 +374,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
         const vmVal = vm ? val(vm) ?? 'continue' : null;
         if (vmVal === 'continue' && open[col]) {
           (open[col]!.attrs.rowspan as number)++;
+          covered = true;
           col += span;
           continue;
         }
@@ -386,7 +391,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
         row.push(cell);
         col += span;
       }
-      if (row.length) rows.push(row);
+      if (row.length || covered) rows.push(row);
     }
     if (!rows.length) return null;
     const T = schema.nodes;

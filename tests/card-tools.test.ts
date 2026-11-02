@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { undo } from 'prosemirror-history';
 import { TextSelection, type EditorState } from 'prosemirror-state';
 import { falconKeys as K } from '../src/editor/keymap';
+import { P, resetPrefs, setPref } from '../src/editor/prefs';
 import { CARD_TOOLS } from '../src/editor/card-tools';
 import { schema } from '../src/editor/schema';
 import { toggleRead } from '../src/editor/read';
@@ -48,6 +49,15 @@ describe('Card menu', () => {
     expect(CARD_TOOLS.map((s) => s.title)).toEqual(['Condense', 'Excerpt', 'Highlighting']);
     expect(CARD_TOOLS[0].items.map((i) => i.key)).toEqual(['F3', 'Alt-F3', 'Mod-Alt-F3', undefined, undefined, 'Mod-Alt-Shift-F3']);
     expect(K['Alt-Shift-F8']).toBe(extractCard);
+  });
+  it('Condense runs the condense Settings picks, like F3', () => {
+    const condense = CARD_TOOLS[0].items.find((i) => i.id === 'condense')!;
+    const s0 = make([['tag', 'Tag'], ['normal', 'cite'], ['normal', 'one   two'], ['normal', 'three']]);
+    setPref(P.condense, 'merge');
+    try {
+      expect(map(run(caret(s0, 'three', 1), condense.run))).toBe('tag: Tag\nnormal: cite\nnormal: one two three');
+      expect(map(run(caret(s0, 'three', 1), condense.run))).toBe(map(run(caret(s0, 'three', 1), K.F3)));
+    } finally { resetPrefs(); }
   });
   it('editing items do nothing in read mode', () => {
     const s = reading(caret(card(), 'First'));

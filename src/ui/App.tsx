@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
@@ -13,7 +13,7 @@ import { buildOutline, currentItem, readWords, type OutlineItem } from '../edito
 import { toggleColorMark } from '../editor/commands';
 import { insertIntoSpeech, sendContent } from '../editor/speech';
 import { selectionState } from './selection-state';
-import { Icon, SvgIcon } from './icons';
+import { SvgIcon } from './icons';
 import { newFileName, openDocument, openPath, saveDocument, type DocMeta } from './files';
 import { Palette } from './Palette';
 import type { FileHit } from './file-search';
@@ -33,6 +33,8 @@ import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 import { P, onPrefs, pref } from '../editor/prefs';
+import { readJson, safeSet } from './storage';
+import { reducedMotion } from './motion';
 
 const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty, speech }]: the open doc and every unsaved one
@@ -98,12 +100,17 @@ function autosave(list: Backup[]): boolean {
     const docs = l.map((b) => ({ meta: b.meta, active: b.active, dirty: b.dirty, speech: b.speech, doc: packDoc(b.doc, media, index) }));
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(media.length ? docs.map((d, i) => (i === 0 ? { ...d, media } : d)) : docs));
   };
-  try { write(keep); }
-  catch { // storage full: the active doc alone is the most useful copy
-    try { write(keep.filter((b) => b.active)); } catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+  const kept = [...keep];
+  for (;;) {
+    try { write(kept); break; }
+    catch { // storage full: let go of the biggest copy that isn't the open doc, the open doc last
+      if (!kept.length) { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+      const drop = kept.filter((b) => !b.active).sort((a, b) => b.doc.content.size - a.doc.content.size)[0] ?? kept[0];
+      kept.splice(kept.indexOf(drop), 1);
+    }
   }
   localStorage.removeItem(OLD_AUTOSAVE_KEY);
-  return keep.some((b) => b.active);
+  return kept.some((b) => b.active);
 }
 function loadBackups(): Backup[] {
   if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return []; } // turned off in Settings
@@ -115,12 +122,11 @@ function loadBackups(): Backup[] {
       return list.map(({ media: _m, ...b }) => ({ ...b, doc: PMNode.fromJSON(schema, unpackDoc(b.doc, media)) }));
     }
     const v1 = localStorage.getItem(OLD_AUTOSAVE_KEY);
-    if (v1) return [{ meta: JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' }, doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
+    if (v1) return [{ meta: readJson<DocMeta>('falcon.meta', { name: 'Untitled' }), doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
   } catch { /* corrupt autosave: start blank */ }
   return [];
 }
 const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 0));
-const reducedMotion = () => pref(P.reduceMotion) || matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Smooth-scroll the page so `pos` sits just below the top. Paragraphs off screen have estimated
  *  heights (content-visibility), so the target moves as they render: the animation re-reads it every frame. */
@@ -169,7 +175,7 @@ export function App() {
   const [depth, setDepth] = useState(() => Number(localStorage.getItem('falcon.depth')) || 3);
   const [zoom, setZoom] = useState(() => Number(localStorage.getItem('falcon.zoom')) || 1);
   const [speechMin, setSpeechMin] = useState(() => Number(localStorage.getItem('falcon.speech')) || 8);
-  const [docs, setDocs] = useState<OpenDoc[]>(() => [{ id: 1, meta: JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' }, dirty: false, state: null, scroll: 0 }]);
+  const [docs, setDocs] = useState<OpenDoc[]>(() => [{ id: 1, meta: { name: 'Untitled' }, dirty: false, state: null, scroll: 0 }]);
   const [activeId, setActiveId] = useState(1);
   const activeRef = useRef(1);
   const docsRef = useRef(docs);
@@ -257,11 +263,10 @@ export function App() {
     return () => view.destroy();
   }, []);
 
-  useEffect(() => { document.documentElement.style.setProperty('--zoom', String(zoom)); localStorage.setItem('falcon.zoom', String(zoom)); }, [zoom]);
-  useEffect(() => { localStorage.setItem('falcon.outline', showOutline ? 'on' : 'off'); }, [showOutline]);
-  useEffect(() => { localStorage.setItem('falcon.depth', String(depth)); }, [depth]);
-  useEffect(() => { localStorage.setItem('falcon.speech', String(speechMin)); }, [speechMin]);
-  useEffect(() => { localStorage.setItem('falcon.meta', JSON.stringify(meta)); }, [meta]);
+  useEffect(() => { document.documentElement.style.setProperty('--zoom', String(zoom)); safeSet('falcon.zoom', String(zoom)); }, [zoom]);
+  useEffect(() => { safeSet('falcon.outline', showOutline ? 'on' : 'off'); }, [showOutline]);
+  useEffect(() => { safeSet('falcon.depth', String(depth)); }, [depth]);
+  useEffect(() => { safeSet('falcon.speech', String(speechMin)); }, [speechMin]);
   useEffect(() => { saveRecents(recents); }, [recents]);
   // the list changed (switch, open, close, saved): refresh the crash-recovery copy once React has settled
   useEffect(() => { if (viewRef.current) whenIdle(() => { backup(); }); }, [docs, activeId, speechId, backup]);
@@ -396,13 +401,18 @@ export function App() {
       if (r) opened(r);
     } catch (e) { flash(`Couldn't open: ${(e as Error).message}`); }
   }, [opened, flash]);
+  /** Opening `path` failed (moved, deleted): say so, and stop listing it in the recents. */
+  const openFailed = useCallback((name: string, path: string, e: unknown) => {
+    setRecents((list) => list.filter((r) => r.path !== path));
+    flash(`Couldn't open ${name}: ${(e as Error).message}`);
+  }, [flash]);
   const openRecent = useCallback(async (r: Recent) => {
     const already = openedPath(r.path) ?? (!r.path ? docsRef.current.find((d) => !d.meta.path && d.meta.name === r.name) : undefined);
     if (already) { switchTo(already.id); return; }
     if (!r.path || !bridge.openPath) { void fileOpen(); return; }
     try { opened(await openPath(r.path)); }
-    catch (e) { flash(`Couldn't open ${r.name}: ${(e as Error).message}`); }
-  }, [opened, fileOpen, switchTo, flash]);
+    catch (e) { openFailed(r.name, r.path, e); }
+  }, [opened, fileOpen, switchTo, openFailed]);
   // Cmd-K: an open doc switches to it; anything else opens by path (indexed folders and recents are allowed)
   const openHit = useCallback(async (h: FileHit) => {
     setHomeOpen(false);
@@ -411,8 +421,8 @@ export function App() {
     if (already) { switchTo(already.id); return; }
     if (!h.path || !bridge.openPath) { void fileOpen(); return; }
     try { opened(await openPath(h.path)); }
-    catch (e) { flash(`Couldn't open ${h.name}: ${(e as Error).message}`); }
-  }, [opened, fileOpen, switchTo, flash]);
+    catch (e) { openFailed(h.name, h.path, e); }
+  }, [opened, fileOpen, switchTo, openFailed]);
   /**
    * Write the active doc. As-Is is the document itself, so the open file takes its new name and path;
    * Send, Read and Marked docs are copies and the open file stays as it was.
@@ -426,6 +436,12 @@ export function App() {
     try {
       const m = await saveDocument(out, meta, as);
       if (!m) return;
+      // another tab on this file would overwrite it on Save: close it if clean, else keep its edits but unbind it.
+      // dropDoc sets the tab list from a snapshot, so this runs before patch(id) below or it would undo the new path
+      for (const o of docsRef.current) {
+        if (o.id === id || !m.path || o.meta.path !== m.path) continue;
+        if (o.dirty) patch(o.id, { meta: { name: o.meta.name } }); else dropDoc(o.id);
+      }
       if (mode !== 'asis') { flash(`Saved ${MODE_NAME[mode]} ${m.name}`); return; }
       // typing during the save keeps the doc marked unsaved
       const now = activeRef.current === id ? viewRef.current!.state.doc : docsRef.current.find((x) => x.id === id)?.state?.doc;
@@ -433,7 +449,7 @@ export function App() {
       setRecents((list) => noteRecent(list, saved, m));
       flash(`Saved ${m.name}`);
     } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
-  }, [patch, flash]);
+  }, [patch, flash, dropDoc]);
   /** Save writes the open file; Save As opens the dialog, which calls `saveCopy`. */
   const fileSave = useCallback(async (as = false) => {
     const d = docsRef.current.find((x) => x.id === activeRef.current)!;
@@ -648,16 +664,16 @@ export function App() {
   const queueRef = useRef(queueOpens);
   queueRef.current = queueOpens;
   // reopen last files: the files open at the last quit, read before the list below is rewritten
-  const lastSession = useRef<string[]>(JSON.parse(localStorage.getItem('falcon.session') ?? '[]'));
+  const [lastSession] = useState(() => readJson<string[]>('falcon.session', []));
   const reopened = useRef(false);
   useEffect(() => {
     if (!hasView || reopened.current) return;
     reopened.current = true;
-    if (pref(P.reopen) && bridge.openPath) queueOpens(lastSession.current, true); // moved or deleted since: skipped
+    if (pref(P.reopen) && bridge.openPath) queueOpens(lastSession, true); // moved or deleted since: skipped
   }, [hasView]); // eslint-disable-line react-hooks/exhaustive-deps
   // files double-clicked in Finder/Explorer (or Open With): open each, or switch to it if it's already open
   useEffect(() => (hasView ? bridge.onOpenPaths?.((ps) => queueRef.current(ps, false)) : undefined), [hasView]);
-  useEffect(() => { localStorage.setItem('falcon.session', JSON.stringify(docs.flatMap((d) => (d.meta.path ? [d.meta.path] : [])))); }, [docs]);
+  useEffect(() => { safeSet('falcon.session', JSON.stringify(docs.flatMap((d) => (d.meta.path ? [d.meta.path] : [])))); }, [docs]);
   // Ctrl/Cmd + scroll wheel or trackpad pinch zooms, in the same 10% steps
   useEffect(() => {
     let acc = 0;
@@ -720,7 +736,7 @@ export function App() {
 
       <footer className="status">
         <span>Σ</span>
-        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {mmss(words / pref(P.wpm1))} · Reader 2: {mmss(words / pref(P.wpm2))}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
+        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {clock((words / pref(P.wpm1)) * 60)} · Reader 2: {clock((words / pref(P.wpm2)) * 60)}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
@@ -768,7 +784,8 @@ function beep() {
   } catch { /* no audio device */ }
 }
 
-const mmss = (min: number) => { const s = Math.round(min * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+/** Seconds as m:ss. */
+const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 // ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
@@ -967,7 +984,6 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   };
   useEffect(() => countdown(running, setRunning, setLeft, 'Time is up'), [running]);
   useEffect(() => countdown(prepRunning, setPrepRunning, setPrepLeft, 'Prep is up'), [prepRunning]);
-  const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   const low = (on: boolean, s: number) => (on && s <= pref(P.lowTime) ? ' low' : '');
 
   return (
@@ -1026,7 +1042,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
             : pop.kind === 'font'
             ? FONT_COLORS.map(([c, n]) => (
               <button key={n} className="sw" role="menuitem" aria-label={n} title={n} aria-current={fontColor === c || undefined} style={{ background: c ?? '#222222' }}
-                onMouseDown={(e) => { e.preventDefault(); setFontColor(c); if (c) localStorage.setItem('falcon.fontColor', c); else localStorage.removeItem('falcon.fontColor'); setPop(null); applyFont(c); }} />
+                onMouseDown={(e) => { e.preventDefault(); setFontColor(c); if (c) safeSet('falcon.fontColor', c); else localStorage.removeItem('falcon.fontColor'); setPop(null); applyFont(c); }} />
             ))
             : <>
               <button className="sw none" role="menuitem" aria-label={pop.kind === 'highlight' ? 'No highlight' : 'No background'} title={pop.kind === 'highlight' ? 'No highlight' : 'No background'}

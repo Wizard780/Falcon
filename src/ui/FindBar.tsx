@@ -1,4 +1,4 @@
-import { titled } from '../editor/keybinds';
+import { IS_MAC, titled } from '../editor/keybinds';
 import { useEffect, useState, type RefObject } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import { clearFind, findInfo, findRequest, replaceAll, replaceOne, setGrouped, setQuery, step } from '../editor/find';
@@ -6,8 +6,6 @@ import { readSetting } from '../editor/tools';
 import { findOrderSetting } from '../editor/nav-keys';
 import { Icon, SvgIcon } from './icons';
 import './outline.css';
-
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 
 /** Find (Mod-F), Find and Replace (Mod-Shift-H, Ctrl-H on Windows), and find by position (Alt-F). */
 export function FindBar({ view, inputRef, onClose, flash }: { view: EditorView; inputRef: RefObject<HTMLInputElement | null>; onClose: () => void; flash: (m: string) => void }) {
