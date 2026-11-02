@@ -11,6 +11,9 @@ const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a win
 // tests: closing never waits on the unsaved-docs question (the smoke test turns this off to check it)
 globalThis.falconSkipUnloadGuard = HEADLESS;
 if (process.env.FALCON_USER_DATA) app.setPath('userData', process.env.FALCON_USER_DATA);
+// One Falcon per profile: a second launch (Windows opens a double-clicked file that way) hands its
+// files to the running one and quits. The lock lives in userData, so test runs never collide with it.
+if (!app.requestSingleInstanceLock()) app.exit(0);
 
 // The theme's background, kept from the last run, so the window opens in it instead of flashing graphite.
 const themeFile = () => path.join(app.getPath('userData'), 'theme.json');
@@ -110,6 +113,34 @@ async function rememberPath(p) {
   recentPaths = [p, ...list.filter((x) => x !== p)].slice(0, MAX_RECENT);
   try { await fs.writeFile(recentFile(), JSON.stringify(recentPaths)); } catch { /* recents are a convenience */ }
 }
+
+// Files the OS asks us to open: a double-click in Finder or Explorer, or Open With. macOS sends
+// open-file (before ready, when the click is what launched the app); Windows puts the path on the command
+// line, of this launch or of a second one. They wait here until the page says it's listening. Each becomes
+// a recent, which is what lets the page's openPath read it.
+const pendingOpens = [];
+let openTarget = null; // the page listening for them
+async function requestOpen(paths) {
+  const docx = paths.filter((p) => typeof p === 'string' && p.toLowerCase().endsWith('.docx')).map((p) => path.resolve(p));
+  for (const p of docx) await rememberPath(p);
+  pendingOpens.push(...docx);
+  flushOpens();
+}
+function flushOpens() {
+  if (!app.isReady()) return; // whenReady makes the window, and its page asks for these
+  if (!openTarget || openTarget.isDestroyed()) {
+    openTarget = null;
+    if (pendingOpens.length && BrowserWindow.getAllWindows().length === 0) createWindow(); // Mac: app open, no window
+    return;
+  }
+  const win = BrowserWindow.fromWebContents(openTarget);
+  if (win && !HEADLESS) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+  if (pendingOpens.length) openTarget.send('falcon:open-paths', pendingOpens.splice(0));
+}
+app.on('open-file', (e, p) => { e.preventDefault(); void requestOpen([p]); });
+app.on('second-instance', (_e, argv) => { void requestOpen(argv.slice(1)); flushOpens(); });
+ipcMain.on('falcon:open-paths-ready', (e) => { openTarget = e.sender; flushOpens(); });
+void requestOpen(process.argv.slice(1));
 
 // File search: the folders allowed in Settings (see indexer.cjs)
 let fileIndex = null;

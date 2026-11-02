@@ -599,6 +599,14 @@ export function App() {
       }
     })();
   }, [hasView]); // eslint-disable-line react-hooks/exhaustive-deps
+  // files double-clicked in Finder/Explorer (or Open With): open each, or switch to it if it's already open
+  const openFromOs = useRef(async (_p: string[]) => {});
+  openFromOs.current = async (paths) => {
+    for (const p of paths) {
+      try { opened(await openPath(p)); } catch (e) { flash(`Couldn't open ${p.split(/[\\/]/).pop()}: ${(e as Error).message}`); }
+    }
+  };
+  useEffect(() => (hasView ? bridge.onOpenPaths?.((ps) => void openFromOs.current(ps)) : undefined), [hasView]);
   useEffect(() => { localStorage.setItem('falcon.session', JSON.stringify(docs.flatMap((d) => (d.meta.path ? [d.meta.path] : [])))); }, [docs]);
   // Ctrl/Cmd + scroll wheel or trackpad pinch zooms, in the same 10% steps
   useEffect(() => {

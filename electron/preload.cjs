@@ -18,6 +18,13 @@ contextBridge.exposeInMainWorld('falcon', {
     ipcRenderer.on('falcon:menu', on);
     return () => ipcRenderer.removeListener('falcon:menu', on);
   },
+  // Files double-clicked in Finder/Explorer. Subscribing tells the main process the page is ready for them.
+  onOpenPaths: (f) => {
+    const on = (_e, paths) => { if (Array.isArray(paths)) f(paths.filter((p) => typeof p === 'string')); };
+    ipcRenderer.on('falcon:open-paths', on);
+    ipcRenderer.send('falcon:open-paths-ready');
+    return () => ipcRenderer.removeListener('falcon:open-paths', on);
+  },
   setMenuKeys: (keys) => ipcRenderer.send('falcon:menu-keys', keys),
   onConfirmClose: (f) => {
     const on = (_e, quit) => f(quit === true);
