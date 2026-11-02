@@ -31,3 +31,19 @@ test('a web picture pasted inside a table is fetched to embed it', () => {
   expect(view.state.doc.lastChild!.type.name).toBe('paragraph');
   expect(fetched).toEqual(['https://site.example/p.png']);
 });
+
+test('every paragraph pasted into a footnote is kept in the note', async () => {
+  const { insertFootnote } = await import('../src/editor/footnotes');
+  const views: EditorView[] = [];
+  const focus = vi.spyOn(EditorView.prototype, 'focus').mockImplementation(function (this: EditorView) { views.push(this); });
+  const view = new EditorView(document.body.appendChild(document.createElement('div')), { state: createState(docFromHTML('<p>text</p>')) });
+  insertFootnote(view.state, view.dispatch, view);
+  const note = views.find((v) => v !== view)!;
+  vi.stubGlobal('ClipboardEvent', class extends Event {});
+  note.pasteText('first paragraph\nsecond paragraph');
+  focus.mockRestore();
+  let content: { text?: string }[] = [];
+  view.state.doc.descendants((n) => { if (n.type.name === 'footnote') content = n.attrs.content; });
+  expect(content.map((n) => n.text ?? '¶')).toEqual(['first paragraph', '¶', 'second paragraph']);
+  view.destroy();
+});
