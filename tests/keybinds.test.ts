@@ -37,6 +37,17 @@ describe('keybindings', () => {
     expect(pressed(ev('-', 189, { ctrlKey: true }), 'Mod--')).toBe(true);
   });
 
+  it('lets Send to speech be one symbol key, and nothing else', () => {
+    expect(keyOf('sendToSpeech')).toBe('`');
+    expect(refusal('sendToSpeech', '`')).toBe(null);
+    expect(refusal('sendToSpeech', 'Shift-`')).toBe(null); // ~
+    expect(refusal('sendToSpeech', '/')).toBe(null);
+    expect(refusal('sendToSpeech', 'a')).toMatch(/Add Ctrl or Alt/);
+    expect(refusal('sendToSpeech', '5')).toMatch(/Add Ctrl or Alt/);
+    expect(refusal('tag', '`')).toMatch(/Add Ctrl or Alt/);
+    expect(refusal('tag', 'Mod-`')).toBe(null);
+  });
+
   it('refuses keys that need a modifier, are taken, or are kept', () => {
     expect(refusal('tag', 't')).toMatch(/Add Ctrl or Alt/);
     expect(refusal('tag', 'Shift-t')).toMatch(/Add Ctrl or Alt/);

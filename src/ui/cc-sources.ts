@@ -41,7 +41,7 @@ export type Ctx = {
   showOutline: boolean; setShowOutline: (s: boolean) => void;
   speechMin: number; setSpeechMin: (m: number) => void;
   highlight: string | null; setHighlight: (c: string) => void;
-  isSpeech: boolean; toggleSpeech: () => void; sendToSpeech: () => void;
+  isSpeech: boolean; toggleSpeech: () => void;
   /** go to outline row i (and peek: scroll there without moving the caret) */
   jump: (i: number) => void; peek: (i: number) => void;
   find: (text: string, replace: boolean) => void;
@@ -77,9 +77,12 @@ const SYN: Record<string, string> = {
   highlight: 'highlighter color', shading: 'background shade fill', clear: 'remove formatting plain', shrink: 'minimize unread small',
   regrow: 'unshrink grow undo shrink', read: 'reading present speech', marker: 'mark place stop', number: 'numbering count',
   sub: 'numbering letter', restart: 'numbering', replace: 'substitute', selectSection: 'card', copySection: 'card', deleteSection: 'card remove',
-  cardUp: 'reorder', cardDown: 'reorder',
+  cardUp: 'reorder', cardDown: 'reorder', sendToSpeech: 'speech doc copy tilde backtick',
 };
-const TOOL_HINTS = new Map([...DOC_TOOLS, ...CARD_TOOLS].flatMap((s) => s.items.map((it) => [it.id, it.hint] as const)));
+const TOOL_HINTS = new Map([
+  ...[...DOC_TOOLS, ...CARD_TOOLS].flatMap((s) => s.items.map((it) => [it.id, it.hint] as const)),
+  ['sendToSpeech', 'Copy the selection, or the card or section at the caret, into the speech doc'],
+]);
 const keyWords = (k: string) => (k ? `${k} ${keyText(k)}` : '');
 type Extra = Omit<Entry, 'source'>;
 const safe = (f: () => boolean) => () => { try { return f(); } catch { return true; } };
@@ -113,7 +116,6 @@ export function commandEntries(ctx: Ctx): Entry[] {
     ...FONT_COLORS.map(([c, n]): Extra => ({ key: `x:font:${n}`, label: `Font color: ${n}`, group: 'Format', keywords: 'text ink', run: () => ctx.run(toggleColorMark(schema.marks.color, c)) })),
     { key: 'x:brushH', label: 'Highlight paintbrush', group: 'Format', keywords: 'brush paint drag highlighter', hint: 'Every stretch you select next gets highlighted. Esc stops', run: () => ctx.run(brush('highlight')) },
     { key: 'x:brushS', label: 'Background color paintbrush', group: 'Format', keywords: 'brush paint shading', hint: 'Every stretch you select next gets the background color. Esc stops', run: () => ctx.run(brush('shading')) },
-    { key: 'x:send', label: 'Send to speech', group: 'Speech', shortcut: '~', keywords: '~ tilde speech doc copy', hint: 'Copy the selection, or the card or section at the caret, into the speech doc', run: () => { ctx.sendToSpeech(); return true; } },
     { key: 'x:speechDoc', label: ctx.isSpeech ? 'Stop using this file as the speech doc' : 'Make this file the speech doc', group: 'Speech', keywords: 'speech doc mark', run: () => { ctx.toggleSpeech(); return true; } },
     { key: 'x:timer', label: 'Start or pause the speech timer', group: 'Speech', keywords: 'clock countdown stopwatch', run: () => { timer({ which: 'speech', op: 'toggle' }); return true; } },
     { key: 'x:timerReset', label: 'Reset the speech timer', group: 'Speech', keywords: 'clock countdown', run: () => { timer({ which: 'speech', op: 'reset' }); return true; } },
@@ -131,7 +133,9 @@ export function commandEntries(ctx: Ctx): Entry[] {
     })),
     { key: 'x:about', label: `Falcon ${version}`, group: 'About', keywords: 'version about install update', run: () => { ctx.openSettings('general'); return true; } },
   ] as Extra[]).map((e): Entry => ({ ...e, source: 'cmd' }));
-  return [...out, ...extra];
+  // one heading per group: Send to speech (a key binding) sits with the other Speech rows
+  const all = [...out, ...extra];
+  return [...new Set(all.map((e) => e.group))].flatMap((g) => all.filter((e) => e.group === g));
 }
 
 // ---------- settings ----------

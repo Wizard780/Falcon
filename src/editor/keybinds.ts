@@ -117,7 +117,9 @@ export function refusal(id: string, key: string): string | null {
   if (/^(Dead|Process|Unidentified|Compose)$/.test(k)) return 'That key types an accent or character here. Try another letter';
   // Ctrl+Alt is AltGr on Windows keyboards, which the app leaves to typing
   if (!IS_MAC && APP_GROUPS.includes(byId.get(id)?.group ?? '') && parts.includes('Mod') && parts.includes('Alt')) return 'Ctrl+Alt is AltGr on many keyboards. Try Ctrl+Shift';
-  if (!mods.length && !ALONE.test(k)) return IS_MAC ? 'Add ⌘, ⌥ or ⌃ (a function key can stand alone)' : 'Add Ctrl or Alt (a function key can stand alone)';
+  // Send to speech can be one symbol key on its own (` by default, or ~); letters and digits stay for typing
+  const symbol = byId.get(id)?.group === 'Speech' && /^[^\p{L}\p{N}]$/u.test(k);
+  if (!mods.length && !symbol && !ALONE.test(k)) return IS_MAC ? 'Add ⌘, ⌥ or ⌃ (a function key can stand alone)' : 'Add Ctrl or Alt (a function key can stand alone)';
   const n = norm(key);
   const kept = RESERVED.get(n);
   if (kept) return `${keyText(key)} is kept for ${kept}`;
@@ -168,5 +170,7 @@ bind('Files', [
   { id: 'save', label: 'Save', key: 'Mod-s' }, { id: 'saveAs', label: 'Save As', key: 'Mod-Shift-s' }, { id: 'close', label: 'Close document', key: 'Mod-w' },
   { id: 'nextDoc', label: 'Next open document', key: 'Ctrl-Tab' }, { id: 'prevDoc', label: 'Previous open document', key: 'Ctrl-Shift-Tab' },
 ]);
+// a plain key on purpose: the page can't type it while it's bound (text boxes still can)
+bind('Speech', [{ id: 'sendToSpeech', label: 'Send to speech', key: '`' }]);
 // second keys that always work: Mod-Shift-] / [ also switch documents
 reserve([['Mod-Shift-]', 'Next open document'], ['Mod-Shift-[', 'Previous open document']]);

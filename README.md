@@ -39,7 +39,7 @@ Or run `xattr -cr /Applications/Falcon.app` in Terminal, then open it normally.
 | Mod-8 / Mod-Shift-8 | Shrink the card's unread text / regrow |
 | Mod-Shift-Space | Command center: run any command, change any setting, go to any heading (CardMirror's Search Everything, minus files) |
 | Mod-F | Find |
-| ~ | Send the selection, or the card or section at the cursor, to the speech doc (the mic button in the tool row marks which file it is). The page can't type a ~ |
+| ` | Send the selection, or the card or section at the cursor, to the speech doc (the mic button in the tool row marks which file it is). The page can't type a ` while it's bound; change the key in Settings > Keybindings |
 | PageUp / PageDown | Previous / next heading |
 | Mod-Alt-Up / Down | Move the card or section |
 | Ctrl/Alt-Up / Down | Previous / next paragraph |
