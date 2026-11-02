@@ -1,8 +1,9 @@
 import type { Node as PMNode } from 'prosemirror-model';
-import { Plugin, PluginKey, TextSelection, type Command, type EditorState } from 'prosemirror-state';
+import { Plugin, PluginKey, Selection, TextSelection, type Command, type EditorState } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { LEVEL, schema, type ParaStyle } from './schema';
 import { cardAround } from './commands';
+import { P, PREFS_META, pref } from './prefs';
 
 /**
  * Read mode: only what gets read aloud stays visible (headings, tags, analytics, cites, highlighted
@@ -10,27 +11,37 @@ import { cardAround } from './commands';
  */
 export const readKey = new PluginKey<{ on: boolean; decos: DecorationSet }>('read');
 
-const MARKER_COLOR = '#FF0000';
+// markers are red unless Settings picks another color; red ones still count after a change
 const isMarker = (marks: readonly { type: { name: string }; attrs: Record<string, unknown> }[]) =>
-  marks.some((m) => m.type.name === 'color' && String(m.attrs.color).toUpperCase() === MARKER_COLOR);
-const isRead = (n: PMNode) => n.marks.some((m) => m.type.name === 'highlight' || m.type.name === 'cite') || isMarker(n.marks);
+  marks.some((m) => {
+    if (m.type.name !== 'color') return false;
+    const c = String(m.attrs.color).toUpperCase();
+    return c === '#FF0000' || c === pref(P.markerColor).toUpperCase();
+  });
+const MARKER_TEXT = /^ ?Marked( \d{1,2}:\d{2})? ?$/;
 
 /**
  * Every text run gets a class: f-read-shown, or f-read-hidden (plus f-read-gap when it sits between two
  * shown runs, so the reader sees one space instead of glued words). After a card's first shown paragraph
- * (its cite), shown paragraphs get f-read-flow and run together the way CardMirror's read mode does.
+ * (its cite), shown paragraphs get f-read-flow and run together the way CardMirror's read mode does,
+ * unless Settings keeps paragraphs apart. Settings can also show undertags, whole cites and background color.
  */
 function hideUnread(doc: PMNode): DecorationSet {
   const decos: Decoration[] = [];
+  const keepParas = pref(P.readParas), wholeCite = pref(P.readWholeCite), undertags = pref(P.readUndertags), shading = pref(P.readShading);
+  const isRead = (n: PMNode) => n.marks.some((m) => m.type.name === 'highlight' || m.type.name === 'cite' || (shading && m.type.name === 'shading')) || isMarker(n.marks);
   let inCard = false, cardHasShown = false;
   doc.forEach((para, pos) => {
     const level = LEVEL[para.attrs.style as ParaStyle];
     if (level > 0) { inCard = level === 4; cardHasShown = false; return; }
     const shown: boolean[] = [];
-    para.forEach((n) => shown.push(n.isText && inCard && para.attrs.style !== 'undertag' && isRead(n)));
+    const under = para.attrs.style === 'undertag';
+    // the card's cite line, shown whole: the first shown paragraph, when it has cite-marked text
+    const cite = wholeCite && !cardHasShown && !under && para.content.content.some((n) => n.marks.some((m) => m.type.name === 'cite'));
+    para.forEach((n) => shown.push(n.isText && inCard && (under ? undertags : cite || isRead(n))));
     if (!shown.some(Boolean)) { decos.push(Decoration.node(pos, pos + para.nodeSize, { class: 'f-read-hidden' })); return; }
-    if (cardHasShown) decos.push(Decoration.node(pos, pos + para.nodeSize, { class: 'f-read-flow' }));
-    cardHasShown = true;
+    if (cardHasShown && !keepParas) decos.push(Decoration.node(pos, pos + para.nodeSize, { class: 'f-read-flow' }));
+    if (!under) cardHasShown = true;
     const lastShown = shown.lastIndexOf(true);
     para.forEach((n, off, i) => {
       const from = pos + 1 + off, to = from + n.nodeSize;
@@ -49,7 +60,7 @@ export const readPlugin = new Plugin<{ on: boolean; decos: DecorationSet }>({
       const meta = tr.getMeta(readKey) as boolean | undefined;
       const on = meta ?? prev.on;
       if (!on) return { on, decos: DecorationSet.empty };
-      if (meta !== undefined || tr.docChanged) return { on, decos: hideUnread(tr.doc) };
+      if (meta !== undefined || tr.docChanged || tr.getMeta(PREFS_META)) return { on, decos: hideUnread(tr.doc) };
       return prev;
     },
   },
@@ -75,7 +86,11 @@ export const readPlugin = new Plugin<{ on: boolean; decos: DecorationSet }>({
 export const isReading = (state: EditorState) => !!readKey.getState(state)?.on;
 
 export const toggleRead: Command = (state, dispatch) => {
-  if (dispatch) dispatch(state.tr.setMeta(readKey, !isReading(state)).setMeta('addToHistory', false));
+  if (!dispatch) return true;
+  const tr = state.tr.setMeta(readKey, !isReading(state)).setMeta('addToHistory', false);
+  // "Jump to the top": the cursor goes to the start and the page scrolls there
+  if (pref(P.readTop)) tr.setSelection(Selection.atStart(state.doc)).scrollIntoView();
+  dispatch(tr);
   return true;
 };
 
@@ -97,7 +112,7 @@ export const toggleMarker: Command = (state, dispatch) => {
   }
   const markers: { from: number; to: number }[] = [];
   doc.nodesBetween(from, to, (n, pos) => {
-    if (n.isText && isMarker(n.marks) && /^ ?Marked \d{1,2}:\d{2} ?$/.test(n.text!)) markers.push({ from: pos, to: pos + n.nodeSize });
+    if (n.isText && isMarker(n.marks) && MARKER_TEXT.test(n.text!)) markers.push({ from: pos, to: pos + n.nodeSize });
     return true;
   });
   const onMarker = markers.some((m) => $c.pos >= m.from && $c.pos <= m.to);
@@ -106,9 +121,9 @@ export const toggleMarker: Command = (state, dispatch) => {
   for (const m of [...markers].sort((a, b) => b.from - a.from)) tr.delete(m.from, m.to);
   if (!onMarker) {
     const now = new Date();
-    const text = ` Marked ${now.getHours() % 12 || 12}:${String(now.getMinutes()).padStart(2, '0')} `;
+    const text = pref(P.markerTime) ? ` Marked ${now.getHours() % 12 || 12}:${String(now.getMinutes()).padStart(2, '0')} ` : ' Marked ';
     const at = tr.mapping.map($c.pos);
-    tr.insert(at, schema.text(text, [schema.marks.color.create({ color: MARKER_COLOR })]));
+    tr.insert(at, schema.text(text, [schema.marks.color.create({ color: pref(P.markerColor) })]));
     tr.setSelection(TextSelection.create(tr.doc, at + text.length)).setStoredMarks([]);
   }
   dispatch(tr.scrollIntoView());

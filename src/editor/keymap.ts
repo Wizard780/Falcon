@@ -8,6 +8,7 @@ import {
   toggleBold, toggleCase, toggleCharMark, toggleColorMark, toggleTypingMark, uncondense,
 } from './commands';
 import { schema } from './schema';
+import { ENTER_AFTER, P, pref } from './prefs';
 import { activeColors, pastePlainFromClipboard } from './host';
 import { moveByHeading, moveByParagraph, moveContainer } from './motion';
 import { toggleMarker, toggleRead } from './read';
@@ -77,14 +78,16 @@ const deleteAtCardEdge: Command = (state, dispatch) => {
   return false;
 };
 
-/** Enter: split, carrying marks (so typing continues underlined); a new line after a heading is body text. */
+/** Enter: split, carrying marks (so typing continues underlined); a new line after a heading is body text,
+ *  or the style Settings picks for that heading. */
 const enter: Command = chainCommands(createParagraphNear, liftEmptyBlock, (state, dispatch) => {
   const $f = state.selection.$from;
   const atEnd = state.selection.empty && $f.parentOffset === $f.parent.content.size && $f.parent.attrs.style !== 'normal';
   if (!atEnd) return splitBlockKeepMarks(state, dispatch);
   if (!dispatch) return true;
   const pos = $f.after(1);
-  const tr = state.tr.insert(pos, schema.nodes.paragraph.create({ style: 'normal', indent: 0 }));
+  const next = ENTER_AFTER[$f.parent.attrs.style];
+  const tr = state.tr.insert(pos, schema.nodes.paragraph.create({ style: next ? pref(next) : 'normal', indent: 0 }));
   dispatch(tr.setSelection(TextSelection.create(tr.doc, pos + 1)).setStoredMarks([]).scrollIntoView());
   return true;
 });
@@ -94,7 +97,8 @@ const shading: Command = (state, dispatch) => toggleColorMark(M.shading, activeC
 
 export const falconKeys: Record<string, Command> = {
   F2: (_s, _d, view) => { if (view) void pastePlainFromClipboard(view); return true; },
-  F3: condense('integrity'),
+  // F3 runs the condense Settings picks; Alt-F3 and Mod-Alt-F3 always merge
+  F3: (state, dispatch) => condense(pref(P.condense))(state, dispatch),
   'Alt-F3': condense('merge'),
   'Mod-Alt-F3': condense('pilcrows'),
   'Mod-Alt-Shift-F3': uncondense,
