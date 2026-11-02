@@ -8,13 +8,13 @@ import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { cardAround, paintColorMark } from './commands';
 import { activeColors, disarmPlainPaste, plainPasteArmed } from './host';
 import { falconKeymap } from './keymap';
+import { navPlugins } from './nav-keys';
 import { wordSelection } from './mouse';
 import { schema } from './schema';
 import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
 import { readPlugin } from './read';
-import { navPlugins } from './nav-keys';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -115,6 +115,7 @@ export function createState(doc: PMNode = emptyDoc()) {
     plugins: [
       readPlugin, // first, so its keyboard lock runs before the formatting keys
       multiSelectionPlugin,
+      ...navPlugins, // card numbers, dragging cards on the page
       falconKeymap(),
       keymap(baseKeymap),
       history({ newGroupDelay: 500 }),
@@ -124,7 +125,6 @@ export function createState(doc: PMNode = emptyDoc()) {
       wordSelection(),
       selectionClasses,
       findPlugin,
-      ...navPlugins,
     ],
   });
 }
