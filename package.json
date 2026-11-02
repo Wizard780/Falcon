@@ -80,6 +80,27 @@
         "name": "Word Document",
         "role": "Editor"
       }
-    ]
+    ],
+    "dmg": {
+      "background": "build/background.png",
+      "iconSize": 96,
+      "window": {
+        "width": 660,
+        "height": 400
+      },
+      "contents": [
+        {
+          "x": 180,
+          "y": 190,
+          "type": "file"
+        },
+        {
+          "x": 480,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
   }
 }
