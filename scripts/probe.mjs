@@ -5,14 +5,21 @@ const which = process.argv[2] || 'cm';
 const only = process.argv[3];
 const url = which === 'cm' ? 'http://localhost:5301/' : (process.env.FALCON_URL || 'http://localhost:5173/');
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+// Cases are independent (each starts from an empty doc), so they run across several pages at once.
+// Each page has its own context, so autosave and settings in localStorage can't leak between them.
+const PAGES = Number(process.env.PROBE_PAGES) || 4;
 const b = await chromium.launch();
-const p = await b.newPage({ viewport: { width: 1400, height: 900 } });
-p.on('pageerror', e => console.log('PAGEERR', e.message));
-await p.goto(url); await p.waitForTimeout(1500);
-if (which === 'cm') { await p.keyboard.press('Escape'); await p.getByText('New document', { exact: true }).first().click(); await p.waitForTimeout(1000); }
-else { await p.keyboard.press('Escape'); await p.waitForTimeout(400); } // close Home
+async function openPage() {
+  const p = await (await b.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  p.on('pageerror', e => console.log('PAGEERR', e.message));
+  await p.goto(url); await p.waitForTimeout(1500);
+  if (which === 'cm') { await p.keyboard.press('Escape'); await p.getByText('New document', { exact: true }).first().click(); await p.waitForTimeout(1000); }
+  else { await p.keyboard.press('Escape'); await p.waitForTimeout(400); } // close Home
+  return p;
+}
 
-const k = async (key, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.waitForTimeout(40); } };
+function suite(p) {
+const k =async (key, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.waitForTimeout(40); } };
 const t = s => p.keyboard.type(s, { delay: 3 });
 const sel = (text, endText) => p.evaluate(([text, endText]) => {
   const root = document.querySelector('.ProseMirror');
@@ -144,13 +151,21 @@ const cases = {
   async typeAfterTagEndThenEnterTwice() { await t('Tag'); await k('F7'); await k('Enter'); await k('Enter'); await t('x'); },
   async backspaceEmptyBelowTag() { await t('Tag'); await k('F7'); await k('Enter'); await k('Backspace'); await t('Z'); },
 };
-const res = {};
-for (const [name, fn] of Object.entries(cases)) {
-  if (only && !name.match(only)) continue;
-  try { await reset(); await fn(); await p.waitForTimeout(100); res[name] = (await map()) + '\n  caret: ' + await caretInfo(); }
-  catch (e) { res[name] = 'ERROR ' + e.message.split('\n')[0]; }
-  console.log('### ' + name + '\n' + res[name]);
+return { cases, run: async (name) => {
+  try { await reset(); await cases[name](); await p.waitForTimeout(100); return (await map()) + '\n  caret: ' + await caretInfo(); }
+  catch (e) { return 'ERROR ' + e.message.split('\n')[0]; }
+} };
 }
+
+const names = Object.keys(suite(null).cases).filter((name) => !only || name.match(only));
+const out = {};
+const queue = [...names];
+await Promise.all(Array.from({ length: Math.min(PAGES, names.length) }, async () => {
+  const { run } = suite(await openPage());
+  while (queue.length) { const name = queue.shift(); out[name] = await run(name); }
+}));
+const res = {};
+for (const name of names) { res[name] = out[name]; console.log('### ' + name + '\n' + res[name]); }
 if (!only) { fs.mkdirSync('shots', { recursive: true }); fs.writeFileSync(`shots/probe-${which}.json`, JSON.stringify(res, null, 1)); }
 // CardMirror's recorded results (its code can't live in this repo; its behavior can)
 const BASELINE = 'tests/cardmirror/probe.json';

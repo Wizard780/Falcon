@@ -1,0 +1,6 @@
+#!/bin/sh
+# Typecheck and unit tests before every push (about 6s), so a red check is caught here instead of in CI.
+# Skip once with: git push --no-verify
+set -e
+npx tsc
+npx vitest run --reporter=dot

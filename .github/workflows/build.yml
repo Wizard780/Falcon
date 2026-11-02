@@ -2,7 +2,14 @@ name: build
 on:
   push:
     branches: [main]
+    paths-ignore: ['**/*.md', '.claude/**']
   pull_request:
+    paths-ignore: ['**/*.md', '.claude/**']
+
+# a new push to a PR cancels that PR's older run, so stale runs don't hold the scarce macOS runners
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -17,17 +24,23 @@ jobs:
 
   # The editing mechanics compared with CardMirror's recorded behavior (tests/cardmirror), on each OS.
   parity:
-    needs: test
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
+      # the browser download is keyed on the lockfile, which pins the Playwright version
+      - uses: actions/cache@v4
+        with:
+          path: .playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install chromium
       - run: npm run build
       - name: Keyboard and mouse parity with CardMirror
@@ -40,7 +53,6 @@ jobs:
           node scripts/paste-word.mjs | tail -1
 
   package:
-    needs: test
     strategy:
       fail-fast: false
       matrix:
