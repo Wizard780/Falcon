@@ -121,4 +121,15 @@ await tilde();
 const again = await rows();
 want(again.length === 2 && again[1].label === SPEECH && (await speechMap()) === CARD1, 'the next send makes a fresh speech doc');
 await f.shot('fresh-speech-doc');
+
+await goto('seed');
+await page.keyboard.press(`${MOD}+n`);
+await page.waitForTimeout(300);
+await page.click(`.tools [aria-label="Speech doc"]`);
+await goto('seed');
+await page.waitForTimeout(2000);
+await page.reload();
+await page.waitForSelector('.doc-row');
+await page.waitForTimeout(500);
+want((await rows()).some((r) => r.label === 'Untitled (speech doc)' && r.mark === 'S'), `a saved, untouched speech doc keeps its marker after a reload: ${JSON.stringify((await rows()).map((r) => r.label))}`);
 await f.done();

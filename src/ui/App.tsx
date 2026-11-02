@@ -159,7 +159,9 @@ export function App() {
   const backup = useCallback(() => autosave(docsRef.current.flatMap((d) => {
     const isActive = d.id === activeRef.current;
     const doc = isActive ? viewRef.current?.state.doc : d.state?.doc;
-    return doc && (isActive || d.dirty) ? [{ meta: d.meta, doc, active: isActive, dirty: d.dirty, speech: d.id === speechRef.current || undefined }] : [];
+    const speech = d.id === speechRef.current;
+    // the speech doc is kept even when saved, so its marker comes back after a crash
+    return doc && (isActive || d.dirty || speech) ? [{ meta: d.meta, doc, active: isActive, dirty: d.dirty, speech: speech || undefined }] : [];
   })), []);
   const backupSoon = useRef(() => {});
   useEffect(() => {
