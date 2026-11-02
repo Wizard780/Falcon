@@ -146,7 +146,7 @@ function runMarks(styles: Map<string, StyleInfo>, rpr: Element | undefined, para
   const sz = Number(val(kid(rpr, 'sz')));
   if (sz) {
     const pt = sz / 2;
-    const natural = kind === 'cite' && (paraStyle === 'normal' || paraStyle === 'undertag') ? 13 : STYLE_PT[paraStyle];
+    const natural = kind === 'cite' ? 13 : STYLE_PT[paraStyle]; // cite text is 13pt in any paragraph
     if (pt !== natural) marks.push(M.size.create({ pt }));
   }
   const va = val(kid(rpr, 'vertAlign'));
