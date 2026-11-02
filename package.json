@@ -5,7 +5,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
-    "prepare": "git config core.hooksPath .githooks",
+    "prepare": "git config core.hooksPath .githooks || true",
     "build": "tsc && vite build",
     "test": "vitest run",
     "typecheck": "tsc",
