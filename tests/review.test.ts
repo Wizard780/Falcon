@@ -30,6 +30,14 @@ describe('review regressions', () => {
     const s = run(all(make([['tag', 'T'], ['normal', 'x']])), insertPlainText('one\ntwo'));
     expect(map(s)).toBe('normal: one\nnormal: two');
   });
+  it('F2 keeps only highlight and size from the cursor, on one line or several', () => {
+    let s = make([['normal', 'alpha beta']]);
+    s = run(select(s, 'alpha beta'), K.F9);
+    s = run(select(s, 'alpha beta'), K.F11);
+    const at2 = caret(s, 'beta', 2);
+    expect(map(run(at2, insertPlainText('X')))).toBe('normal: [alpha be]{highlight:yellow+underline}[X]{highlight:yellow}[ta]{highlight:yellow+underline}');
+    expect(map(run(at2, insertPlainText('X\nY')))).toBe('normal: [alpha be]{highlight:yellow+underline}[X]{highlight:yellow}\nnormal: [Y]{highlight:yellow}[ta]{highlight:yellow+underline}');
+  });
   it('motion keys and Alt-F8 do nothing on select-all instead of throwing', () => {
     const s0 = all(make([['tag', 'T'], ['normal', 'x']]));
     for (const key of ['PageUp', 'PageDown', 'Ctrl-ArrowUp', 'Ctrl-ArrowDown', 'Alt-F8']) expect(() => run(s0, K[key])).not.toThrow();
