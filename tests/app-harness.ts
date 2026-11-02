@@ -38,6 +38,7 @@ export async function mountApp(bridge: Bridge = {}) {
   Range.prototype.getBoundingClientRect = () => zero as DOMRect;
   window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })) as unknown as typeof matchMedia;
   Element.prototype.scrollTo = (() => {}) as unknown as typeof Element.prototype.scrollTo;
+  Element.prototype.scrollIntoView = () => {};
 
   for (const k of Object.keys(fake)) delete fake[k];
   let onMenu: (c: string) => void = () => {};
@@ -75,6 +76,18 @@ export async function mountApp(bridge: Bridge = {}) {
     /** The rail's button for the tab with this name. */
     tab: (name: string) => [...el.querySelectorAll('.fs-docs .doc-nm')].find((b) => b.getAttribute('aria-label') === name) ?? null,
     toast: () => el.querySelector('.toast')?.textContent ?? '',
+    /** A key pressed on the page (Ctrl is the shortcut modifier here: jsdom is not a Mac). */
+    press: async (key: string, init: KeyboardEventInit = {}, wait = 50) => {
+      await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })); await tick(wait); });
+    },
+    /** Type into a React-controlled text field. */
+    fill: async (input: Element | null, value: string, wait = 50) => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+        input!.dispatchEvent(new Event('input', { bubbles: true }));
+        await tick(wait);
+      });
+    },
     click: async (node: Element | null, wait = 100) => { await act(async () => { (node as HTMLElement).click(); await tick(wait); }); },
   };
 }
