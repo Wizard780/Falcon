@@ -1,7 +1,7 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { Plugin, PluginKey, Selection, TextSelection, type Command, type EditorState } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
-import { LEVEL, schema, type ParaStyle } from './schema';
+import { LEVEL, levelOf, schema, type ParaStyle } from './schema';
 import { cardAround } from './commands';
 import { P, PREFS_META, pref } from './prefs';
 import { keyOf, pressed } from './keybinds';
@@ -39,7 +39,9 @@ export function readView(doc: PMNode): ReadPara[] {
   const isRead = (n: PMNode) => n.marks.some((m) => m.type.name === 'highlight' || m.type.name === 'cite' || (shading && m.type.name === 'shading')) || shownMarker(n);
   let inCard = false, cardHasShown = false;
   doc.forEach((para) => {
-    const level = LEVEL[para.attrs.style as ParaStyle];
+    // a table shows whole, like a heading, and doesn't change which card the text after it belongs to
+    if (!para.isTextblock) { out.push({ heading: true, shown: [], flow: false }); return; }
+    const level = levelOf(para);
     if (level > 0) { inCard = level === 4; cardHasShown = false; out.push({ heading: true, shown: [], flow: false }); return; }
     const shown: boolean[] = [];
     const under = para.attrs.style === 'undertag';

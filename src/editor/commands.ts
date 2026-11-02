@@ -1,10 +1,10 @@
 import type { Mark, MarkType, Node as PMNode } from 'prosemirror-model';
 import { EditorState, Selection, TextSelection, type Command, type Transaction } from 'prosemirror-state';
-import { LEVEL, schema, type ParaStyle } from './schema';
+import { LEVEL, levelOf, schema, type ParaStyle } from './schema';
 import { P, pref, type CondenseMode } from './prefs';
 
 const M = schema.marks;
-export const isHeading = (n: PMNode) => LEVEL[n.attrs.style as ParaStyle] > 0;
+export const isHeading = (n: PMNode) => levelOf(n) > 0;
 const isCardHead = (n: PMNode) => n.attrs.style === 'tag' || n.attrs.style === 'analytic';
 
 type Range = { from: number; to: number };
@@ -249,11 +249,11 @@ export function cardAround(doc: PMNode, pos: number): { head: number; start: num
   let head = idx;
   while (head >= 0 && !isHeading(doc.child(head))) head--;
   if (head < 0) return null;
-  const level = LEVEL[doc.child(head).attrs.style as ParaStyle];
+  const level = levelOf(doc.child(head));
   let end = head + 1;
   while (end < doc.childCount) {
     const n = doc.child(end);
-    const l = LEVEL[n.attrs.style as ParaStyle];
+    const l = levelOf(n);
     if (l > 0 && (level === 4 || l <= level)) break;
     end++;
   }

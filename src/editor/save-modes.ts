@@ -1,11 +1,11 @@
 import type { Node as PMNode } from 'prosemirror-model';
-import { LEVEL, schema, type ParaStyle } from './schema';
+import { LEVEL, levelOf, schema, type ParaStyle } from './schema';
 import { isMarker, readView } from './read';
 
 /** The four ways Save As can write the doc. Only As-Is is the document itself; the rest are copies. */
 export type SaveMode = 'asis' | 'send' | 'read' | 'marked';
 
-const level = (p: PMNode) => LEVEL[p.attrs.style as ParaStyle];
+const level = levelOf;
 const docOf = (paras: PMNode[]) => (paras.length ? schema.node('doc', null, paras) : null);
 
 /** Send Doc: the file for the other team, without analytics (and any text under them) and undertags. */

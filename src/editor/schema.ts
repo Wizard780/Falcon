@@ -1,4 +1,5 @@
-import { Schema, type MarkSpec, type NodeSpec } from 'prosemirror-model';
+import { Schema, type MarkSpec, type NodeSpec, type Node as PMNode } from 'prosemirror-model';
+import { tableNodes } from 'prosemirror-tables';
 
 /**
  * Falcon's document model is flat, like a Word/Verbatim file: a list of paragraphs,
@@ -12,6 +13,9 @@ export type ParaStyle = (typeof PARA_STYLES)[number];
 export const LEVEL: Record<ParaStyle, number> = {
   normal: 0, undertag: 0, pocket: 1, hat: 2, block: 3, tag: 4, analytic: 4,
 };
+
+/** A node's outline level: 0 for body paragraphs and for anything that isn't a paragraph (tables). */
+export const levelOf = (n: PMNode): number => (n.type.name === 'paragraph' ? LEVEL[n.attrs.style as ParaStyle] ?? 0 : 0);
 
 const TAG_FOR: Record<ParaStyle, string> = {
   pocket: 'h1', hat: 'h2', block: 'h3', tag: 'h4', analytic: 'p', undertag: 'p', normal: 'p',
@@ -118,10 +122,77 @@ const marks: Record<string, MarkSpec> = {
   sub: { excludes: 'sup sub', parseDOM: [{ tag: 'sub' }], toDOM: () => ['sub', 0] },
 };
 
+/** Image sources the editor keeps: embedded pictures, and web pictures it couldn't fetch (saved as linked pictures). */
+export const imageSrc = (s: string | null) => (s && /^(data:image\/[\w.+-]+;base64,|https?:\/\/)/i.test(s) ? s : null);
+const num = (v: string | null | undefined) => { const n = Math.round(Number(v)); return n > 0 ? n : null; };
+
+/**
+ * A picture, inline in its paragraph like Word's "in line with text". `width`/`height` are CSS pixels
+ * (null: the picture's own size); the corner handle changes them together, so the shape never stretches.
+ */
+const image: NodeSpec = {
+  inline: true,
+  group: 'inline',
+  draggable: true,
+  attrs: { src: {}, width: { default: null }, height: { default: null }, alt: { default: '' } },
+  leafText: () => '\ufffc',
+  parseDOM: [{
+    tag: 'img[src]',
+    getAttrs: (el) => {
+      const e = el as HTMLImageElement;
+      const src = imageSrc(e.getAttribute('src'));
+      if (!src) return false;
+      const w = num(e.getAttribute('width')) ?? num(e.style.width.replace(/px$/, '')), h = num(e.getAttribute('height')) ?? num(e.style.height.replace(/px$/, ''));
+      return { src, width: w, height: w && h ? h : null, alt: e.getAttribute('alt') ?? '' };
+    },
+  }],
+  toDOM: (n) => ['img', { class: 'f-image', src: n.attrs.src, alt: n.attrs.alt, ...(n.attrs.width ? { width: String(n.attrs.width) } : {}), ...(n.attrs.width && n.attrs.height ? { height: String(n.attrs.height) } : {}) }],
+};
+
+/** Plain text of a footnote's content (stored as ProseMirror JSON for text and hard breaks). */
+export type FootnoteContent = { type: string; text?: string; marks?: { type: string; attrs?: Record<string, unknown> }[] }[];
+export const footnoteText = (c: FootnoteContent) => c.map((n) => (n.type === 'hard_break' ? '\n' : n.text ?? '')).join('');
+
+/**
+ * A footnote reference. It's one character in the text (a number the editor draws); the note itself rides
+ * along as `content`, so cutting, pasting and undo carry it whole. Its own little editor opens on click.
+ */
+const footnote: NodeSpec = {
+  inline: true,
+  group: 'inline',
+  atom: true,
+  attrs: { content: { default: [] } },
+  leafText: () => '\ufffc',
+  parseDOM: [{
+    tag: 'sup.f-footnote',
+    priority: 60, // ahead of the superscript mark's plain <sup> rule
+    getAttrs: (el) => {
+      try { const c = JSON.parse((el as HTMLElement).dataset.content ?? '[]'); return { content: Array.isArray(c) ? c : [] }; } catch { return { content: [] }; }
+    },
+  }],
+  toDOM: (n) => ['sup', { class: 'f-footnote', 'data-content': JSON.stringify(n.attrs.content), title: footnoteText(n.attrs.content) }],
+};
+
+const cssColor = (s: string | null) => (s && /^#[0-9a-f]{6}$/i.test(s) ? s.toUpperCase() : s && /^rgb\(/.test(s) ? s : null);
+const tables = tableNodes({
+  tableGroup: 'block',
+  cellContent: 'paragraph+',
+  cellAttributes: {
+    background: {
+      default: null,
+      getFromDOM: (dom) => cssColor(dom.dataset.bg ?? null),
+      setDOMAttr: (value, attrs) => { if (value) { attrs['data-bg'] = value; attrs.style = `${attrs.style ?? ''}background-color:${value};`; } },
+    },
+  },
+});
+tables.table.parseDOM = [{ tag: 'table' }];
+tables.table.toDOM = () => ['table', { class: 'f-table' }, ['tbody', 0]];
+
 export const schema = new Schema({
   nodes: {
     doc: { content: 'block+' },
     paragraph,
+    ...tables,
     text: { group: 'inline' },
     hard_break: {
       inline: true,
@@ -130,6 +201,8 @@ export const schema = new Schema({
       parseDOM: [{ tag: 'br' }],
       toDOM: () => ['br'],
     },
+    image,
+    footnote,
   },
   marks,
 });

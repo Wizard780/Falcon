@@ -1,7 +1,7 @@
 import { Fragment, Slice, type Node as PMNode } from 'prosemirror-model';
 import { TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
-import { LEVEL, schema, type ParaStyle } from '../schema';
+import { levelOf, schema, type ParaStyle } from '../schema';
 import { cardAround } from '../commands';
 import { MultiSelection } from '../multi';
 
@@ -12,7 +12,7 @@ import { MultiSelection } from '../multi';
  */
 export type Section = { from: number; to: number; level: number };
 
-export const levelOf = (n: PMNode) => LEVEL[n.attrs.style as ParaStyle] ?? 0;
+export { levelOf };
 
 /** The section headed by the paragraph at `head` (a top-level position), or null if it isn't a heading. */
 export function sectionAt(doc: PMNode, head: number): Section | null {
