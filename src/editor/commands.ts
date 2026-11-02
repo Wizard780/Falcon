@@ -240,6 +240,8 @@ export function setParaStyle(style: ParaStyle): Command {
       } else {
         tr.setNodeMarkup(pos, undefined, { ...node.attrs, style });
       }
+      // analytic and undertag take their color from Settings; inline run color (Verbatim's navy, kept by .docx import) would hide it
+      if (style === 'analytic' || style === 'undertag') tr.removeMark(pos + 1, pos + 1 + node.content.size, M.color);
     }
     return finish(state, tr, dispatch);
   };
