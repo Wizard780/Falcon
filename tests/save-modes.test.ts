@@ -64,29 +64,35 @@ describe('Read Doc', () => {
 });
 
 describe('Marked Doc', () => {
+  const R = (t: string, ...m: Mark[]): Run => [t, [red(), ...m]];
   const d = doc(
     p('pocket', 'Aff'),
     p('hat', 'Contention 1'),
     p('tag', 'Unmarked card'), p('normal', 'body one'),
-    p('tag', 'Marked card'), p('normal', 'read up to ', [' Marked ', [red()]], ' here'),
+    p('tag', R('Marked card')), p('normal', R('Smith 24', cite())), p('normal', R('all of it '), R('red', hl())),
+    p('tag', 'Stamped only'), p('normal', 'read up to ', [' Marked 3:15 ', [red()]], ' here'),
     p('hat', 'Contention 2'),
     p('tag', 'Also unmarked'), p('normal', 'body'),
     p('pocket', 'Neg'),
     p('block', 'AT: Thing'),
-    p('analytic', ['red analytic', [red()]]),
-    p('tag', 'Second marked'), p('normal', ['all red', [red()]]),
+    p('analytic', R('red analytic')),
+    p('tag', 'Half red'), p('normal', R('red body')),
   );
-  it('keeps only cards with red text, under the headings they sit in', () => {
+  it('keeps only cards whose whole text is red, under the headings they sit in', () => {
     expect(lines(markedDoc(d))).toEqual([
-      'pocket: Aff', 'hat: Contention 1', 'tag: Marked card', 'normal: read up to  Marked  here',
-      'pocket: Neg', 'block: AT: Thing', 'analytic: red analytic', 'tag: Second marked', 'normal: all red',
+      'pocket: Aff', 'hat: Contention 1', 'tag: Marked card', 'normal: Smith 24', 'normal: all of it red',
+      'pocket: Neg', 'block: AT: Thing', 'analytic: red analytic',
     ]);
+  });
+  it('ignores an undertag inside a red card, and keeps it', () => {
+    const d2 = doc(p('tag', R('T')), p('undertag', 'my note'), p('normal', R('body')));
+    expect(lines(markedDoc(d2))).toEqual(['tag: T', 'undertag: my note', 'normal: body']);
   });
   it('is empty when nothing is marked', () => {
     expect(markedDoc(doc(p('tag', 'T'), p('normal', 'b')))).toBeNull();
   });
   it('counts other colors as unmarked', () => {
     const blue = M.color.create({ color: '#0000FF' });
-    expect(markedDoc(doc(p('tag', 'T'), p('normal', ['blue', [blue]])))).toBeNull();
+    expect(markedDoc(doc(p('tag', ['T', [blue]]), p('normal', ['blue', [blue]])))).toBeNull();
   });
 });

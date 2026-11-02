@@ -61,9 +61,28 @@ f.want(!/analytic:/.test(send) && /tag: Growth is slowing/.test(send) && /next y
 const read = await reopen(await saveAs('read', 'read.docx'));
 f.want(/two percent/.test(read) && !/growth will fall to/.test(read) && !/Temperatures rose/.test(read) && /tag: Warming is real/.test(read), 'Read Doc: only headings, cites, highlights, markers');
 
-const marked = await reopen(await saveAs('marked', 'marked.docx'));
-f.want(/tag: Warming is real/.test(marked) && !/Growth is slowing/.test(marked) && /block: Warming Block/.test(marked) && !/Economy Block/.test(marked), 'Marked Doc: only the card with red text, under its headings');
+// a red reading stamp alone doesn't mark a card: nothing is saved, and the toast says why
+await page.click('.tools [aria-label="Save As…"]');
+await dialog.waitFor();
+let downloaded = false;
+page.once('download', () => { downloaded = true; });
+await page.click('.sa-mode[data-mode="marked"]');
+await page.waitForTimeout(500);
+f.want(!downloaded && /No marked cards/.test(await page.locator('.toast').innerText().catch(() => '')), 'Marked Doc: a stamp-only doc saves nothing and says so');
+await f.shot('marked-none');
 
 f.want((await f.markMap()) === before, 'the open doc is still unchanged after all copies');
+
+// a card turned all red is marked: only it survives, under its headings
+await f.open(path.join(path.dirname(SEED), 'marked.docx'));
+const [dl] = await Promise.all([page.waitForEvent('download'), (async () => {
+  await page.click('.tools [aria-label="Save As…"]'); await dialog.waitFor(); await page.click('.sa-mode[data-mode="marked"]');
+})()]);
+const mp = path.join(f.out, 'marked-out.docx');
+await dl.saveAs(mp);
+await f.open(mp);
+const marked = await f.markMap();
+await f.shot('marked-reopened');
+f.want(marked.trim().split('\n').join('|') === ['pocket: Seed Pocket', 'hat: Seed Hat', 'block: Marked Block', 'tag: [Trade is collapsing]{color}', 'normal: [Lee 25]{cite+color}[ [cite]]{color}', 'normal: [Tariffs ]{color}[cut trade in half]{color+highlight:yellow+underline}[ this year.]{color}'].join('|'), 'Marked Doc: only the all-red card, under its headings');
 console.log('--- send\n' + send + '\n--- read\n' + read + '\n--- marked\n' + marked);
 await f.done();

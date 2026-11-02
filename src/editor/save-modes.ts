@@ -1,6 +1,6 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { LEVEL, schema, type ParaStyle } from './schema';
-import { readView, shownMarker } from './read';
+import { isMarker, readView } from './read';
 
 /** The four ways Save As can write the doc. Only As-Is is the document itself; the rest are copies. */
 export type SaveMode = 'asis' | 'send' | 'read' | 'marked';
@@ -55,15 +55,21 @@ export function readDoc(doc: PMNode): PMNode | null {
   return docOf(keep);
 }
 
-/** A card (a tag or analytic and the paragraphs under it) is marked when it has red text, or a marker in the Settings color: what read mode counts. */
-const hasMarked = (p: PMNode) => {
-  let red = false;
-  p.forEach((n) => { if (n.isText && shownMarker(n)) red = true; });
-  return red;
+/** Red as marking counts it: #FF0000, or the marker color Settings picks. */
+const isRed = (n: PMNode) => isMarker(n.marks);
+/**
+ * A card (a tag or analytic and the paragraphs under it) is marked when all of its text is red: marking
+ * a card turns the whole thing red. A red "Marked 3:15" reading stamp in an otherwise black card is not.
+ */
+const isMarkedCard = (card: PMNode[]) => {
+  let any = false, all = true;
+  // undertags are the user's own notes: they don't decide whether the card is marked
+  for (const p of card) if (p.attrs.style !== 'undertag') p.forEach((n) => { if (n.isText && n.text!.trim()) { any = true; if (!isRed(n)) all = false; } });
+  return any && all;
 };
 
 /**
- * Marked Doc: only the cards with red text in them, under the pocket, hat and block headings they sit
+ * Marked Doc: only the marked cards (all their text red), under the pocket, hat and block headings they sit
  * in. Headings with no marked card below them, and anything outside a card, are left out.
  */
 export function markedDoc(doc: PMNode): PMNode | null {
@@ -82,7 +88,7 @@ export function markedDoc(doc: PMNode): PMNode | null {
     let end = i + 1;
     while (end < paras.length && level(paras[end]) === 0) end++;
     const card = paras.slice(i, end);
-    if (card.some(hasMarked)) {
+    if (isMarkedCard(card)) {
       // write the heading path once: heads already written are cleared from the list
       keep.push(...heads.splice(0));
       keep.push(...card);

@@ -5,7 +5,7 @@ const MODES: { mode: SaveMode; label: string; hint: string }[] = [
   { mode: 'asis', label: 'As-Is', hint: 'Everything in the document. The open file becomes this copy.' },
   { mode: 'send', label: 'Send Doc', hint: 'Without analytics and undertags, for the other team.' },
   { mode: 'read', label: 'Read Doc', hint: 'Only what read mode shows: headings, tags, cites and highlights.' },
-  { mode: 'marked', label: 'Marked Doc', hint: 'Only the cards with red text in them.' },
+  { mode: 'marked', label: 'Marked Doc', hint: 'Only the cards you marked (turned red).' },
 ];
 
 /** Save As: a name, then one of four kinds of copy. Enter saves As-Is; Esc or a backdrop click cancels. */

@@ -20,7 +20,7 @@ export const isMarker = (marks: readonly { type: { name: string }; attrs: Record
   });
 const MARKER_TEXT = /^ ?Marked( \d{1,2}:\d{2})? ?$/;
 /** Read mode shows red text (as it always has) and markers in the color Settings picks, but not other text in that color. */
-export const shownMarker = (n: PMNode) => n.marks.some((m) => m.type.name === 'color' && String(m.attrs.color).toUpperCase() === '#FF0000') || (isMarker(n.marks) && MARKER_TEXT.test(n.text ?? ''));
+const shownMarker = (n: PMNode) => n.marks.some((m) => m.type.name === 'color' && String(m.attrs.color).toUpperCase() === '#FF0000') || (isMarker(n.marks) && MARKER_TEXT.test(n.text ?? ''));
 
 /** What read mode shows of one paragraph: a flag per child node, and whether it runs into the shown paragraph above. */
 export type ReadPara = { heading: boolean; shown: boolean[]; flow: boolean };
