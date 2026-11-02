@@ -52,7 +52,7 @@ export function compute(doc: PMNode, marks: Map<number, NumMark>, prev: string[]
     let label = '';
     if (lv <= 2) num = sub = 0;
     else if (lv === 3) {
-      if (m?.flip && shown(pos)) decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-num-cont': '' }));
+      if (m?.flip) { if (shown(pos)) decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-num-cont': '' })); }
       else num = sub = 0;
     } else {
       if (m?.flip) num = sub = 0;
