@@ -18,9 +18,10 @@ console.log(map);
 const want = [
   'tag: Data centers cause blackouts',
   'normal: [Smith 24]{cite}, Professor at MIT, "The Crunch"',
-  'normal: The rapid expansion of AI has [pushed utilities]{highlight:yellow+underline}[ to their limits]{underline} and [rolling blackouts]{emphasis+highlight:cyan} loom.',
+  // the 8pt (shrunk) card text keeps its size
+  'normal: [The rapid expansion of AI has ]{size:8pt}[pushed utilities]{highlight:yellow+underline}[ to their limits]{underline}[ and ]{size:8pt}[rolling blackouts]{emphasis+highlight:cyan}[ loom.]{size:8pt}',
 ];
 const ok = want.every((line) => map.split('\n').includes(line));
-console.log(ok ? 'Word paste: structure, cite, underline, emphasis and highlights all kept' : 'WORD PASTE MISMATCH');
+console.log(ok ? 'Word paste: structure, cite, underline, emphasis, highlights and shrunk text all kept' : 'WORD PASTE MISMATCH');
 if (!ok) process.exitCode = 1;
 await b.close();

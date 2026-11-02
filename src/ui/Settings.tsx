@@ -97,6 +97,9 @@ export function Settings(props: Props) {
     void load();
     return () => { live = false; };
   }, [props.open]);
+  // the spelling dictionary lives in the desktop app's session too
+  const [words, setWords] = useState<string[]>([]);
+  useEffect(() => { if (props.open && bridge.dictionaryWords) bridge.dictionaryWords().then(setWords, () => {}); }, [props.open]);
   useEffect(() => onPrefs(() => setSpecTick((t) => t + 1)), []);
   if (!props.open) return null;
 
@@ -265,6 +268,13 @@ export function Settings(props: Props) {
       ]],
     ] },
     { id: 'editor', title: 'Editor', icon: 'doc', sections: [
+      ['Spelling', [
+        tog(P.spellcheck, 'Check spelling', 'Misspelled words get a red underline. Right-click one for suggestions or Add to Dictionary.'),
+        ...words.map((w): Row => ({ label: w, hint: 'In your dictionary', control: (
+          <button className="sb-ico" aria-label={`Remove ${w} from the dictionary`} title="Remove from the dictionary"
+            onClick={() => void bridge.removeDictionaryWord!(w).then(setWords)}><SvgIcon name="x" /></button>) })),
+        ...(bridge.dictionaryWords && !words.length ? [{ label: 'Your dictionary', hint: 'Words you add show up here, so you can take them back out.', control: null }] : []),
+      ]],
       ['Outline', [
         { label: 'Show outline pane', hint: `The nav pane on the document's left edge. Also ${keyLabel('outline')}.`, control: toggle('Show outline pane', props.showOutline, props.onShowOutline) },
         { label: 'Outline depth', hint: 'How many heading levels the outline shows.', control:

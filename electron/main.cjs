@@ -11,6 +11,11 @@ const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a win
 // tests: closing never waits on the unsaved-docs question (the smoke test turns this off to check it)
 globalThis.falconSkipUnloadGuard = HEADLESS;
 if (process.env.FALCON_USER_DATA) app.setPath('userData', process.env.FALCON_USER_DATA);
+// One Falcon per profile: a second launch (Windows opens a double-clicked file that way) hands its
+// files to the running one and quits. The lock lives in userData, so test runs (their own profile) never
+// collide with it; dev runs skip it, so several checkouts can run at once.
+const primary = DEV || app.requestSingleInstanceLock();
+if (!primary) app.quit();
 
 // The theme's background, kept from the last run, so the window opens in it instead of flashing graphite.
 const themeFile = () => path.join(app.getPath('userData'), 'theme.json');
@@ -43,7 +48,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      spellcheck: false,
+      spellcheck: true, // Chromium's checker: the system dictionary on a Mac, Hunspell on Windows and Linux
     },
   });
   if (!HEADLESS) win.once('ready-to-show', () => win.show());
@@ -64,6 +69,14 @@ function createWindow() {
     win.webContents.send('falcon:confirm-close', quitting);
     quitting = false; // a cancelled quit is over; a confirmed one quits again
   });
+  win.webContents.on('context-menu', (_e, p) => {
+    const items = contextMenu(win.webContents, p);
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
+  });
+  // a reload or crash drops the page's listener: hold OS opens until the new page asks again
+  const unlisten = () => { if (openTarget === win.webContents) openTarget = null; };
+  win.webContents.on('did-start-loading', unlisten);
+  win.webContents.on('render-process-gone', unlisten);
   // the app is one page: block every navigation away from it
   win.webContents.on('will-navigate', (e, url) => {
     if (url !== win.webContents.getURL()) e.preventDefault();
@@ -71,22 +84,73 @@ function createWindow() {
   return win;
 }
 
+// Right-click: spelling suggestions and Add to Dictionary on a misspelled word, then Cut, Copy and Paste,
+// the menu every text app has. Pages that draw their own menu (the outline) stop the event, so this never runs there.
+function contextMenu(wc, p) {
+  const items = [];
+  if (p.misspelledWord) {
+    const guesses = p.dictionarySuggestions.slice(0, 5);
+    for (const g of guesses) items.push({ label: g, click: () => wc.replaceMisspelling(g) });
+    if (!guesses.length) items.push({ label: 'No Guesses Found', enabled: false });
+    items.push({ type: 'separator' },
+      { label: 'Add to Dictionary', click: () => wc.session.addWordToSpellCheckerDictionary(p.misspelledWord) },
+      { type: 'separator' });
+  }
+  if (p.isEditable) items.push({ role: 'cut', enabled: p.editFlags.canCut }, { role: 'copy', enabled: p.editFlags.canCopy }, { role: 'paste', enabled: p.editFlags.canPaste });
+  else if (p.selectionText) items.push({ role: 'copy' });
+  return items;
+}
+globalThis.falconContextMenu = contextMenu; // the smoke test checks the menu a misspelled word gets
+
 const DOCX = [{ name: 'Word documents', extensions: ['docx'] }];
 // Files picked in a dialog in earlier sessions, so Home and the files panel can reopen them.
 // Only paths in this list (and only .docx) can be opened without a dialog.
 const MAX_RECENT = 50;
 const recentFile = () => path.join(app.getPath('userData'), 'recent-paths.json');
 let recentPaths = null;
-async function loadRecent() {
-  if (recentPaths) return recentPaths;
-  try { recentPaths = JSON.parse(await fs.readFile(recentFile(), 'utf8')).filter((p) => typeof p === 'string'); }
-  catch { recentPaths = []; }
-  return recentPaths;
+let recentLoad = null; // one read, shared: several files opened at once must not each start from their own copy
+function loadRecent() {
+  recentLoad ??= fs.readFile(recentFile(), 'utf8')
+    .then((t) => JSON.parse(t).filter((p) => typeof p === 'string'), () => [])
+    .then((list) => { recentPaths = list; });
+  return recentLoad.then(() => recentPaths); // the current list, not the one first read
 }
+let recentWrite = Promise.resolve(); // writes in order, so the file ends with the latest list
 async function rememberPath(p) {
-  const list = await loadRecent();
-  recentPaths = [p, ...list.filter((x) => x !== p)].slice(0, MAX_RECENT);
-  try { await fs.writeFile(recentFile(), JSON.stringify(recentPaths)); } catch { /* recents are a convenience */ }
+  await loadRecent();
+  recentPaths = [p, ...recentPaths.filter((x) => x !== p)].slice(0, MAX_RECENT);
+  recentWrite = recentWrite.then(() => fs.writeFile(recentFile(), JSON.stringify(recentPaths))).catch(() => { /* recents are a convenience */ });
+  await recentWrite;
+}
+
+// Files the OS asks us to open: a double-click in Finder or Explorer, or Open With. macOS sends
+// open-file (before ready, when the click is what launched the app); Windows puts the path on the command
+// line, of this launch or of a second one. They wait here until the page says it's listening. Each becomes
+// a recent, which is what lets the page's openPath read it.
+const pendingOpens = [];
+let openTarget = null; // the page listening for them
+async function requestOpen(paths) {
+  const docx = paths.filter((p) => typeof p === 'string' && p.toLowerCase().endsWith('.docx')).map((p) => path.resolve(p));
+  for (const p of docx) await rememberPath(p);
+  pendingOpens.push(...docx);
+  flushOpens();
+}
+function flushOpens() {
+  if (!app.isReady()) return; // whenReady makes the window, and its page asks for these
+  if (!openTarget || openTarget.isDestroyed()) {
+    openTarget = null;
+    if (pendingOpens.length && BrowserWindow.getAllWindows().length === 0) createWindow(); // Mac: app open, no window
+    return;
+  }
+  const win = BrowserWindow.fromWebContents(openTarget);
+  if (win && !HEADLESS) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+  if (pendingOpens.length) openTarget.send('falcon:open-paths', pendingOpens.splice(0));
+}
+if (primary) {
+  app.on('open-file', (e, p) => { e.preventDefault(); void requestOpen([p]); });
+  app.on('second-instance', (_e, argv) => { void requestOpen(argv.slice(1)); flushOpens(); });
+  ipcMain.on('falcon:open-paths-ready', (e) => { openTarget = e.sender; flushOpens(); });
+  void requestOpen(process.argv.slice(1));
 }
 
 // File search: the folders allowed in Settings (see indexer.cjs)
@@ -140,6 +204,14 @@ ipcMain.handle('falcon:index-remove', async (_e, p) => {
   if (typeof p !== 'string') throw new Error('bad remove request');
   await index().remove(p);
   return index().folders();
+});
+// the words the user added with Add to Dictionary, for Settings to list and remove
+const dictWords = async (e) => (await e.sender.session.listWordsInSpellCheckerDictionary()).sort((a, b) => a.localeCompare(b));
+ipcMain.handle('falcon:dict-words', dictWords);
+ipcMain.handle('falcon:dict-remove', async (e, w) => {
+  if (typeof w !== 'string') throw new Error('bad remove request');
+  e.sender.session.removeWordFromSpellCheckerDictionary(w);
+  return (await dictWords(e)).filter((x) => x !== w); // the list can lag the removal by a moment
 });
 ipcMain.handle('falcon:index-files', () => index().files());
 ipcMain.handle('falcon:save-file', async (e, opts) => {
@@ -200,7 +272,7 @@ ipcMain.on('falcon:menu-keys', (_e, keys) => {
   try { buildMenu(clean); } catch { buildMenu(); }
 });
 
-app.whenReady().then(() => {
+if (primary) app.whenReady().then(() => {
   buildMenu();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

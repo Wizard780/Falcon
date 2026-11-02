@@ -285,7 +285,7 @@ describe('review fixes', () => {
   });
 
   it('pasted HTML cannot smuggle bad footnote content or styles', () => {
-    const html = `<p>x<sup class="f-footnote" data-content='[null,{"type":"image","attrs":{"src":"x"}},{"type":"text","text":"ok"}]'></sup></p><table><tr><td data-bg="rgb(0,0,0);position:fixed">c</td></tr></table>`;
+    const html = `<p class="f-normal">x<sup class="f-footnote" data-content='[null,{"type":"image","attrs":{"src":"x"}},{"type":"text","text":"ok"}]'></sup></p><table><tr><td data-bg="rgb(0,0,0);position:fixed">c</td></tr></table>`;
     const doc = docFromHTML(cleanPastedHTML(html));
     expect(markMap(doc)).toBe('normal: x[^ok]\ntable 1 rows\ncell r0c0 normal: c');
   });
@@ -298,5 +298,22 @@ describe('review fixes', () => {
     s = s.apply(s.tr.setSelection(TextSelection.create(s.doc, 7)));
     s = run(s, K.Enter);
     expect(markMap(s.doc)).toBe('table 1 rows\ncell r0c0 tag: Tag\ncell r0c0 normal: \nnormal: ');
+  });
+});
+
+describe('copying tables out', () => {
+  it('a copied table carries its lines, widths and shading inline, and still pastes back into Falcon whole', async () => {
+    const { clipboardHTML } = await import('../src/editor/clipboard-styles');
+    const doc = schema.node('doc', null, [
+      schema.nodes.paragraph.create(null, schema.text('t')),
+      schema.nodes.table.create(null, [schema.nodes.table_row.create(null, [
+        schema.nodes.table_cell.create({ colwidth: [120], background: '#FFF2CC' }, schema.nodes.paragraph.create(null, schema.text('a'))),
+        schema.nodes.table_cell.create(null, schema.nodes.paragraph.create(null, schema.text('b'))),
+      ])]),
+    ]);
+    const html = clipboardHTML(doc.content);
+    expect(html).toContain('border:1px solid #a3a3a8;padding:3px 6px;vertical-align:top;width:120px');
+    expect(html).toMatch(/background-color: ?(#FFF2CC|rgb\(255, 242, 204\))/);
+    expect(markMap(docFromHTML(cleanPastedHTML(html)))).toBe(markMap(doc));
   });
 });

@@ -1,4 +1,5 @@
-import { DOMSerializer, Fragment, type Node as PMNode } from 'prosemirror-model';
+import { Fragment, type Node as PMNode } from 'prosemirror-model';
+import { clipboardHTML } from '../clipboard-styles';
 import type { Command, EditorState } from 'prosemirror-state';
 import { HIGHLIGHTS, schema } from '../schema';
 import { readSetting, type SettingSpec } from '../tools';
@@ -73,15 +74,9 @@ export function referenceNodes(state: EditorState): PMNode[] | null {
   return out;
 }
 
-/** HTML for the clipboard: Falcon's own markup (so it pastes back exactly), with inline styles for Word. */
+/** HTML for the clipboard: Falcon's own markup (so it pastes back exactly), with inline styles for Gmail, Docs and Word. */
 export function referenceHTML(nodes: PMNode[]): string {
-  const div = document.createElement('div');
-  div.append(DOMSerializer.fromSchema(schema).serializeFragment(Fragment.fromArray(nodes)));
-  const add = (sel: string, css: string) => div.querySelectorAll<HTMLElement>(sel).forEach((el) => { el.style.cssText += css; });
-  add('.f-underline, .f-emphasis', 'text-decoration:underline;');
-  add('.f-emphasis, .f-cite', 'font-weight:bold;');
-  add('.f-emphasis', 'border:1px solid windowtext;');
-  return div.innerHTML;
+  return clipboardHTML(Fragment.fromArray(nodes));
 }
 
 /** Create Reference: copy the excerpt to the clipboard as rich text, with plain text alongside. */

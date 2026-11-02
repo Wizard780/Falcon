@@ -1,14 +1,12 @@
-import { DOMSerializer, type Slice } from 'prosemirror-model';
-import { schema } from '../schema';
+import type { Slice } from 'prosemirror-model';
+import { clipboardHTML } from '../clipboard-styles';
 
 /**
  * Put paragraphs on the clipboard as HTML (which Falcon pastes back with styles intact) and plain text.
  * Resolves true once the copy has landed, so Cut can remove the original only then.
  */
 export async function copySlice(slice: Slice): Promise<boolean> {
-  const div = document.createElement('div');
-  div.appendChild(DOMSerializer.fromSchema(schema).serializeFragment(slice.content));
-  const html = div.innerHTML;
+  const html = clipboardHTML(slice.content);
   const text = slice.content.textBetween(0, slice.content.size, '\n');
   // a copy event we fill ourselves: works from any key or click, with no permission prompt
   let ok = false;

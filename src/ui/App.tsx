@@ -633,20 +633,30 @@ export function App() {
   // ---- settings that act on the app (the rest act through CSS or in the editor) ----
   const [, setPrefTick] = useState(0);
   useEffect(() => onPrefs(() => setPrefTick((t) => t + 1)), []); // redraw: word-count speeds, recents, the timer
+  // Opens by path run one at a time: two at once both read the tab list before either adds its tab,
+  // and one is lost (or the same file opens twice). Last session's files and OS opens share the queue.
+  const pathQueue = useRef(Promise.resolve());
+  const queueOpens = useCallback((paths: string[], quiet: boolean) => {
+    pathQueue.current = pathQueue.current.then(async () => {
+      for (const p of paths) {
+        if (quiet && openedPath(p)) continue;
+        try { opened(await openPath(p)); }
+        catch (e) { if (!quiet) flash(`Couldn't open ${p.split(/[\\/]/).pop()}: ${(e as Error).message}`); }
+      }
+    });
+  }, [opened, flash]);
+  const queueRef = useRef(queueOpens);
+  queueRef.current = queueOpens;
   // reopen last files: the files open at the last quit, read before the list below is rewritten
   const lastSession = useRef<string[]>(JSON.parse(localStorage.getItem('falcon.session') ?? '[]'));
   const reopened = useRef(false);
   useEffect(() => {
     if (!hasView || reopened.current) return;
     reopened.current = true;
-    if (!pref(P.reopen) || !bridge.openPath) return;
-    void (async () => {
-      for (const p of lastSession.current) {
-        if (openedPath(p)) continue;
-        try { opened(await openPath(p)); } catch { /* moved or deleted since */ }
-      }
-    })();
+    if (pref(P.reopen) && bridge.openPath) queueOpens(lastSession.current, true); // moved or deleted since: skipped
   }, [hasView]); // eslint-disable-line react-hooks/exhaustive-deps
+  // files double-clicked in Finder/Explorer (or Open With): open each, or switch to it if it's already open
+  useEffect(() => (hasView ? bridge.onOpenPaths?.((ps) => queueRef.current(ps, false)) : undefined), [hasView]);
   useEffect(() => { localStorage.setItem('falcon.session', JSON.stringify(docs.flatMap((d) => (d.meta.path ? [d.meta.path] : [])))); }, [docs]);
   // Ctrl/Cmd + scroll wheel or trackpad pinch zooms, in the same 10% steps
   useEffect(() => {

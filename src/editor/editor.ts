@@ -13,11 +13,12 @@ import { falconKeymap } from './keymap';
 import { navPlugins } from './nav-keys';
 import { wordSelection } from './mouse';
 import { footnoteText, schema } from './schema';
-import { PREFS_META, onPrefs } from './prefs';
+import { P, PREFS_META, onPrefs, pref } from './prefs';
 import { cleanPastedHTML } from './paste';
+import { clipboardSerializer } from './clipboard-styles';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
-import { readPlugin } from './read';
+import { isReading, readPlugin } from './read';
 import { docToolPlugins } from './doc-tools';
 import { tablePlugins } from './tables';
 import { imagePlugin } from './images';
@@ -91,9 +92,10 @@ const selectionClasses = new Plugin({
   },
 });
 
-/** Mod-V after a refused F2 pastes plain; Word/web HTML is cleaned of source styling. */
+/** Mod-V after a refused F2 pastes plain; Word/web HTML is cleaned of source styling. Copies carry inline styles for Gmail, Docs and Word. */
 const pastePlugin = new Plugin({
   props: {
+    clipboardSerializer,
     transformPastedHTML: (html) => cleanPastedHTML(html),
     // a pasted tag or heading keeps its style instead of melting into the line it lands on
     transformPasted: (slice) => {
@@ -164,7 +166,9 @@ export function createView(mount: HTMLElement, onChange: (view: EditorView) => v
       view.updateState(next);
       onChange(view);
     },
-    attributes: { spellcheck: 'false', class: 'f-page-text' },
+    // read again on every update, so the Check spelling setting applies at once; read mode is never
+    // checked (no underlines while reading, and no guesses to click that would edit the locked doc)
+    attributes: (state) => ({ spellcheck: pref(P.spellcheck) && !isReading(state) ? 'true' : 'false', class: 'f-page-text' }),
     // Read the page's selection before any key runs. The editor learns about a new selection from
     // the selectionchange event, and a busy page handles a key press before that event, so a format
     // key right after selecting (Shift-arrows, a drag) would format the old selection. ProseMirror's

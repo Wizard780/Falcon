@@ -105,6 +105,8 @@ export const readPlugin = new Plugin<{ on: boolean; decos: DecorationSet }>({
     handleTextInput: (view) => !!readKey.getState(view.state)?.on,
     handlePaste: (view) => !!readKey.getState(view.state)?.on,
     handleDrop: (view) => !!readKey.getState(view.state)?.on,
+    // Cut from the right-click menu skips the keyboard lock; stop it before the browser deletes the text
+    handleDOMEvents: { cut: (view, ev) => { if (!readKey.getState(view.state)?.on) return false; ev.preventDefault(); return true; } },
   },
 });
 
