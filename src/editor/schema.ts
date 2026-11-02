@@ -81,7 +81,8 @@ const marks: Record<string, MarkSpec> = {
   },
   color: {
     attrs: { color: {} },
-    parseDOM: [{ tag: 'span.f-color', getAttrs: (el) => ({ color: (el as HTMLElement).dataset.color }) }],
+    // sanitized: the value goes into an inline style
+    parseDOM: [{ tag: 'span.f-color', getAttrs: (el) => { const c = color((el as HTMLElement).dataset.color ?? null); return c ? { color: c } : false; } }],
     toDOM: (m) => ['span', { class: 'f-color', 'data-color': m.attrs.color, style: `color:${m.attrs.color}` }, 0],
   },
   bold: {
