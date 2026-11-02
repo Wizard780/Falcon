@@ -12,13 +12,15 @@ import { toggleColorMark } from '../editor/commands';
 import { selectionState } from './selection-state';
 import { Icon, SvgIcon } from './icons';
 import { openDocument, openPath, saveDocument, type DocMeta } from './files';
-import { clearFind, findInfo, setQuery, step } from '../editor/find';
+import { clearFind, findInfo } from '../editor/find';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
 import { Settings } from './Settings';
 import { Confirm, nameList, type Ask } from './Confirm';
 import { Tips, parseTip } from './Tips';
 import { OutlinePane } from './Outline';
+import { FindBar } from './FindBar';
+import { outlineNumbers } from '../editor/nav/numbering';
 import { DOC_TOOLS } from '../editor/doc-tools';
 import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
@@ -433,6 +435,11 @@ export function App() {
     (v.dom as HTMLElement).focus({ preventScroll: true });
     scrollToPos(v, item.pos);
   }, []);
+  const getView = useCallback(() => viewRef.current, []);
+  // outline search: Up/Down scroll the page to a match without leaving the search box
+  const peek = useCallback((item: OutlineItem) => { const v = viewRef.current; if (v) scrollToPos(v, item.pos); }, []);
+  // Find and Replace and find-by-position keys live in the editor keymap and ask for the bar here
+  useEffect(() => { addEventListener('falcon-find', openFind); return () => removeEventListener('falcon-find', openFind); }, [openFind]);
 
   const colorButton = (kind: 'highlight' | 'shading') => {
     const v = viewRef.current;
@@ -484,26 +491,13 @@ export function App() {
 
       <OutlinePane active={activeId}
         shown={showOutline} items={outline} depth={depth} cur={cur}
+        numbers={view ? outlineNumbers(view.state) : []} getView={getView} onPeek={peek} flash={flash}
         onDepth={setDepth} onJump={jump} />
 
       <div ref={scrollRef} className="f-scroll" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); viewRef.current?.focus(); } }}>
         <div className="page"><div ref={mountRef} /></div>
       </div>
-      {findOpen && view && (
-        <div className="findbar">
-          <SvgIcon name="search" />
-          <input ref={findRef} placeholder="Find" defaultValue={findInfo(view.state)?.query ?? ''}
-            onChange={(e) => setQuery(view, e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); step(view, e.shiftKey ? -1 : 1); }
-              else if (e.key === 'Escape') { e.preventDefault(); clearFind(view); setFindOpen(false); view.focus(); }
-            }} />
-          <span className="count">{(() => { const f = findInfo(view.state); return f && f.query ? (f.matches.length ? `${f.index + 1}/${f.matches.length}` : 'No results') : ''; })()}</span>
-          <button title="Previous (⇧Enter): go to the match above" onMouseDown={(e) => { e.preventDefault(); step(view, -1); }}><Icon name="chevronUp" /></button>
-          <button title="Next (Enter): go to the match below" onMouseDown={(e) => { e.preventDefault(); step(view, 1); }}><Icon name="chevron" /></button>
-          <button title="Close find (Esc)" onMouseDown={(e) => { e.preventDefault(); clearFind(view); setFindOpen(false); view.focus(); }}><Icon name="x" /></button>
-        </div>
-      )}
+      {findOpen && view && <FindBar view={view} inputRef={findRef} flash={flash} onClose={() => setFindOpen(false)} />}
 
       <footer className="status">
         <span>Σ</span>
