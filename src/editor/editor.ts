@@ -11,7 +11,7 @@ import { falconKeymap } from './keymap';
 import { navPlugins } from './nav-keys';
 import { wordSelection } from './mouse';
 import { schema } from './schema';
-import { PREFS_META, onPrefs } from './prefs';
+import { P, PREFS_META, onPrefs, pref } from './prefs';
 import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
@@ -152,7 +152,8 @@ export function createView(mount: HTMLElement, onChange: (view: EditorView) => v
       view.updateState(next);
       onChange(view);
     },
-    attributes: { spellcheck: 'false', class: 'f-page-text' },
+    // read again on every update, so the Check spelling setting applies at once
+    attributes: () => ({ spellcheck: pref(P.spellcheck) ? 'true' : 'false', class: 'f-page-text' }),
     // Read the page's selection before any key runs. The editor learns about a new selection from
     // the selectionchange event, and a busy page handles a key press before that event, so a format
     // key right after selecting (Shift-arrows, a drag) would format the old selection. ProseMirror's

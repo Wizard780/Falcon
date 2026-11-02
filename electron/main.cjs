@@ -43,7 +43,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      spellcheck: false,
+      spellcheck: true, // Chromium's checker: the system dictionary on a Mac, Hunspell on Windows and Linux
     },
   });
   if (!HEADLESS) win.once('ready-to-show', () => win.show());
@@ -64,12 +64,34 @@ function createWindow() {
     win.webContents.send('falcon:confirm-close', quitting);
     quitting = false; // a cancelled quit is over; a confirmed one quits again
   });
+  win.webContents.on('context-menu', (_e, p) => {
+    const items = contextMenu(win.webContents, p);
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
+  });
   // the app is one page: block every navigation away from it
   win.webContents.on('will-navigate', (e, url) => {
     if (url !== win.webContents.getURL()) e.preventDefault();
   });
   return win;
 }
+
+// Right-click: spelling suggestions and Add to Dictionary on a misspelled word, then Cut, Copy and Paste,
+// the menu every text app has. Pages that draw their own menu (the outline) stop the event, so this never runs there.
+function contextMenu(wc, p) {
+  const items = [];
+  if (p.misspelledWord) {
+    const guesses = p.dictionarySuggestions.slice(0, 5);
+    for (const g of guesses) items.push({ label: g, click: () => wc.replaceMisspelling(g) });
+    if (!guesses.length) items.push({ label: 'No Guesses Found', enabled: false });
+    items.push({ type: 'separator' },
+      { label: 'Add to Dictionary', click: () => wc.session.addWordToSpellCheckerDictionary(p.misspelledWord) },
+      { type: 'separator' });
+  }
+  if (p.isEditable) items.push({ role: 'cut', enabled: p.editFlags.canCut }, { role: 'copy', enabled: p.editFlags.canCopy }, { role: 'paste', enabled: p.editFlags.canPaste });
+  else if (p.selectionText) items.push({ role: 'copy' });
+  return items;
+}
+globalThis.falconContextMenu = contextMenu; // the smoke test checks the menu a misspelled word gets
 
 const DOCX = [{ name: 'Word documents', extensions: ['docx'] }];
 // Files picked in a dialog in earlier sessions, so Home and the files panel can reopen them.
@@ -140,6 +162,14 @@ ipcMain.handle('falcon:index-remove', async (_e, p) => {
   if (typeof p !== 'string') throw new Error('bad remove request');
   await index().remove(p);
   return index().folders();
+});
+// the words the user added with Add to Dictionary, for Settings to list and remove
+const dictWords = async (e) => (await e.sender.session.listWordsInSpellCheckerDictionary()).sort((a, b) => a.localeCompare(b));
+ipcMain.handle('falcon:dict-words', dictWords);
+ipcMain.handle('falcon:dict-remove', async (e, w) => {
+  if (typeof w !== 'string') throw new Error('bad remove request');
+  e.sender.session.removeWordFromSpellCheckerDictionary(w);
+  return (await dictWords(e)).filter((x) => x !== w); // the list can lag the removal by a moment
 });
 ipcMain.handle('falcon:index-files', () => index().files());
 ipcMain.handle('falcon:save-file', async (e, opts) => {

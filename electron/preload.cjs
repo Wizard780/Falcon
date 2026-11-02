@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('falcon', {
   addIndexFolder: () => ipcRenderer.invoke('falcon:index-add'),
   removeIndexFolder: (p) => ipcRenderer.invoke('falcon:index-remove', p),
   indexedFiles: () => ipcRenderer.invoke('falcon:index-files'),
+  dictionaryWords: () => ipcRenderer.invoke('falcon:dict-words'),
+  removeDictionaryWord: (w) => ipcRenderer.invoke('falcon:dict-remove', w),
   onMenu: (f) => {
     const on = (_e, cmd) => { if (typeof cmd === 'string') f(cmd); };
     ipcRenderer.on('falcon:menu', on);
