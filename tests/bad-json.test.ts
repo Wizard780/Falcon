@@ -20,6 +20,14 @@ describe('storage holding text that is not JSON', () => {
     expect(app.tabs()).toEqual(['Untitled']);
   });
 
+  it('still brings back a pre-v2 backup when its file name entry is cut off', async () => {
+    const doc = { type: 'doc', content: [{ type: 'paragraph', attrs: { style: 'tag' }, content: [{ type: 'text', text: 'old session' }] }] };
+    await freshStorage({ 'falcon.autosave.v1': JSON.stringify(doc), 'falcon.meta': '{"name":"Big","pa' });
+    const app = await mountApp();
+    expect(app.tabs()).toEqual(['Untitled']);
+    expect(app.text()).toBe('old session');
+  });
+
   it('starts when the recent files list is cut off', async () => {
     localStorage.setItem('falcon.recents.v1', '[{"name":"A"');
     const app = await mountApp();
