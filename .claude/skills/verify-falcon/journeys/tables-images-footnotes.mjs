@@ -133,6 +133,22 @@ await f.shot('picture-resized');
 await page.keyboard.press(`${MOD}+z`);
 want(JSON.stringify((await facts()).images[0]) === '[360,203]', 'one undo puts it back to 360 × 203');
 await page.keyboard.press(`${MOD}+Shift+z`);
+// zoomed in, the handle still follows the cursor (the page's CSS zoom once made it run ahead)
+for (let i = 0; i < 3; i++) await page.keyboard.press(`${MOD}+=`);
+await page.waitForTimeout(150);
+await img.scrollIntoViewIfNeeded();
+const zb = await page.locator('.f-img-handle').boundingBox();
+const zx = zb.x + zb.width / 2, zy = zb.y + zb.height / 2;
+await page.mouse.move(zx, zy);
+await page.mouse.down();
+await page.mouse.move(zx - 80, zy, { steps: 6 });
+const zh = await page.locator('.f-img-handle').boundingBox();
+const off = Math.abs(zh.x + zh.width / 2 - (zx - 80));
+await f.shot('picture-resize-zoomed');
+await page.mouse.up();
+want(off < 2, `at 130% zoom the resize handle stays under the cursor (${off.toFixed(1)}px off)`);
+await page.keyboard.press(`${MOD}+z`);
+await page.keyboard.press(`${MOD}+0`);
 
 // ---- footnotes: click a number, edit the note ----
 await page.locator('.ProseMirror .f-footnote').nth(1).scrollIntoViewIfNeeded();
