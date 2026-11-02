@@ -59,3 +59,8 @@
 /* it's a ProseMirror editor too: undo the page editor's tall minimum height and black caret */
 .f-note-pop .f-note-text.ProseMirror { min-height: 1.4em; max-height: 40vh; overflow-y: auto; padding: 6px 8px; border-radius: 6px; background: var(--u-well); font: 13px/1.4 var(--doc-font); color: var(--u-tx); white-space: pre-wrap; outline: none; caret-color: var(--u-tx); }
 .f-note-text p { margin: 0; }
+
+/* a table Word draws without lines: faint guides, the way Word shows gridlines */
+.ProseMirror .f-noborder td, .ProseMirror .f-noborder th { border: 1px dashed #d4d4d8; }
+/* a picture Word cropped: a window onto the scaled-up picture */
+.f-img-clip { display: block; max-width: 100%; overflow: hidden; line-height: 0; }

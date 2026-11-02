@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
-import { strFromU8, unzipSync } from 'fflate';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { DOMSerializer } from 'prosemirror-model';
-import { TextSelection } from 'prosemirror-state';
+import type { DecorationSet } from 'prosemirror-view';
+import { NodeSelection, TextSelection } from 'prosemirror-state';
 import { docToDocx, imageSize } from '../src/docx/export';
 import { docxToDoc } from '../src/docx/import';
 import { createState, docFromHTML, markMap } from '../src/editor/editor';
@@ -11,7 +12,8 @@ import { cleanPastedHTML } from '../src/editor/paste';
 import { readDoc, markedDoc, sendDoc } from '../src/editor/save-modes';
 import { schema } from '../src/editor/schema';
 import { insertTable, evenColumns } from '../src/editor/tables';
-import { insertFootnote } from '../src/editor/footnotes';
+import { footnotePlugin, insertFootnote } from '../src/editor/footnotes';
+import { falconKeys as K } from '../src/editor/keymap';
 import { buildOutline, readWords } from '../src/editor/outline';
 import { run } from './helpers';
 
@@ -201,5 +203,100 @@ describe('pasting tables and pictures', () => {
     const div = document.createElement('div');
     div.append(DOMSerializer.fromSchema(schema).serializeFragment(doc.content));
     expect(markMap(docFromHTML(cleanPastedHTML(div.innerHTML)))).toBe(markMap(doc));
+  });
+});
+
+describe('review fixes', () => {
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+  const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const docx = (body: string, extra: Record<string, string> = {}, rels = '') => zipSync({
+    'word/document.xml': strToU8(`<w:document ${W}><w:body>${body}</w:body></w:document>`),
+    'word/_rels/document.xml.rels': strToU8(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>`),
+    ...Object.fromEntries(Object.entries(extra).map(([k, v]) => [k, strToU8(v)])),
+  });
+
+  it('a link inside a footnote uses the footnotes part\'s own relationships', async () => {
+    const bytes = docx(
+      '<w:p><w:r><w:t>See</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>',
+      {
+        'word/footnotes.xml': `<w:footnotes ${W}><w:footnote w:id="1"><w:p><w:r><w:footnoteRef/></w:r><w:hyperlink r:id="rId1"><w:r><w:t>source</w:t></w:r></w:hyperlink></w:p></w:footnote></w:footnotes>`,
+        'word/_rels/footnotes.xml.rels': `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/hyperlink" Target="https://right.example/" TargetMode="External"/></Relationships>`,
+      },
+      `<Relationship Id="rId1" Type="${REL}/hyperlink" Target="https://wrong.example/" TargetMode="External"/>`,
+    );
+    const doc = await docxToDoc(bytes);
+    const json = JSON.stringify(doc.toJSON());
+    expect(json).toContain('https://right.example/');
+    expect(json).not.toContain('wrong.example');
+    // and it saves back into footnotes.xml.rels
+    const p = parts(await docToDocx(doc));
+    expect(p['word/_rels/footnotes.xml.rels']).toContain('https://right.example/');
+  });
+
+  it('endnotes open as footnotes, so their text is kept', async () => {
+    const bytes = docx('<w:p><w:r><w:t>End</w:t></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p>', {
+      'word/endnotes.xml': `<w:endnotes ${W}><w:endnote w:type="separator" w:id="-1"><w:p/></w:endnote><w:endnote w:id="2"><w:p><w:r><w:endnoteRef/></w:r><w:r><w:t xml:space="preserve"> An endnote.</w:t></w:r></w:p></w:endnote></w:endnotes>`,
+    });
+    expect(markMap(await docxToDoc(bytes))).toBe('normal: End[^An endnote.]');
+  });
+
+  it('a borderless Word table stays borderless, and a crop is kept', async () => {
+    const png = `data:image/png;base64,${PNG_2X3}`;
+    const doc = schema.node('doc', null, [
+      schema.nodes.table.create({ borders: false }, [schema.nodes.table_row.create(null, [schema.nodes.table_cell.create(null, schema.nodes.paragraph.create(null, schema.text('a')))])]),
+      schema.nodes.table.create(null, [schema.nodes.table_row.create(null, [schema.nodes.table_cell.create(null, schema.nodes.paragraph.create(null, schema.text('b')))])]),
+      schema.nodes.paragraph.create(null, [schema.nodes.image.create({ src: png, width: 100, height: 50, crop: { l: 0.1, t: 0, r: 0.25, b: 0.05 } })]),
+    ]);
+    const p = parts(await docToDocx(doc));
+    expect(p['word/document.xml']).toContain('<w:top w:val="nil"/>');
+    expect(p['word/document.xml']).toContain('<a:srcRect l="10000" r="25000" b="5000"/>');
+    // two tables in a row stay two tables
+    expect(p['word/document.xml']).toMatch(/<\/w:tbl><w:p\/><w:tbl>/);
+    const back = markMap(await docxToDoc(await docToDocx(doc)));
+    expect(back).toContain('table 1 rows no borders');
+    expect(back).toContain('[image 100x50 crop 100,0,250,50]');
+  });
+
+  it('arrowing onto a footnote selects it without opening its editor; a click or Insert Footnote opens it', () => {
+    let s = createState(schema.node('doc', null, [schema.nodes.paragraph.create(null, [schema.text('ab'), schema.nodes.footnote.create({ content: [{ type: 'text', text: 'n' }] }), schema.text('cd')])]));
+    const open = () => (footnotePlugin.getState(s) as { open: boolean }).open;
+    s = s.apply(s.tr.setSelection(NodeSelection.create(s.doc, 3)));
+    expect(open()).toBe(false);
+    s = s.apply(s.tr.setSelection(NodeSelection.create(s.doc, 3)).setMeta('pointer', true));
+    expect(open()).toBe(true);
+    s = s.apply(s.tr.setNodeAttribute(3, 'content', [{ type: 'text', text: 'nn' }]));
+    expect(open()).toBe(true); // typing in the note keeps it open
+    s = s.apply(s.tr.setSelection(TextSelection.create(s.doc, 1)));
+    expect(open()).toBe(false);
+  });
+
+  it('footnote numbers follow edits: typing keeps them, deleting one renumbers the rest', () => {
+    const fn = (t: string) => schema.nodes.footnote.create({ content: [{ type: 'text', text: t }] });
+    let s = createState(schema.node('doc', null, [schema.nodes.paragraph.create(null, [schema.text('a'), fn('one'), schema.text('b'), fn('two')])]));
+    const nums = () => (footnotePlugin.getState(s) as { decos: DecorationSet }).decos.find().flatMap((x) => {
+      const n = (x as unknown as { type: { attrs?: Record<string, string> } }).type.attrs?.['data-n'];
+      return n ? [`${x.from}:${n}`] : [];
+    }).sort();
+    expect(nums()).toEqual(['2:1', '4:2']);
+    s = s.apply(s.tr.insertText('x', 1));
+    expect(nums()).toEqual(['3:1', '5:2']);
+    s = s.apply(s.tr.delete(3, 4));
+    expect(nums()).toEqual(['4:1']);
+  });
+
+  it('pasted HTML cannot smuggle bad footnote content or styles', () => {
+    const html = `<p>x<sup class="f-footnote" data-content='[null,{"type":"image","attrs":{"src":"x"}},{"type":"text","text":"ok"}]'></sup></p><table><tr><td data-bg="rgb(0,0,0);position:fixed">c</td></tr></table>`;
+    const doc = docFromHTML(cleanPastedHTML(html));
+    expect(markMap(doc)).toBe('normal: x[^ok]\ntable 1 rows\ncell r0c0 normal: c');
+  });
+
+  it('in a table cell, Enter after a heading-styled line stays in the cell', () => {
+    let s = createState(schema.node('doc', null, [
+      schema.nodes.table.create(null, [schema.nodes.table_row.create(null, [schema.nodes.table_cell.create(null, schema.nodes.paragraph.create({ style: 'tag' }, schema.text('Tag')))])]),
+      schema.nodes.paragraph.create(),
+    ]));
+    s = s.apply(s.tr.setSelection(TextSelection.create(s.doc, 7)));
+    s = run(s, K.Enter);
+    expect(markMap(s.doc)).toBe('table 1 rows\ncell r0c0 tag: Tag\ncell r0c0 normal: \nnormal: ');
   });
 });

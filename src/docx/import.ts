@@ -189,7 +189,11 @@ function readPicture(el: Element, images: Map<string, string>): PMNode | null {
     const ext = descendant(el, 'extent');
     const cx = Number(ext?.getAttribute('cx')), cy = Number(ext?.getAttribute('cy'));
     const alt = descendant(el, 'docPr')?.getAttribute('descr') ?? '';
-    return schema.nodes.image.create({ src, alt, width: cx > 0 ? Math.round(cx / EMU_PX) : null, height: cy > 0 ? Math.round(cy / EMU_PX) : null });
+    // Word's crop, in thousandths of a percent cut from each side
+    const rect = descendant(el, 'srcRect');
+    const cut = (k: string) => Math.max(0, Math.min(0.99, Number(rect?.getAttribute(k) ?? 0) / 100000)) || 0;
+    const crop = rect && ['l', 't', 'r', 'b'].some((k) => cut(k) > 0) && cut('l') + cut('r') < 1 && cut('t') + cut('b') < 1 ? { l: cut('l'), t: cut('t'), r: cut('r'), b: cut('b') } : null;
+    return schema.nodes.image.create({ src, alt, crop, width: cx > 0 ? Math.round(cx / EMU_PX) : null, height: cy > 0 ? Math.round(cy / EMU_PX) : null });
   }
   const data = descendant(el, 'imagedata');
   const src = images.get(rAttr(data, 'id') ?? '');
@@ -203,10 +207,11 @@ function readPicture(el: Element, images: Map<string, string>): PMNode | null {
 }
 
 type Footnotes = Map<string, Element>;
-function readFootnotes(xml: string | undefined): Footnotes {
+/** footnotes.xml or endnotes.xml: note id → its element (Word's separator notes left out). */
+function readFootnotes(xml: string | undefined, tag = 'footnote'): Footnotes {
   const map: Footnotes = new Map();
   if (!xml) return map;
-  for (const f of kids(parseXml(xml).documentElement, 'footnote')) {
+  for (const f of kids(parseXml(xml).documentElement, tag)) {
     const type = f.getAttributeNS(W, 'type') ?? f.getAttribute('w:type');
     const id = f.getAttributeNS(W, 'id') ?? f.getAttribute('w:id');
     if (id && (!type || type === 'normal')) map.set(id, f);
@@ -216,15 +221,17 @@ function readFootnotes(xml: string | undefined): Footnotes {
 
 /** Convert a .docx (zip bytes) into a Falcon document. */
 export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
-  const files = unzipSync(data, { filter: (f) => f.name === 'word/document.xml' || f.name === 'word/styles.xml' || f.name === 'word/_rels/document.xml.rels' || f.name === 'word/footnotes.xml' || f.name === 'word/_rels/footnotes.xml.rels' || f.name.startsWith('word/media/') || f.name.startsWith('media/') });
+  const files = unzipSync(data, { filter: (f) => f.name === 'word/document.xml' || f.name === 'word/styles.xml' || f.name === 'word/_rels/document.xml.rels' || f.name === 'word/footnotes.xml' || f.name === 'word/_rels/footnotes.xml.rels' || f.name === 'word/endnotes.xml' || f.name === 'word/_rels/endnotes.xml.rels' || f.name.startsWith('word/media/') || f.name.startsWith('media/') });
   const docXml = files['word/document.xml'];
   if (!docXml) throw new Error('not a Word document');
   const str = (name: string) => (files[name] ? strFromU8(files[name]) : undefined);
   const styles = readStyles(str('word/styles.xml'));
-  const links = readLinks(str('word/_rels/document.xml.rels'));
-  const images = readImageRels(str('word/_rels/document.xml.rels'), files);
-  const noteImages = readImageRels(str('word/_rels/footnotes.xml.rels'), files);
-  const notes = readFootnotes(str('word/footnotes.xml'));
+  // each part numbers its own relationships: the body's, the footnotes' and the endnotes' links differ
+  type Rels = { links: Map<string, string>; pics: Map<string, string> };
+  const relsOf = (part: string): Rels => ({ links: readLinks(str(`word/_rels/${part}.xml.rels`)), pics: readImageRels(str(`word/_rels/${part}.xml.rels`), files) });
+  const bodyRels = relsOf('document');
+  // endnotes come in as footnotes (Falcon has one kind of note), so their text is kept
+  const noteSets = { footnoteReference: { notes: readFootnotes(str('word/footnotes.xml')), rels: relsOf('footnotes') }, endnoteReference: { notes: readFootnotes(str('word/endnotes.xml'), 'endnote'), rels: relsOf('endnotes') } };
   const body = kid(parseXml(strFromU8(docXml)).documentElement, 'body');
   const cache = new Map<string, CharKind>();
   const pstyleCache = new Map<string, ParaStyle>();
@@ -241,7 +248,8 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
   };
 
   /** A paragraph's inline content: text runs, breaks, links, pictures and footnote references. */
-  const readInline = (p: Element, style: ParaStyle, pics: Map<string, string>, inNote: boolean, boxes?: PMNode[]): PMNode[] => {
+  const readInline = (p: Element, style: ParaStyle, rels: Rels, inNote: boolean, boxes?: PMNode[]): PMNode[] => {
+    const pics = rels.pics;
     const inline: PMNode[] = [];
     const readRuns = (parent: Element, link: Mark | null) => {
       for (const c of kids(parent)) {
@@ -278,9 +286,10 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
                   readRun(alt);
                   if (inline.length + (boxes?.length ?? 0) > before) break;
                 }
-              } else if (tl === 'footnoteReference' && !inNote) {
-                const note = notes.get(t.getAttributeNS(W, 'id') ?? t.getAttribute('w:id') ?? '');
-                if (note) { flush(); inline.push(schema.nodes.footnote.create({ content: noteContent(note) })); }
+              } else if ((tl === 'footnoteReference' || tl === 'endnoteReference') && !inNote) {
+                const set = noteSets[tl];
+                const note = set.notes.get(t.getAttributeNS(W, 'id') ?? t.getAttribute('w:id') ?? '');
+                if (note) { flush(); inline.push(schema.nodes.footnote.create({ content: noteContent(note, set.rels) })); }
               }
             }
           };
@@ -288,7 +297,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
           flush();
         } else if (ln === 'hyperlink') {
           // links to a web address (through the relationships file); links to a bookmark in the file stay plain text
-          const href = links.get(c.getAttributeNS(R, 'id') ?? c.getAttribute('r:id') ?? '');
+          const href = rels.links.get(c.getAttributeNS(R, 'id') ?? c.getAttribute('r:id') ?? '');
           readRuns(c, href ? M.link.create({ href }) : link);
         } else if (ln === 'smartTag' || ln === 'ins' || ln === 'fldSimple' || ln === 'customXml' || ln === 'sdtContent') {
           readRuns(c, link);
@@ -302,11 +311,11 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
   };
 
   /** A footnote's paragraphs as one run of text, joined by line breaks; Word's own leading space after the number goes. */
-  const noteContent = (note: Element) => {
+  const noteContent = (note: Element, rels: Rels) => {
     const out: PMNode[] = [];
     kids(note, 'p').forEach((p, i) => {
       if (i > 0) out.push(schema.nodes.hard_break.create());
-      out.push(...readInline(p, 'normal', noteImages, true).filter((n) => n.type.name !== 'image'));
+      out.push(...readInline(p, 'normal', rels, true).filter((n) => n.type.name !== 'image'));
     });
     const first = out[0];
     if (first?.isText && first.text!.startsWith(' ')) out[0] = first.text!.length > 1 ? schema.text(first.text!.slice(1), first.marks) : null!;
@@ -320,7 +329,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
     const left = Number(ind?.getAttributeNS(W, 'left') ?? ind?.getAttributeNS(W, 'start') ?? ind?.getAttribute('w:left') ?? 0);
     const indent = left > 0 ? Math.min(8, Math.round(left / 720)) : 0;
     const boxes: PMNode[] = [];
-    out.push(schema.nodes.paragraph.create({ style, indent }, readInline(p, style, images, false, boxes)), ...boxes);
+    out.push(schema.nodes.paragraph.create({ style, indent }, readInline(p, style, bodyRels, false, boxes)), ...boxes);
   };
 
   /** Block content: paragraphs, with content controls opened up and (inside a cell) nested tables flattened. */
@@ -378,7 +387,10 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
     }
     if (!rows.length) return null;
     const T = schema.nodes;
-    return T.table.create(null, rows.map((r) => T.table_row.create(null, r.map((c) => (c.header ? T.table_header : T.table_cell).create(c.attrs, c.paras)))));
+    // borders: the table's own border lines, or (with none set) whether a table style gives it some
+    const tblPr = kid(tbl, 'tblPr'), lines = kid(tblPr, 'tblBorders');
+    const borders = lines ? kids(lines).some((b) => !['none', 'nil'].includes(val(b) ?? 'none')) : !!val(kid(tblPr, 'tblStyle'));
+    return T.table.create({ borders }, rows.map((r) => T.table_row.create(null, r.map((c) => (c.header ? T.table_header : T.table_cell).create(c.attrs, c.paras)))));
   };
 
   const blocks: PMNode[] = [];

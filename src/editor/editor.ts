@@ -191,7 +191,7 @@ export function markMap(doc: PMNode): string {
     const runs: [string, string][] = [];
     p.forEach((n) => {
       const text = n.isText ? n.text!
-        : n.type.name === 'image' ? `[image ${n.attrs.width ?? '?'}x${n.attrs.height ?? '?'}]`
+        : n.type.name === 'image' ? `[image ${n.attrs.width ?? '?'}x${n.attrs.height ?? '?'}${n.attrs.crop ? ` crop ${['l', 't', 'r', 'b'].map((k) => Math.round(n.attrs.crop[k] * 1000)).join(',')}` : ''}]`
         : n.type.name === 'footnote' ? `[^${footnoteText(n.attrs.content)}]` : '';
       const mk = n.marks
         .map((m) => (m.type.name === 'highlight' ? `highlight:${m.attrs.color}` : m.type.name === 'size' ? `size:${m.attrs.pt}pt` : m.type.name))
@@ -205,7 +205,7 @@ export function markMap(doc: PMNode): string {
   };
   doc.forEach((node) => {
     if (node.isTextblock) return para(node);
-    out.push(`table ${node.childCount} rows`);
+    out.push(`table ${node.childCount} rows${node.attrs.borders ? '' : ' no borders'}`);
     node.forEach((row, _o, r) => row.forEach((cell, _p, c) => {
       const { colspan, rowspan, background } = cell.attrs;
       const tag = `cell r${r}c${c}${colspan > 1 || rowspan > 1 ? ` ${colspan}x${rowspan}` : ''}${background ? ` bg${background}` : ''}${cell.type.name === 'table_header' ? ' head' : ''} `;

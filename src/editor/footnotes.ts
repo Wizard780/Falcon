@@ -4,7 +4,8 @@ import { keymap } from 'prosemirror-keymap';
 import type { Node as PMNode } from 'prosemirror-model';
 import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Command, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
-import { footnoteText, schema, type FootnoteContent } from './schema';
+import { AttrStep } from 'prosemirror-transform';
+import { footnoteText, noteNodes, schema, type FootnoteContent } from './schema';
 
 const FN = schema.nodes.footnote;
 type Note = { pos: number; node: PMNode };
@@ -19,12 +20,20 @@ function notesOf(doc: PMNode): Note[] {
   return out;
 }
 
-const hasFootnote = (tr: Transaction) => tr.steps.some((s) => {
-  const slice = (s as unknown as { slice?: { content: { descendants(f: (n: PMNode) => boolean | void): void } } }).slice;
+/** Whether a transaction added, removed or changed a footnote: only then are the numbers and the list redone. */
+const touchesFootnote = (tr: Transaction) => tr.steps.some((step, i) => {
+  const doc = tr.docs[i];
   let found = false;
-  slice?.content.descendants((n) => { if (n.type === FN) found = true; return !found; });
+  const hit = (n: PMNode) => { if (n.type === FN) found = true; return !found; };
+  if (step instanceof AttrStep) return doc.nodeAt(step.pos)?.type === FN;
+  step.getMap().forEach((from, to) => { if (!found && to > from) doc.nodesBetween(from, to, hit); });
+  (step as { slice?: { content: { descendants(f: (n: PMNode) => boolean): void } } }).slice?.content.descendants(hit);
   return found;
 });
+
+/** Transactions that open a footnote's editor (a click, Insert Footnote, the list). Arrowing onto one doesn't. */
+const OPEN = 'footnoteOpen';
+type FnState = { decos: DecorationSet; open: boolean };
 
 /** The notes listed under the document, each one clickable to open it. */
 function listWidget(notes: Note[]) {
@@ -41,7 +50,7 @@ function listWidget(notes: Note[]) {
       li.addEventListener('mousedown', (e) => {
         e.preventDefault();
         const at = notesOf(view.state.doc)[i];
-        if (at) view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at.pos)).scrollIntoView());
+        if (at) view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at.pos)).setMeta(OPEN, true).scrollIntoView());
       });
       ol.append(li);
     });
@@ -59,7 +68,9 @@ function decorate(doc: PMNode): DecorationSet {
   return DecorationSet.create(doc, decos);
 }
 
-const key = new PluginKey<DecorationSet>('footnotes');
+const key = new PluginKey<FnState>('footnotes');
+/** The number shown on the footnote at `pos` (its place in document order). */
+const numberAt = (state: EditorState, pos: number) => key.getState(state)!.decos.find(0, pos + 1).filter((d) => d.to > d.from && d.from <= pos).length;
 
 /** Footnote reference at the cursor (Word's Alt-Mod-F); its editor opens right away. */
 export const insertFootnote: Command = (state, dispatch) => {
@@ -67,7 +78,7 @@ export const insertFootnote: Command = (state, dispatch) => {
   if (!dispatch) return true;
   // the selection ends up just after the new reference
   const tr = state.tr.replaceSelectionWith(FN.create({ content: [] }), false);
-  dispatch(tr.setSelection(NodeSelection.create(tr.doc, tr.selection.from - 1)).scrollIntoView());
+  dispatch(tr.setSelection(NodeSelection.create(tr.doc, tr.selection.from - 1)).setMeta(OPEN, true).scrollIntoView());
   return true;
 };
 
@@ -95,7 +106,7 @@ class NoteEditor {
   private onScroll() { if (!this.dom.hidden) this.place(); }
   private selected(): Note | null {
     const sel = this.view.state.selection;
-    return sel instanceof NodeSelection && sel.node.type === FN ? { pos: sel.from, node: sel.node } : null;
+    return key.getState(this.view.state)?.open && sel instanceof NodeSelection && sel.node.type === FN ? { pos: sel.from, node: sel.node } : null;
   }
   private place() {
     const c = this.view.coordsAtPos(this.pos);
@@ -117,7 +128,7 @@ class NoteEditor {
   }
   private open(note: Note) {
     this.pos = note.pos;
-    const content = (note.node.attrs.content as FootnoteContent).map((j) => schema.nodeFromJSON(j));
+    const content = noteNodes(note.node.attrs.content);
     const doc = schema.node('doc', null, [schema.nodes.paragraph.create(null, content)]);
     const leave: Command = () => { this.close(true); return true; };
     const state = EditorState.create({
@@ -159,12 +170,12 @@ class NoteEditor {
     if (this.inner && note.pos === this.pos) {
       // undo or another change from outside: show what the footnote holds now
       if (JSON.stringify(note.node.attrs.content) !== JSON.stringify(this.innerJson())) { this.close(false); this.open(note); }
-      this.num.textContent = `Footnote ${notesOf(this.view.state.doc).findIndex((n) => n.pos === note.pos) + 1}`;
+      this.num.textContent = `Footnote ${numberAt(this.view.state, note.pos)}`;
       return;
     }
     if (this.inner) this.close(false);
     this.open(note);
-    this.num.textContent = `Footnote ${notesOf(this.view.state.doc).findIndex((n) => n.pos === note.pos) + 1}`;
+    this.num.textContent = `Footnote ${numberAt(this.view.state, note.pos)}`;
   }
   destroy() {
     window.removeEventListener('scroll', this.onScroll, true);
@@ -174,20 +185,19 @@ class NoteEditor {
 }
 
 /** Footnotes: numbered in order, each one opening its own editor, all listed at the end of the document. */
-export const footnotePlugin = new Plugin<DecorationSet>({
+export const footnotePlugin = new Plugin<FnState>({
   key,
   state: {
-    init: (_c, state) => decorate(state.doc),
-    apply(tr, set, old) {
-      if (!tr.docChanged) return set;
-      // renumber only when a footnote could have come or gone or changed
-      const before = set.find().length;
-      const mapped = set.map(tr.mapping, tr.doc);
-      if (before === 0 && !hasFootnote(tr)) return mapped;
-      void old;
-      return decorate(tr.doc);
+    init: (_c, state) => ({ decos: decorate(state.doc), open: false }),
+    apply(tr, prev, _old, state) {
+      const decos = !tr.docChanged ? prev.decos : touchesFootnote(tr) ? decorate(tr.doc) : prev.decos.map(tr.mapping, tr.doc);
+      const sel = state.selection;
+      const onNote = sel instanceof NodeSelection && sel.node.type === FN;
+      // a click selects with ProseMirror's 'pointer' meta; edits from the editor keep it open
+      const open = onNote && (!!tr.getMeta(OPEN) || !!tr.getMeta('pointer') || (prev.open && !tr.selectionSet));
+      return { decos, open };
     },
   },
-  props: { decorations: (state) => key.getState(state) },
+  props: { decorations: (state) => key.getState(state)?.decos },
   view: (view) => new NoteEditor(view),
 });

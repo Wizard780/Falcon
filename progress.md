@@ -115,14 +115,17 @@ Done means:
 - npm test, tsc, build, every verify-falcon journey and the Electron smoke test pass.
 Results:
 - [x] 12 real debate files from ~/Downloads (up to 872 pictures, 14 tables, footnotes) round-trip exactly. python-docx opens every save. Text is unchanged except no-break hyphens (already written as characters before this) and Word's duplicate text-box fallback, now read once.
-- [x] vitest 188 pass (16 new in tests/media.test.ts). Journey tables-images-footnotes: 42 ok. Typing on the 871-picture file: 16.7ms median, 20ms p90 (crash-recovery autosave stores each picture once; before that fix, p90 was over 1s). The other 10 web journeys and desktop-shell pass.
+- [x] vitest 195 pass (23 new in tests/media.test.ts). Subagent review: 9 important findings fixed (footnote popup focus on arrow keys, shift-click cell selection, footnote links, per-keystroke footnote scan, borders, crop, unsupported picture types, motion/Enter in cells, fetching on open) plus the low ones (sanitized pasted footnotes and cell colors, adjacent tables, sticky broken overlay, multi-picture order). Journey tables-images-footnotes: 42 ok. Typing on the 871-picture file: 16.7ms median, 20ms p90 (crash-recovery autosave stores each picture once; before that fix, p90 was over 1s). The other 10 web journeys and desktop-shell pass.
 Decisions:
 - prosemirror-tables for tables (column resizing, cell selection, fixTables), the one new dependency.
 - Pictures are data URLs in the document, so big picture-heavy files hold their bytes in memory. A web picture that can't be fetched stays a linked picture.
 - Footnotes are one-character atoms carrying their note as JSON, so find, read times and positions are unaffected and cut/paste/undo carry the note whole.
 - Floating pictures open in line with the text (their position is lost, the picture isn't). Text boxes come out as paragraphs after their line. Tables nested in a cell are flattened into that cell.
 - An inner column edge takes width from its neighbour, like Word, so a table stays page-wide. A document always ends with a paragraph after a final table.
-- Table borders save as plain single lines: custom border colours aren't kept. Cell shading, widths, spans and header rows are kept.
+- Table borders: a table with lines saves with plain single lines (custom border colours aren't kept); a table Word draws without lines stays without them (shown with faint dashed guides). Cell shading, widths, spans and header rows are kept.
+- Word's picture crop (srcRect) is kept and shown. Endnotes open as footnotes so their text is kept (they save as footnotes).
+- Pasted pictures in formats Word can't hold (WebP, AVIF, SVG…) are redrawn as PNG on the way in. Opening a file never fetches the web pictures linked inside it; only pasted ones are fetched.
+- Charts, SmartArt, shapes and OLE objects without a picture are still dropped on open (as before this work); pictures inside footnotes too.
 Open:
 - Word's own clipboard gives pictures as file:// paths the page can't read, so a mixed text+picture copy from Word brings the text only. Copying the picture alone, or a screenshot, works.
 - Not opened in Microsoft Word itself (no Word launch here). Package structure matches Word's own output and python-docx reads it.

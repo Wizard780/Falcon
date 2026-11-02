@@ -2,7 +2,7 @@ import { Plugin, TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { wordAt } from './commands';
 import { MultiSelection, spansOf, type Span as MSpan } from './multi';
-import { acrossCells } from './tables';
+import { CellSelection, acrossCells } from './tables';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -61,6 +61,8 @@ export function wordSelection() {
             return true;
           }
           if (e.shiftKey) {
+            // shift-click from one cell to another extends a cell selection (the table plugin does that)
+            if (state.selection instanceof CellSelection || acrossCells(state.doc, state.selection.anchor, hit.pos)) return false;
             e.preventDefault();
             const anchor = state.selection.anchor;
             const forward = hit.pos >= anchor;

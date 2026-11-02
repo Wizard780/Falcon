@@ -1,7 +1,7 @@
 import { strToU8, zipSync } from 'fflate';
 import type { Mark, Node as PMNode } from 'prosemirror-model';
 import { TableMap } from 'prosemirror-tables';
-import { schema } from '../editor/schema';
+import { colWidths, schema } from '../editor/schema';
 import { STYLES_XML } from './styles';
 
 /** Paragraph style → Word style id (Verbatim uses the built-in headings for Pocket/Hat/Block/Tag). */
@@ -112,6 +112,8 @@ export function imageSize(b: Uint8Array): { w: number; h: number } | null {
   return null;
 }
 
+const cropXml = (c: { l: number; t: number; r: number; b: number } | null) => (c ? `<a:srcRect${(['l', 't', 'r', 'b'] as const).map((k) => (c[k] ? ` ${k}="${Math.round(c[k] * 100000)}"` : '')).join('')}/>` : '');
+
 /** An in-line picture: embedded (word/media) for data URLs, a linked picture for a web address. */
 function pictureXml(node: PMNode, part: Part): string {
   const src: string = node.attrs.src;
@@ -135,7 +137,7 @@ function pictureXml(node: PMNode, part: Part): string {
   const h: number = node.attrs.height ?? (own ? Math.round((w * own.h) / own.w) : w);
   const cx = Math.round(w * EMU_PX), cy = Math.round(h * EMU_PX);
   const id = ++pkg.pics;
-  return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="${id}" name="Picture ${id}" descr="${esc(node.attrs.alt ?? '')}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="Picture ${id}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip ${blip}/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+  return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="${id}" name="Picture ${id}" descr="${esc(node.attrs.alt ?? '')}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="Picture ${id}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip ${blip}/>${cropXml(node.attrs.crop)}<a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
 }
 
 /** A footnote reference run; the note itself (Word's number mark, a space, then its runs) goes to footnotes.xml. */
@@ -175,17 +177,12 @@ export function paragraphXml(para: PMNode, part: Part = newPart()): string {
 }
 
 const PAGE_TWIPS = 9360; // 6.5in of text width at 1in margins; 15 twips per CSS pixel
-const BORDERS = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((s) => `<w:${s} w:val="single" w:sz="4" w:space="0" w:color="auto"/>`).join('');
+const borders = (on: boolean) => ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((s) => (on ? `<w:${s} w:val="single" w:sz="4" w:space="0" w:color="auto"/>` : `<w:${s} w:val="nil"/>`)).join('');
 
 /** A table: column widths in tblGrid, gridSpan for column spans, vMerge for row spans, shading per cell. */
 function tableXml(table: PMNode, part: Part): string {
   const map = TableMap.get(table);
-  const px: (number | null)[] = Array(map.width).fill(null);
-  map.map.forEach((pos, i) => {
-    const col = i % map.width, cw: number[] | null = table.nodeAt(pos)!.attrs.colwidth;
-    const left = map.colCount(pos);
-    if (px[col] === null && cw?.[col - left]) px[col] = cw[col - left];
-  });
+  const px = colWidths(table);
   const known = px.reduce<number>((a, w) => a + (w ?? 0) * 15, 0), missing = px.filter((w) => w === null).length;
   const each = missing ? Math.max(720, Math.round((PAGE_TWIPS - known) / missing)) : 0;
   const twips = px.map((w) => (w !== null ? Math.round(w * 15) : each));
@@ -211,14 +208,18 @@ function tableXml(table: PMNode, part: Part): string {
     }
     rows += `<w:tr>${header ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${cells}</w:tr>`;
   }
-  return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>${BORDERS}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/></w:tblPr><w:tblGrid>${twips.map((t) => `<w:gridCol w:w="${t}"/>`).join('')}</w:tblGrid>${rows}</w:tbl>`;
+  return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>${borders(table.attrs.borders !== false)}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/></w:tblPr><w:tblGrid>${twips.map((t) => `<w:gridCol w:w="${t}"/>`).join('')}</w:tblGrid>${rows}</w:tbl>`;
 }
 
 const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
 
 export function documentXml(doc: PMNode, part: Part = newPart()): string {
   const body: string[] = [];
-  doc.forEach((n) => body.push(n.type.name === 'table' ? tableXml(n, part) : paragraphXml(n, part)));
+  doc.forEach((n, _o, i) => {
+    // two tables in a row would merge into one in Word: a paragraph keeps them apart
+    if (n.type.name === 'table' && i > 0 && doc.child(i - 1).type.name === 'table') body.push('<w:p/>');
+    body.push(n.type.name === 'table' ? tableXml(n, part) : paragraphXml(n, part));
+  });
   // Word wants a paragraph after a table that ends the document
   if (doc.lastChild?.type.name === 'table') body.push('<w:p/>');
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

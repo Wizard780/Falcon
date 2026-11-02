@@ -1,5 +1,5 @@
 import { Schema, type MarkSpec, type NodeSpec, type Node as PMNode } from 'prosemirror-model';
-import { tableNodes } from 'prosemirror-tables';
+import { TableMap, tableNodes } from 'prosemirror-tables';
 
 /**
  * Falcon's document model is flat, like a Word/Verbatim file: a list of paragraphs,
@@ -134,7 +134,8 @@ const image: NodeSpec = {
   inline: true,
   group: 'inline',
   draggable: true,
-  attrs: { src: {}, width: { default: null }, height: { default: null }, alt: { default: '' } },
+  // crop: Word's crop of the picture, as fractions cut from each side ({ l, t, r, b }), or null
+  attrs: { src: {}, width: { default: null }, height: { default: null }, alt: { default: '' }, crop: { default: null } },
   leafText: () => '\ufffc',
   parseDOM: [{
     tag: 'img[src]',
@@ -151,7 +152,16 @@ const image: NodeSpec = {
 
 /** Plain text of a footnote's content (stored as ProseMirror JSON for text and hard breaks). */
 export type FootnoteContent = { type: string; text?: string; marks?: { type: string; attrs?: Record<string, unknown> }[] }[];
-export const footnoteText = (c: FootnoteContent) => c.map((n) => (n.type === 'hard_break' ? '\n' : n.text ?? '')).join('');
+export const footnoteText = (c: FootnoteContent) => (Array.isArray(c) ? c : []).map((n) => (n?.type === 'hard_break' ? '\n' : n?.text ?? '')).join('');
+/** A footnote's content as nodes, keeping only text and line breaks that parse (pasted HTML can carry anything). */
+export function noteNodes(c: unknown): PMNode[] {
+  if (!Array.isArray(c)) return [];
+  const out: PMNode[] = [];
+  for (const j of c) {
+    try { const n = schema.nodeFromJSON(j); if (n.isText || n.type.name === 'hard_break') out.push(n); } catch { /* dropped */ }
+  }
+  return out;
+}
 
 /**
  * A footnote reference. It's one character in the text (a number the editor draws); the note itself rides
@@ -167,13 +177,13 @@ const footnote: NodeSpec = {
     tag: 'sup.f-footnote',
     priority: 60, // ahead of the superscript mark's plain <sup> rule
     getAttrs: (el) => {
-      try { const c = JSON.parse((el as HTMLElement).dataset.content ?? '[]'); return { content: Array.isArray(c) ? c : [] }; } catch { return { content: [] }; }
+      try { return { content: noteNodes(JSON.parse((el as HTMLElement).dataset.content ?? '[]')).map((n) => n.toJSON()) }; } catch { return { content: [] }; }
     },
   }],
   toDOM: (n) => ['sup', { class: 'f-footnote', 'data-content': JSON.stringify(n.attrs.content), title: footnoteText(n.attrs.content) }],
 };
 
-const cssColor = (s: string | null) => (s && /^#[0-9a-f]{6}$/i.test(s) ? s.toUpperCase() : s && /^rgb\(/.test(s) ? s : null);
+const cssColor = (s: string | null) => (s && /^#[0-9a-f]{6}$/i.test(s) ? s.toUpperCase() : null);
 const tables = tableNodes({
   tableGroup: 'block',
   cellContent: 'paragraph+',
@@ -185,8 +195,21 @@ const tables = tableNodes({
     },
   },
 });
-tables.table.parseDOM = [{ tag: 'table' }];
-tables.table.toDOM = () => ['table', { class: 'f-table' }, ['tbody', 0]];
+// borders: false for a table Word draws without lines (a layout table); Falcon shows faint guides there
+tables.table.attrs = { borders: { default: true } };
+tables.table.parseDOM = [{ tag: 'table', getAttrs: (el) => ({ borders: (el as HTMLElement).dataset.borders !== 'none' }) }];
+tables.table.toDOM = (n) => ['table', { class: n.attrs.borders ? 'f-table' : 'f-table f-noborder', ...(n.attrs.borders ? {} : { 'data-borders': 'none' }) }, ['tbody', 0]];
+
+/** Each column's width in a table, from the first cell that sets one (null where none does). */
+export function colWidths(table: PMNode): (number | null)[] {
+  const map = TableMap.get(table);
+  const out: (number | null)[] = Array(map.width).fill(null);
+  map.map.forEach((pos, i) => {
+    const col = i % map.width, left = map.colCount(pos), cw: number[] | null = table.nodeAt(pos)!.attrs.colwidth;
+    if (out[col] === null && cw?.[col - left]) out[col] = cw[col - left];
+  });
+  return out;
+}
 
 export const schema = new Schema({
   nodes: {

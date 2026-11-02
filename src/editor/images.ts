@@ -19,12 +19,28 @@ const naturalSize = (src: string) => new Promise<{ w: number; h: number } | null
   img.src = src;
 });
 
+/** Formats a .docx can hold as an ordinary picture; anything else (WebP, AVIF, SVG, HEIC…) is redrawn as PNG. */
+const WORD_TYPES = /^data:image\/(png|jpeg|gif|bmp);/i;
+async function wordSafe(src: string, size: { w: number; h: number }): Promise<string | null> {
+  if (WORD_TYPES.test(src)) return src;
+  const img = new Image();
+  img.src = src;
+  try { await img.decode(); } catch { return null; }
+  const c = document.createElement('canvas');
+  c.width = size.w; c.height = size.h;
+  c.getContext('2d')?.drawImage(img, 0, 0);
+  const png = c.toDataURL('image/png');
+  return png.startsWith('data:image/png') ? png : null;
+}
+
 /** An image node for a picture file, no wider than the page (a big screenshot comes in at page width). */
 async function imageFrom(file: Blob): Promise<PMNode | null> {
   if (!/^image\//.test(file.type)) return null;
-  const src = await readAsDataUrl(file);
-  const size = await naturalSize(src);
+  const size = await naturalSize(await readAsDataUrl(file));
   if (!size) return null;
+  // a picture the file can't hold is refused here, not dropped later when saving
+  const src = await wordSafe(await readAsDataUrl(file), size);
+  if (!src) return null;
   const w = Math.min(size.w, PAGE_PX);
   return schema.nodes.image.create({ src, width: w, height: Math.round((w * size.h) / size.w) });
 }
@@ -35,7 +51,8 @@ async function insertFiles(view: EditorView, files: File[], pos?: number) {
   const tr = view.state.tr;
   if (pos === undefined) tr.replaceSelectionWith(nodes[0], false);
   else tr.insert(pos, nodes[0]);
-  let at = tr.mapping.map(pos ?? view.state.selection.from);
+  // the rest go after the first, in order
+  let at = pos === undefined ? tr.selection.from : tr.mapping.map(pos);
   for (const n of nodes.slice(1)) { tr.insert(at, n); at += n.nodeSize; }
   view.dispatch(tr.scrollIntoView());
 }
@@ -62,6 +79,9 @@ const imageFiles = (dt: DataTransfer | null) => Array.from(dt?.files ?? []).filt
 class ImageView implements NodeView {
   dom: HTMLElement;
   private img: HTMLImageElement;
+  /** What the size applies to: the picture, or for a picture Word cropped, the window showing the crop. */
+  private box: HTMLElement;
+  private clip: HTMLElement | null = null;
   private handle: HTMLElement;
   private label: HTMLElement;
   constructor(private node: PMNode, private view: EditorView, private getPos: () => number | undefined) {
@@ -71,6 +91,8 @@ class ImageView implements NodeView {
     this.img.className = 'f-image';
     this.img.draggable = false;
     this.img.addEventListener('error', () => this.dom.classList.add('f-img-broken'));
+    this.img.addEventListener('load', () => this.dom.classList.remove('f-img-broken'));
+    this.box = this.img;
     this.handle = document.createElement('span');
     this.handle.className = 'f-img-handle';
     this.handle.title = 'Drag to resize (double-click for the picture\'s own size)';
@@ -82,11 +104,24 @@ class ImageView implements NodeView {
     this.render();
   }
   private render() {
-    const { src, width, height, alt } = this.node.attrs;
-    if (this.img.getAttribute('src') !== src) this.img.src = src;
+    const { src, width, height, alt, crop } = this.node.attrs;
+    if (this.img.getAttribute('src') !== src) { this.dom.classList.remove('f-img-broken'); this.img.src = src; }
     this.img.alt = alt;
-    this.img.style.width = width ? `${width}px` : '';
-    this.img.style.aspectRatio = width && height ? `${width} / ${height}` : '';
+    const c = crop as { l: number; t: number; r: number; b: number } | null;
+    if (c && width && height) {
+      // Word's crop: the picture, scaled up, inside a window the size of the cropped picture
+      if (!this.clip) { this.clip = document.createElement('span'); this.clip.className = 'f-img-clip'; this.img.replaceWith(this.clip); this.clip.append(this.img); }
+      const fx = 1 - c.l - c.r, fy = 1 - c.t - c.b;
+      this.box = this.clip;
+      this.img.style.width = `${100 / fx}%`;
+      this.img.style.maxWidth = 'none';
+      this.img.style.aspectRatio = `${width / fx} / ${height / fy}`;
+      this.img.style.marginLeft = `${(-c.l / fx) * 100}%`;
+      this.img.style.marginTop = `${(-(c.t * height) / fy / width) * 100}%`;
+    } else if (this.clip) { this.clip.replaceWith(this.img); this.clip = null; this.img.removeAttribute('style'); }
+    this.box = this.clip ?? this.img;
+    this.box.style.width = width ? `${width}px` : '';
+    this.box.style.aspectRatio = width && height ? `${width} / ${height}` : '';
   }
   private ratio() {
     const { width, height } = this.node.attrs;
@@ -108,19 +143,20 @@ class ImageView implements NodeView {
   }
   private async ownSize() {
     const own = await naturalSize(this.node.attrs.src);
-    if (own) this.commit(Math.min(own.w, this.maxWidth()));
+    const c = this.node.attrs.crop as { l: number; r: number } | null;
+    if (own) this.commit(Math.min(own.w * (c ? 1 - c.l - c.r : 1), this.maxWidth()));
   }
   private startResize(e: PointerEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const startX = e.clientX, startW = this.img.getBoundingClientRect().width, max = this.maxWidth(), ratio = this.ratio();
+    const startX = e.clientX, startW = this.box.getBoundingClientRect().width, max = this.maxWidth(), ratio = this.ratio();
     let w = startW;
     this.dom.classList.add('f-img-resizing');
     this.handle.setPointerCapture?.(e.pointerId);
     const move = (ev: PointerEvent) => {
       w = Math.max(MIN_PX, Math.min(max, startW + ev.clientX - startX));
-      this.img.style.width = `${w}px`;
-      this.img.style.aspectRatio = `${1} / ${ratio}`;
+      this.box.style.width = `${w}px`;
+      this.box.style.aspectRatio = `${1} / ${ratio}`;
       this.label.textContent = `${Math.round(w)} × ${Math.round(w * ratio)}`;
     };
     const up = () => {
@@ -161,8 +197,10 @@ function embedWebImages(view: EditorView) {
     tried.add(src);
     fetch(src).then((r) => (r.ok ? r.blob() : null)).then(async (blob) => {
       if (!blob || !/^image\//.test(blob.type) || view.isDestroyed) return;
-      const data = await readAsDataUrl(blob);
-      const size = await naturalSize(data);
+      const raw = await readAsDataUrl(blob);
+      const size = await naturalSize(raw);
+      const data = size && await wordSafe(raw, size);
+      if (!data) return;
       const tr = view.state.tr;
       view.state.doc.descendants((n, pos) => {
         if (n.type.name !== 'image' || n.attrs.src !== src) return true;
@@ -200,8 +238,6 @@ export const imagePlugin = new Plugin<boolean>({
       return true;
     },
   },
-  view: (view) => {
-    embedWebImages(view);
-    return { update: (v) => { if (imagePlugin.getState(v.state)) embedWebImages(v); } };
-  },
+  // only pasted or dropped pictures are fetched: opening a file never reaches out to the addresses inside it
+  view: () => ({ update: (v) => { if (imagePlugin.getState(v.state)) embedWebImages(v); } }),
 });

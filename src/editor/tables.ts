@@ -7,8 +7,8 @@ import {
   deleteTable, findTable, goToNextCell, isInTable, mergeCells, selectedRect, setCellAttr, splitCell, tableEditing, toggleHeaderRow,
 } from 'prosemirror-tables';
 import { ReplaceAroundStep } from 'prosemirror-transform';
-import type { EditorView } from 'prosemirror-view';
-import { schema } from './schema';
+import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
+import { colWidths, schema } from './schema';
 
 const T = schema.nodes;
 const PAGE_PX = 624; // 6.5in of text width
@@ -166,17 +166,6 @@ const tableKeys = keymap({
   'Shift-Tab': (state, dispatch) => isInTable(state) && (goToNextCell(-1)(state, dispatch) || true),
 });
 
-/** Each column's width in a table (null where no cell sets one). */
-function colWidths(table: PMNode): (number | null)[] {
-  const map = TableMap.get(table);
-  const out: (number | null)[] = Array(map.width).fill(null);
-  map.map.forEach((pos, i) => {
-    const col = i % map.width, cw: number[] | null = table.nodeAt(pos)!.attrs.colwidth;
-    if (out[col] === null && cw?.[col - map.colCount(pos)]) out[col] = cw[col - map.colCount(pos)];
-  });
-  return out;
-}
-
 /**
  * Dragging an inner column edge moves the edge, like Word: the column to its right gives up (or takes) the
  * width, so the table keeps its width instead of growing past the page. The last edge still widens the table.
@@ -250,11 +239,34 @@ const keepTableWidth = new Plugin({
   },
 });
 
-/** The document always ends with a line to type on, never with a table (Word keeps one there too). */
+/** A table Word draws without lines gets faint guide lines here (the class goes on the table's wrapper). */
+const borderless = new Plugin({
+  props: {
+    decorations(state) {
+      const decos: Decoration[] = [];
+      state.doc.forEach((n, pos) => { if (n.type === T.table && !n.attrs.borders) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-noborder' })); });
+      return decos.length ? DecorationSet.create(state.doc, decos) : null;
+    },
+  },
+});
+
+/**
+ * A table is always followed by a line: at the end of the document (to keep typing on) and between two
+ * tables (Word would merge them into one). Word keeps a paragraph there too.
+ */
 const lineAfterTable = new Plugin({
-  appendTransaction: (trs, _old, state) => trs.some((t) => t.docChanged) && state.doc.lastChild?.type === T.table
-    ? state.tr.insert(state.doc.content.size, T.paragraph.create())
-    : null,
+  appendTransaction(trs, _old, state) {
+    if (!trs.some((t) => t.docChanged)) return null;
+    const at: number[] = [];
+    state.doc.forEach((n, pos, i) => {
+      const next = i + 1 < state.doc.childCount ? state.doc.child(i + 1) : null;
+      if (n.type === T.table && (!next || next.type === T.table)) at.push(pos + n.nodeSize);
+    });
+    if (!at.length) return null;
+    const tr = state.tr;
+    for (const pos of at.reverse()) tr.insert(pos, T.paragraph.create());
+    return tr;
+  },
 });
 
 /**
@@ -265,6 +277,7 @@ export const tablePlugins: Plugin[] = [
   columnResizing({ cellMinWidth: 32, lastColumnResizable: true }),
   keepTableWidth,
   lineAfterTable,
+  borderless,
   tableEditing(),
   tableKeys,
   new Plugin({ view: (view) => new TableBar(view) }),
