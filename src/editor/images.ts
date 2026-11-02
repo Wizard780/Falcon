@@ -190,7 +190,9 @@ const tried = new Set<string>();
 function embedWebImages(view: EditorView) {
   const srcs = new Set<string>();
   view.state.doc.descendants((n) => {
-    if (n.type.name === 'image' && /^https?:/i.test(n.attrs.src) && !tried.has(n.attrs.src)) srcs.add(n.attrs.src);
+    // web pictures, and pasted embedded ones in a format Word can't hold (redrawn as PNG)
+    const src: string = n.attrs.src;
+    if (n.type.name === 'image' && (/^https?:/i.test(src) || !WORD_TYPES.test(src)) && !tried.has(src)) srcs.add(src);
     return true;
   });
   for (const src of srcs) {
