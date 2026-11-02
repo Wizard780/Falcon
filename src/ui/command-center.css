@@ -34,6 +34,7 @@
 .cc-badge[data-b="TOG"] { --t: #3fb47c; }
 .cc-badge[data-b="CYC"] { --t: #5b8def; }
 .cc-badge[data-b="SET"] { --t: #d79b33; }
+.cc-badge[data-b="DOCX"] { --t: #3a9fc4; }
 .cc-badge[data-b="GO"], .cc-badge[data-b="FIND"] { --t: var(--u-tx); }
 .cc-badge[data-b="POC"], .cc-badge[data-b="HAT"], .cc-badge[data-b="BLK"] { --t: #a07be3; }
 .cc-badge[data-b="TAG"], .cc-badge[data-b="ANL"] { --t: #d0679b; }

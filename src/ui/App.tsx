@@ -656,6 +656,7 @@ export function App() {
       requestAnimationFrame(() => { if (findRef.current) findRef.current.value = text; });
     },
     openSettings: openSettingsAt,
+    docs: docList, recents, openFile: (h) => void openHit(h),
   };
   const saveScroll = useCallback(() => {
     const sc = scrollRef.current, top = sc?.scrollTop ?? 0;

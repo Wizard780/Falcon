@@ -1,5 +1,5 @@
 // Command center (Mod-Shift-Space): commands, settings with choices, headings and cites in the file,
-// typed values, find, Shift-Enter to stay open, undo inside it, Tab to Settings, and no file search.
+// typed values, find, Shift-Enter to stay open, undo inside it, Tab to Settings, and .docx files (DOCX rows).
 import { openFalcon, SEED, MOD } from '../lib/falcon.mjs';
 const f = await openFalcon('command-center');
 const p = f.page;
@@ -14,7 +14,7 @@ const open = () => p.$('.cc').then(Boolean);
 
 await openCC();
 f.want(await p.evaluate(() => document.activeElement?.closest('.cc') !== null), 'Mod-Shift-Space opens it with focus in the box');
-f.want((await p.$eval('.cc-start', (x) => x.textContent)).startsWith('Type to search everything') && await p.locator('.cc-chips button').count() === 4, 'an empty box shows the prompt and the prefix chips');
+f.want((await p.$eval('.cc-start', (x) => x.textContent)).startsWith('Type to search everything') && await p.locator('.cc-chips button').count() === 5, 'an empty box shows the prompt and the prefix chips');
 f.want(await p.evaluate(() => { const r = document.querySelector('.cc').getBoundingClientRect(); return r.bottom > innerHeight * 0.6 && document.querySelector('.cc-list').getBoundingClientRect().bottom <= document.querySelector('.cc-bar').getBoundingClientRect().top; }), 'it sits low on the page with results above the box');
 await f.shot('empty');
 await typeIn('c ');
@@ -131,12 +131,37 @@ await f.shot('tab-settings');
 await p.keyboard.press('Escape'); await p.keyboard.press('Escape');
 await p.waitForTimeout(100);
 
-// help, and no file search
+// help
 await openCC();
 await typeIn('?');
 f.want((await rows()).some((r) => r.startsWith('card 12')), '? lists what you can type');
 await typeIn('search files');
-f.want(!(await rows()).includes('Search files'), 'file search is not in here (Cmd-K keeps it)');
+f.want(!(await rows()).includes('Search files'), 'the Search files command is not a row (files are rows here)');
+await p.keyboard.press(`${MOD}+Shift+Space`);
+await p.waitForTimeout(100);
+
+// files: DOCX rows next to CMD rows; Enter on one switches to it
+await p.keyboard.press(`${MOD}+n`);
+await p.waitForTimeout(300);
+const tagged = () => p.$$eval('.cc-row', (r) => r.map((x) => `${x.querySelector('.cc-badge')?.textContent ?? ''} ${x.querySelector('.cc-nm')?.textContent}`));
+await openCC();
+await typeIn('un');
+const mixed = (await tagged()).slice(0, 6);
+f.want(mixed.includes('DOCX Untitled') && mixed.some((r) => r.startsWith('CMD Un')), `typing lists files and commands together: ${mixed.join(' | ')}`);
+await f.shot('files-and-commands');
+await typeIn('f ');
+const browse = await tagged();
+f.want(browse.length >= 2 && browse.every((r) => r.startsWith('DOCX ')) && browse.includes('DOCX seed') && browse.includes('DOCX Untitled'), `f lists the open files: ${browse.join(' | ')}`);
+f.want((await p.$$eval('.cc-head', (r) => r.map((x) => x.textContent))).includes('Open'), 'under an Open head');
+await f.shot('f-files');
+await typeIn('seed');
+f.want(await cur() === 'seed' && await p.$eval('.cc-row[data-on] .cc-badge', (b) => b.textContent) === 'DOCX', 'seed is the lit DOCX row');
+await p.keyboard.press('Enter');
+await p.waitForTimeout(300);
+f.want(!(await open()) && await p.$eval('.doc-row[data-on] .doc-nm', (e) => e.getAttribute('aria-label')) === 'seed', 'Enter on a DOCX row switches to that file');
+await openCC();
+f.want((await tagged()).includes('DOCX seed'), 'an opened file shows under Recent next time');
+await f.shot('recent-file');
 await p.keyboard.press(`${MOD}+Shift+Space`);
 f.want(!(await open()), 'Mod-Shift-Space toggles it closed');
 await f.done();
