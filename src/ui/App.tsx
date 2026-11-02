@@ -98,12 +98,17 @@ function autosave(list: Backup[]): boolean {
     const docs = l.map((b) => ({ meta: b.meta, active: b.active, dirty: b.dirty, speech: b.speech, doc: packDoc(b.doc, media, index) }));
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(media.length ? docs.map((d, i) => (i === 0 ? { ...d, media } : d)) : docs));
   };
-  try { write(keep); }
-  catch { // storage full: the active doc alone is the most useful copy
-    try { write(keep.filter((b) => b.active)); } catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+  const kept = [...keep];
+  for (;;) {
+    try { write(kept); break; }
+    catch { // storage full: let go of the biggest copy that isn't the open doc, the open doc last
+      if (!kept.length) { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+      const drop = kept.filter((b) => !b.active).sort((a, b) => b.doc.content.size - a.doc.content.size)[0] ?? kept[0];
+      kept.splice(kept.indexOf(drop), 1);
+    }
   }
   localStorage.removeItem(OLD_AUTOSAVE_KEY);
-  return keep.some((b) => b.active);
+  return kept.some((b) => b.active);
 }
 function loadBackups(): Backup[] {
   if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return []; } // turned off in Settings
@@ -169,7 +174,7 @@ export function App() {
   const [depth, setDepth] = useState(() => Number(localStorage.getItem('falcon.depth')) || 3);
   const [zoom, setZoom] = useState(() => Number(localStorage.getItem('falcon.zoom')) || 1);
   const [speechMin, setSpeechMin] = useState(() => Number(localStorage.getItem('falcon.speech')) || 8);
-  const [docs, setDocs] = useState<OpenDoc[]>(() => [{ id: 1, meta: JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' }, dirty: false, state: null, scroll: 0 }]);
+  const [docs, setDocs] = useState<OpenDoc[]>(() => [{ id: 1, meta: { name: 'Untitled' }, dirty: false, state: null, scroll: 0 }]);
   const [activeId, setActiveId] = useState(1);
   const activeRef = useRef(1);
   const docsRef = useRef(docs);
@@ -261,7 +266,6 @@ export function App() {
   useEffect(() => { localStorage.setItem('falcon.outline', showOutline ? 'on' : 'off'); }, [showOutline]);
   useEffect(() => { localStorage.setItem('falcon.depth', String(depth)); }, [depth]);
   useEffect(() => { localStorage.setItem('falcon.speech', String(speechMin)); }, [speechMin]);
-  useEffect(() => { localStorage.setItem('falcon.meta', JSON.stringify(meta)); }, [meta]);
   useEffect(() => { saveRecents(recents); }, [recents]);
   // the list changed (switch, open, close, saved): refresh the crash-recovery copy once React has settled
   useEffect(() => { if (viewRef.current) whenIdle(() => { backup(); }); }, [docs, activeId, speechId, backup]);
