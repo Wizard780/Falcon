@@ -224,6 +224,12 @@ export function App() {
   const [curItem, setCurItem] = useState(-1); // the outline row to light (see measureRead)
   const findRef = useRef<HTMLInputElement>(null);
   const lastDoc = useRef<PMNode | null>(null);
+  // each doc as it was last opened or saved: an edit that puts it back the same makes it clean again
+  const savedDocs = useRef(new Map<number, PMNode>());
+  const isDirty = (id: number, doc: PMNode) => {
+    const saved = savedDocs.current.get(id);
+    return !saved || saved.content.size !== doc.content.size || !saved.eq(doc);
+  };
 
   const patch = useCallback((id: number, p: Partial<OpenDoc>) => setDocs((ds) => ds.map((d) => (d.id === id ? { ...d, ...p } : d))), []);
 
@@ -257,6 +263,7 @@ export function App() {
     // a recovered doc with unsaved changes must ask before closing; the file you last had open, untouched
     // since its save, comes back clean (backups from before the flag guess: anything with text is unsaved)
     const restored: OpenDoc[] = backups.map((b) => ({ id: b === first ? 1 : nextDocId++, meta: b.meta, dirty: b.dirty ?? (b !== first || !!b.doc.textContent.trim()), state: b === first ? null : createState(b.doc), scroll: 0 }));
+    restored.forEach((d, i) => { if (!d.dirty) savedDocs.current.set(d.id, backups[i].doc); });
     if (restored.length) {
       setDocs(restored);
       const spoken = backups.findIndex((b) => b.speech);
@@ -269,7 +276,8 @@ export function App() {
       if (v.state.doc !== lastDoc.current) {
         lastDoc.current = v.state.doc;
         const id = activeRef.current;
-        setDocs((ds) => (ds.some((d) => d.id === id && !d.dirty) ? ds.map((d) => (d.id === id ? { ...d, dirty: true } : d)) : ds));
+        const dirty = isDirty(id, v.state.doc);
+        setDocs((ds) => (ds.some((d) => d.id === id && d.dirty !== dirty) ? ds.map((d) => (d.id === id ? { ...d, dirty } : d)) : ds));
         // the outline and word count walk the whole doc: refresh them when typing pauses, not per keystroke
         window.clearTimeout(outlineTimer);
         outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
@@ -277,6 +285,7 @@ export function App() {
       }
     }, doc);
     lastDoc.current = view.state.doc;
+    if (!restored.length) savedDocs.current.set(1, view.state.doc);
     viewRef.current = view;
     setTick(1);
     return () => view.destroy();
@@ -376,6 +385,7 @@ export function App() {
     const blank = !cur.dirty && !cur.meta.path && !v.state.doc.textContent.trim() && v.state.doc.childCount <= 1 && cur.id !== speechRef.current;
     const id = blank ? cur.id : nextDocId++;
     const fresh: OpenDoc = { id, meta: m, dirty: false, state: null, scroll: 0 };
+    savedDocs.current.set(id, doc);
     if (blank) setDocs((ds) => ds.map((d) => (d.id === id ? fresh : d)));
     else {
       const out = stash();
@@ -388,12 +398,14 @@ export function App() {
     const list = docsRef.current, i = list.findIndex((d) => d.id === id);
     if (i < 0) return;
     setSpeechId((s) => (s === id ? null : s));
+    savedDocs.current.delete(id);
     const rest = list.filter((x) => x.id !== id);
     if (id !== activeRef.current) { setDocs(rest); return; }
     if (!rest.length) {
-      const nid = nextDocId++;
+      const nid = nextDocId++, blankDoc = emptyDoc();
+      savedDocs.current.set(nid, blankDoc);
       setDocs([{ id: nid, meta: { name: 'Untitled' }, dirty: false, state: null, scroll: 0 }]);
-      show(nid, createState(emptyDoc()), 0);
+      show(nid, createState(blankDoc), 0);
       setHomeOpen(true);
       return;
     }
@@ -476,7 +488,8 @@ export function App() {
       if (mode !== 'asis') { flash(`Saved ${MODE_NAME[mode]} ${m.name}`); return; }
       // typing during the save keeps the doc marked unsaved
       const now = activeRef.current === id ? viewRef.current!.state.doc : docsRef.current.find((x) => x.id === id)?.state?.doc;
-      patch(id, { meta: m, dirty: now !== saved });
+      savedDocs.current.set(id, saved);
+      patch(id, { meta: m, dirty: !!now && isDirty(id, now) });
       setRecents((list) => noteRecent(list, saved, m));
       flash(`Saved ${m.name}`);
     } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
