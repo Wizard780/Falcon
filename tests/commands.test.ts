@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Fragment, Slice } from 'prosemirror-model';
-import { Selection } from 'prosemirror-state';
+import { GapCursor } from 'prosemirror-gapcursor';
+import { Selection, type EditorState } from 'prosemirror-state';
 import { falconKeys as K } from '../src/editor/keymap';
 import { insertPlainText } from '../src/editor/commands';
-import { createView } from '../src/editor/editor';
+import { createState, createView } from '../src/editor/editor';
+import { schema, type ParaStyle } from '../src/editor/schema';
 import { MultiSelection } from '../src/editor/multi';
 import { at, caret, make, map, run, select } from './helpers';
 
@@ -171,6 +173,31 @@ describe('moving around and moving cards', () => {
   it('a card does not move above its block', () => {
     const s = run(caret(doc(), 'Card A'), K['Mod-Alt-ArrowUp']);
     expect(map(s)).toBe(map(doc()));
+  });
+  describe('next to a table', () => {
+    const p = (t: string, style: ParaStyle = 'normal') => schema.node('paragraph', { style }, [schema.text(t)]);
+    const table = () => schema.node('table', null, [schema.node('table_row', null, ['c1', 'c2'].map((t) => schema.node('table_cell', null, [p(t)])))]);
+    const where = (s: EditorState) => [s.selection.$head.parent.isTextblock, s.selection.$head.parent.textContent, s.selection.$head.parentOffset];
+    it('selecting by paragraph into a table stops in its cell text', () => {
+      const s0 = createState(schema.node('doc', null, [p('above'), table(), p('below')]));
+      for (const key of ['Ctrl-Shift-ArrowDown', 'Alt-Shift-ArrowDown']) {
+        const s = run(caret(s0, 'above', 5), K[key]);
+        expect(s.selection.anchor).toBe(at(s0, 'above', 5));
+        expect(where(s)).toEqual([true, 'c2', 2]);
+      }
+      // (from the very start of a line, prosemirror-tables would trim a selection ending there to the cell)
+      for (const key of ['Ctrl-Shift-ArrowUp', 'Alt-Shift-ArrowUp']) {
+        const s = run(run(caret(s0, 'below', 2), K[key]), K[key]);
+        expect(s.selection.anchor).toBe(at(s0, 'below', 2));
+        expect(where(s)).toEqual([true, 'c1', 0]);
+      }
+    });
+    it('moving a card that ends in a table, from the cursor after the table, keeps the cursor in the table', () => {
+      const s0 = createState(schema.node('doc', null, [p('Card A', 'tag'), p('a body'), p('Card B', 'tag'), table()]));
+      const s = run(s0.apply(s0.tr.setSelection(new GapCursor(s0.doc.resolve(s0.doc.content.size)))), K['Mod-Alt-ArrowUp']);
+      expect(map(s).split('\n').filter((l) => !l.startsWith('cell'))).toEqual(['tag: Card B', 'table 1 rows', 'tag: Card A', 'normal: a body']);
+      expect(where(s)).toEqual([true, 'c2', 2]);
+    });
   });
   it('PageDown/PageUp jump between headings', () => {
     let s = run(caret(doc(), 'a body', 1), K.PageDown);
