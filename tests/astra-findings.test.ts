@@ -16,7 +16,7 @@ test('a table whose first two rows are one merged cell keeps all three rows', as
 
 test('a size set on a heading survives a save', async () => {
   const doc = await reopen('<p data-style="tag"><span class="f-size" data-pt="24">big tag</span> plain</p>');
-  expect(markMap(doc)).toContain('[big tag]{size:24}');
+  expect(markMap(doc)).toContain('[big tag]{size:24pt}');
   expect(markMap(doc)).not.toContain('plain]{size');
 });
 
