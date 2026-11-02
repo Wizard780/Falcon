@@ -23,10 +23,10 @@ Preconditions:
 - `falcon-verify doctor` is all `ok`.
 - `fixtures/seed.docx` matches `fixtures/seed.markmap.txt`.
 
-- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/open-save-docx.mjs`. It exits 0 with seven `ok` lines.
+- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/open-save-docx.mjs`. It exits 0 with eight `ok` lines.
 - **Open.** `f.open(SEED)` clicks `.tools [aria-label="Open…"]` and answers the file chooser. The rail gains `.doc-row .doc-nm[aria-label="seed"]`, and `f.markMap()` equals `seed.markmap.txt`.
 - **Edit.** `f.select('needle')`, then type `thread`. `.doc-row i[aria-label="unsaved"]` appears, and the mark map changes only `needle` to `thread`.
-- **Save.** `f.save('seed-saved.docx')` presses `Mod-S` and keeps the download. The unsaved dot is gone, and the file's `word/document.xml` contains `thread finds this line`.
+- **Save.** Press `Mod-S` and catch the download. Its suggested name is `seed.docx`. Keep it as `seed-saved.docx`. The unsaved dot is gone, and the file's `word/document.xml` contains `thread finds this line`.
 - **Reopen.** A second `openFalcon('open-save-docx/reopen')` opens the saved file. Its mark map equals the edited one.
 - **Proof.** `evidence/open-save-docx/` holds `01-empty.png` through `04-saved.png`, `opened.markmap.txt`, `seed-saved.docx` and `results.txt`. `reopen/` holds `reopened.markmap.txt` and its screenshot.
 

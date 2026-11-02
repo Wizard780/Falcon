@@ -22,7 +22,10 @@ const edited = await f.markMap();
 want(edited === expected.replace('needle', 'thread'), 'typing over the selection replaced "needle" with "thread"');
 await f.shot('edited');
 
-const saved = await f.save('seed-saved.docx');
+const [dl] = await Promise.all([page.waitForEvent('download'), page.keyboard.press(`${MOD}+s`)]);
+want(dl.suggestedFilename() === 'seed.docx', `the download is named after the doc (${dl.suggestedFilename()})`);
+const saved = `${f.out}/seed-saved.docx`;
+await dl.saveAs(saved);
 await page.waitForTimeout(300);
 want(await page.locator('.doc-row i[aria-label="unsaved"]').count() === 0, 'Mod-S clears the unsaved dot');
 const xml = strFromU8(unzipSync(fs.readFileSync(saved), { filter: (x) => x.name === 'word/document.xml' })['word/document.xml']);

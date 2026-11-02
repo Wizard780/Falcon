@@ -20,10 +20,14 @@ const [cmd, ...rest] = process.argv.slice(2);
 const die = (m) => { console.error(`falcon-verify: ${m}`); process.exit(1); };
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const git = (...a) => execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim();
-const runs = () => (fs.existsSync(ROOT) ? fs.readdirSync(ROOT).filter((d) => fs.existsSync(`${ROOT}/${d}/state.json`)).sort() : []);
+const readState = (id) => JSON.parse(fs.readFileSync(`${ROOT}/${id}/state.json`, 'utf8'));
+// /tmp/falcon-verify is shared by every checkout and session: the default run is the newest one from THIS checkout
+const runs = () => (fs.existsSync(ROOT) ? fs.readdirSync(ROOT).filter((d) => fs.existsSync(`${ROOT}/${d}/state.json`) && readState(d).repo === REPO).sort() : []);
+// our server, not just any process that now has its pid: the command line must be this run's vite preview
+const ours = (s) => { try { const c = execFileSync('ps', ['-o', 'command=', '-p', String(s.pid)], { encoding: 'utf8' }); return c.includes('vite') && c.includes('preview') && c.includes(`--port ${s.port}`); } catch { return false; } };
 const load = (id) => {
   id ||= runs().at(-1);
-  if (!id) die('no runs; start one with: falcon-verify launch');
+  if (!id) die(`no live runs from ${REPO}; start one with: falcon-verify launch`);
   const f = `${ROOT}/${id}/state.json`;
   if (!fs.existsSync(f)) die(`no run ${id}`);
   return JSON.parse(fs.readFileSync(f, 'utf8'));
@@ -51,13 +55,17 @@ async function editorReady(url, timeoutMs) {
 async function launch() {
   const port = rest.includes('--port') ? Number(rest[rest.indexOf('--port') + 1]) : await freePort();
   if (portOwner(port)) die(`port ${port} is already taken; pick another or omit --port`);
+  // a second build would empty dist/ under the first server: one live run per checkout
+  const live = runs().map(readState).find(ours);
+  if (live) die(`run ${live.id} is already up from this checkout (${live.url}); drive it, or: falcon-verify cleanup ${live.id}`);
   const id = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '') + '-' + port;
   const dir = `${ROOT}/${id}`;
   fs.mkdirSync(`${dir}/evidence`, { recursive: true });
   fs.mkdirSync(`${dir}/scratch`, { recursive: true });
   if (!rest.includes('--no-build')) {
     console.log('building dist/ (npm run build)…');
-    try { execFileSync('npm', ['run', 'build'], { cwd: REPO, stdio: ['ignore', fs.openSync(`${dir}/build.log`, 'w'), fs.openSync(`${dir}/build.log`, 'a')] }); }
+    const blog = fs.openSync(`${dir}/build.log`, 'w');
+    try { execFileSync('npm', ['run', 'build'], { cwd: REPO, stdio: ['ignore', blog, blog] }); }
     catch { die(`build failed, see ${dir}/build.log`); }
   } else if (!fs.existsSync(`${REPO}/dist/index.html`)) die('--no-build but dist/index.html is missing');
   const log = fs.openSync(`${dir}/server.log`, 'w');
@@ -75,15 +83,16 @@ async function doctor() {
   const s = load(rest[0]);
   const checks = [];
   const want = (ok, what) => checks.push(`${ok ? 'ok  ' : 'FAIL'} ${what}`);
-  want(alive(s.pid), `server process ${s.pid} is running`);
+  want(ours(s), `server process ${s.pid} is running and is this run's vite preview`);
   const owner = portOwner(s.port);
   want(owner && descends(owner, s.pid), `port ${s.port} is held by our server (listener pid ${owner ?? 'none'})`);
-  const head = git('rev-parse', '--short', 'HEAD');
+  const head = execFileSync('git', ['-C', s.repo, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
   want(head === s.commit, `repo HEAD ${head} matches the launched build ${s.commit}`);
   const built = fs.existsSync(`${s.repo}/dist/index.html`) ? fs.statSync(`${s.repo}/dist/index.html`).mtime.toISOString() : 'missing';
   want(built === s.distBuiltAt, `dist/ is the build this run served (${built})`);
-  const newer = execFileSync('find', [`${s.repo}/src`, '-newer', `${s.repo}/dist/index.html`, '-type', 'f'], { encoding: 'utf8' }).trim();
-  want(!newer, newer ? `src/ has edits newer than dist/ (relaunch to test them): ${newer.split('\n').slice(0, 3).join(', ')}` : 'no src/ edits newer than dist/');
+  const inputs = ['src', 'public', 'index.html', 'vite.config.ts', 'package.json'].map((p) => `${s.repo}/${p}`).filter((p) => fs.existsSync(p));
+  const newer = built === 'missing' ? 'dist/ missing' : execFileSync('find', [...inputs, '-newer', `${s.repo}/dist/index.html`, '-type', 'f'], { encoding: 'utf8' }).trim();
+  want(!newer, newer ? `build inputs changed after dist/ was built (relaunch to test them): ${newer.split('\n').slice(0, 3).join(', ')}` : 'no build input (src/, public/, index.html, vite.config.ts, package.json) is newer than dist/');
   const r = await editorReady(s.url, 15000);
   want(r.ok && r.title === 'Falcon' && !r.errors.length, r.ok ? `editor renders at ${s.url} (title "${r.title}", ${r.errors.length} page errors)` : `editor does not render: ${r.error}`);
   console.log(`run ${s.id}\n` + checks.join('\n'));
@@ -92,7 +101,7 @@ async function doctor() {
 
 function run() {
   let id;
-  if (rest[0] && !rest[0].endsWith('.mjs')) id = rest.shift();
+  if (rest[0] && fs.existsSync(`${ROOT}/${rest[0]}/state.json`)) id = rest.shift();
   const s = load(id);
   const [script, ...args] = rest;
   if (!script) die('usage: falcon-verify run [RUN] <script.mjs> [args]');
@@ -104,7 +113,9 @@ function run() {
 
 function cleanup() {
   const s = load(rest[0]);
-  if (alive(s.pid)) { try { process.kill(-s.pid, 'SIGTERM'); } catch { process.kill(s.pid, 'SIGTERM'); } }
+  // kill only if the pid is still this run's vite preview (a dead server's pid may be reused); it leads its own group
+  if (ours(s)) { try { process.kill(-s.pid, 'SIGTERM'); } catch { process.kill(s.pid, 'SIGTERM'); } }
+  else if (alive(s.pid)) console.log(`pid ${s.pid} is no longer this run's server; not killing it`);
   fs.rmSync(`${s.dir}/scratch`, { recursive: true, force: true });
   fs.renameSync(`${s.dir}/state.json`, `${s.dir}/state.stopped.json`);
   const n = fs.existsSync(`${s.dir}/evidence`) ? fs.readdirSync(`${s.dir}/evidence`, { recursive: true }).length : 0;
@@ -117,7 +128,7 @@ function list() {
     const f = ['state.json', 'state.stopped.json'].map((n) => `${ROOT}/${id}/${n}`).find((x) => fs.existsSync(x));
     if (!f) continue;
     const s = JSON.parse(fs.readFileSync(f, 'utf8'));
-    const st = f.endsWith('stopped.json') ? 'stopped' : alive(s.pid) ? 'up     ' : 'down   ';
+    const st = f.endsWith('stopped.json') ? 'stopped' : ours(s) ? 'up     ' : 'down   ';
     console.log(`${id}  ${st}  ${s.url}  ${s.commit}  evidence: ${s.dir}/evidence`);
   }
 }

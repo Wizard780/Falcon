@@ -41,7 +41,8 @@ export async function openFalcon(feature, { viewport = { width: 1400, height: 90
       const v = window.__falconView; let at = -1;
       v.state.doc.descendants((n, pos) => { if (at < 0 && n.isTextblock) { const i = n.textContent.indexOf(text); if (i >= 0) at = pos + 1 + i; } return at < 0; });
       if (at < 0) throw new Error(`text not in doc: ${text}`);
-      const S = v.state.selection.constructor; v.dispatch(v.state.tr.setSelection(S.create(v.state.doc, at, at + text.length))); v.focus();
+      // TextSelection via Selection.near, so this also works after Select All (AllSelection) or a NodeSelection
+      const S = v.state.selection.constructor.near(v.state.doc.resolve(at)).constructor; v.dispatch(v.state.tr.setSelection(S.create(v.state.doc, at, at + text.length))); v.focus();
     }, text),
     /** Open a .docx through the tool row's Open… button and its file chooser. */
     async open(file) {

@@ -7,6 +7,8 @@ import path from 'node:path';
 const out = path.join(process.env.FALCON_EVIDENCE, 'desktop-shell');
 fs.mkdirSync(out, { recursive: true });
 fs.mkdirSync('shots', { recursive: true }); // the smoke script writes shots/electron-<platform>.png, relative to the repo
+// it swallows a failed confirm-dialog screenshot: drop old ones so a stale png never lands in this run's evidence
+for (const f of fs.readdirSync('shots').filter((f) => f.startsWith('electron-'))) fs.rmSync(`shots/${f}`);
 const env = { ...process.env, FALCON_HEADLESS: '1' };
 delete env.ELECTRON_RUN_AS_NODE;
 const r = spawnSync(process.execPath, ['scripts/electron-smoke.mjs'], { env, encoding: 'utf8', timeout: 120000 });

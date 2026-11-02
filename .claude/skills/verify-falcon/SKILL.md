@@ -25,7 +25,11 @@ Ready is the line `READY <run-id>`, printed only after a headless browser saw th
 (`.ProseMirror`) mount. Ready means usable, not just a port that answers. Launch prints the URL, the
 server pid, the commit it built and `evidence  /tmp/falcon-verify/<run-id>/evidence`. Each run gets
 its own port and its own folder, and each drive opens a fresh browser context with `localStorage`
-cleared, so several runs can sit side by side. Never drive a vite server you did not launch: the
+cleared, so many drives can share one run. Only one run per checkout can be up, because a second build
+would empty the `dist/` the first server is serving. `launch` refuses and names the live run. To run
+side by side, use separate worktrees. `/tmp/falcon-verify` is shared by every checkout and session.
+Commands with no run id pick the newest live run from this checkout only. Pass the id explicitly
+whenever you are not sure. Never drive a vite server you did not launch: the
 user's `npm run dev` (:5173) or a hand-started `vite preview` (:5190, the port the older
 `scripts/*-check.mjs` assume) belong to someone else.
 
@@ -35,10 +39,11 @@ user's `npm run dev` (:5173) or a hand-started `vite preview` (:5190, the port t
 $V doctor [run-id]   # default: newest run
 ```
 
-Read-only. Checks that the server pid is alive, the port's listener is our process, repo HEAD matches
-the commit that was built, `dist/` is the build the run served, no `src/` file is newer than `dist/`,
-and the page renders the editor with title `Falcon` and no page errors. Any `FAIL` exits 1. Run it
-first whenever a result looks wrong. A "src/ has edits newer than dist/" failure means you are
+Read-only. Checks that the server pid is alive and is still this run's `vite preview`, the port's
+listener is our process, the run's checkout HEAD matches the commit that was built, `dist/` is the
+build the run served, no build input (`src/`, `public/`, `index.html`, `vite.config.ts`,
+`package.json`) is newer than `dist/`, and the page renders the editor with title `Falcon` and no page errors. Any `FAIL` exits 1. Run it
+first whenever a result looks wrong. A "build inputs changed after dist/ was built" failure means you are
 testing stale code: `cleanup`, then `launch` again.
 
 ## Drive
@@ -105,7 +110,8 @@ $V cleanup [run-id]  # kills the process group launch started, removes scratch/,
 $V list              # every run (up, down or stopped) and its evidence folder
 ```
 
-Cleanup kills only the pid recorded at launch (and its group), never by process name. It renames
+Cleanup kills only the pid recorded at launch (and its group), never by process name, and only
+after checking that the pid is still this run's `vite preview` (a dead server's pid can be reused). It renames
 `state.json` to `state.stopped.json` and leaves `evidence/`, `server.log` and `build.log` in place.
 Run it after every failed attempt too. `dist/` is the repo's normal build output and is left alone.
 
