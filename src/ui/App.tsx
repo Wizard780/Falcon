@@ -7,7 +7,8 @@ import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
 import { commandOf } from '../editor/keymap';
 import { IS_MAC, isRecording, keyOf, keyText, pressedId, titled } from '../editor/keybinds';
-import { activeColors, bridge, setActiveColor } from '../editor/host';
+import { activeColors, bridge, setActiveColor, type UpdateInfo } from '../editor/host';
+import { ago, releaseNotes } from './update';
 import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
 import { buildOutline, currentItem, readWords, type OutlineItem } from '../editor/outline';
 import { toggleColorMark } from '../editor/commands';
@@ -291,6 +292,18 @@ export function App() {
       ok: `${what} Without Saving`,
     }).then((yes) => { if (yes) bridge.forceClose?.(quit); });
   }), [confirmAsk]);
+  // a newer Falcon, downloaded: the button in the rail installs it and restarts
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  useEffect(() => bridge.onUpdate?.(setUpdate), []);
+  const installUpdate = useCallback(async () => {
+    const names = docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled');
+    if (names.length && !update?.manual && pref(P.confirmClose) && !(await confirmAsk({
+      title: 'Restart to update without saving?',
+      body: `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They'll be lost.`,
+      ok: 'Restart Without Saving',
+    }))) return;
+    void bridge.installUpdate?.();
+  }, [confirmAsk, update]);
   useEffect(() => {
     const onUnload = (e: BeforeUnloadEvent) => { if (docsRef.current.some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ''; } };
     addEventListener('beforeunload', onUnload);
@@ -742,7 +755,7 @@ export function App() {
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
-        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} />
+        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} />
       </div>
 
       <div className="covered" inert={homeOpen || modal}>
@@ -839,7 +852,7 @@ const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor
 // ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
 type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech: boolean };
-function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void }) {
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -889,8 +902,42 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         </div>
       </aside>
       <div className="grow" />
+      {props.update && <UpdateButton u={props.update} onInstall={props.onUpdate} />}
       <button className="fs-b gear-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /></button>
     </nav>
+  );
+}
+
+// the update button: lit while a downloaded update waits; hovering it shows what's new
+function UpdateButton({ u, onInstall }: { u: UpdateInfo; onInstall: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [bottom, setBottom] = useState(0);
+  const btn = useRef<HTMLButtonElement>(null);
+  const timer = useRef(0);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const show = () => { clearTimeout(timer.current); setBottom(innerHeight - btn.current!.getBoundingClientRect().bottom); setOpen(true); };
+  const hide = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(false), 180); };
+  const { items, more } = useMemo(() => releaseNotes(u.notes), [u.notes]);
+  const busy = u.state === 'installing';
+  const title = busy ? 'Installing the update' : u.state === 'error' ? "The update didn't install" : 'Update ready to install';
+  const action = busy ? 'Falcon restarts when it\'s done.'
+    : u.state === 'error' ? `${u.error ?? 'Something went wrong'}. Click to try again.`
+    : u.manual ? 'Click to open the installer, then drag Falcon onto Applications.' : 'Click to restart and update.';
+  return (
+    <>
+      <button ref={btn} className="fs-b upd" aria-label={`${title}: Falcon ${u.version}`} aria-disabled={busy || undefined} data-state={u.state}
+        onClick={() => { if (!busy) onInstall(); }} onPointerEnter={show} onPointerLeave={hide} onFocus={show} onBlur={hide}>
+        <SvgIcon name="download" /><i className="upd-dot" />
+      </button>
+      <div className="upd-card" data-open={open || undefined} role="tooltip" style={{ bottom }} onPointerEnter={show} onPointerLeave={hide}>
+        <b>{title}</b>
+        <span className="upd-v">{u.version}{u.date && ` · ${ago(u.date)}`}</span>
+        {items.length > 0 && <ul>{items.map((n, i) => <li key={i}>{n.lead && <strong>{n.lead} </strong>}{n.rest}</li>)}</ul>}
+        {more > 0 && <p className="upd-more">Plus {more} more {more === 1 ? 'change' : 'changes'}.</p>}
+        <p className="upd-act">{action}</p>
+        {u.url && <a href={u.url} target="_blank" rel="noreferrer">Full release notes</a>}
+      </div>
+    </>
   );
 }
 

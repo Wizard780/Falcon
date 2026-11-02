@@ -32,5 +32,13 @@ contextBridge.exposeInMainWorld('falcon', {
     return () => ipcRenderer.removeListener('falcon:confirm-close', on);
   },
   setTheme: (bg, dark, system) => ipcRenderer.send('falcon:theme', String(bg), dark === true, system === true),
+  // a newer Falcon, downloaded and ready (or null). Subscribing gets the current state too.
+  onUpdate: (f) => {
+    const on = (_e, u) => f(u ?? null);
+    ipcRenderer.on('falcon:update', on);
+    void ipcRenderer.invoke('falcon:update-get').then((u) => f(u ?? null));
+    return () => ipcRenderer.removeListener('falcon:update', on);
+  },
+  installUpdate: () => ipcRenderer.invoke('falcon:update-install'),
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
 });

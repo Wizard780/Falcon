@@ -72,6 +72,25 @@ svg { flex: none; }
 .files-r:hover .dot { opacity: 0; }
 .files-x:hover { color: var(--u-tx); background: var(--u-ctl-on); }
 /* the tooltip every button shares: name, key, and what it does */
+/* the update button and its card: the card opens beside the rail like the files panel */
+.fs-b.upd { border-radius: 50%; color: var(--u-tx); background: var(--u-raised); box-shadow: var(--u-top), 0 0 16px color-mix(in srgb, var(--ink-ui) 40%, transparent); }
+.fs-b.upd:hover { background: var(--u-ctl-on); }
+.fs-b.upd[data-state="installing"] { cursor: progress; color: var(--u-mut); box-shadow: var(--u-top); }
+.upd-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--u-tx); box-shadow: 0 0 0 2px var(--u-raised); }
+.upd[data-state="installing"] .upd-dot { display: none; }
+.upd[data-state="error"] .upd-dot { background: var(--ink-ui); }
+.upd-card { position: fixed; z-index: 1; left: calc(var(--strip-w) + 4px); width: 340px; padding: 18px 20px; border-radius: 20px; background: var(--u-deep);
+  box-shadow: inset 0 0 0 1px var(--u-hover), 0 8px 24px rgba(0, 0, 0, calc(.35 * var(--u-sh))); color: var(--u-tx); font-size: 14px; line-height: 1.45;
+  opacity: 0; transform: translateX(-8px); pointer-events: none; transition: opacity 150ms ease-out, transform 220ms var(--u-ease); }
+.upd-card[data-open] { opacity: 1; transform: none; pointer-events: auto; }
+.upd-card b { display: block; font-size: 16px; font-weight: 500; }
+.upd-v { display: block; margin-top: 4px; font: 12px var(--mono); color: var(--u-mut); }
+.upd-card ul { margin: 14px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; color: var(--u-tx2); }
+.upd-card strong { color: var(--u-tx); font-weight: 600; }
+.upd-more { margin: 14px 0 0; font-weight: 500; }
+.upd-act { margin: 6px 0 0; color: var(--u-tx2); }
+.upd-card a { display: inline-block; margin-top: 12px; font: 12px var(--mono); color: var(--u-mut); text-decoration: none; }
+.upd-card a:hover { color: var(--u-tx); }
 .tip { position: fixed; z-index: 3000; max-width: 280px; padding: 7px 10px; border-radius: 8px; background: var(--u-raised); color: var(--u-tx); box-shadow: var(--u-top), 0 8px 24px rgba(0, 0, 0, calc(.35 * var(--u-sh)));
   font-size: 12.5px; line-height: 1.35; pointer-events: none; animation: tip-in 120ms ease-out both; }
 .tip[data-from="bottom"] { animation-name: tip-up; }
