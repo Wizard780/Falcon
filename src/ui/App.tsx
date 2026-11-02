@@ -1005,6 +1005,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   const SPEECH_SECONDS = props.speechSeconds;
   const [pop, setPop] = useState<{ kind: PopKind; x: number; y: number; origin: number } | null>(null);
   const [fontColor, setFontColor] = useState<string | null>(() => localStorage.getItem('falcon.fontColor'));
+  useEffect(() => onPrefs(() => setFontColor(localStorage.getItem('falcon.fontColor'))), []); // Import settings
   const popRef = useRef<HTMLDivElement>(null);
 
   // each button runs its key's command, and its tip shows the key Settings has for it now
