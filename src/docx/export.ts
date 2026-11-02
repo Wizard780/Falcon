@@ -52,20 +52,35 @@ function runText(text: string): string {
     .join('<w:tab/>');
 }
 
-export function paragraphXml(para: PMNode): string {
+/** Link targets, numbered as relationships of document.xml (rId1 is styles.xml). */
+type Links = Map<string, string>;
+const linkId = (links: Links, href: string) => {
+  if (!links.has(href)) links.set(href, `rId${links.size + 2}`);
+  return links.get(href)!;
+};
+
+export function paragraphXml(para: PMNode, links: Links = new Map()): string {
   const ps = PSTYLE[para.attrs.style as string];
   const ppr = [ps ? `<w:pStyle w:val="${ps}"/>` : '', para.attrs.indent ? `<w:ind w:left="${para.attrs.indent * 720}"/>` : ''].join('');
   let runs = '';
+  let open: string | null = null; // href of the hyperlink the runs are inside
   para.forEach((n) => {
+    const href: string | null = n.marks.find((m) => m.type.name === 'link')?.attrs.href ?? null;
+    if (href !== open) {
+      if (open !== null) runs += '</w:hyperlink>';
+      if (href !== null) runs += `<w:hyperlink r:id="${linkId(links, href)}">`;
+      open = href;
+    }
     if (n.type.name === 'hard_break') runs += '<w:r><w:br/></w:r>';
     else if (n.isText) runs += `<w:r>${rPr(n.marks)}${runText(n.text!)}</w:r>`;
   });
+  if (open !== null) runs += '</w:hyperlink>';
   return `<w:p>${ppr ? `<w:pPr>${ppr}</w:pPr>` : ''}${runs}</w:p>`;
 }
 
-export function documentXml(doc: PMNode): string {
+export function documentXml(doc: PMNode, links: Links = new Map()): string {
   const body: string[] = [];
-  doc.forEach((p) => body.push(paragraphXml(p)));
+  doc.forEach((p) => body.push(paragraphXml(p, links)));
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body.join('')}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`;
 }
@@ -74,15 +89,19 @@ const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`;
 const RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
-const DOC_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+const docRels = (links: Links) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${
+  [...links].map(([href, id]) => `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${esc(href)}" TargetMode="External"/>`).join('')
+}</Relationships>`;
 
 export async function docToDocx(doc: PMNode): Promise<Uint8Array> {
+  const links: Links = new Map();
+  const xml = documentXml(doc, links);
   return zipSync({
     '[Content_Types].xml': strToU8(CONTENT_TYPES),
     '_rels/.rels': strToU8(RELS),
-    'word/document.xml': strToU8(documentXml(doc)),
-    'word/_rels/document.xml.rels': strToU8(DOC_RELS),
+    'word/document.xml': strToU8(xml),
+    'word/_rels/document.xml.rels': strToU8(docRels(links)),
     'word/styles.xml': strToU8(STYLES_XML),
   });
 }

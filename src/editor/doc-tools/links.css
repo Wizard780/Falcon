@@ -1,0 +1,2 @@
+/* links look like links, but the caret stays a text caret: a plain click edits, Cmd/Ctrl-click opens */
+.ProseMirror a.f-link { color: #1d4fc4; text-decoration: none; cursor: text; }
