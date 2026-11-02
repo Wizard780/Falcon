@@ -58,7 +58,7 @@ const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships
 
 /** What the whole package collects while parts are written: picture files and footnotes. */
 class Package {
-  media = new Map<string, string>(); // data URL -> file name under word/media/
+  media = new Map<string, { name: string; own: { w: number; h: number } | null }>(); // data URL -> its file under word/media/
   files: Record<string, Uint8Array> = {};
   notes: string[] = []; // footnote XML; a note's id is its index + 1
   pics = 0; // drawing ids, unique across the file
@@ -119,12 +119,17 @@ function pictureXml(node: PMNode, part: Part): string {
   let blip: string;
   let own: { w: number; h: number } | null = null;
   if (src.startsWith('data:')) {
-    const file = bytesOf(src);
-    if (!file) return '';
-    let name = pkg.media.get(src);
-    if (!name) { name = `image${pkg.media.size + 1}.${file.ext}`; pkg.media.set(src, name); pkg.files[`word/media/${name}`] = file.bytes; }
-    blip = `r:embed="${part.rel('image', `media/${name}`, false)}"`;
-    if (!node.attrs.width || !node.attrs.height) own = imageSize(file.bytes);
+    // each picture is decoded once, however many times the document uses it
+    let file = pkg.media.get(src);
+    if (!file) {
+      const data = bytesOf(src);
+      if (!data) return '';
+      file = { name: `image${pkg.media.size + 1}.${data.ext}`, own: imageSize(data.bytes) };
+      pkg.media.set(src, file);
+      pkg.files[`word/media/${file.name}`] = data.bytes;
+    }
+    blip = `r:embed="${part.rel('image', `media/${file.name}`, false)}"`;
+    if (!node.attrs.width || !node.attrs.height) own = file.own;
   } else blip = `r:link="${part.rel('image', src, true)}"`;
   const w: number = node.attrs.width ?? own?.w ?? 200;
   const h: number = node.attrs.height ?? (own ? Math.round((w * own.h) / own.w) : w);
@@ -242,7 +247,7 @@ export async function docToDocx(doc: PMNode): Promise<Uint8Array> {
   const part = new Part(hasNotes ? 4 : 2, pkg);
   const xml = documentXml(doc, part);
   const fixed = `<Relationship Id="rId1" Type="${REL}/styles" Target="styles.xml"/>${hasNotes ? `<Relationship Id="rId2" Type="${REL}/footnotes" Target="footnotes.xml"/><Relationship Id="rId3" Type="${REL}/settings" Target="settings.xml"/>` : ''}`;
-  const exts = [...new Set([...pkg.media.values()].map((n) => n.split('.').pop()!))];
+  const exts = [...new Set([...pkg.media.values()].map((m) => m.name.split('.').pop()!))];
   const notes: Record<string, Uint8Array> = hasNotes ? { 'word/footnotes.xml': strToU8(footnotesXml(pkg.notes)), 'word/settings.xml': strToU8(SETTINGS) } : {};
   if (pkg.notesPart?.rels.size) notes['word/_rels/footnotes.xml.rels'] = strToU8(pkg.notesPart.relsXml());
   return zipSync({
