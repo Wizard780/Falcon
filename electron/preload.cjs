@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('falcon', {
     ipcRenderer.on('falcon:menu', on);
     return () => ipcRenderer.removeListener('falcon:menu', on);
   },
+  setMenuKeys: (keys) => ipcRenderer.send('falcon:menu-keys', keys),
   onConfirmClose: (f) => {
     const on = (_e, quit) => f(quit === true);
     ipcRenderer.on('falcon:confirm-close', on);

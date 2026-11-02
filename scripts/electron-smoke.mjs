@@ -92,7 +92,7 @@ console.log(map, '\nplatform:', platform, '| bridge:', bridge, '| visible:', vis
 const want = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.exitCode = 1; } };
 // emphasis replaced the underline on "app"; highlight stays on "app"
 want(map === 'tag: Electron tag\nnormal: Body text in the [desktop ]{emphasis}[app]{emphasis+highlight:yellow}', `marks: ${JSON.stringify(map)}`);
-want(bridge === 'forceClose,onConfirmClose,onMenu,openFile,openPath,platform,readClipboardText,saveFile', `preload bridge: ${bridge}`);
+want(bridge === 'forceClose,onConfirmClose,onMenu,openFile,openPath,platform,readClipboardText,saveFile,setMenuKeys', `preload bridge: ${bridge}`);
 want(askTitle === 'Close Falcon without saving?', `closing with an unsaved doc asks in Falcon's dialog: ${askTitle}`);
 want(keptAfterCancel, 'Cancel keeps the window open');
 want(closedAfterOk, 'Close Without Saving closes the window');

@@ -122,7 +122,12 @@ ipcMain.handle('falcon:save-file', async (e, opts) => {
   return { path: p, name: path.basename(p) };
 });
 
-function buildMenu() {
+// "Mod-Shift-s" (a keymap name, as Settings saves it) as an Electron accelerator, "Cmd+Shift+S"
+const ACC = { Mod: 'Cmd', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Shift', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', ' ': 'Space' };
+const accelerator = (k) => (k ? k.split(/-(?!$)/).map((p) => ACC[p] ?? (p.length === 1 ? p.toUpperCase() : p)).join('+') : undefined);
+const MENU_KEYS = { settings: 'Mod-,', new: 'Mod-n', open: 'Mod-o', save: 'Mod-s', saveAs: 'Mod-Shift-s', close: 'Mod-w' };
+
+function buildMenu(keys = MENU_KEYS) {
   const mac = process.platform === 'darwin';
   // Windows/Linux: no menu bar. A visible one takes F10 (Emphasis) and Alt for itself, and
   // Ctrl-C/X/V/A already work in the editor without menu roles.
@@ -130,11 +135,11 @@ function buildMenu() {
   // File items show their shortcuts but don't take the keys (registerAccelerator: false): the page
   // already handles them, and a menu accelerator would swallow the key before the page sees it.
   const send = (cmd) => (_item, win) => win?.webContents.send('falcon:menu', cmd);
-  const item = (label, accelerator, cmd) => ({ label, accelerator, registerAccelerator: false, click: send(cmd) });
+  const item = (label, cmd) => ({ label, accelerator: accelerator(keys[cmd]), registerAccelerator: false, click: send(cmd) });
   // Edit roles give Cmd/Ctrl-C/X/V/A to the editor; the editor handles its own undo, so no undo roles here.
   const template = [
-    { role: 'appMenu', submenu: [{ role: 'about' }, { type: 'separator' }, item('Settings…', 'Cmd+,', 'settings'), { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
-    { label: 'File', submenu: [item('New', 'Cmd+N', 'new'), item('Open…', 'Cmd+O', 'open'), { type: 'separator' }, item('Save', 'Cmd+S', 'save'), item('Save As…', 'Cmd+Shift+S', 'saveAs'), { type: 'separator' }, item('Close Document', 'Cmd+W', 'close')] },
+    { role: 'appMenu', submenu: [{ role: 'about' }, { type: 'separator' }, item('Settings…', 'settings'), { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+    { label: 'File', submenu: [item('New', 'new'), item('Open…', 'open'), { type: 'separator' }, item('Save', 'save'), item('Save As…', 'saveAs'), { type: 'separator' }, item('Close Document', 'close')] },
     { label: 'Edit', submenu: [{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
     // no fullscreen/reload roles: their default keys (F11, F5, Ctrl-R) are formatting keys here
     ...(DEV ? [{ label: 'Dev', submenu: [{ role: 'reload', accelerator: 'CmdOrCtrl+Alt+R' }, { role: 'toggleDevTools' }] }] : []),
@@ -142,6 +147,14 @@ function buildMenu() {
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+// Settings > Keybindings changed a File menu key: show the new one
+ipcMain.on('falcon:menu-keys', (_e, keys) => {
+  if (!keys || typeof keys !== 'object') return;
+  const clean = {};
+  for (const id of Object.keys(MENU_KEYS)) clean[id] = typeof keys[id] === 'string' ? keys[id] : MENU_KEYS[id];
+  try { buildMenu(clean); } catch { buildMenu(); }
+});
 
 app.whenReady().then(() => {
   buildMenu();
