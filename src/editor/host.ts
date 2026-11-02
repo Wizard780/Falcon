@@ -19,6 +19,10 @@ type FalconBridge = {
   saveFile?: (opts: { path?: string; name: string; data: Uint8Array }) => Promise<{ path: string; name: string } | null>;
   /** Mac File menu clicks ('new', 'open', 'save', 'saveAs', 'close', 'settings'). Returns an unsubscribe. */
   onMenu?: (f: (cmd: string) => void) => () => void;
+  /** Closing the window (quit = quitting the app) with unsaved docs: the page asks. Returns an unsubscribe. */
+  onConfirmClose?: (f: (quit: boolean) => void) => () => void;
+  /** The user said close anyway: close the window (or quit) past the unsaved-docs guard. */
+  forceClose?: (quit: boolean) => void;
   platform?: string;
 };
 export const bridge: FalconBridge = (globalThis as unknown as { falcon?: FalconBridge }).falcon ?? {};

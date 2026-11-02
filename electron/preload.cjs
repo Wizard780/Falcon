@@ -12,4 +12,10 @@ contextBridge.exposeInMainWorld('falcon', {
     ipcRenderer.on('falcon:menu', on);
     return () => ipcRenderer.removeListener('falcon:menu', on);
   },
+  onConfirmClose: (f) => {
+    const on = (_e, quit) => f(quit === true);
+    ipcRenderer.on('falcon:confirm-close', on);
+    return () => ipcRenderer.removeListener('falcon:confirm-close', on);
+  },
+  forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
 });

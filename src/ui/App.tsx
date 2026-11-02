@@ -16,6 +16,7 @@ import { clearFind, findInfo, setQuery, step } from '../editor/find';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
 import { Settings } from './Settings';
+import { Confirm, nameList, type Ask } from './Confirm';
 import { Tips, parseTip } from './Tips';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 
@@ -107,6 +108,14 @@ export function App() {
   const [findOpen, setFindOpen] = useState(false);
   const [homeOpen, setHomeOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // the open warning dialog, if any: everything else waits for it
+  const [ask, setAsk] = useState<Ask | null>(null);
+  const askRef = useRef(ask);
+  askRef.current = ask;
+  const confirmAsk = useCallback((a: Omit<Ask, 'done'>) => new Promise<boolean>((resolve) => {
+    askRef.current?.done(false);
+    setAsk({ ...a, done: (yes) => { setAsk(null); resolve(yes); } });
+  }), []);
   const [recents, setRecents] = useState<Recent[]>(loadRecents);
   const [curItem, setCurItem] = useState(-1); // the outline row to light (see measureRead)
   const findRef = useRef<HTMLInputElement>(null);
@@ -169,7 +178,17 @@ export function App() {
   useEffect(() => { saveRecents(recents); }, [recents]);
   // the list changed (switch, open, close, saved): refresh the crash-recovery copy once React has settled
   useEffect(() => { if (viewRef.current) whenIdle(() => { backup(); }); }, [docs, activeId, backup]);
-  // quitting or closing the window with unsaved docs: the main process asks first
+  // quitting or closing the window with unsaved docs: the page blocks it, the main process passes
+  // the question back here, and Falcon's own dialog asks it
+  useEffect(() => bridge.onConfirmClose?.((quit) => {
+    const names = docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled');
+    const what = quit ? 'Quit' : 'Close';
+    void confirmAsk({
+      title: `${what} Falcon without saving?`,
+      body: `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They'll be lost.`,
+      ok: `${what} Without Saving`,
+    }).then((yes) => { if (yes) bridge.forceClose?.(quit); });
+  }), [confirmAsk]);
   useEffect(() => {
     const onUnload = (e: BeforeUnloadEvent) => { if (docsRef.current.some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ''; } };
     addEventListener('beforeunload', onUnload);
@@ -241,11 +260,9 @@ export function App() {
     return show(id, createState(doc), 0);
   }, [show]);
 
-  const closeDoc = useCallback((id: number) => {
+  const dropDoc = useCallback((id: number) => {
     const list = docsRef.current, i = list.findIndex((d) => d.id === id);
-    const d = list[i];
-    if (!d) return;
-    if (d.dirty && !window.confirm(`Close ${d.meta.name || 'Untitled'} without saving?`)) return;
+    if (i < 0) return;
     const rest = list.filter((x) => x.id !== id);
     if (id !== activeRef.current) { setDocs(rest); return; }
     if (!rest.length) {
@@ -259,6 +276,14 @@ export function App() {
     setDocs(rest.map((x) => (x.id === next.id ? { ...x, state: null } : x)));
     show(next.id, next.state!, next.scroll);
   }, [show]);
+  const closeDoc = useCallback((id: number) => {
+    const d = docsRef.current.find((x) => x.id === id);
+    if (!d) return;
+    if (!d.dirty) { dropDoc(id); return; }
+    const name = d.meta.name || 'Untitled';
+    void confirmAsk({ title: `Close ${name} without saving?`, body: 'Your changes will be lost.', ok: 'Close Without Saving' })
+      .then((yes) => { if (yes) dropDoc(id); });
+  }, [dropDoc, confirmAsk]);
 
   const cycle = useCallback((dir: 1 | -1) => {
     const list = docsRef.current;
@@ -310,8 +335,9 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => settingsRef.current || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => settingsRef.current || !!askRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
+    if (askRef.current) return; // a warning is up: it gets answered first
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
     if (c === 'new') fileNew(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
@@ -322,6 +348,8 @@ export function App() {
   // app-level shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // a warning is up: its own keys (Tab, Enter, Esc) and nothing else
+      if (askRef.current) { if (e.ctrlKey || e.metaKey) e.preventDefault(); return; }
       // Ctrl-Tab switches documents on every platform
       if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); if (!locked()) cycle(e.shiftKey ? -1 : 1); return; }
       // AltGr arrives as Ctrl+Alt on Windows: those keys type characters (AltGr+ß is "\\"), never shortcuts
@@ -357,7 +385,7 @@ export function App() {
   homeRef.current = homeOpen;
   const settingsRef = useRef(settingsOpen);
   settingsRef.current = settingsOpen;
-  useEffect(() => { if (!settingsOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen]);
+  useEffect(() => { if (!settingsOpen && !ask && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask]);
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -417,14 +445,15 @@ export function App() {
   const name = meta.name || 'Untitled';
   const docList = docs.map((d) => ({ id: d.id, name: d.meta.name || 'Untitled', path: d.meta.path, dirty: d.dirty }));
 
+  const modal = settingsOpen || !!ask;
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
-      <div className="covered" inert={settingsOpen}>
+      <div className="covered" inert={modal}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} />
       </div>
 
-      <div className="covered" inert={homeOpen || settingsOpen}>
+      <div className="covered" inert={homeOpen || modal}>
       <Toolbar
         sel={sel}
         run={run}
@@ -440,14 +469,14 @@ export function App() {
 
       {/* After the toolbar on purpose: Electron applies drag regions in document order, so the toolbar's
           drag area (which runs under these buttons) would swallow their clicks if they came first. */}
-      <div className="covered" inert={settingsOpen}>
+      <div className="covered" inert={modal}>
       <Tools outline={showOutline} reading={reading}
         onNew={fileNew} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
         onFind={openFind} onOutline={() => { setHomeOpen(false); setShowOutline((s) => !s); }}
         onRead={() => { setHomeOpen(false); run(toggleRead); }} />
       </div>
 
-      <div className="covered" inert={homeOpen || settingsOpen}>
+      <div className="covered" inert={homeOpen || modal}>
 
       <OutlinePane active={activeId}
         shown={showOutline} items={outline} depth={depth} cur={cur}
@@ -484,6 +513,7 @@ export function App() {
       </footer>
       </div>
 
+      <div className="covered" inert={!!ask}>
       <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents}
         onNew={fileNew} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)}
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
@@ -491,6 +521,8 @@ export function App() {
         zoom={zoom} onZoom={setZoom} speechMin={speechMin} onSpeechMin={setSpeechMin}
         showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth}
         highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} />
+      </div>
+      <Confirm ask={ask} />
       <div className={`toast${toast ? ' show' : ''}`}>{toast}</div>
       <Tips />
     </div>
