@@ -2,8 +2,8 @@
 // Dot Field and the matrix clock are adapted from EasyUI (https://easyui.site, MIT, Suraj Maurya).
 
 import { onPrefs } from '../editor/prefs';
+import { reducedMotion as reduced } from './motion';
 
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** A still canvas grid of dots that fades along a diagonal. Returns a stop function. */
 export function dots(host: HTMLElement): () => void {
