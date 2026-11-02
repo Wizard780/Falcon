@@ -232,6 +232,9 @@ export function Settings(props: Props) {
         tog(P.savePrefix, 'Prefix Save As copies', 'Send, Read and Marked Doc copies start with a prefix, so you can tell them apart from the file.'),
         prefixRow(P.prefixSend, 'Send Doc'), prefixRow(P.prefixRead, 'Read Doc'), prefixRow(P.prefixMarked, 'Marked Doc'),
       ]],
+      ['Privacy', [
+        tog(P.usageStats, 'Share usage statistics', 'Send anonymous counts of which features get used, like opening and saving files. Never file names or anything you type. Desktop app only.'),
+      ]],
     ] },
     { id: 'search', title: 'File search', icon: 'search', sections: [
       ['Folders', !bridge.indexFolders

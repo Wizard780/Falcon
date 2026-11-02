@@ -41,6 +41,7 @@ import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 import { P, onPrefs, pref } from '../editor/prefs';
+import { track, type DocSource } from './analytics';
 import { readJson, safeSet } from './storage';
 import { reducedMotion } from './motion';
 
@@ -430,18 +431,19 @@ export function App() {
   }, [switchTo]);
 
   const openedPath = (p?: string) => (p ? docsRef.current.find((d) => d.meta.path === p) : undefined);
-  const opened = useCallback((r: { doc: PMNode; meta: DocMeta }) => {
+  const opened = useCallback((r: { doc: PMNode; meta: DocMeta }, source: DocSource) => {
     setRecents((list) => noteRecent(list, r.doc, r.meta));
     const already = openedPath(r.meta.path);
     if (already) { switchTo(already.id); flash(`${r.meta.name} is already open`); return; }
+    if (source !== 'restore') track('doc_opened', { source }); // reopening last session's files isn't a user action
     if (pref(P.openDepth)) setDepth(pref(P.openDepth));
     flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${keyLabel('save')}).`);
   }, [addDoc, switchTo, flash]);
-  const fileNew = useCallback(() => { addDoc(emptyDoc(), { name: 'Untitled' }); }, [addDoc]);
+  const fileNew = useCallback(() => { track('doc_new'); addDoc(emptyDoc(), { name: 'Untitled' }); }, [addDoc]);
   const fileOpen = useCallback(async () => {
     try {
       const r = await openDocument();
-      if (r) opened(r);
+      if (r) opened(r, 'dialog');
     } catch (e) { flash(`Couldn't open: ${(e as Error).message}`); }
   }, [opened, flash]);
   /** Opening `path` failed (moved, deleted): say so, and stop listing it in the recents. */
@@ -453,7 +455,7 @@ export function App() {
     const already = openedPath(r.path) ?? (!r.path ? docsRef.current.find((d) => !d.meta.path && d.meta.name === r.name) : undefined);
     if (already) { switchTo(already.id); return; }
     if (!r.path || !bridge.openPath) { void fileOpen(); return; }
-    try { opened(await openPath(r.path)); }
+    try { opened(await openPath(r.path), 'recent'); }
     catch (e) { openFailed(r.name, r.path, e); }
   }, [opened, fileOpen, switchTo, openFailed]);
   // Cmd-K: an open doc switches to it; anything else opens by path (indexed folders and recents are allowed)
@@ -463,7 +465,7 @@ export function App() {
     const already = openedPath(h.path);
     if (already) { switchTo(already.id); return; }
     if (!h.path || !bridge.openPath) { void fileOpen(); return; }
-    try { opened(await openPath(h.path)); }
+    try { opened(await openPath(h.path), 'search'); }
     catch (e) { openFailed(h.name, h.path, e); }
   }, [opened, fileOpen, switchTo, openFailed]);
   /**
@@ -479,6 +481,7 @@ export function App() {
     try {
       const m = await saveDocument(out, meta, as);
       if (!m) return;
+      track('doc_saved', { mode, save_as: as });
       // another tab on this file would overwrite it on Save: close it if clean, else keep its edits but unbind it.
       // dropDoc sets the tab list from a snapshot, so this runs before patch(id) below or it would undo the new path
       for (const o of docsRef.current) {
@@ -710,6 +713,7 @@ export function App() {
   // ---- settings that act on the app (the rest act through CSS or in the editor) ----
   const [, setPrefTick] = useState(0);
   useEffect(() => onPrefs(() => setPrefTick((t) => t + 1)), []); // redraw: word-count speeds, recents, the timer
+  useEffect(() => { track('app_opened'); }, []);
   // Opens by path run one at a time: two at once both read the tab list before either adds its tab,
   // and one is lost (or the same file opens twice). Last session's files and OS opens share the queue.
   const pathQueue = useRef(Promise.resolve());
@@ -717,7 +721,7 @@ export function App() {
     pathQueue.current = pathQueue.current.then(async () => {
       for (const p of paths) {
         if (quiet && openedPath(p)) continue;
-        try { opened(await openPath(p)); }
+        try { opened(await openPath(p), quiet ? 'restore' : 'os'); }
         catch (e) { if (!quiet) flash(`Couldn't open ${p.split(/[\\/]/).pop()}: ${(e as Error).message}`); }
       }
     });

@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createIndex } = require('./indexer.cjs');
 const updater = require('./updater.cjs');
+const telemetry = require('./telemetry.cjs');
 
 const DEV = process.env.FALCON_DEV === '1';
 const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a window
@@ -284,6 +285,11 @@ ipcMain.on('falcon:menu-keys', (_e, keys) => {
   const clean = {};
   for (const id of Object.keys(MENU_KEYS)) clean[id] = typeof keys[id] === 'string' ? keys[id] : MENU_KEYS[id];
   try { buildMenu(clean); } catch { buildMenu(); }
+});
+
+// anonymous feature counts (electron/telemetry.cjs); the page only sends them when Settings allows
+ipcMain.on('falcon:track', (_e, event, props) => {
+  if (telemetry.enabled({ dev: DEV, headless: HEADLESS })) telemetry.track(event, props);
 });
 
 if (primary) app.whenReady().then(() => {

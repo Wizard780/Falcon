@@ -20,6 +20,7 @@ export const P = {
   confirmClose: def('confirmClose', true),
   crashRecovery: def('crashRecovery', true),
   recentCount: def('recentCount', 12),
+  usageStats: def('usageStats', true), // anonymous feature counts to PostHog (src/ui/analytics.ts)
   newName: def<'untitled' | 'speech' | 'date'>('newName', 'untitled'),
   savePrefix: def('savePrefix', true), // Save As puts the prefixes below on Send, Read and Marked Doc names
   prefixSend: def('prefix.send', 'SEND_'),
@@ -132,7 +133,8 @@ export function clearPref(p: Pref<string | number | boolean>) {
 }
 /** Restore defaults: forget every setting here. */
 export function resetPrefs() {
-  for (const p of [...Object.values(P), ...EXTRA]) localStorage.removeItem(p.key);
+  // an opt-out of usage statistics survives Restore defaults
+  for (const p of [...Object.values(P), ...EXTRA]) if (p !== P.usageStats) localStorage.removeItem(p.key);
   cache.clear();
   changed();
 }

@@ -40,5 +40,6 @@ contextBridge.exposeInMainWorld('falcon', {
     return () => ipcRenderer.removeListener('falcon:update', on);
   },
   installUpdate: () => ipcRenderer.invoke('falcon:update-install'),
+  track: (event, props) => ipcRenderer.send('falcon:track', String(event), props ?? {}),
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
 });

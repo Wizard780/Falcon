@@ -198,3 +198,13 @@ describe('headings and cites', () => {
     expect(rank(rows, 'smith')[0].label).toBe('Econ decides');
   });
 });
+
+describe('usage statistics', () => {
+  it('an opt-out survives Restore defaults', async () => {
+    const { setPref } = await import('../src/editor/prefs');
+    setPref(P.usageStats, false);
+    resetPrefs();
+    expect(pref(P.usageStats)).toBe(false);
+    setPref(P.usageStats, true);
+  });
+});
