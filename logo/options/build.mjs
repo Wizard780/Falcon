@@ -43,6 +43,41 @@ const options = [
     body: `<rect fill="${A}" x="2" y="2" width="60" height="60" rx="14"/><path fill="#0f0f10" d="M32 11C34.4 19 40.8 31.8 53.6 43C45.6 41.8 39.2 42.2 35.6 45.8L33.6 54.2H30.4L28.4 45.8C24.8 42.2 18.4 41.8 10.4 43C23.2 31.8 29.6 19 32 11Z"/>` },
 ];
 
+// Head iterations. Shared parts on the same 64px grid.
+const EYE = 'M39 17.5A3.5 3.5 0 1 0 39 24.5A3.5 3.5 0 1 0 39 17.5Z';
+const TEAR = 'M36 26C35.5 31 33 36.5 29 41C28.4 36 29.5 30.5 32.5 26C33.5 25 35.2 25 36 26Z';
+const UNDER = 'C53 31 50 29 46 29'; // underside of the beak
+const TOOTH = 'C54.2 32.6 53 31.8 51.6 31.8L50.4 29.8C49.2 29.2 47.6 29 46 29'; // the falcon's notched beak
+const sharp = (neck = 57, under = UNDER) =>
+  `M12 ${neck}V36A24 24 0 0 1 36 12H40C48 12 54 17 55.5 25C56.2 28 56 31 55 34${under}H41C37 29 34.5 32 34.5 36V${neck}Z`;
+const ORIGINAL = 'M12 57V36A24 24 0 0 1 36 12H42C50.5 12 56 18 56 26C56 30.5 54 33.5 50.5 35.5C51 31.5 49 29 45.5 29H41C37 29 34.5 32 34.5 36V57Z';
+
+const heads = [
+  { id: 'head-0', name: 'Original', idea: 'The Head from the first round, for reference. Its round beak reads a bit like a parrot.',
+    body: `<path fill="${M}" fill-rule="evenodd" d="${ORIGINAL}${EYE}"/>` },
+  { id: 'head-sharp', name: 'Sharp beak', idea: 'A shorter beak that comes to a hard point. Falcons have small, sharp beaks.',
+    body: `<path fill="${M}" fill-rule="evenodd" d="${sharp()}${EYE}"/>` },
+  { id: 'head-tear', name: 'Tear', idea: 'Sharp beak plus the dark stripe under the eye, cut out of the face.',
+    body: `<path fill="${M}" fill-rule="evenodd" d="${sharp()}${EYE}${TEAR}"/>` },
+  { id: 'head-cyan-eye', name: 'Cyan eye', idea: 'The eye is the one lit spot, in the app’s highlighter cyan.',
+    body: `<path fill="${M}" d="${sharp()}"/><circle fill="${A}" cx="39" cy="21" r="4"/>` },
+  { id: 'head-cyan-tear', name: 'Cyan tear', idea: 'The stripe is drawn in cyan, like a highlighter swipe across the face.',
+    body: `<path fill="${M}" fill-rule="evenodd" d="${sharp()}${EYE}"/><path fill="${A}" d="${TEAR}"/>` },
+  { id: 'head-tooth', name: 'Notched beak', idea: 'Adds the notch real falcons have in the beak, plus eye and stripe. The most detailed one.',
+    body: `<path fill="${M}" fill-rule="evenodd" d="${sharp(57, TOOTH)}${EYE}${TEAR}"/>` },
+  { id: 'head-faceted', name: 'Faceted', idea: 'All straight lines, no curves. Sharper and more technical.',
+    body: `<path fill="${M}" fill-rule="evenodd" d="M12 57V34L20 20L32 12H44L53 18L56 34L48 29H41L34.5 35V57Z${EYE}"/>` },
+  { id: 'head-bold', name: 'Bold', idea: 'Thicker neck and a bigger eye, so it still reads at 16px in the sidebar.',
+    body: `<path fill="${M}" fill-rule="evenodd" d="M10 58V36A26 26 0 0 1 36 10H40C49 10 55 16 56.5 25C57.2 29 57 32 56 36C53 32.5 50 31 46 31H44C40 31 38 34 38 38V58ZM40 15.5A4.5 4.5 0 1 0 40 24.5A4.5 4.5 0 1 0 40 15.5Z"/>` },
+  { id: 'head-line', name: 'Outline', idea: 'Drawn with one stroke, the same weight as the app’s icons.',
+    body: `<path fill="none" stroke="${M}" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" d="M12 57V36A24 24 0 0 1 36 12H40C48 12 54 17 55.5 25C56.2 28 56 31 55 34${UNDER}H41C37 29 34.5 32 34.5 36V57"/><circle fill="${M}" cx="39" cy="21" r="3.5"/>` },
+  { id: 'head-badge', name: 'Badge', idea: 'The head cut out of a solid circle, with the neck running off the bottom.',
+    body: `<mask id="m-badge"><rect width="64" height="64" fill="#fff"/><path fill="#000" fill-rule="evenodd" transform="translate(9 8) scale(.8)" d="${sharp(70)}${EYE}${TEAR}"/></mask><circle fill="${M}" cx="32" cy="32" r="30" mask="url(#m-badge)"/>` },
+  { id: 'head-tile', name: 'Tile', idea: 'Dark head with its stripe on a cyan app tile, for the Dock and taskbar.',
+    tile: true,
+    body: `<clipPath id="c-tile"><rect x="2" y="2" width="60" height="60" rx="14"/></clipPath><rect fill="${A}" x="2" y="2" width="60" height="60" rx="14"/><path clip-path="url(#c-tile)" fill="#0f0f10" fill-rule="evenodd" transform="translate(7 6) scale(.85)" d="${sharp(70)}${EYE}${TEAR}"/>` },
+];
+
 const svgFile = (o, color) => {
   const body = o.body.replaceAll('currentColor', color).replaceAll('var(--ink)', INK);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${o.vb || '0 0 64 64'}">${body}</svg>\n`;
@@ -50,10 +85,6 @@ const svgFile = (o, color) => {
 const inline = (o, px) => `<svg viewBox="${o.vb || '0 0 64 64'}" width="${px}" height="${px}" aria-hidden="true">${o.body}</svg>`;
 
 mkdirSync(join(here, 'svg'), { recursive: true });
-for (const o of options) {
-  writeFileSync(join(here, 'svg', `${o.id}-white.svg`), svgFile(o, '#ededed'));
-  writeFileSync(join(here, 'svg', `${o.id}-black.svg`), svgFile(o, '#0f0f10'));
-}
 
 const card = (o) => `
 <section class="opt" id="${o.id}">
@@ -69,8 +100,13 @@ const card = (o) => `
   <div class="dl"><a href="svg/${o.id}-white.svg" download>white.svg</a><a href="svg/${o.id}-black.svg" download>black.svg</a></div>
 </section>`;
 
-const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Falcon logo options</title>
+const page = (file, title, sub, options) => {
+  for (const o of options) {
+    writeFileSync(join(here, 'svg', `${o.id}-white.svg`), svgFile(o, '#ededed'));
+    writeFileSync(join(here, 'svg', `${o.id}-black.svg`), svgFile(o, '#0f0f10'));
+  }
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>${title}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root { --deep:#0f0f10; --card:#19191b; --raised:#232325; --tx:#ededed; --mut:#85858b; --ink:${INK};
@@ -98,9 +134,13 @@ h2 { font-size:15px; font-weight:600; margin-bottom:2px; }
 .dl a:hover { color:var(--tx); }
 </style></head>
 <body>
-<header><h1>Falcon logo options</h1><p class="label">${options.length} marks · 64px grid · one accent: highlighter cyan</p></header>
+<header><h1>${title}</h1><p class="label">${sub}</p></header>
 <main class="grid">${options.map(card).join('')}</main>
 </body></html>
 `;
-writeFileSync(join(here, 'index.html'), html);
-console.log(`wrote ${options.length} options`);
+writeFileSync(join(here, file), html);
+};
+
+page('index.html', 'Falcon logo options', `${options.length} marks · 64px grid · one accent: highlighter cyan`, options);
+page('head.html', 'Head iterations', `${heads.length} takes on the Head mark`, heads);
+console.log(`wrote ${options.length} options, ${heads.length} heads`);
