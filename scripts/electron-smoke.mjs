@@ -3,13 +3,14 @@
 import { _electron as electron } from 'playwright';
 import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 const { ELECTRON_RUN_AS_NODE, ...env } = process.env; // set by some hosts; it turns Electron into plain Node
 const exe = process.env.FALCON_EXE;
 env.FALCON_USER_DATA = fs.mkdtempSync(`${os.tmpdir()}/falcon-smoke-`);
 // a file picked in an earlier session: Save must write it in place, with no dialog
-const keptDoc = `${env.FALCON_USER_DATA}/Kept.docx`;
+const keptDoc = path.join(env.FALCON_USER_DATA, "Kept.docx"); // native separators, like the paths the app itself records
 fs.writeFileSync(keptDoc, 'old');
 fs.writeFileSync(`${env.FALCON_USER_DATA}/recent-paths.json`, JSON.stringify([keptDoc]));
 const app = await electron.launch(exe ? { executablePath: exe, env: { ...env, FALCON_HEADLESS: '1' } } : { args: ['.'], env: { ...env, FALCON_HEADLESS: '1' } });
