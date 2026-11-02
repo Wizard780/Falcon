@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { beam, clock, dots } from './home-fx';
 import { whenLabel, type Recent } from './recents';
+import { keyOf, keyText } from '../editor/keybinds';
 import { SvgIcon } from './icons';
 
-const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 /** The start screen (and ⌘T): New, Open and the files you opened recently. */
 export function Home(props: {
@@ -83,8 +83,8 @@ export function Home(props: {
             <div ref={clockRef} className="hm-clock" aria-live="off" />
           </div>
           <div className="hm-acts">
-            <button className="hm-act" onClick={props.onNew}><span className="ic"><SvgIcon name="plus" /></span><span className="t">New document</span><kbd>{MOD}N</kbd><span className="d">A blank file</span></button>
-            <button className="hm-act" onClick={props.onOpen}><span className="ic"><SvgIcon name="open" /></span><span className="t">Open</span><kbd>{MOD}O</kbd><span className="d">A .docx file</span></button>
+            <button className="hm-act" onClick={props.onNew}><span className="ic"><SvgIcon name="plus" /></span><span className="t">New document</span>{keyOf('new') && <kbd>{keyText(keyOf('new'))}</kbd>}<span className="d">A blank file</span></button>
+            <button className="hm-act" onClick={props.onOpen}><span className="ic"><SvgIcon name="open" /></span><span className="t">Open</span>{keyOf('open') && <kbd>{keyText(keyOf('open'))}</kbd>}<span className="d">A .docx file</span></button>
           </div>
           <div className="hm-lab"><span>Recent</span>{shown.length > 0 && <button className="hm-clear" onClick={() => { hidePeek(); setUndo(recents); props.onClear(null); }}>Clear</button>}</div>
           <div className="hm-list">

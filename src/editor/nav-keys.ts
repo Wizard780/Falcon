@@ -31,43 +31,28 @@ const deleteCurrentHeading: Command = (state, dispatch) => {
 };
 const openFind = (req: { replace?: boolean; byPosition?: boolean }): Command => (_s, dispatch) => { if (dispatch) requestFind(req); return true; };
 
-/** Navigation and structure keys, merged into the editor keymap. */
-export const navKeys: Record<string, Command> = {
-  'Alt-PageDown': gotoStyle('tag', 1),
-  'Alt-PageUp': gotoStyle('tag', -1),
-  'Mod-PageDown': gotoStyle('block', 1),
-  'Mod-PageUp': gotoStyle('block', -1),
-  'Mod-Alt-PageDown': gotoStyle('hat', 1),
-  'Mod-Alt-PageUp': gotoStyle('hat', -1),
-  'Mod-Alt-Shift-PageDown': gotoStyle('pocket', 1),
-  'Mod-Alt-Shift-PageUp': gotoStyle('pocket', -1),
-  'Alt-a': selectCurrentHeading,
-  'Alt-c': copyCurrentHeading,
-  'Mod-Alt-Backspace': deleteCurrentHeading,
-  'Mod-Alt-1': toggleRole('number'),
-  'Mod-Alt-2': toggleRole('sub'),
-  'Mod-Alt-3': toggleRestart,
+/** Navigation and structure commands, bound in the editor keymap (Settings > Keybindings can change their keys). */
+export const navBinds: { id: string; label: string; key: string; run: Command }[] = [
+  { id: 'nextTag', label: 'Next tag', key: 'Alt-PageDown', run: gotoStyle('tag', 1) },
+  { id: 'prevTag', label: 'Previous tag', key: 'Alt-PageUp', run: gotoStyle('tag', -1) },
+  { id: 'nextBlock', label: 'Next block', key: 'Mod-PageDown', run: gotoStyle('block', 1) },
+  { id: 'prevBlock', label: 'Previous block', key: 'Mod-PageUp', run: gotoStyle('block', -1) },
+  { id: 'nextHat', label: 'Next hat', key: 'Mod-Alt-PageDown', run: gotoStyle('hat', 1) },
+  { id: 'prevHat', label: 'Previous hat', key: 'Mod-Alt-PageUp', run: gotoStyle('hat', -1) },
+  { id: 'nextPocket', label: 'Next pocket', key: 'Mod-Alt-Shift-PageDown', run: gotoStyle('pocket', 1) },
+  { id: 'prevPocket', label: 'Previous pocket', key: 'Mod-Alt-Shift-PageUp', run: gotoStyle('pocket', -1) },
+  { id: 'selectSection', label: 'Select the card or heading at the cursor, with everything under it', key: 'Alt-a', run: selectCurrentHeading },
+  { id: 'copySection', label: 'Copy the card or heading at the cursor, with everything under it', key: 'Alt-c', run: copyCurrentHeading },
+  { id: 'deleteSection', label: 'Delete the card or heading at the cursor, with everything under it', key: 'Mod-Alt-Backspace', run: deleteCurrentHeading },
+  { id: 'number', label: 'Number the card (or the cards selected, here or in the outline)', key: 'Mod-Alt-1', run: toggleRole('number') },
+  { id: 'sub', label: 'Substructure: letter the card under the number above', key: 'Mod-Alt-2', run: toggleRole('sub') },
+  { id: 'restart', label: 'Restart numbering at this card, or let a block continue from the one above', key: 'Mod-Alt-3', run: toggleRestart },
   // Cmd-H hides the app on a Mac, so Find and Replace is Cmd-Shift-H there (Word for Mac's key)
-  'Mod-Shift-h': openFind({ replace: true }),
-  ...(IS_MAC ? {} : { 'Mod-h': openFind({ replace: true }) }),
-  'Alt-f': openFind({ byPosition: true }),
-};
-
-/** [key, what it does] rows for Settings > Keybindings. */
-export const navShortcuts: [string, string][] = [
-  ['Alt-PageDown', 'Next tag'], ['Alt-PageUp', 'Previous tag'],
-  ['Mod-PageDown', 'Next block'], ['Mod-PageUp', 'Previous block'],
-  ['Mod-Alt-PageDown', 'Next hat'], ['Mod-Alt-PageUp', 'Previous hat'],
-  ['Mod-Alt-Shift-PageDown', 'Next pocket'], ['Mod-Alt-Shift-PageUp', 'Previous pocket'],
-  ['Alt-A', 'Select the card or heading at the cursor, with everything under it'],
-  ['Alt-C', 'Copy the card or heading at the cursor, with everything under it'],
-  ['Mod-Alt-Backspace', 'Delete the card or heading at the cursor, with everything under it'],
-  ['Mod-Alt-1', 'Number the card (or the cards selected, here or in the outline)'],
-  ['Mod-Alt-2', 'Substructure: letter the card under the number above'],
-  ['Mod-Alt-3', 'Restart numbering at this card, or let a block continue from the one above'],
-  [IS_MAC ? 'Mod-Shift-H' : 'Mod-H', 'Find and replace'],
-  ['Alt-F', 'Find in order from the cursor, not grouped by type'],
+  { id: 'replace', label: 'Find and replace', key: IS_MAC ? 'Mod-Shift-h' : 'Mod-h', run: openFind({ replace: true }) },
+  { id: 'findInOrder', label: 'Find in order from the cursor, not grouped by type', key: 'Alt-f', run: openFind({ byPosition: true }) },
 ];
+/** Off the Mac, Ctrl-Shift-H also opens Find and Replace. */
+export const navFixed: [string, string, Command][] = IS_MAC ? [] : [['Mod-Shift-h', 'Find and replace', openFind({ replace: true })]];
 
 /** This feature's rows in Settings > Editor. */
 export const findOrderSetting: SettingSpec = {

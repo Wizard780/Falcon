@@ -5,7 +5,8 @@ import { TextSelection, type EditorState } from 'prosemirror-state';
 import { Node as PMNode } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
-import { falconKeys } from '../editor/keymap';
+import { commandOf } from '../editor/keymap';
+import { IS_MAC, isRecording, keyOf, keyText, pressedId, titled } from '../editor/keybinds';
 import { activeColors, bridge, setActiveColor } from '../editor/host';
 import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
 import { buildOutline, currentItem, readWords, type OutlineItem } from '../editor/outline';
@@ -33,8 +34,12 @@ import { P, onPrefs, pref } from '../editor/prefs';
 
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty, speech }]: the open doc and every unsaved one
 const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could be open
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
-const MOD = IS_MAC ? '⌘' : 'Ctrl+';
+/** A command's key as text, for messages: ⌘S. */
+const keyLabel = (id: string) => keyText(keyOf(id));
+/** The keys that swap the document out, which read mode and Settings hold back. */
+const SWAPS = ['home', 'new', 'open', 'close', 'nextDoc', 'prevDoc'];
+/** The commands the app runs itself (the editor's keymap runs the rest). */
+const APP_IDS = ['search', 'save', 'saveAs', 'find', 'open', 'new', 'close', 'nextDoc', 'prevDoc', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -149,7 +154,7 @@ export function App() {
   const warnBig = () => {
     if (warnedBig.current) return;
     warnedBig.current = true;
-    flashRef.current?.(`This file is too big for crash recovery. Save often (${MOD}S).`);
+    flashRef.current?.(`This file is too big for crash recovery. Save often (${keyLabel('save')}).`);
   };
   const flashRef = useRef<((m: string) => void) | null>(null);
   const flash = useCallback((msg: string, action?: Toast['action']) => {
@@ -330,7 +335,7 @@ export function App() {
     const already = openedPath(r.meta.path);
     if (already) { switchTo(already.id); flash(`${r.meta.name} is already open`); return; }
     if (pref(P.openDepth)) setDepth(pref(P.openDepth));
-    flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${MOD}S).`);
+    flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${keyLabel('save')}).`);
   }, [addDoc, switchTo, flash]);
   const fileNew = useCallback(() => { addDoc(emptyDoc(), { name: 'Untitled' }); }, [addDoc]);
   const fileOpen = useCallback(async () => {
@@ -404,7 +409,7 @@ export function App() {
       const isView = id === activeRef.current;
       const now = isView ? viewRef.current?.state : docsRef.current.find((d) => d.id === id)?.state;
       if (!now) return;
-      if (now.doc !== next.doc) { flash(`${speechName} has changed since. Undo it there with ${MOD}Z.`); return; }
+      if (now.doc !== next.doc) { flash(`${speechName} has changed since. Undo it there with ${keyText('Mod-z')}.`); return; }
       undo(now, (tr) => { if (isView) viewRef.current!.dispatch(tr); else patch(id, { state: now.apply(tr), dirty: true }); });
     };
     flash(`Sent “${sent.label}” to ${speechName}`, { label: 'Undo', run: takeBack });
@@ -428,49 +433,58 @@ export function App() {
     else if (c === 'saveAs') void fileSave(true); else if (c === 'close') closeDoc(activeRef.current); else if (c === 'settings') setSettingsOpen(true);
   };
   useEffect(() => bridge.onMenu?.((c) => menuRef.current(c)), []);
+  // the Mac menu shows the keys Settings > Keybindings has for its items
+  useEffect(() => {
+    const send = () => bridge.setMenuKeys?.(Object.fromEntries(['settings', 'new', 'open', 'save', 'saveAs', 'close'].map((id) => [id, keyOf(id)])));
+    send();
+    return onPrefs(send);
+  }, []);
 
   // app-level shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Settings is listening for a new shortcut: every key goes to it
+      if (isRecording()) return;
       // a warning is up: its own keys (Tab, Enter, Esc) and nothing else
       if (askRef.current) { if (e.ctrlKey || e.metaKey) e.preventDefault(); return; }
-      // Ctrl-Tab switches documents on every platform
-      if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); if (!locked()) cycle(e.shiftKey ? -1 : 1); return; }
       // ~ sends to the speech doc, so the page can never type one (AltGr layouts too: their ~ arrives with Ctrl+Alt held). Boxes with their own text field keep it.
       if (e.key === '~' && (!e.ctrlKey || e.getModifierState?.('AltGraph')) && !e.metaKey && !settingsRef.current && !e.isComposing && !homeRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
         e.preventDefault(); e.stopPropagation();
         if (!e.repeat) sendToSpeech();
         return;
       }
-      // AltGr arrives as Ctrl+Alt on Windows: those keys type characters (AltGr+ß is "\\"), never shortcuts
-      if (e.altKey || e.getModifierState?.('AltGraph')) return;
+      // AltGr types characters (it arrives as Ctrl+Alt on Windows: AltGr+ß is "\\"), never shortcuts
+      if (e.getModifierState?.('AltGraph') || (!IS_MAC && e.ctrlKey && e.altKey)) return;
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+      // Mod-Shift-] and [ also switch documents
+      const bracket = mod && e.shiftKey && !e.altKey && (e.code === 'BracketRight' || e.code === 'BracketLeft');
+      const id = bracket ? (e.code === 'BracketRight' ? 'nextDoc' : 'prevDoc') : pressedId(e, APP_IDS);
       const v = viewRef.current;
       // read mode locks the keyboard: nothing that swaps the document out
-      if (v && isReading(v.state) && (/^[notw]$/i.test(e.key) || /^Bracket/.test(e.code))) return;
-      const mod = IS_MAC ? e.metaKey : e.ctrlKey; // Ctrl-N/O/F are caret keys on macOS
-      const k0 = e.key.toLowerCase();
-      // Cmd-K opens file search (or closes it); while it's up, only its own keys get through
-      if (mod && k0 === 'k' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); if (paletteRef.current) setPaletteOpen(false); else if (!locked()) setPaletteOpen(true); return; }
-      if (paletteRef.current) { if (mod && !/^[acvxz]$/.test(k0)) e.preventDefault(); return; }
-      // Settings is modal: only its own keys (Esc, Mod-,) get through
-      if (settingsRef.current && !(e.key === 'Escape' || (mod && e.key === ','))) { if (mod) e.preventDefault(); return; }
+      if (id && SWAPS.includes(id) && v && isReading(v.state)) return;
+      // Search files opens the palette (or closes it); while it's up, only its own keys get through
+      if (id === 'search') { e.preventDefault(); e.stopPropagation(); if (paletteRef.current) setPaletteOpen(false); else if (!locked()) setPaletteOpen(true); return; }
+      if (paletteRef.current) { if (mod && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
+      // Settings is modal: only its own keys (Esc, its shortcut) get through
+      if (settingsRef.current && !(e.key === 'Escape' || id === 'settings')) { if (mod) e.preventDefault(); return; }
       // Esc in a filled Settings search clears the search before it closes Settings
       if (e.key === 'Escape' && settingsRef.current && e.target instanceof HTMLInputElement && e.target.closest('.st-search') && e.target.value) return;
-      const k = e.key.toLowerCase();
-      if (mod && k === 's') { e.preventDefault(); void fileSave(e.shiftKey); }
-      else if (mod && k === 'f') { e.preventDefault(); openFind(); }
-      else if (mod && k === 'o') { e.preventDefault(); void fileOpen(); }
-      else if (mod && k === 'n' && !e.shiftKey) { e.preventDefault(); fileNew(); }
-      else if (mod && k === 'w' && !e.shiftKey) { e.preventDefault(); closeDoc(activeRef.current); }
-      else if (mod && (e.code === 'BracketRight' || e.code === 'BracketLeft') && e.shiftKey) { e.preventDefault(); cycle(e.code === 'BracketRight' ? 1 : -1); }
-      else if (mod && k === 't' && !e.shiftKey) { e.preventDefault(); setHomeOpen((h) => !h); }
-      else if (mod && e.key === ',') { e.preventDefault(); setSettingsOpen((s) => !s); }
-      else if (mod && e.key === '\\') { e.preventDefault(); setShowOutline((s) => !s); }
-      else if (e.key === 'Escape' && settingsRef.current) { e.preventDefault(); e.stopPropagation(); setSettingsOpen(false); }
-      else if (e.key === 'Escape' && homeRef.current) { e.preventDefault(); e.stopPropagation(); setHomeOpen(false); }
-      else if (mod && (e.key === '=' || e.key === '+') && !e.shiftKey) { e.preventDefault(); zoomBy(0.1); }
-      else if (mod && e.key === '-') { e.preventDefault(); zoomBy(-0.1); }
-      else if (mod && e.key === '0') { e.preventDefault(); setZoom(1); }
+      if (e.key === 'Escape' && settingsRef.current) { e.preventDefault(); e.stopPropagation(); setSettingsOpen(false); return; }
+      if (e.key === 'Escape' && homeRef.current) { e.preventDefault(); e.stopPropagation(); setHomeOpen(false); return; }
+      if (!id) return;
+      e.preventDefault();
+      if (id === 'nextDoc' || id === 'prevDoc') { e.stopPropagation(); if (!locked()) cycle(id === 'nextDoc' ? 1 : -1); }
+      else if (id === 'save' || id === 'saveAs') void fileSave(id === 'saveAs');
+      else if (id === 'find') openFind();
+      else if (id === 'open') void fileOpen();
+      else if (id === 'new') fileNew();
+      else if (id === 'close') closeDoc(activeRef.current);
+      else if (id === 'home') setHomeOpen((h) => !h);
+      else if (id === 'settings') setSettingsOpen((o) => !o);
+      else if (id === 'outline') setShowOutline((o) => !o);
+      else if (id === 'zoomIn') zoomBy(0.1);
+      else if (id === 'zoomOut') zoomBy(-0.1);
+      else if (id === 'zoomReset') setZoom(1);
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
@@ -538,7 +552,7 @@ export function App() {
       // nothing selected: arm (or disarm) the paintbrush
       v.dispatch(v.state.tr.setMeta(brushKey, brush === kind ? null : kind));
       v.focus();
-    } else run(falconKeys[kind === 'highlight' ? 'F11' : 'Mod-F11']);
+    } else run(commandOf(kind));
   };
 
   const ink = activeColors.highlight === null ? '#00e5ff' : HIGHLIGHTS[activeColors.highlight] ?? activeColors.highlight;
@@ -594,7 +608,7 @@ export function App() {
         brush={brush}
         onColor={colorButton}
         onSend={sendToSpeech}
-        onPick={(kind, c) => { setActiveColor(kind, c); setTick((t) => t + 1); const v = viewRef.current; if (v && !v.state.selection.empty) run(falconKeys[kind === 'highlight' ? 'F11' : 'Mod-F11']); }}
+        onPick={(kind, c) => { setActiveColor(kind, c); setTick((t) => t + 1); const v = viewRef.current; if (v && !v.state.selection.empty) run(commandOf(kind)); }}
         flash={flash}
         reading={reading}
         onRead={() => run(toggleRead)}
@@ -630,9 +644,9 @@ export function App() {
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
-        <button title={`Zoom out (${MOD}−): make the page smaller`} onClick={() => zoomBy(-0.1)}>−</button>
-        <button className="zoom" title={`Actual size (${MOD}0): back to 100%`} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
-        <button title={`Zoom in (${MOD}+): make the page bigger`} onClick={() => zoomBy(0.1)}>+</button>
+        <button title={titled('Zoom out', 'zoomOut', 'make the page smaller')} onClick={() => zoomBy(-0.1)}>−</button>
+        <button className="zoom" title={titled('Actual size', 'zoomReset', 'back to 100%')} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+        <button title={titled('Zoom in', 'zoomIn', 'make the page bigger')} onClick={() => zoomBy(0.1)}>+</button>
       </footer>
       </div>
 
@@ -699,7 +713,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
   const isOn = (d: DocRow) => d.id === props.active && !props.home;
   return (
     <nav className="fstrip" aria-label="Open documents">
-      <button ref={logo} className="sb-logo" title={`Home (${MOD}T): recent files and new documents`} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
+      <button ref={logo} className="sb-logo" title={titled('Home', 'home', 'recent files and new documents')} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
       <div ref={strip} className="fs-docs" role="tablist" aria-label="Open documents" onPointerEnter={show} onPointerLeave={hide}
         onScroll={(e) => { if (list.current) list.current.scrollTop = e.currentTarget.scrollTop; }}>
         {props.docs.map((d) => (
@@ -722,13 +736,13 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
               <button tabIndex={-1} className="files-b" onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
                 <SvgIcon name="doc" /><span className="nm">{tidy(d.name)}</span>{d.speech && <i className="spk" aria-hidden="true">S</i>}{d.dirty && <i className="dot" />}
               </button>
-              <button tabIndex={-1} className="files-x" title={`Close (${MOD}W): close this file`} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
+              <button tabIndex={-1} className="files-x" title={titled('Close', 'close', 'close this file')} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
             </div>
           ))}
         </div>
       </aside>
       <div className="grow" />
-      <button className="fs-b" title={`Settings (${MOD},): highlight color, speech time, keys and more`} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /></button>
+      <button className="fs-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /></button>
     </nav>
   );
 }
@@ -741,14 +755,14 @@ function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onN
   );
   return (
     <div className="tools" role="toolbar" aria-label="File and view">
-      {b('plus', `New document (${MOD}N): start a blank file`, props.onNew)}
-      {b('open', `Open… (${MOD}O): open a .docx file`, props.onOpen)}
-      {b('save', `Save (${MOD}S): save this file. Shift-click to save a copy`, (e) => props.onSave(e.shiftKey))}
-      {b('saveAs', `Save As… (${IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S'}): save a copy under a new name`, () => props.onSave(true))}
+      {b('plus', titled('New document', 'new', 'start a blank file'), props.onNew)}
+      {b('open', titled('Open…', 'open', 'open a .docx file'), props.onOpen)}
+      {b('save', titled('Save', 'save', 'save this file. Shift-click to save a copy'), (e) => props.onSave(e.shiftKey))}
+      {b('saveAs', titled('Save As…', 'saveAs', 'save a copy under a new name'), () => props.onSave(true))}
       <span className="sep" />
-      {b('search', `Find (${MOD}F): search this file`, props.onFind)}
-      {b('list', `Outline (${MOD}\\): show or hide the list of pockets, hats, blocks and tags`, props.onOutline, props.outline)}
-      {b('eye', `Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'}): show only what's read aloud`, props.onRead, props.reading)}
+      {b('search', titled('Find', 'find', 'search this file'), props.onFind)}
+      {b('list', titled('Outline', 'outline', 'show or hide the list of pockets, hats, blocks and tags'), props.onOutline, props.outline)}
+      {b('eye', titled('Read mode', 'read', 'show only what\'s read aloud'), props.onRead, props.reading)}
       {b('mic', 'Speech doc: make this file the speech doc, where ~ sends the selection. Click again to unmark it', props.onSpeech, props.speech)}
     </div>
   );
@@ -769,14 +783,14 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   const [fontColor, setFontColor] = useState<string | null>(() => localStorage.getItem('falcon.fontColor'));
   const popRef = useRef<HTMLDivElement>(null);
 
-  const keyName = (k: string) => k.replace('Mod-', MOD);
-  const style = (s: ParaStyle, key: string, label: string, cls: string, desc: string) => (
-    <button className="b" data-on={sel?.style === s || undefined} title={`${label} (${keyName(key)}): ${desc}`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys[key]); }}>
+  // each button runs its key's command, and its tip shows the key Settings has for it now
+  const style = (s: ParaStyle, label: string, cls: string, desc: string) => (
+    <button className="b" data-on={sel?.style === s || undefined} title={titled(label, s, desc)} onMouseDown={(e) => { e.preventDefault(); run(commandOf(s)); }}>
       <span className={cls}>{label}</span>
     </button>
   );
-  const mark = (name: string, key: string, label: string, cls: string, desc: string) => (
-    <button className="b" data-on={sel?.marks.has(name) || undefined} title={`${label} (${keyName(key)}): ${desc}`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys[key]); }}>
+  const mark = (name: string, label: string, cls: string, desc: string) => (
+    <button className="b" data-on={sel?.marks.has(name) || undefined} title={titled(label, name, desc)} onMouseDown={(e) => { e.preventDefault(); run(commandOf(name)); }}>
       <span className={cls}>{label}</span>
     </button>
   );
@@ -825,10 +839,6 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
     <button className="b mn" data-pop={kind} title={tip} aria-haspopup="menu" aria-expanded={pop?.kind === kind}
       onMouseDown={(e) => { e.preventDefault(); openPop(kind, e.currentTarget); }}>{label}<SvgIcon name="caret" /></button>
   );
-  // "Mod-Alt-F3" as ⌘⌥F3 on macOS, Ctrl+Alt+F3 elsewhere
-  const menuKey = (k: string) => IS_MAC
-    ? k.split('-').map((p) => ({ Mod: '⌘', Alt: '⌥', Shift: '⇧', Ctrl: '⌃' }[p] ?? p)).join('')
-    : k.replace(/Mod/g, 'Ctrl').replace(/-/g, '+');
   const toolMenu = (sections: ToolSection[]) => sections.length === 0
     ? <p className="mn-none">Nothing here yet</p>
     : sections.map((sec) => (
@@ -837,7 +847,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
         {sec.items.map((it) => (
           <button key={it.label} className="mn-i" role="menuitem" title={it.hint}
             onMouseDown={(e) => { e.preventDefault(); setPop(null); run(it.run); }}>
-            <span>{it.label}</span>{it.key && <kbd>{menuKey(it.key)}</kbd>}
+            <span>{it.label}</span>{keyOf(it.id) && <kbd>{keyText(keyOf(it.id))}</kbd>}
           </button>
         ))}
       </div>
@@ -883,20 +893,20 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
     <header className="toolbar">
       <div className="bar">
         <div className="g">
-          {style('pocket', 'F4', 'Pocket', 'pv box', 'turn this line into a pocket, the biggest heading')}{style('tag', 'F7', 'Tag', 'pv', 'turn this line into a card tag')}
-          {style('hat', 'F5', 'Hat', 'pv uu', 'turn this line into a hat, the heading above blocks')}{style('block', 'F6', 'Block', 'pv u', 'turn this line into a block heading')}
-          {style('analytic', 'Mod-F7', 'Analytic', 'pv an', 'turn this line into an analytic, a tag with no card')}{style('undertag', 'Mod-F8', 'Undertag', 'ut', 'turn this line into an undertag, the note under a tag')}
+          {style('pocket', 'Pocket', 'pv box', 'turn this line into a pocket, the biggest heading')}{style('tag', 'Tag', 'pv', 'turn this line into a card tag')}
+          {style('hat', 'Hat', 'pv uu', 'turn this line into a hat, the heading above blocks')}{style('block', 'Block', 'pv u', 'turn this line into a block heading')}
+          {style('analytic', 'Analytic', 'pv an', 'turn this line into an analytic, a tag with no card')}{style('undertag', 'Undertag', 'ut', 'turn this line into an undertag, the note under a tag')}
         </div>
         <div className="g">
-          {mark('cite', 'F8', 'Cite', 'pv', 'mark the selection as the cite')}{mark('underline', 'F9', 'Underline', 'u', 'underline the selection')}
-          {mark('emphasis', 'F10', 'Emphasis', 'pv u box', 'bold, underline and box the selection')}
-          <button className="b" title="Clear (F12): remove formatting from the selection, or this line" onMouseDown={(e) => { e.preventDefault(); run(falconKeys.F12); }}>Clear</button>
+          {mark('cite', 'Cite', 'pv', 'mark the selection as the cite')}{mark('underline', 'Underline', 'u', 'underline the selection')}
+          {mark('emphasis', 'Emphasis', 'pv u box', 'bold, underline and box the selection')}
+          <button className="b" title={titled('Clear', 'clear', 'remove formatting from the selection, or this line')} onMouseDown={(e) => { e.preventDefault(); run(commandOf('clear')); }}>Clear</button>
         </div>
         <div className="g">
-          {pair('highlight', <SvgIcon name="pen" />, 'Highlight (F11): highlight the selection. With nothing selected, turns on a paintbrush', () => props.onColor('highlight'), swatch('highlight'), props.brush === 'highlight')}
-          {pair('shading', <SvgIcon name="bucket" />, `Background color (${MOD}F11): shade the selection`, () => props.onColor('shading'), swatch('shading'), props.brush === 'shading')}
+          {pair('highlight', <SvgIcon name="pen" />, titled('Highlight', 'highlight', 'highlight the selection. With nothing selected, turns on a paintbrush'), () => props.onColor('highlight'), swatch('highlight'), props.brush === 'highlight')}
+          {pair('shading', <SvgIcon name="bucket" />, titled('Background color', 'shading', 'shade the selection'), () => props.onColor('shading'), swatch('shading'), props.brush === 'shading')}
           {pair('font', <b className="fa">A</b>, 'Font color: color the selection\'s text', () => applyFont(fontColor), fontColor ?? 'var(--u-tx)')}
-          <button className="b sm" title={`Shrink (${MOD}8): make the text you don't read smaller. Press again to shrink more`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys['Mod-8']); }}>Shrink</button>
+          <button className="b sm" title={titled('Shrink', 'shrink', 'make the text you don\'t read smaller. Press again to shrink more')} onMouseDown={(e) => { e.preventDefault(); run(commandOf('shrink')); }}>Shrink</button>
           <button className="b fsz" data-pop="size" title="Font size: pick a size for the selection" aria-label={`Font size ${fontSize ?? 11} pt`} aria-haspopup="menu" aria-expanded={pop?.kind === 'size'}
             onMouseDown={(e) => { e.preventDefault(); openPop('size', e.currentTarget); }}>{fontSize ?? 11}<SvgIcon name="caret" /></button>
           <button className="b sz" title={`Bigger: one point bigger (now ${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(1); }}>A<SvgIcon name="up" /></button>
@@ -907,7 +917,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
           {menuBtn('card', 'Card', 'Card tools: condense, extract and convert the card at the cursor')}
         </div>
         <div className="end">
-          <button className="b" data-on={props.reading || undefined} title={`Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'}): show only what's read aloud. Typing is locked and Space drops a marker`} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
+          <button className="b" data-on={props.reading || undefined} title={titled('Read mode', 'read', 'show only what\'s read aloud. Typing is locked and Space drops a marker')} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
           <button className={`b timer${low(running, left)}`} data-on={running || undefined} title="Speech timer: click to start or pause. Right-click to reset"
             onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (left === 0) setLeft(SPEECH_SECONDS); setRunning((r) => !r); } }}
             onContextMenu={(e) => { e.preventDefault(); setRunning(false); setLeft(SPEECH_SECONDS); }}>

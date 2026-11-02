@@ -4,6 +4,7 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 import { LEVEL, schema, type ParaStyle } from './schema';
 import { cardAround } from './commands';
 import { P, PREFS_META, pref } from './prefs';
+import { keyOf, pressed } from './keybinds';
 
 /**
  * Read mode: only what gets read aloud stays visible (headings, tags, analytics, cites, highlighted
@@ -74,9 +75,9 @@ export const readPlugin = new Plugin<{ on: boolean; decos: DecorationSet }>({
       if (!readKey.getState(view.state)?.on) return false;
       const mod = ev.metaKey || ev.ctrlKey;
       if (ev.key === ' ' || ev.key === 'Enter') { toggleMarker(view.state, view.dispatch); return true; }
-      if (mod && ev.shiftKey && /^[dr]$/i.test(ev.key)) return false; // marker and read mode: handled by the keymap
+      if (pressed(ev, keyOf('read')) || pressed(ev, keyOf('marker'))) return false; // read mode and marker, at the keys Settings has: handled by the keymap
       if (/^(Arrow|Page|Home|End|Escape|Shift|Control|Alt|Meta)/.test(ev.key)) return false;
-      if (mod && /^[acf]$/i.test(ev.key)) return false;
+      if (mod && /^[ac]$/i.test(ev.key)) return false; // select all, copy (Find is the app's: it never gets here)
       return true;
     },
     handleTextInput: (view) => !!readKey.getState(view.state)?.on,
