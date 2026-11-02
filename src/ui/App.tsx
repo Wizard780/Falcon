@@ -249,7 +249,8 @@ export function App() {
   flashRef.current = flash;
 
   /** Back up the active doc and every unsaved one (state is read from refs, so call it after renders). */
-  const backup = useCallback(() => autosave(docsRef.current.flatMap((d) => {
+  const mounted = useRef(true);
+  const backup = useCallback(() => !mounted.current || autosave(docsRef.current.flatMap((d) => {
     const isActive = d.id === activeRef.current;
     const doc = isActive ? viewRef.current?.state.doc : d.state?.doc;
     const speech = d.id === speechRef.current;
@@ -289,7 +290,9 @@ export function App() {
     if (!restored.length) savedDocs.current.set(1, view.state.doc);
     viewRef.current = view;
     setTick(1);
-    return () => view.destroy();
+    mounted.current = true;
+    // a backup still waiting for idle time must not write over storage the next page (or test) starts from
+    return () => { mounted.current = false; window.clearTimeout(saveTimer); window.clearTimeout(outlineTimer); view.destroy(); };
   }, []);
 
   useEffect(() => { document.documentElement.style.setProperty('--zoom', String(zoom)); safeSet('falcon.zoom', String(zoom)); }, [zoom]);
