@@ -73,6 +73,16 @@ describe('find', () => {
     expect(v.state.doc.textContent).toBe(PARAS.map((p) => p[1]).join(''));
   });
 
+  it('a match covers its own text after letters that lowercase to two characters', () => {
+    const v = viewOf([['normal', 'İİİ foo bar İ']]);
+    setQuery(v, 'foo');
+    const m = findInfo(v.state)!.matches[0];
+    expect(v.state.doc.textBetween(m.from, m.to)).toBe('foo');
+    setQuery(v, 'bar İ');
+    const n = findInfo(v.state)!.matches[0];
+    expect(v.state.doc.textBetween(n.from, n.to)).toBe('bar İ');
+  });
+
   it('replace and replace all change nothing in read mode', () => {
     const v = viewOf(PARAS);
     toggleRead(v.state, v.dispatch);
