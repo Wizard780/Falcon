@@ -53,13 +53,22 @@ export class MultiSelection extends Selection {
     return new Slice(Fragment.from(paras), 0, 0);
   }
 
-  /** Typing over several stretches: delete them all and type at the last one. */
+  /** Typing or pasting over several stretches: delete them all and put the new content at the last one. */
   replace(tr: Transaction, content = Slice.empty) {
     const spans = [...this.spans].sort((a, b) => b.from - a.from);
     const last = this.spans[this.spans.length - 1];
     for (const s of spans) if (s !== last && !(s.from === last.from && s.to === last.to)) tr.delete(s.from, s.to);
     const from = tr.mapping.map(last.from), to = tr.mapping.map(last.to);
     tr.replaceRange(from, to, content);
+    // the cursor goes after the new content, searching back into it when it ends inline, as ProseMirror's own selections do
+    let end: PMNode | null = content.content.lastChild, parent: PMNode | null = null;
+    for (let i = 0; i < content.openEnd; i++) { parent = end; end = end?.lastChild ?? null; }
+    tr.setSelection(Selection.near(tr.doc.resolve(tr.mapping.map(last.to)), (end ? end.isInline : parent?.isTextblock) ? -1 : 1));
+  }
+
+  /** Typing, F2, a footnote or a picture: ProseMirror inserts nodes through here, not `replace`. */
+  replaceWith(tr: Transaction, node: PMNode) {
+    this.replace(tr, new Slice(Fragment.from(node), 0, 0));
   }
 
   toJSON() {

@@ -1,9 +1,9 @@
 import { Fragment, type Mark, type MarkType, type Node as PMNode } from 'prosemirror-model';
 import { EditorState, TextSelection, type Command, type Transaction } from 'prosemirror-state';
-import { condense, shrink } from '../commands';
+import { cardAt, condense, shrink } from '../commands';
 import { HIGHLIGHTS, schema } from '../schema';
 import { readSetting, type SettingSpec } from '../tools';
-import { bodySelection, cardAt, editing, posOf } from './scope';
+import { bodySelection, editing, posOf } from './scope';
 
 const M = schema.marks;
 const para = (style: string, text: string) => schema.nodes.paragraph.create({ style }, text ? schema.text(text) : null);

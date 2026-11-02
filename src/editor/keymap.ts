@@ -2,13 +2,12 @@ import { chainCommands, deleteSelection, joinBackward, joinForward, selectAll, s
 import { redo, undo } from 'prosemirror-history';
 import { keydownHandler } from 'prosemirror-keymap';
 import { Plugin, TextSelection, type Command } from 'prosemirror-state';
-import type { Node as PMNode } from 'prosemirror-model';
 import {
-  applyEmphasis, clearFormatting, condense, copyPreviousCite, indent, regrow, setParaStyle, shrink,
+  applyEmphasis, clearFormatting, condenseBySettings, copyPreviousCite, indent, isCardHead, regrow, setParaStyle, shrink,
   toggleBold, toggleCase, toggleCharMark, toggleColorMark, toggleTypingMark,
 } from './commands';
 import { schema } from './schema';
-import { ENTER_AFTER, P, onPrefs, pref } from './prefs';
+import { ENTER_AFTER, onPrefs, pref } from './prefs';
 import { activeColors, pastePlainFromClipboard } from './host';
 import { moveByHeading, moveByParagraph, moveContainer } from './motion';
 import { toggleMarker, toggleRead } from './read';
@@ -18,7 +17,6 @@ import { navBinds, navFixed } from './nav-keys';
 import { BINDINGS, bind, bindingOf, isRecording, keyOf, reserve } from './keybinds';
 
 const M = schema.marks;
-const cardHead = (n: PMNode | null | undefined) => !!n && (n.attrs.style === 'tag' || n.attrs.style === 'analytic');
 
 /**
  * Backspace at a card's edges: never merge body text up into a tag.
@@ -35,7 +33,7 @@ const backspaceAtCardEdge: Command = (state, dispatch) => {
   const cur = $c.parent;
   const prev = state.doc.child(idx - 1);
   const prevPos = $c.before(1) - prev.nodeSize;
-  if (cardHead(cur)) {
+  if (isCardHead(cur)) {
     if (cur.content.size === 0) return false; // empty tag: let it join up and disappear
     if (prev.content.size === 0) {
       if (dispatch) dispatch(state.tr.delete(prevPos, prevPos + prev.nodeSize).scrollIntoView());
@@ -43,7 +41,7 @@ const backspaceAtCardEdge: Command = (state, dispatch) => {
     }
     return true; // swallow: don't merge a tag into the paragraph above
   }
-  if (cardHead(prev)) {
+  if (isCardHead(prev)) {
     if (cur.content.size === 0) {
       if (dispatch) {
         const tr = state.tr.delete($c.before(1), $c.after(1));
@@ -67,15 +65,15 @@ const deleteAtCardEdge: Command = (state, dispatch) => {
   const cur = $c.parent;
   const next = state.doc.child(idx + 1);
   const nextPos = $c.after(1);
-  if (cardHead(cur)) {
+  if (isCardHead(cur)) {
     if (next.content.size === 0) {
       if (dispatch) dispatch(state.tr.delete(nextPos, nextPos + next.nodeSize));
       return true;
     }
-    if (cardHead(next)) return false; // tag + tag merge normally
+    if (isCardHead(next)) return false; // tag + tag merge normally
     return true;
   }
-  if (cardHead(next) && cur.content.size > 0) return true; // don't pull a tag into body text
+  if (isCardHead(next) && cur.content.size > 0) return true; // don't pull a tag into body text
   return false;
 };
 
@@ -130,7 +128,7 @@ reserve(FIXED.map(([k, what]) => [k, what]));
 bind('Cutting', [
   { id: 'pastePlain', label: 'Paste as plain text', key: 'F2', run: (_s, _d, view) => { if (view) void pastePlainFromClipboard(view); return true; } },
   // F3 runs the condense Settings picks; Alt-F3 and Mod-Alt-F3 always merge (Card tools)
-  { id: 'condense', label: 'Condense paragraph', key: 'F3', run: (state, dispatch) => condense(pref(P.condense))(state, dispatch) },
+  { id: 'condense', label: 'Condense paragraph', key: 'F3', run: condenseBySettings },
   { id: 'changeCase', label: 'Change case', key: 'Shift-F3', run: toggleCase },
   { id: 'pocket', label: 'Pocket', key: 'F4', run: setParaStyle('pocket') },
   { id: 'hat', label: 'Hat', key: 'F5', run: setParaStyle('hat') },

@@ -52,7 +52,7 @@ export function compute(doc: PMNode, marks: Map<number, NumMark>, prev: string[]
     let label = '';
     if (lv <= 2) num = sub = 0;
     else if (lv === 3) {
-      if (m?.flip && shown(pos)) decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-num-cont': '' }));
+      if (m?.flip) { if (shown(pos)) decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-num-cont': '' })); }
       else num = sub = 0;
     } else {
       if (m?.flip) num = sub = 0;
@@ -210,11 +210,4 @@ export const toggleRestart: Command = (state, dispatch) => {
   const heads = blocks.length ? blocks : scope(state, (l) => l === 4);
   const all = heads.every((h) => numberMarks(state).get(h)?.flip);
   return setMarks(state, heads, (m) => ({ ...m, flip: !all }), dispatch);
-};
-
-/** Take every number off this document. */
-export const clearNumbering: Command = (state, dispatch) => {
-  if (!numberMarks(state).size) return false;
-  dispatch?.(state.tr.setMeta(numberingKey, new Map()).setMeta('addToHistory', false));
-  return true;
 };

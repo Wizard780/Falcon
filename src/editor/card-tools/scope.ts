@@ -1,36 +1,13 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import type { Command, EditorState } from 'prosemirror-state';
-import { cardAround } from '../commands';
+import { cardAt } from '../commands';
 import { isReading } from '../read';
-import { schema } from '../schema';
 
 /** Document position where paragraph `index` starts. */
 export function posOf(doc: PMNode, index: number): number {
   let pos = 0;
   for (let i = 0; i < index; i++) pos += doc.child(i).nodeSize;
   return pos;
-}
-
-const hasCite = (n: PMNode) => n.content.content.some((c) => !!schema.marks.cite.isInSet(c.marks));
-
-/**
- * The card (tag or analytic plus its body) around `pos`, as paragraph indexes; null under a pocket, hat or block.
- * Falcon has no cite node, so the cite line is the first non-empty body paragraph, as Alt-F8 and F3 treat it;
- * under an analytic, where that paragraph is often just the argument, only when it carries a cite mark.
- */
-export function cardAt(doc: PMNode, pos: number) {
-  const c = cardAround(doc, pos);
-  if (!c) return null;
-  const head = doc.child(c.head);
-  if (head.attrs.style !== 'tag' && head.attrs.style !== 'analytic') return null;
-  let cite: number | null = null;
-  for (let i = c.start; i < c.end; i++) {
-    const n = doc.child(i);
-    if (n.attrs.style === 'undertag' || n.content.size === 0) continue;
-    if (head.attrs.style === 'tag' || hasCite(n)) cite = i;
-    break;
-  }
-  return { ...c, cite };
 }
 
 /**
