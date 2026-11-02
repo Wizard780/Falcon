@@ -1,0 +1,41 @@
+// Cmd-K file search in the web build: open docs and recents show with no query, typing filters,
+// arrows move, Enter switches to the doc, Esc clears then closes. (Indexed folders need the desktop
+// bridge: scripts/electron-smoke.mjs covers adding a folder and opening a file from it.)
+import { openFalcon, SEED, MOD } from '../lib/falcon.mjs';
+const f = await openFalcon('file-search');
+await f.open(SEED);
+await f.page.keyboard.press(`${MOD}+n`);
+await f.page.waitForTimeout(300);
+await f.page.keyboard.press(`${MOD}+k`);
+await f.page.waitForSelector('.pk input');
+await f.page.waitForTimeout(400);
+const rows = () => f.page.$$eval('.pk-row .pk-nm', (r) => r.map((x) => x.textContent));
+const heads = await f.page.$$eval('.pk-head', (r) => r.map((x) => x.textContent));
+const all = await rows();
+f.want(heads.includes('Open') && all.includes('seed') && all.includes('Untitled'), `no query lists open docs: ${heads} / ${all}`);
+f.want(await f.page.evaluate(() => document.activeElement?.closest('.pk') !== null), 'focus is in the search field');
+await f.shot('empty-query');
+await f.page.keyboard.type('see');
+await f.page.waitForTimeout(100);
+f.want((await rows()).join() === 'seed', `typing filters: ${await rows()}`);
+await f.shot('typed');
+await f.page.keyboard.press('Escape');
+f.want(await f.page.$eval('.pk input', (i) => i.value) === '', 'Esc clears the query first');
+await f.page.keyboard.press('Escape');
+f.want(!(await f.page.$('.pk')), 'second Esc closes');
+await f.page.keyboard.press(`${MOD}+k`);
+await f.page.keyboard.type('seed');
+await f.page.keyboard.press('Enter');
+await f.page.waitForTimeout(300);
+f.want(!(await f.page.$('.pk')), 'Enter closes the palette');
+f.want(await f.page.$eval('.doc-row[data-on] .doc-nm', (e) => e.getAttribute('aria-label')).catch(() => null) === 'seed', 'Enter switched to seed');
+f.want((await f.markMap()).length > 0 && await f.page.evaluate(() => document.activeElement?.closest('.ProseMirror') !== null), 'focus is back in the editor');
+await f.page.keyboard.press(`${MOD}+k`);
+await f.page.keyboard.press(`${MOD}+k`);
+f.want(!(await f.page.$('.pk')), 'Cmd-K toggles closed');
+await f.page.keyboard.press(`${MOD}+,`);
+await f.page.click('[aria-label="Settings sections"] button:has-text("File search")');
+await f.page.waitForTimeout(300);
+f.want(await f.page.locator('.st-row:has-text("Search folders")').count() === 1, 'web build: File search page says folders are desktop-only');
+await f.shot('settings-web');
+await f.done();
