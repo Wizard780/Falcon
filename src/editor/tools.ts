@@ -1,7 +1,10 @@
 import type { Command } from 'prosemirror-state';
 
-/** One entry in the toolbar's Doc or Card menu. `key` (a keymap name like "Alt-Shift-F8") is shown beside it. */
-export type ToolItem = { label: string; run: Command; key?: string; hint?: string };
+/**
+ * One entry in the toolbar's Doc or Card menu. Each is a command Settings > Keybindings can bind, under `id`;
+ * `key` (a keymap name like "Alt-Shift-F8") is its default, and the menu shows the key it has now.
+ */
+export type ToolItem = { id: string; label: string; run: Command; key?: string; hint?: string };
 export type ToolSection = { title: string; items: ToolItem[] };
 
 /**

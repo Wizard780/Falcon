@@ -114,29 +114,25 @@ const shading = () => activeColors.shading?.toUpperCase() ?? null;
 /** The toolbar's Doc menu: whole-document cleanup. Each tool acts on the selection when there is one. */
 export const DOC_TOOLS: ToolSection[] = [
   { title: 'Cleanup', items: [
-    { label: 'Convert Analytics to Tags', run: analyticsToTags(false), hint: 'Turn analytics into tags: the selected ones, or every one in the document' },
-    { label: 'Convert Cited Analytics to Tags', run: analyticsToTags(true), hint: 'Turn analytics into tags, only those with a cite under them' },
-    { label: 'Fix Formatting Gaps', run: fixFormattingGaps, hint: 'Give the space between two formatted words the formatting both share, and take off what they don\'t' },
-    { label: 'Remove Hyperlinks', run: removeHyperlinks, hint: 'Drop the links, keeping the text' },
-    { label: 'Link URLs', run: linkUrls, hint: 'Turn written web addresses into links' },
+    { id: 'analyticsToTags', label: 'Convert Analytics to Tags', run: analyticsToTags(false), hint: 'Turn analytics into tags: the selected ones, or every one in the document' },
+    { id: 'citedAnalyticsToTags', label: 'Convert Cited Analytics to Tags', run: analyticsToTags(true), hint: 'Turn analytics into tags, only those with a cite under them' },
+    { id: 'fixFormattingGaps', label: 'Fix Formatting Gaps', run: fixFormattingGaps, hint: 'Give the space between two formatted words the formatting both share, and take off what they don\'t' },
+    { id: 'removeHyperlinks', label: 'Remove Hyperlinks', run: removeHyperlinks, hint: 'Drop the links, keeping the text' },
+    { id: 'linkUrls', label: 'Link URLs', run: linkUrls, hint: 'Turn written web addresses into links' },
   ] },
   { title: 'Highlighting', items: [
-    { label: 'Standardize Highlighting', run: standardize(M.highlight, () => activeColors.highlight), hint: 'Every highlight becomes your highlighter\'s color' },
-    { label: 'Standardize Background Color', run: standardize(M.shading, shading), hint: 'Every background color becomes your background pen\'s color' },
+    { id: 'standardizeHighlighting', label: 'Standardize Highlighting', run: standardize(M.highlight, () => activeColors.highlight), hint: 'Every highlight becomes your highlighter\'s color' },
+    { id: 'standardizeShading', label: 'Standardize Background Color', run: standardize(M.shading, shading), hint: 'Every background color becomes your background pen\'s color' },
     // getters, so the menu shows the exception chosen in Settings each time it opens
-    { get label() { return `Standardize Highlighting (except ${choiceLabel(highlightException)})`; },
+    { id: 'standardizeHighlightingExcept', get label() { return `Standardize Highlighting (except ${choiceLabel(highlightException)})`; },
       run: standardize(M.highlight, () => activeColors.highlight, () => readSetting(highlightException) as string), hint: 'Like Standardize Highlighting, leaving one color alone (pick it in Settings)' },
-    { get label() { return `Standardize Background Color (except ${choiceLabel(shadingException)})`; },
+    { id: 'standardizeShadingExcept', get label() { return `Standardize Background Color (except ${choiceLabel(shadingException)})`; },
       run: standardize(M.shading, shading, () => readSetting(shadingException) as string), hint: 'Like Standardize Background Color, leaving one color alone (pick it in Settings)' },
   ] },
   { title: 'Select', items: [
-    { label: 'Select Similar Formatting', run: selectSimilar, hint: 'Select every stretch formatted like the text at the cursor' },
+    { id: 'selectSimilar', label: 'Select Similar Formatting', run: selectSimilar, hint: 'Select every stretch formatted like the text at the cursor' },
   ] },
 ];
-/** Keys for Doc tools, merged into the editor keymap. Unbound by default, like CardMirror. */
-export const docToolKeys: Record<string, Command> = {};
-/** [key, what it does] rows for Settings > Keybindings. */
-export const docToolShortcuts: [string, string][] = [];
 /** This feature's rows in Settings > Editor. */
 export const docToolSettings: SettingSpec[] = [autoBridgeSetting, gapClassSetting, highlightException, shadingException];
 /** Editor plugins: Cmd/Ctrl-click on links (ahead of mouse selection) and automatic gap bridging. */

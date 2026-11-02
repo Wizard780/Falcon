@@ -44,4 +44,5 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Send to speech](./send-to-speech.md) covers `~`, the speech doc in the rail, send order, the Undo toast, Mod-Z and the Speech doc button.
 - [Settings](./settings.md) covers the seven panes and the highlighter pen with its stored value and effect.
 - [Themes](./themes.md) covers the preset tiles, custom themes and their colors, Document paper, System, and the desktop window following the theme.
+- [Keybindings](./keybindings.md) covers changing a shortcut in Settings and the editor and app following it.
 - [Desktop shell](./desktop-shell.md) covers the Electron app with no visible window: launch, keys, the preload bridge, save in place, and the close guard.

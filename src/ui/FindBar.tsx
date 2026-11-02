@@ -1,3 +1,4 @@
+import { titled } from '../editor/keybinds';
 import { useEffect, useState, type RefObject } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import { clearFind, findInfo, findRequest, replaceAll, replaceOne, setGrouped, setQuery, step } from '../editor/find';
@@ -52,7 +53,7 @@ export function FindBar({ view, inputRef, onClose, flash }: { view: EditorView; 
           () => order(!grouped), grouped ? 'By type' : 'In order', 'fb-txt')}
         {btn('Previous (⇧Enter): go to the match above', () => step(view, -1), <Icon name="chevronUp" />)}
         {btn('Next (Enter): go to the match below', () => step(view, 1), <Icon name="chevron" />)}
-        {btn(`Replace (${IS_MAC ? '⌘⇧H' : 'Ctrl+H'}): show the replace box`, () => { setReplace((r) => !r); if (!replace) requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.findbar .fb-with')?.focus()); }, 'Replace', 'fb-txt', replace)}
+        {btn(titled('Replace', 'replace', 'show the replace box'), () => { setReplace((r) => !r); if (!replace) requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.findbar .fb-with')?.focus()); }, 'Replace', 'fb-txt', replace)}
         {btn('Close find (Esc)', close, <Icon name="x" />)}
       </div>
       {replace && (

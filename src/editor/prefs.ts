@@ -87,6 +87,7 @@ export const ENTER_AFTER: Partial<Record<string, Pref<Style>>> = {
 };
 
 const cache = new Map<string, string | number | boolean>();
+const KEYS = new Set<string>(Object.values(P).map((p) => p.key));
 const EVENT = 'falcon-prefs';
 /** Transaction meta set when settings change, so plugins that draw from them redraw. */
 export const PREFS_META = 'falconPrefs';
@@ -111,9 +112,20 @@ export function setPref<T extends string | number | boolean>(p: Pref<T>, v: T) {
   cache.set(p.key, v);
   changed();
 }
+/** Settings declared outside `P` (each shortcut in keybinds.ts), so Restore defaults and other windows cover them too. */
+const EXTRA: Pref<string | number | boolean>[] = [];
+export function registerPrefs(ps: Pref<string | number | boolean>[]) {
+  for (const p of ps) { EXTRA.push(p); KEYS.add(p.key); }
+}
+/** Put one setting back to its default. */
+export function clearPref(p: Pref<string | number | boolean>) {
+  localStorage.removeItem(p.key);
+  cache.delete(p.key);
+  changed();
+}
 /** Restore defaults: forget every setting here. */
 export function resetPrefs() {
-  for (const p of Object.values(P)) localStorage.removeItem(p.key);
+  for (const p of [...Object.values(P), ...EXTRA]) localStorage.removeItem(p.key);
   cache.clear();
   changed();
 }
@@ -123,5 +135,4 @@ export function onPrefs(f: () => void): () => void {
   return () => removeEventListener(EVENT, f);
 }
 // another window changed them
-const KEYS = new Set(Object.values(P).map((p) => p.key));
 if (typeof window !== 'undefined') addEventListener('storage', (e) => { if (!e.key || KEYS.has(e.key) || e.key === 'falcon.themes') { cache.clear(); changed(); } });

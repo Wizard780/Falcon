@@ -128,7 +128,7 @@ console.log(map, '\nplatform:', platform, '| bridge:', bridge, '| visible:', vis
 const want = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.exitCode = 1; } };
 // emphasis replaced the underline on "app"; highlight stays on "app"
 want(map === 'tag: Electron tag\nnormal: Body text in the [desktop ]{emphasis}[app]{emphasis+highlight:yellow}', `marks: ${JSON.stringify(map)}`);
-want(bridge === 'addIndexFolder,forceClose,indexFolders,indexedFiles,onConfirmClose,onMenu,openFile,openPath,platform,readClipboardText,removeIndexFolder,saveFile,setTheme', `preload bridge: ${bridge}`);
+want(bridge === 'addIndexFolder,forceClose,indexFolders,indexedFiles,onConfirmClose,onMenu,openFile,openPath,platform,readClipboardText,removeIndexFolder,saveFile,setMenuKeys,setTheme', `preload bridge: ${bridge}`);
 want(folderRow, 'Settings > File search > Add folder lists the folder with its file count');
 want(indexed.join() === 'Zebra Counterplan.docx', `indexed files are the allowed folder's .docx files: ${indexed}`);
 want(outsideOpen.startsWith('refused'), `openPath refuses a .docx outside the allowed folders: ${outsideOpen}`);

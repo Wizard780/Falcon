@@ -28,6 +28,8 @@ type FalconBridge = {
   indexedFiles?: () => Promise<IndexedFile[]>;
   /** Mac File menu clicks ('new', 'open', 'save', 'saveAs', 'close', 'settings'). Returns an unsubscribe. */
   onMenu?: (f: (cmd: string) => void) => () => void;
+  /** The keys the Mac menu shows beside its items, by command ('save': 'Mod-s'; '' shows none). */
+  setMenuKeys?: (keys: Record<string, string>) => void;
   /** Closing the window (quit = quitting the app) with unsaved docs: the page asks. Returns an unsubscribe. */
   onConfirmClose?: (f: (quit: boolean) => void) => () => void;
   /** The user said close anyway: close the window (or quit) past the unsaved-docs guard. */
