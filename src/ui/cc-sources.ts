@@ -180,6 +180,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: P.prefixSend.key, label: 'Send Doc filename prefix', page: 'general', query: 'Send Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixSend), set: () => {} },
     { id: P.prefixRead.key, label: 'Read Doc filename prefix', page: 'general', query: 'Read Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixRead), set: () => {} },
     { id: P.prefixMarked.key, label: 'Marked Doc filename prefix', page: 'general', query: 'Marked Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixMarked), set: () => {} },
+    tog(P.usageStats, 'Share usage statistics', 'general', 'Send anonymous counts of which features get used. Never file names or anything you type.'),
     // Appearance
     pick(P.theme, 'Theme', 'appearance', themes, 'The colors of Falcon and the page.'),
     pick(P.uiFont, 'Interface font', 'appearance', UI_FONTS, 'Menus, tooltips, Settings and the top bar.'),

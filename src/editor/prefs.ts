@@ -20,6 +20,7 @@ export const P = {
   confirmClose: def('confirmClose', true),
   crashRecovery: def('crashRecovery', true),
   recentCount: def('recentCount', 12),
+  usageStats: def('usageStats', true), // anonymous feature counts to PostHog (src/ui/analytics.ts)
   newName: def<'untitled' | 'speech' | 'date'>('newName', 'untitled'),
   savePrefix: def('savePrefix', true), // Save As puts the prefixes below on Send, Read and Marked Doc names
   prefixSend: def('prefix.send', 'SEND_'),
