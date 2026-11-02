@@ -8,6 +8,7 @@ import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { cardAround, paintColorMark, pastedText } from './commands';
 import { activeColors, disarmPlainPaste, plainPasteArmed } from './host';
 import { falconKeymap } from './keymap';
+import { navPlugins } from './nav-keys';
 import { wordSelection } from './mouse';
 import { schema } from './schema';
 import { PREFS_META, onPrefs } from './prefs';
@@ -121,6 +122,7 @@ export function createState(doc: PMNode = emptyDoc()) {
     plugins: [
       readPlugin, // first, so its keyboard lock runs before the formatting keys
       multiSelectionPlugin,
+      ...navPlugins, // card numbers, dragging cards on the page
       falconKeymap(),
       keymap(baseKeymap),
       history({ newGroupDelay: 500 }),
