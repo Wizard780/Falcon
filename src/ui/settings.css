@@ -1,0 +1,47 @@
+/* Display settings (Settings sets the variables and root classes in applyDisplay). None of them change
+   the file. This sheet loads before styles.css, so every rule here is more specific than the one it overrides. */
+.f-scroll .ProseMirror { font-size: var(--sz-normal, 11pt); line-height: var(--doc-lh, 1.2); }
+.ProseMirror .f-pocket { font-size: var(--sz-pocket, 26pt); }
+.ProseMirror .f-hat { font-size: var(--sz-hat, 22pt); }
+.ProseMirror .f-block { font-size: var(--sz-block, 16pt); }
+.ProseMirror .f-tag { font-size: var(--sz-tag, 13pt); }
+.ProseMirror .f-analytic { font-size: var(--sz-analytic, 13pt); color: var(--c-analytic, #1f3f8a); }
+.ProseMirror .f-undertag { font-size: var(--sz-undertag, 11pt); color: var(--c-undertag, #2a6a3a); }
+.ProseMirror .f-cite { font-size: var(--sz-cite, 13pt); }
+.f-scroll .page { max-width: var(--text-w, none); margin: 0 auto; padding-left: var(--margin-x, 30px); padding-right: var(--margin-x, 20px); }
+
+/* dark page: light ink, and dark ink on highlighted or shaded text so it stays readable */
+:root.page-dark { --page: #1e1e20; --doc-ink: #e6e6e6; }
+.page-dark .ProseMirror:not(.f-read) { caret-color: #fff; }
+.page-dark .ProseMirror .f-pocket, .page-dark .ProseMirror .f-emphasis { border-color: currentColor; }
+.page-dark .ProseMirror .f-highlight, .page-dark .ProseMirror .f-shading { color: #111; }
+.page-dark .ProseMirror .f-analytic { color: var(--c-analytic, #8aa4d6); }
+.page-dark .ProseMirror .f-undertag { color: var(--c-undertag, #8fae7a); }
+.page-dark .f-cur-card::before { background: #4a4a50; }
+
+.cite-plain .ProseMirror .f-cite { font-weight: 400; }
+.emph-nobox .ProseMirror .f-emphasis { border: 0; }
+.pocket-nobox .ProseMirror .f-pocket { border: 0; }
+.hat-single .ProseMirror .f-hat { text-decoration: underline; }
+.shade-dots .ProseMirror .f-shading { background-image: radial-gradient(rgba(0, 0, 0, .3) .7px, transparent .9px); background-size: 3px 3px; }
+.no-card-bar .ProseMirror .f-cur-card::before { display: none; }
+
+:root[data-caret="blue"] .ProseMirror:not(.f-read) { caret-color: #2563eb; }
+:root[data-caret="red"] .ProseMirror:not(.f-read) { caret-color: #e11d48; }
+:root[data-caret="ink"] .ProseMirror:not(.f-read) { caret-color: var(--ink); }
+:root[data-sel="gray"] .ProseMirror ::selection, :root[data-sel="gray"] .ProseMirror .f-multisel { background: rgba(0, 0, 0, .16); }
+:root[data-sel="ink"] .ProseMirror ::selection, :root[data-sel="ink"] .ProseMirror .f-multisel { background: color-mix(in srgb, var(--ink) 45%, transparent); }
+
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { transition: none !important; animation: none !important; }
+
+/* timers: the prep clock, and the last seconds flashing */
+.b.timer.prep { min-width: 84px; }
+.b.timer.low, .b.timer.low[data-on] { color: #ff6b6b; animation: tm-low 1s steps(1) infinite; }
+@keyframes tm-low { 50% { opacity: .4; } }
+
+/* Settings controls beyond the base ones in styles.css */
+.st-color { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.st-color::-webkit-color-swatch-wrapper { padding: 0; }
+.st-color::-webkit-color-swatch { border: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14); }
+.st .st-step output { min-width: 72px; }
+.st .st-seg button { white-space: nowrap; }

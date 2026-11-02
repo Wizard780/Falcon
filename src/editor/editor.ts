@@ -5,11 +5,12 @@ import { keymap } from 'prosemirror-keymap';
 import { DOMParser as PMDOMParser, Slice, type Node as PMNode } from 'prosemirror-model';
 import { EditorState, Plugin, PluginKey, TextSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
-import { cardAround, paintColorMark } from './commands';
+import { cardAround, paintColorMark, pastedText } from './commands';
 import { activeColors, disarmPlainPaste, plainPasteArmed } from './host';
 import { falconKeymap } from './keymap';
 import { wordSelection } from './mouse';
 import { schema } from './schema';
+import { PREFS_META, onPrefs } from './prefs';
 import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
@@ -99,10 +100,15 @@ const pastePlugin = new Plugin({
       disarmPlainPaste();
       const text = ev.clipboardData?.getData('text/plain');
       if (!text) return false;
-      view.dispatch(view.state.tr.insertText(text));
+      view.dispatch(view.state.tr.insertText(pastedText(text)));
       return true;
     },
   },
+});
+
+/** A setting changed: an empty transaction tells the plugins that draw from settings (read mode) to redraw. */
+const prefsWatch = new Plugin({
+  view: (view) => ({ destroy: onPrefs(() => view.dispatch(view.state.tr.setMeta(PREFS_META, true).setMeta('addToHistory', false))) }),
 });
 
 export function emptyDoc(): PMNode {
@@ -125,6 +131,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       wordSelection(),
       selectionClasses,
       findPlugin,
+      prefsWatch,
     ],
   });
 }

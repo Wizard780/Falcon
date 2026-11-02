@@ -1,16 +1,18 @@
 import { HIGHLIGHTS } from './schema';
+import { P, pref } from './prefs';
 
 const HL_BY_HEX: Record<string, string> = Object.fromEntries(Object.entries(HIGHLIGHTS).map(([k, v]) => [v.toLowerCase(), k]));
 
 /**
  * Turn clipboard HTML (Word, Verbatim, the web) into HTML Falcon's schema understands:
  * Verbatim character styles become cite/underline/emphasis, highlight colors map to Word's names,
- * and everything else (fonts, colors from web pages, classes) is dropped.
+ * and everything else (fonts, colors from web pages, classes) is dropped. With smart paste off in
+ * Settings, Word's styles aren't converted: only bold, italic and the paragraphs come through.
  */
-export function cleanPastedHTML(html: string): string {
+export function cleanPastedHTML(html: string, smart = pref(P.smartPaste)): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   doc.querySelectorAll('style, meta, link, script, title, xml').forEach((n) => n.remove());
-  const fromWord = /urn:schemas-microsoft-com|mso-/.test(html);
+  const fromWord = smart && /urn:schemas-microsoft-com|mso-/.test(html);
   for (const el of Array.from(doc.body.querySelectorAll<HTMLElement>('*'))) {
     const cls = (el.getAttribute('class') ?? '').toLowerCase();
     const style = (el.getAttribute('style') ?? '').toLowerCase();

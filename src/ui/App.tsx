@@ -22,6 +22,7 @@ import { DOC_TOOLS } from '../editor/doc-tools';
 import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
+import { P, onPrefs, pref } from '../editor/prefs';
 
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty }]: the open doc and every unsaved one
 const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could be open
@@ -35,6 +36,7 @@ type Backup = { meta: DocMeta; doc: PMNode; active: boolean; dirty?: boolean };
 /** Crash-recovery copy of the open doc and every unsaved one. Docs too big to keep are left out;
  *  returns false when the active doc was one of them. */
 function autosave(list: Backup[]): boolean {
+  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return true; } // turned off in Settings
   const keep = list.filter((b) => b.doc.content.size <= AUTOSAVE_MAX);
   const write = (l: Backup[]) => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(l.map((b) => ({ meta: b.meta, active: b.active, dirty: b.dirty, doc: b.doc.toJSON() }))));
   try { write(keep); }
@@ -45,6 +47,7 @@ function autosave(list: Backup[]): boolean {
   return keep.some((b) => b.active);
 }
 function loadBackups(): Backup[] {
+  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return []; } // turned off in Settings
   try {
     const v2 = localStorage.getItem(AUTOSAVE_KEY);
     if (v2) return (JSON.parse(v2) as { meta: DocMeta; doc: unknown; active: boolean; dirty?: boolean }[]).map((b) => ({ ...b, doc: PMNode.fromJSON(schema, b.doc) }));
@@ -54,7 +57,7 @@ function loadBackups(): Backup[] {
   return [];
 }
 const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 0));
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reducedMotion = () => pref(P.reduceMotion) || matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Smooth-scroll the page so `pos` sits just below the top. Paragraphs off screen have estimated
  *  heights (content-visibility), so the target moves as they render: the animation re-reads it every frame. */
@@ -109,7 +112,7 @@ export function App() {
   const meta = active.meta, dirty = active.dirty;
   const [toast, setToast] = useState<string | null>(null);
   const [findOpen, setFindOpen] = useState(false);
-  const [homeOpen, setHomeOpen] = useState(true);
+  const [homeOpen, setHomeOpen] = useState(() => pref(P.openHome));
   const [settingsOpen, setSettingsOpen] = useState(false);
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
@@ -185,6 +188,7 @@ export function App() {
   // quitting or closing the window with unsaved docs: the page blocks it, the main process passes
   // the question back here, and Falcon's own dialog asks it
   useEffect(() => bridge.onConfirmClose?.((quit) => {
+    if (!pref(P.confirmClose)) { bridge.forceClose?.(quit); return; }
     const names = docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled');
     const what = quit ? 'Quit' : 'Close';
     void confirmAsk({
@@ -283,7 +287,7 @@ export function App() {
   const closeDoc = useCallback((id: number) => {
     const d = docsRef.current.find((x) => x.id === id);
     if (!d) return;
-    if (!d.dirty) { dropDoc(id); return; }
+    if (!d.dirty || !pref(P.confirmClose)) { dropDoc(id); return; }
     const name = d.meta.name || 'Untitled';
     void confirmAsk({ title: `Close ${name} without saving?`, body: 'Your changes will be lost.', ok: 'Close Without Saving' })
       .then((yes) => { if (yes) dropDoc(id); });
@@ -301,6 +305,7 @@ export function App() {
     setRecents((list) => noteRecent(list, r.doc, r.meta));
     const already = openedPath(r.meta.path);
     if (already) { switchTo(already.id); flash(`${r.meta.name} is already open`); return; }
+    if (pref(P.openDepth)) setDepth(pref(P.openDepth));
     flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${MOD}S).`);
   }, [addDoc, switchTo, flash]);
   const fileNew = useCallback(() => { addDoc(emptyDoc(), { name: 'Untitled' }); }, [addDoc]);
@@ -449,6 +454,39 @@ export function App() {
   const name = meta.name || 'Untitled';
   const docList = docs.map((d) => ({ id: d.id, name: d.meta.name || 'Untitled', path: d.meta.path, dirty: d.dirty }));
 
+  // ---- settings that act on the app (the rest act through CSS or in the editor) ----
+  const [, setPrefTick] = useState(0);
+  useEffect(() => onPrefs(() => setPrefTick((t) => t + 1)), []); // redraw: word-count speeds, recents, the timer
+  // reopen last files: the files open at the last quit, read before the list below is rewritten
+  const lastSession = useRef<string[]>(JSON.parse(localStorage.getItem('falcon.session') ?? '[]'));
+  const reopened = useRef(false);
+  useEffect(() => {
+    if (!hasView || reopened.current) return;
+    reopened.current = true;
+    if (!pref(P.reopen) || !bridge.openPath) return;
+    void (async () => {
+      for (const p of lastSession.current) {
+        if (openedPath(p)) continue;
+        try { opened(await openPath(p)); } catch { /* moved or deleted since */ }
+      }
+    })();
+  }, [hasView]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { localStorage.setItem('falcon.session', JSON.stringify(docs.flatMap((d) => (d.meta.path ? [d.meta.path] : [])))); }, [docs]);
+  // Ctrl/Cmd + scroll wheel or trackpad pinch zooms, in the same 10% steps
+  useEffect(() => {
+    let acc = 0;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !pref(P.wheelZoom) || settingsRef.current) return;
+      e.preventDefault();
+      acc += e.deltaY;
+      if (Math.abs(acc) < 40) return;
+      zoomBy(acc < 0 ? 0.1 : -0.1);
+      acc = 0;
+    };
+    addEventListener('wheel', onWheel, { passive: false });
+    return () => removeEventListener('wheel', onWheel);
+  }, [zoomBy]);
+
   const modal = settingsOpen || !!ask;
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
@@ -507,7 +545,7 @@ export function App() {
 
       <footer className="status">
         <span>Σ</span>
-        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {mmss(words / 200)} · Reader 2: {mmss(words / 300)}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
+        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {mmss(words / pref(P.wpm1))} · Reader 2: {mmss(words / pref(P.wpm2))}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
@@ -518,7 +556,7 @@ export function App() {
       </div>
 
       <div className="covered" inert={!!ask}>
-      <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents}
+      <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents.slice(0, pref(P.recentCount))}
         onNew={fileNew} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)}
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)}
@@ -531,6 +569,22 @@ export function App() {
       <Tips />
     </div>
   );
+}
+
+/** Time's up, out loud: two short tones (Settings, Speech and timers). */
+function beep() {
+  try {
+    const ctx = new AudioContext();
+    for (const at of [0, 0.3]) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 880;
+      g.gain.value = 0.2;
+      o.connect(g).connect(ctx.destination);
+      o.start(ctx.currentTime + at);
+      o.stop(ctx.currentTime + at + 0.18);
+    }
+    setTimeout(() => void ctx.close(), 1000);
+  } catch { /* no audio device */ }
 }
 
 const mmss = (min: number) => { const s = Math.round(min * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -713,19 +767,30 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   });
   const bump = (d: number) => setSize((fontSize ?? 11) + d);
 
-  // the speech timer: click to start or pause, right-click to reset
+  // the speech timer (and the prep timer, when Settings shows it): click to start or pause, right-click to reset
   const [left, setLeft] = useState(SPEECH_SECONDS);
   const [running, setRunning] = useState(false);
+  const PREP_SECONDS = pref(P.prepMin) * 60;
+  const [prepLeft, setPrepLeft] = useState(PREP_SECONDS);
+  const [prepRunning, setPrepRunning] = useState(false);
   // a new length from Settings resets an idle timer
   useEffect(() => { if (!running) setLeft(SPEECH_SECONDS); }, [SPEECH_SECONDS]);
-  useEffect(() => {
-    if (!running) return;
-    const t = window.setInterval(() => setLeft((s) => {
-      if (s <= 1) { setRunning(false); props.flash('Time is up'); return 0; }
+  useEffect(() => { if (!prepRunning) setPrepLeft(PREP_SECONDS); }, [PREP_SECONDS]);
+  const showPrep = pref(P.showPrep);
+  // hiding the prep timer stops and resets it
+  useEffect(() => { if (!showPrep) { setPrepRunning(false); setPrepLeft(PREP_SECONDS); } }, [showPrep]);
+  const countdown = (on: boolean, setOn: (b: boolean) => void, setLeftOf: (f: (s: number) => number) => void, what: string) => {
+    if (!on) return;
+    const t = window.setInterval(() => setLeftOf((s) => {
+      if (s <= 1) { setOn(false); props.flash(what); if (pref(P.beep)) beep(); return 0; }
       return s - 1;
     }), 1000);
     return () => clearInterval(t);
-  }, [running]);
+  };
+  useEffect(() => countdown(running, setRunning, setLeft, 'Time is up'), [running]);
+  useEffect(() => countdown(prepRunning, setPrepRunning, setPrepLeft, 'Prep is up'), [prepRunning]);
+  const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const low = (on: boolean, s: number) => (on && s <= pref(P.lowTime) ? ' low' : '');
 
   return (
     <header className="toolbar">
@@ -756,11 +821,18 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
         </div>
         <div className="end">
           <button className="b" data-on={props.reading || undefined} title={`Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'}): show only what's read aloud. Typing is locked and Space drops a marker`} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
-          <button className="b timer" data-on={running || undefined} title="Speech timer: click to start or pause. Right-click to reset"
+          <button className={`b timer${low(running, left)}`} data-on={running || undefined} title="Speech timer: click to start or pause. Right-click to reset"
             onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (left === 0) setLeft(SPEECH_SECONDS); setRunning((r) => !r); } }}
             onContextMenu={(e) => { e.preventDefault(); setRunning(false); setLeft(SPEECH_SECONDS); }}>
-            {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
+            {clock(left)}
           </button>
+          {showPrep && (
+            <button className={`b timer prep${low(prepRunning, prepLeft)}`} data-on={prepRunning || undefined} title="Prep timer: click to start or pause. Right-click to reset"
+              onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (prepLeft === 0) setPrepLeft(PREP_SECONDS); setPrepRunning((r) => !r); } }}
+              onContextMenu={(e) => { e.preventDefault(); setPrepRunning(false); setPrepLeft(PREP_SECONDS); }}>
+              Prep {clock(prepLeft)}
+            </button>
+          )}
         </div>
       </div>
       {pop && (

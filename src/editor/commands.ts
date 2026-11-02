@@ -1,6 +1,7 @@
 import type { Mark, MarkType, Node as PMNode } from 'prosemirror-model';
 import { EditorState, Selection, TextSelection, type Command, type Transaction } from 'prosemirror-state';
 import { LEVEL, schema, type ParaStyle } from './schema';
+import { P, pref, type CondenseMode } from './prefs';
 
 const M = schema.marks;
 export const isHeading = (n: PMNode) => LEVEL[n.attrs.style as ParaStyle] > 0;
@@ -148,17 +149,33 @@ export const applyEmphasis: Command = (state, dispatch) => {
   return finish(state, tr, dispatch);
 };
 
+/**
+ * With "Highlight underlined text only" on, the parts of the ranges a highlight or background color
+ * lands on: underlined, emphasized or cited body text, and headings whole. Otherwise the ranges.
+ */
+function paintable(doc: PMNode, ranges: Range[], type: MarkType): Range[] {
+  if ((type !== M.highlight && type !== M.shading) || !pref(P.hlUnderlined)) return ranges;
+  const out: Range[] = [];
+  eachText(doc, ranges, (node, from, to, para) => {
+    if (isHeading(para) || node.marks.some((m) => m.type === M.underline || m.type === M.emphasis || m.type === M.cite)) out.push({ from, to });
+  });
+  return out;
+}
+
 /** F11 / Mod-F11: toggle a color mark. `null` color is the "no color" pen, which strips the mark. */
 export function toggleColorMark(type: MarkType, color: string | null): Command {
   return (state, dispatch) => {
     const ranges = trimRanges(state.doc, targetRanges(state, 'none'));
     if (!ranges.length) return false;
     const tr = state.tr;
-    if (color === null) {
+    const paint = color === null ? [] : paintable(state.doc, ranges, type);
+    // nothing paintable (or the no-color pen): clear the whole selection, so removal is never blocked
+    if (!paint.length) {
       for (const r of ranges) tr.removeMark(r.from, r.to, type);
     } else {
-      const has = allHave(state.doc, ranges, (ms) => ms.some((m) => m.type === type && m.attrs.color === color));
-      for (const r of ranges) has ? tr.removeMark(r.from, r.to, type) : tr.addMark(r.from, r.to, type.create({ color }));
+      const has = allHave(state.doc, paint, (ms) => ms.some((m) => m.type === type && m.attrs.color === color));
+      if (has) for (const r of ranges) tr.removeMark(r.from, r.to, type);
+      else for (const r of paint) tr.addMark(r.from, r.to, type.create({ color }));
     }
     return finish(state, tr, dispatch);
   };
@@ -170,7 +187,8 @@ export function paintColorMark(type: MarkType, color: string | null, from: numbe
     const [r] = trimRanges(state.doc, [{ from, to }]);
     if (!r) return false;
     const tr = state.tr;
-    color === null ? tr.removeMark(r.from, r.to, type) : tr.addMark(r.from, r.to, type.create({ color }));
+    if (color === null) tr.removeMark(r.from, r.to, type);
+    else for (const p of paintable(state.doc, [r], type)) tr.addMark(p.from, p.to, type.create({ color }));
     return finish(state, tr, dispatch);
   };
 }
@@ -256,7 +274,8 @@ function cardBodyRange(state: EditorState): Range | null {
   return { from: posOfIndex(state.doc, c.start), to: posOfIndex(state.doc, c.end) };
 }
 
-const SHRINK_STEPS = [8, 7, 6, 5, 4];
+/** The sizes Mod-8 steps through, down to the smallest one set in Settings. */
+const shrinkSteps = () => [8, 7, 6, 5, 4].filter((pt) => pt >= pref(P.shrinkMin));
 const OMISSION = /[[<][^\]>]*omitted[^\]>]*[\]>]/gi;
 
 /** Mod-8: cycle the unread (not underlined/emphasized/cited) text in the card through smaller sizes. */
@@ -264,6 +283,7 @@ export const shrink: Command = (state, dispatch) => {
   const r = cardBodyRange(state);
   if (!r) return false;
   const pieces: Range[] = [];
+  const protect = pref(P.shrinkProtect);
   let current: number | null | undefined;
   state.doc.nodesBetween(r.from, r.to, (node, pos, parent) => {
     if (node.isTextblock) return !isHeading(node);
@@ -274,7 +294,7 @@ export const shrink: Command = (state, dispatch) => {
     // keep omission notes like [Table Omitted] at full size
     const text = node.text!.slice(from - pos, to - pos);
     let last = 0;
-    for (const m of text.matchAll(OMISSION)) {
+    if (protect) for (const m of text.matchAll(OMISSION)) {
       if (m.index! > last) pieces.push({ from: from + last, to: from + m.index! });
       last = m.index! + m[0].length;
     }
@@ -282,8 +302,9 @@ export const shrink: Command = (state, dispatch) => {
     return false;
   });
   if (!pieces.length) return false;
-  const i = current == null ? -1 : SHRINK_STEPS.indexOf(current);
-  const next = i + 1 < SHRINK_STEPS.length ? SHRINK_STEPS[i + 1] : null;
+  const steps = shrinkSteps();
+  const i = current == null ? -1 : steps.indexOf(current);
+  const next = i + 1 < steps.length ? steps[i + 1] : null;
   const tr = state.tr;
   for (const p of pieces) next === null ? tr.removeMark(p.from, p.to, M.size) : tr.addMark(p.from, p.to, M.size.create({ pt: next }));
   return finish(state, tr, dispatch);
@@ -328,7 +349,7 @@ export const toggleCase: Command = (state, dispatch) => {
  * F3 family. `integrity` keeps paragraph breaks and only collapses whitespace;
  * `merge` joins the paragraphs; `pilcrows` joins them and marks each old break with ¶.
  */
-export function condense(mode: 'integrity' | 'merge' | 'pilcrows'): Command {
+export function condense(mode: CondenseMode): Command {
   return (state, dispatch) => {
     let range: Range | null;
     let skipCite = false;
@@ -376,7 +397,10 @@ export function condense(mode: 'integrity' | 'merge' | 'pilcrows'): Command {
         if (curNode.content.size === 0) { tr.delete(mapped[i], mapped[i] + curNode.nodeSize); continue; }
         tr.join(mapped[i]);
         const sep = mode === 'pilcrows' ? ' ¶ ' : ' ';
-        if (prevNode.content.size > 0) tr.insertText(sep, mapped[i] - 1);
+        if (prevNode.content.size > 0) {
+          tr.insertText(sep, mapped[i] - 1);
+          if (mode === 'pilcrows' && pref(P.smallPilcrows)) tr.addMark(mapped[i] - 1, mapped[i] - 1 + sep.length, M.size.create({ pt: 6 }));
+        }
       }
     }
     return finish(state, tr, dispatch);
@@ -404,6 +428,8 @@ export const uncondense: Command = (state, dispatch) => {
   return finish(state, tr, dispatch);
 };
 
+const hasCite = (n: PMNode) => { let yes = false; n.forEach((c) => { if (M.cite.isInSet(c.marks)) yes = true; }); return yes; };
+
 /** Alt-F8: copy the previous card's cite paragraph to the cursor. */
 export const copyPreviousCite: Command = (state, dispatch) => {
   const doc = state.doc;
@@ -418,10 +444,21 @@ export const copyPreviousCite: Command = (state, dispatch) => {
     for (let j = i + 1; j < doc.childCount && !isHeading(doc.child(j)); j++) {
       const cite = doc.child(j);
       if (cite.content.size === 0) continue;
+      // "nearest cite only" off: also the cite-marked lines right after it (a cite split over lines)
+      const more: PMNode[] = [];
+      if (!pref(P.citeNearest)) {
+        for (let k = j + 1; k < doc.childCount; k++) {
+          const n = doc.child(k);
+          if (isHeading(n) || !n.content.size || !hasCite(n)) break;
+          more.push(schema.nodes.paragraph.create(null, n.content));
+        }
+      }
       const $f = state.selection.$from;
       const tr = state.tr;
-      if ($f.parent.content.size === 0 && !isHeading($f.parent)) tr.replaceWith($f.start(), $f.end(), cite.content);
-      else tr.insert(state.selection.$to.after(1), schema.nodes.paragraph.create(null, cite.content));
+      if ($f.parent.content.size === 0 && !isHeading($f.parent)) {
+        tr.replaceWith($f.start(), $f.end(), cite.content);
+        if (more.length) tr.insert(tr.mapping.map($f.after(1)), more);
+      } else tr.insert(state.selection.$to.after(1), [schema.nodes.paragraph.create(null, cite.content), ...more]);
       return finish(state, tr, dispatch);
     }
     return false;
@@ -429,10 +466,20 @@ export const copyPreviousCite: Command = (state, dispatch) => {
   return false;
 };
 
+/** Condense pasted plain text the way F3 condenses a card: collapse whitespace, and merge the lines unless `integrity`. */
+export function condenseText(text: string, mode: CondenseMode): string {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/[ \t\u00a0]+/g, ' ').trim());
+  if (mode === 'integrity') return lines.join('\n');
+  return lines.filter(Boolean).join(mode === 'pilcrows' ? ' ¶ ' : ' ');
+}
+
+/** Text from F2 (or a plain paste), condensed first when "Condense after Paste Text" is on. */
+export const pastedText = (text: string) => (pref(P.pasteCondense) ? condenseText(text, pref(P.condense)) : text);
+
 /** Insert plain text (F2 paste), keeping paragraph breaks and dropping all source styling. */
 export function insertPlainText(text: string): Command {
   return (state, dispatch) => {
-    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    const lines = pastedText(text).replace(/\r\n?/g, '\n').split('\n');
     const marks = state.selection.$from.marks().filter((m) => m.type === M.highlight || m.type === M.size);
     const tr = state.tr;
     if (lines.length === 1) {

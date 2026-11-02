@@ -1,5 +1,7 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { buildOutline } from '../editor/outline';
+// the most Settings lets Home show; Home shows the first `Recent files` of them
+const MAX = 24;
 
 /** A file the user opened or saved. `blocks` is a short outline for the home peek. */
 export type Recent = {
@@ -12,7 +14,6 @@ export type Recent = {
 };
 
 const KEY = 'falcon.recents.v1';
-const MAX = 12;
 
 export function loadRecents(): Recent[] {
   try { return JSON.parse(localStorage.getItem(KEY) ?? '[]') as Recent[]; } catch { return []; }

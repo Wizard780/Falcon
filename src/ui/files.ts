@@ -2,6 +2,7 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { bridge } from '../editor/host';
 import { docxToDoc } from '../docx/import';
 import { docToDocx } from '../docx/export';
+import { P, pref } from '../editor/prefs';
 
 export type DocMeta = { name: string; path?: string };
 
@@ -23,9 +24,17 @@ export async function openPath(path: string): Promise<{ doc: PMNode; meta: DocMe
   return { doc, meta: { name: file.name.replace(/\.docx$/i, ''), path: file.path } };
 }
 
+/** The name a never-saved Untitled doc is offered under, as Settings picks it. */
+export function newFileName(how = pref(P.newName), now = new Date()): string {
+  if (how === 'date') return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  if (how === 'speech') return `Speech ${now.getMonth() + 1}-${now.getDate()} ${now.getHours() % 12 || 12}-${String(now.getMinutes()).padStart(2, '0')}${now.getHours() < 12 ? 'AM' : 'PM'}`;
+  return 'Untitled';
+}
+
 export async function saveDocument(doc: PMNode, meta: DocMeta, saveAs: boolean): Promise<DocMeta | null> {
   const data = await docToDocx(doc);
-  const name = `${meta.name || 'Untitled'}.docx`;
+  const untitled = !meta.path && (meta.name || 'Untitled') === 'Untitled';
+  const name = `${untitled ? newFileName() : meta.name}.docx`;
   if (bridge.saveFile) {
     const r = await bridge.saveFile({ path: saveAs ? undefined : meta.path, name, data });
     return r ? { name: r.name.replace(/\.docx$/i, ''), path: r.path } : null;
@@ -36,7 +45,7 @@ export async function saveDocument(doc: PMNode, meta: DocMeta, saveAs: boolean):
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  return meta;
+  return untitled ? { ...meta, name: name.replace(/\.docx$/, '') } : meta;
 }
 
 function pickFile(): Promise<{ name: string; data: Uint8Array } | null> {

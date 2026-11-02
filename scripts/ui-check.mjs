@@ -94,21 +94,21 @@ want(sz0 === '13' && sz1 === '18', `font size box shows 13 on a tag, then 18 aft
 await page.click('.fstrip [aria-label="Settings"]');
 await page.waitForSelector('.st');
 await page.screenshot({ path: `${shots}/5-settings.png` });
-want(await page.$$eval('.st-navb', (x) => x.map((b) => b.textContent).join(',')) === 'Appearance,Editor,Keybindings,Speech and timers', 'Settings lists Appearance, Editor, Keybindings, Speech and timers');
+want(await page.$$eval('.st-navb', (x) => x.map((b) => b.textContent).join(',')) === 'General,Appearance,Text and styles,Editor,Keybindings,Read mode,Speech and timers', 'Settings lists General, Appearance, Text and styles, Editor, Keybindings, Read mode, Speech and timers');
 await page.click('.st-navb:has-text("Speech and timers")');
 await page.selectOption('select[aria-label="Speech length"]', '9');
 want(await page.$eval('.b.timer', (x) => x.textContent) === '9:00', 'speech timer length follows Settings');
-await page.click('.st-navb:has-text("Editor")');
+await page.click('.st-navb:has-text("General")');
 await page.click('.st [aria-label="Show outline pane"]');
 want(await page.$eval('.app', (x) => x.classList.contains('no-outline')), 'Settings switch hides the outline');
-await page.click('.st-seg button:has-text("2")');
+await page.click('.st-seg[aria-label="Outline depth"] button:has-text("2")');
 want(await page.$eval('.lv [data-lv="2"]', (x) => x.hasAttribute('data-on')), 'Settings depth sets the outline depth');
 await page.screenshot({ path: `${shots}/5b-settings-editor.png` });
 await page.click('.st-navb:has-text("Keybindings")');
 await page.screenshot({ path: `${shots}/5c-settings-keys.png` });
 await page.keyboard.press('/');
 await page.keyboard.type('zoom');
-want(await page.$$eval('.st-row .st-txt > span', (x) => x.map((e) => e.textContent).join(',')) === 'Zoom,Zoom in,Zoom out', `search finds the zoom rows: ${await page.$$eval('.st-row .st-txt > span', (x) => x.map((e) => e.textContent).join(','))}`);
+want(await page.$$eval('.st-row .st-txt > span', (x) => x.map((e) => e.textContent).join(',')) === 'Zoom,Zoom with the scroll wheel,Zoom in,Zoom out', `search finds the zoom rows: ${await page.$$eval('.st-row .st-txt > span', (x) => x.map((e) => e.textContent).join(','))}`);
 await page.screenshot({ path: `${shots}/5d-settings-search.png` });
 await page.keyboard.press('Escape'); // clears the search first
 want(!!(await page.$('.st')) && (await page.$eval('.st-search input', (x) => x.value)) === '', 'Esc in the search clears it and keeps Settings open');
