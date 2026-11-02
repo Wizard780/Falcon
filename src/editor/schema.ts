@@ -111,8 +111,8 @@ const marks: Record<string, MarkSpec> = {
     attrs: { href: {} },
     inclusive: false,
     parseDOM: [{ tag: 'a.f-link[data-href]', getAttrs: (el) => ({ href: (el as HTMLElement).dataset.href }) }],
-    // only web and mail addresses become a live href; anything else (javascript:, file:) is kept but inert
-    toDOM: (m) => ['a', { class: 'f-link', 'data-href': m.attrs.href, ...(/^(https?|mailto):/i.test(m.attrs.href) ? { href: m.attrs.href } : {}) }, 0],
+    // only web addresses become a live href; anything else (mailto:, javascript:, file:) is kept but inert
+    toDOM: (m) => ['a', { class: 'f-link', 'data-href': m.attrs.href, ...(/^https?:/i.test(m.attrs.href) ? { href: m.attrs.href } : {}) }, 0],
   },
   sup: { excludes: 'sup sub', parseDOM: [{ tag: 'sup' }], toDOM: () => ['sup', 0] },
   sub: { excludes: 'sup sub', parseDOM: [{ tag: 'sub' }], toDOM: () => ['sub', 0] },
