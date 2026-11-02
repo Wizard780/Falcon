@@ -4,11 +4,11 @@ import { keydownHandler } from 'prosemirror-keymap';
 import { Plugin, TextSelection, type Command } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
 import {
-  applyEmphasis, clearFormatting, condense, copyPreviousCite, indent, regrow, setParaStyle, shrink,
+  applyEmphasis, clearFormatting, condenseBySettings, copyPreviousCite, indent, regrow, setParaStyle, shrink,
   toggleBold, toggleCase, toggleCharMark, toggleColorMark, toggleTypingMark,
 } from './commands';
 import { schema } from './schema';
-import { ENTER_AFTER, P, onPrefs, pref } from './prefs';
+import { ENTER_AFTER, onPrefs, pref } from './prefs';
 import { activeColors, pastePlainFromClipboard } from './host';
 import { moveByHeading, moveByParagraph, moveContainer } from './motion';
 import { toggleMarker, toggleRead } from './read';
@@ -130,7 +130,7 @@ reserve(FIXED.map(([k, what]) => [k, what]));
 bind('Cutting', [
   { id: 'pastePlain', label: 'Paste as plain text', key: 'F2', run: (_s, _d, view) => { if (view) void pastePlainFromClipboard(view); return true; } },
   // F3 runs the condense Settings picks; Alt-F3 and Mod-Alt-F3 always merge (Card tools)
-  { id: 'condense', label: 'Condense paragraph', key: 'F3', run: (state, dispatch) => condense(pref(P.condense))(state, dispatch) },
+  { id: 'condense', label: 'Condense paragraph', key: 'F3', run: condenseBySettings },
   { id: 'changeCase', label: 'Change case', key: 'Shift-F3', run: toggleCase },
   { id: 'pocket', label: 'Pocket', key: 'F4', run: setParaStyle('pocket') },
   { id: 'hat', label: 'Hat', key: 'F5', run: setParaStyle('hat') },

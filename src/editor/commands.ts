@@ -407,6 +407,9 @@ export function condense(mode: CondenseMode): Command {
   };
 }
 
+/** F3 and the Card menu's Condense: the condense Settings picks. */
+export const condenseBySettings: Command = (state, dispatch) => condense(pref(P.condense))(state, dispatch);
+
 /** Mod-Alt-Shift-F3: split paragraphs at ¶ marks. */
 export const uncondense: Command = (state, dispatch) => {
   const r = cardBodyRange(state);

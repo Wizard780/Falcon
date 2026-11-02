@@ -1,4 +1,4 @@
-import { condense, uncondense } from './commands';
+import { condense, condenseBySettings, uncondense } from './commands';
 import type { SettingSpec, ToolSection } from './tools';
 import { editing } from './card-tools/scope';
 import {
@@ -9,7 +9,7 @@ import { createReference, refHeading, refHighlights, refShrink } from './card-to
 /** The toolbar's Card menu: operations on the card at the cursor. */
 export const CARD_TOOLS: ToolSection[] = [
   { title: 'Condense', items: [
-    { id: 'condense', label: 'Condense', run: editing(condense('integrity')), key: 'F3', hint: 'Collapse extra spaces, keeping the paragraphs' },
+    { id: 'condense', label: 'Condense', run: editing(condenseBySettings), key: 'F3', hint: 'Collapse extra spaces, keeping or merging the paragraphs as Settings picks' },
     { id: 'condenseMerge', label: 'Condense without paragraph integrity', run: editing(condense('merge')), key: 'Alt-F3', hint: 'Merge the paragraphs into one' },
     { id: 'condensePilcrows', label: 'Condense with pilcrows', run: editing(condense('pilcrows')), key: 'Mod-Alt-F3', hint: 'Merge the paragraphs, marking each old break with ¶' },
     { id: 'condenseWarning', label: 'Condense With Warning', run: condenseWithWarning(false), hint: 'Merge the selected paragraphs between [PARAGRAPH INTEGRITY PAUSES] and RESUMES lines' },
