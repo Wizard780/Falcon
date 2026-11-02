@@ -275,7 +275,10 @@ button.b:active { transform: scale(.97); }
 
 /* desktop: the window drags by the chrome; on macOS the strip and panel start below the traffic lights */
 .desktop .toolbar, .desktop .fstrip, .desktop .tools, .desktop .status { -webkit-app-region: drag; }
-.desktop button, .desktop .pop, .desktop input, .desktop .files { -webkit-app-region: no-drag; }
+.desktop button, .desktop .pop, .desktop input, .desktop .files[data-open] { -webkit-app-region: no-drag; }
+/* Electron cuts drag areas in page order, so the toolbar (later in the page) would turn the open files
+   panel's rows over it back into window drags; it gives up dragging while the panel is open */
+.desktop .app:has(.files[data-open]) .toolbar { -webkit-app-region: no-drag; }
 /* page */
 .page { zoom: var(--zoom); padding: 36px 20px 50vh 30px; color: var(--doc-ink); }
 .ProseMirror { outline: none; font-family: var(--doc-font); font-size: 11pt; line-height: 1.2; white-space: pre-wrap; word-wrap: break-word; caret-color: #000; min-height: 60vh; }

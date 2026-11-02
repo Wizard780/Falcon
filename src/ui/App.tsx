@@ -535,8 +535,9 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
           </div>
         ))}
       </div>
-      {/* mouse-only: the tabs in the rail are what the keyboard and screen readers use */}
-      <aside className="files" data-open={open || undefined} aria-hidden="true" onPointerEnter={show} onPointerLeave={hide}>
+      {/* mouse-only: the tabs in the rail are what the keyboard and screen readers use; inert while
+          closed so its rows can't take clicks */}
+      <aside className="files" data-open={open || undefined} inert={!open} aria-hidden="true" onPointerEnter={show} onPointerLeave={hide}>
         <div className="files-h" style={{ top: at.head }}><b>Falcon</b><span>{props.docs.length} open</span></div>
         <div ref={list} className="files-l" style={{ top: at.list }}
           onScroll={(e) => { if (strip.current) strip.current.scrollTop = e.currentTarget.scrollTop; }}>
