@@ -1,5 +1,6 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { buildOutline } from '../editor/outline';
+import { P, pref } from '../editor/prefs';
 
 /** A file the user opened or saved. `blocks` is a short outline for the home peek. */
 export type Recent = {
@@ -12,13 +13,12 @@ export type Recent = {
 };
 
 const KEY = 'falcon.recents.v1';
-const MAX = 12;
 
 export function loadRecents(): Recent[] {
   try { return JSON.parse(localStorage.getItem(KEY) ?? '[]') as Recent[]; } catch { return []; }
 }
 export function saveRecents(list: Recent[]) {
-  localStorage.setItem(KEY, JSON.stringify(list.slice(0, MAX)));
+  localStorage.setItem(KEY, JSON.stringify(list.slice(0, pref(P.recentCount))));
 }
 
 const same = (a: Recent, b: { name: string; path?: string }) => (a.path && b.path ? a.path === b.path : !a.path && !b.path && a.name === b.name);
@@ -35,7 +35,7 @@ export function noteRecent(list: Recent[], doc: PMNode, file: { name: string; pa
     blocks: items.filter((i) => i.level === 2 || i.level === 3).slice(0, 7).map((i) => ({ label: i.text || 'Untitled', level: i.level, cards: i.cards })),
     when: Date.now(),
   };
-  return [entry, ...list.filter((r) => !same(r, file))].slice(0, MAX);
+  return [entry, ...list.filter((r) => !same(r, file))].slice(0, pref(P.recentCount));
 }
 
 /** "9:41" today, "Yesterday", else "Oct 28". */
