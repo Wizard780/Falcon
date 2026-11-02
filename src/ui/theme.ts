@@ -8,6 +8,7 @@
  */
 import { bridge } from '../editor/host';
 import { P, onPrefs, pref } from '../editor/prefs';
+import { safeSet } from './storage';
 
 export type ThemeColors = { bg: string; text: string; paper: string; paperInk: string };
 export type Theme = ThemeColors & { id: string; name: string; tokens?: Partial<Record<Token, string>> };
@@ -51,7 +52,7 @@ export function customThemes(): Theme[] {
   } catch { return []; }
 }
 function saveCustom(list: Theme[]) {
-  localStorage.setItem(CUSTOM_KEY, JSON.stringify(list));
+  safeSet(CUSTOM_KEY, JSON.stringify(list));
   dispatchEvent(new Event('falcon-prefs')); // same event as a pref change: Settings and the theme redraw
 }
 /** A new custom theme copied from `from`'s four colors, named "<from> copy" (then 2, 3…). Returns it. */
@@ -136,7 +137,7 @@ export function applyTheme() {
 
 /** The old Document paper toggle (falcon.pageDark) becomes the paper setting, once. */
 function migrate() {
-  if (localStorage.getItem(P.paper.key) === null && localStorage.getItem('falcon.pageDark') === 'on') localStorage.setItem(P.paper.key, 'dark');
+  if (localStorage.getItem(P.paper.key) === null && localStorage.getItem('falcon.pageDark') === 'on') safeSet(P.paper.key, 'dark');
   localStorage.removeItem('falcon.pageDark');
 }
 
