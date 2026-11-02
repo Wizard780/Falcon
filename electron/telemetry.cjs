@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // PostHog's project key is public by design (it can only send events, not read them)
-const KEY = '';
+const KEY = 'phc_tfJKiFHhGFqYHbhoTgymjt59BACPKYGvqTxUbbzTi6T9';
 const HOST = 'https://us.i.posthog.com';
 
 // the only events and properties the page may send; anything else is dropped
