@@ -96,6 +96,7 @@ export function OutlinePane(props: Props) {
                   onMouseDown={(e) => e.preventDefault()} onClick={() => { setLevel(v); save(outlineLevelSetting, v); }}>{v === 'all' ? 'All' : name[0]}</button>
               ))}
             </div>
+            <span className="ol-br" />
             {opt('Hide others', hide, setHide, outlineHideSetting, 'Show only the matches and the headings above them')}
             {opt('Card text', content, setContent, outlineContentSetting, 'A heading also matches when the text under it does')}
           </div>
