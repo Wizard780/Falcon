@@ -14,6 +14,7 @@ import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
 import { readPlugin } from './read';
+import { docToolPlugins } from './doc-tools';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -120,6 +121,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       dropCursor({ color: '#3b82f6', width: 2 }),
       brush,
       pastePlugin,
+      ...docToolPlugins, // before wordSelection: Cmd/Ctrl-click on a link opens it
       wordSelection(),
       selectionClasses,
       findPlugin,
