@@ -191,6 +191,7 @@ export function Settings(props: Props) {
   const themeId = pref(P.theme);
   const current = resolveTheme(themeId);
   const custom = customThemes().find((t) => t.id === themeId);
+  const shownId = themeId === SYSTEM ? SYSTEM : current.id; // a deleted theme's id shows Dark, its fallback, as checked
   const paperDark = document.documentElement.classList.contains('page-dark');
   const themeTiles: [string, string, ReactNode][] = [
     [SYSTEM, 'System', <span className="st-thp sys"><ThemeLook t={resolveTheme('dark')} /><ThemeLook t={resolveTheme('light')} /></span>],
@@ -249,7 +250,7 @@ export function Settings(props: Props) {
         { label: 'Theme', hint: 'The colors of Falcon and the page. + makes your own, starting from the one you have on.', wide: true, control: (
           <span className="st-themes" role="radiogroup" aria-label="Theme">
             {themeTiles.map(([id, name, look]) => (
-              <button key={id} className="st-th" role="radio" aria-checked={themeId === id} aria-label={name} title={name} onClick={() => setPref(P.theme, id)}>
+              <button key={id} className="st-th" role="radio" aria-checked={shownId === id} aria-label={name} title={name} onClick={() => setPref(P.theme, id)}>
                 {look}<span>{name}</span>
               </button>
             ))}

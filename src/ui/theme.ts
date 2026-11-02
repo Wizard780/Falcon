@@ -131,7 +131,7 @@ export function applyTheme() {
   root.dataset.chrome = chromeDark ? 'dark' : 'light';
   root.style.colorScheme = chromeDark ? 'dark' : 'light'; // native selects, color pickers and scrollbars match
   root.classList.toggle('page-dark', isDark(vars['--page']));
-  bridge.setTheme?.(t.bg, chromeDark);
+  bridge.setTheme?.(t.bg, chromeDark, pref(P.theme) === SYSTEM);
 }
 
 /** The old Document paper toggle (falcon.pageDark) becomes the paper setting, once. */

@@ -17,14 +17,17 @@ const themeFile = () => path.join(app.getPath('userData'), 'theme.json');
 function lastTheme() {
   try {
     const t = JSON.parse(fsSync.readFileSync(themeFile(), 'utf8'));
-    if (/^#[0-9a-f]{6}$/i.test(t.bg)) return { bg: t.bg, dark: t.dark !== false };
+    if (/^#[0-9a-f]{6}$/i.test(t.bg)) return { bg: t.bg, dark: t.dark !== false, system: t.system === true };
   } catch { /* first run, or no theme saved yet */ }
-  return { bg: '#0f0f10', dark: true };
+  return { bg: '#0f0f10', dark: true, system: false };
 }
+
+// System leaves the native theme on the OS setting: forcing it would also fix the page's prefers-color-scheme
+const themeSource = (dark, system) => (system ? 'system' : dark ? 'dark' : 'light');
 
 function createWindow() {
   const theme = lastTheme();
-  nativeTheme.themeSource = theme.dark ? 'dark' : 'light';
+  nativeTheme.themeSource = themeSource(theme.dark, theme.system);
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -100,11 +103,11 @@ ipcMain.on('falcon:force-close', (e, quit) => {
 });
 
 let lastThemeJson = '';
-ipcMain.on('falcon:theme', (e, bg, dark) => {
+ipcMain.on('falcon:theme', (e, bg, dark, system) => {
   if (!/^#[0-9a-f]{6}$/i.test(bg)) return;
   BrowserWindow.fromWebContents(e.sender)?.setBackgroundColor(bg);
-  nativeTheme.themeSource = dark ? 'dark' : 'light';
-  const json = JSON.stringify({ bg, dark });
+  nativeTheme.themeSource = themeSource(dark === true, system === true);
+  const json = JSON.stringify({ bg, dark: dark === true, system: system === true });
   if (json !== lastThemeJson) { lastThemeJson = json; fs.writeFile(themeFile(), json).catch(() => { /* a convenience */ }); }
 });
 

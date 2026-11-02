@@ -124,4 +124,4 @@ export function onPrefs(f: () => void): () => void {
 }
 // another window changed them
 const KEYS = new Set(Object.values(P).map((p) => p.key));
-if (typeof window !== 'undefined') addEventListener('storage', (e) => { if (!e.key || KEYS.has(e.key)) { cache.clear(); changed(); } });
+if (typeof window !== 'undefined') addEventListener('storage', (e) => { if (!e.key || KEYS.has(e.key) || e.key === 'falcon.themes') { cache.clear(); changed(); } });

@@ -96,6 +96,9 @@ await win.click('[aria-label="Theme"] [role=radio][aria-label="Light"]');
 await new Promise((ok) => setTimeout(ok, 300));
 const winBg = await app.evaluate(({ BrowserWindow, nativeTheme }) => [BrowserWindow.getAllWindows()[0].getBackgroundColor(), nativeTheme.themeSource]);
 const themeFile = (() => { try { return JSON.parse(fs.readFileSync(path.join(env.FALCON_USER_DATA, 'theme.json'), 'utf8')); } catch { return null; } })();
+await win.click('[aria-label="Theme"] [role=radio][aria-label="System"]');
+await new Promise((ok) => setTimeout(ok, 300));
+const systemSource = await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource);
 await win.click('[aria-label="Theme"] [role=radio][aria-label="Dark"]');
 await win.click('[aria-label="Close settings"]');
 fs.mkdirSync('shots', { recursive: true });
@@ -131,6 +134,7 @@ want(indexed.join() === 'Zebra Counterplan.docx', `indexed files are the allowed
 want(outsideOpen.startsWith('refused'), `openPath refuses a .docx outside the allowed folders: ${outsideOpen}`);
 want(openedByPalette && paletteGone, 'Cmd-K, typing and Enter opens the indexed file and closes the palette');
 want(winBg[0].toLowerCase() === '#f4f4f5' && winBg[1] === 'light', `the Light theme sets the window background and native theme: ${winBg}`);
+want(systemSource === 'system', `System leaves the native theme on the OS setting, so the page can follow it: ${systemSource}`);
 want(themeFile?.bg === '#f4f4f5' && themeFile?.dark === false, `and is kept for the next launch: ${JSON.stringify(themeFile)}`);
 want(askTitle === 'Close Falcon without saving?', `closing with an unsaved doc asks in Falcon's dialog: ${askTitle}`);
 want(keptAfterCancel, 'Cancel keeps the window open');

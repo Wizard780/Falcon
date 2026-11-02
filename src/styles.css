@@ -4,7 +4,7 @@
   --u-deep: #0f0f10; --u-card: #19191b; --u-raised: #232325; --u-hover: rgba(237, 237, 237, .05);
   --u-tx: #ededed; --u-tx2: #a1a1a6; --u-mut: #85858b; --u-top: inset 0 1px 0 rgba(255, 255, 255, .08);
   /* the theme's other shades (src/ui/theme.ts sets them all; these are the Dark theme's) */
-  --u-pop: var(--u-pop); --u-panel: var(--u-panel); --u-well: var(--u-well); --u-ctl: var(--u-ctl); --u-ctl2: var(--u-ctl2); --u-ctl-on: var(--u-ctl-on); --u-line: var(--u-line);
+  --u-pop: #1b1b1e; --u-panel: #141416; --u-well: #1c1c1f; --u-ctl: #26262a; --u-ctl2: #2c2c30; --u-ctl-on: #3a3a3f; --u-line: #232326;
   --u-texture: #b8b8bd; --u-an: #8aa4d6; --u-ut: #8fae7a; --u-sh: 1;
   --u-ease: cubic-bezier(.22, 1, .36, 1);
   --ink: #00e5ff; /* the highlighter you're cutting with: the one accent */
