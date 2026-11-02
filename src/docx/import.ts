@@ -3,6 +3,7 @@ import type { Mark, Node as PMNode } from 'prosemirror-model';
 import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const M = schema.marks;
 
 type StyleInfo = { name: string; alias: string; basedOn?: string; type: string; outline?: number; rpr?: Element };
@@ -98,6 +99,17 @@ function charStyleOf(styles: Map<string, StyleInfo>, id: string | null): CharKin
 
 const HL_NAMES = new Set(Object.keys(HIGHLIGHTS));
 
+/** Relationship id → URL for the document's external hyperlinks. */
+function readLinks(xml: string | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!xml) return map;
+  for (const r of Array.from(parseXml(xml).documentElement.children)) {
+    const id = r.getAttribute('Id'), target = r.getAttribute('Target');
+    if (id && target && r.getAttribute('TargetMode') === 'External' && /\/hyperlink$/.test(r.getAttribute('Type') ?? '')) map.set(id, target);
+  }
+  return map;
+}
+
 function runMarks(styles: Map<string, StyleInfo>, rpr: Element | undefined, paraStyle: ParaStyle, cache: Map<string, CharKind>): Mark[] {
   const marks: Mark[] = [];
   if (!rpr) return marks;
@@ -142,10 +154,11 @@ function runMarks(styles: Map<string, StyleInfo>, rpr: Element | undefined, para
 
 /** Convert a .docx (zip bytes) into a Falcon document. */
 export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
-  const files = unzipSync(data, { filter: (f) => f.name === 'word/document.xml' || f.name === 'word/styles.xml' });
+  const files = unzipSync(data, { filter: (f) => f.name === 'word/document.xml' || f.name === 'word/styles.xml' || f.name === 'word/_rels/document.xml.rels' });
   const docXml = files['word/document.xml'];
   if (!docXml) throw new Error('not a Word document');
   const styles = readStyles(files['word/styles.xml'] ? strFromU8(files['word/styles.xml']) : undefined);
+  const links = readLinks(files['word/_rels/document.xml.rels'] ? strFromU8(files['word/_rels/document.xml.rels']) : undefined);
   const body = kid(parseXml(strFromU8(docXml)).documentElement, 'body');
   const paras: PMNode[] = [];
   const cache = new Map<string, CharKind>();
@@ -164,11 +177,12 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
     const left = Number(ind?.getAttributeNS(W, 'left') ?? ind?.getAttributeNS(W, 'start') ?? ind?.getAttribute('w:left') ?? 0);
     const indent = left > 0 ? Math.min(8, Math.round(left / 720)) : 0;
     const inline: PMNode[] = [];
-    const readRuns = (parent: Element) => {
+    const readRuns = (parent: Element, link: Mark | null) => {
       for (const c of kids(parent)) {
         const ln = c.localName;
         if (ln === 'r') {
           const marks = runMarks(styles, kid(c, 'rPr'), style!, cache);
+          if (link) marks.push(link);
           let text = '';
           const flush = () => { if (text) { inline.push(schema.text(text, marks)); text = ''; } };
           for (const t of kids(c)) {
@@ -184,14 +198,18 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
             }
           }
           flush();
-        } else if (ln === 'hyperlink' || ln === 'smartTag' || ln === 'ins' || ln === 'fldSimple' || ln === 'customXml' || ln === 'sdtContent') {
-          readRuns(c);
+        } else if (ln === 'hyperlink') {
+          // links to a web address (through the relationships file); links to a bookmark in the file stay plain text
+          const href = links.get(c.getAttributeNS(R, 'id') ?? c.getAttribute('r:id') ?? '');
+          readRuns(c, href ? M.link.create({ href }) : link);
+        } else if (ln === 'smartTag' || ln === 'ins' || ln === 'fldSimple' || ln === 'customXml' || ln === 'sdtContent') {
+          readRuns(c, link);
         } else if (ln === 'sdt') {
-          readRuns(kid(c, 'sdtContent') ?? c);
+          readRuns(kid(c, 'sdtContent') ?? c, link);
         }
       }
     };
-    readRuns(p);
+    readRuns(p, null);
     paras.push(schema.nodes.paragraph.create({ style, indent }, inline));
   };
 

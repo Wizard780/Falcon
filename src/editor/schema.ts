@@ -106,6 +106,14 @@ const marks: Record<string, MarkSpec> = {
     parseDOM: [{ tag: 's' }, { tag: 'del' }, { style: 'text-decoration-line=line-through' }],
     toDOM: () => ['s', 0],
   },
+  // A hyperlink. Only our own links parse from HTML (copy/paste inside Falcon): links in pasted web text stay plain.
+  link: {
+    attrs: { href: {} },
+    inclusive: false,
+    parseDOM: [{ tag: 'a.f-link[data-href]', getAttrs: (el) => ({ href: (el as HTMLElement).dataset.href }) }],
+    // only web and mail addresses become a live href; anything else (javascript:, file:) is kept but inert
+    toDOM: (m) => ['a', { class: 'f-link', 'data-href': m.attrs.href, ...(/^(https?|mailto):/i.test(m.attrs.href) ? { href: m.attrs.href } : {}) }, 0],
+  },
   sup: { excludes: 'sup sub', parseDOM: [{ tag: 'sup' }], toDOM: () => ['sup', 0] },
   sub: { excludes: 'sup sub', parseDOM: [{ tag: 'sub' }], toDOM: () => ['sub', 0] },
 };
