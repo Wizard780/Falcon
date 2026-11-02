@@ -3,7 +3,7 @@ import { EditorState } from 'prosemirror-state';
 import { undo } from 'prosemirror-history';
 import { make, caret, select, run } from './helpers';
 import { alphabetize, canDrop, deleteSections, gotoStyle, moveSections, sectionAt, sectionsSlice, selectSections, topSections } from '../src/editor/nav/sections';
-import { compute, letters, numberMarks, outlineNumbers, toggleRestart, toggleRole, setNavScope } from '../src/editor/nav/numbering';
+import { compute, letters, numberMarks, numberingKey, outlineNumbers, toggleRestart, toggleRole, setNavScope } from '../src/editor/nav/numbering';
 import { falconKeys as navKeys } from '../src/editor/keymap';
 import type { ParaStyle } from '../src/editor/schema';
 import { buildOutline, searchOutline } from '../src/editor/outline';
@@ -188,6 +188,14 @@ describe('numbering', () => {
     s = run(s, toggleRole('number'));
     expect(labels(s)).toBe(',,,,,,1.,2.');
     setNavScope(() => []);
+  });
+
+  it('a block that continues the count keeps it when the block is scrolled out of the drawn stretch', () => {
+    let s = run(select(make(NUM), 'T1', 'T6'), toggleRole('number'));
+    s = run(caret(s, 'B2'), toggleRestart);
+    expect(labels(s)).toBe(',1.,2.,3.,4.,,5.,6.');
+    s = s.apply(s.tr.setMeta(numberingKey, { win: [pos(s, 'T5'), s.doc.content.size] }));
+    expect(labels(s)).toBe(',1.,2.,3.,4.,,5.,6.');
   });
 
   it('no marks, no cost', () => {
