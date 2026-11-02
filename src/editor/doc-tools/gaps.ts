@@ -3,15 +3,12 @@ import { Plugin, type Command, type EditorState, type Transaction } from 'prosem
 import { AddMarkStep, RemoveMarkStep } from 'prosemirror-transform';
 import { isHistoryTransaction } from 'prosemirror-history';
 import { schema } from '../schema';
-import { wordAt } from '../commands';
+import { NO_BRIDGE, wordAt } from '../commands';
 import { spansOf, type Span } from '../multi';
 import { isReading } from '../read';
 import { readSetting, type SettingSpec } from '../tools';
 
 const M = schema.marks;
-
-/** Transaction meta: a bulk recolor or cleanup that the automatic bridging must leave as it is. */
-export const NO_BRIDGE = 'falcon-no-bridge';
 
 export const autoBridgeSetting: SettingSpec = {
   section: 'Formatting gaps', key: 'falcon.autoBridge', kind: 'toggle', default: true,
@@ -165,21 +162,10 @@ const BRIDGED = new Set<MarkType>([M.underline, M.emphasis, M.cite, M.highlight,
  * to a formatted word reads as one stretch. Rides along in the same undo step. Gaps inside the selection
  * are left exactly as the command set them.
  */
-let clearing = false;
 export const autoBridgePlugin = new Plugin({
-  props: {
-    handleDOMEvents: {
-      // F12 (clear formatting) never bridges, as in CardMirror. DOM handlers run before the keymap, and the
-      // keymap dispatches synchronously, so the flag is up exactly while F12's transaction is applied.
-      keydown: (_view, ev) => {
-        if (ev.key === 'F12') { clearing = true; setTimeout(() => { clearing = false; }); }
-        return false;
-      },
-    },
-  },
   appendTransaction(trs, old, state) {
     const tr = trs[0];
-    if (trs.length !== 1 || clearing || !tr.docChanged || tr.getMeta(NO_BRIDGE) || isHistoryTransaction(tr) || !readSetting(autoBridgeSetting)) return null;
+    if (trs.length !== 1 || !tr.docChanged || tr.getMeta(NO_BRIDGE) || isHistoryTransaction(tr) || !readSetting(autoBridgeSetting)) return null;
     let named = false;
     for (const s of tr.steps) {
       if (!(s instanceof AddMarkStep || s instanceof RemoveMarkStep) || !BRIDGED.has(s.mark.type)) return null;

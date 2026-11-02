@@ -193,9 +193,12 @@ export function paintColorMark(type: MarkType, color: string | null, from: numbe
   };
 }
 
+/** Transaction meta: a bulk recolor or cleanup that the automatic gap bridging must leave as it is. */
+export const NO_BRIDGE = 'falcon-no-bridge';
+
 const CLEAR_KEEPS = new Set(['highlight', 'shading']);
 
-/** F12: strip direct formatting, keep highlighting. With nothing selected, clears the current paragraph. */
+/** F12: strip direct formatting, keep highlighting. With nothing selected, clears the current paragraph. Never bridges gaps, as in CardMirror. */
 export const clearFormatting: Command = (state, dispatch) => {
   let ranges = targetRanges(state, 'none');
   if (!ranges.length) {
@@ -207,7 +210,7 @@ export const clearFormatting: Command = (state, dispatch) => {
     for (const name of Object.keys(schema.marks)) if (!CLEAR_KEEPS.has(name)) tr.removeMark(r.from, r.to, schema.marks[name]);
   }
   if (state.selection.empty) tr.setStoredMarks([]);
-  return finish(state, tr, dispatch);
+  return finish(state, tr.setMeta(NO_BRIDGE, true), dispatch);
 };
 
 /** Paragraphs touched by the selection, as [node, pos] pairs. */
