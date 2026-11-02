@@ -38,7 +38,6 @@ const row = (label) => `.st-row:has(.st-txt > span:text-is("${label}"))`;
 const tog = (p, label) => p.click(`${row(label)} .st-tog`);
 const seg = (p, label, text) => p.click(`${row(label)} .st-seg button:text-is("${text}")`);
 const sel = (p, label, value) => p.selectOption(`${row(label)} select`, String(value));
-const more = (p, label) => p.click(`${row(label)} .st-step button:nth-of-type(2)`);
 /** Replace the doc with [style, text] paragraphs. */
 const setDoc = (p, paras) => p.evaluate((paras) => {
   const v = window.__falconView, s = v.state.schema;
@@ -68,23 +67,23 @@ const markAll = async (p) => {
 if (part('general')) {
   const p = await fresh();
   await open(p, 'General');
-  await tog(p, 'Open Home at launch');
+  await sel(p, 'Open on launch', 'doc');
   await p.reload(); await p.waitForSelector('.ProseMirror'); await p.waitForTimeout(200);
-  want(!(await p.$('.home.open')), 'Open Home at launch off: launches straight to the document');
-  await open(p, 'General'); await tog(p, 'Open Home at launch');
+  want(!(await p.$('.home.open')), 'Open on launch Last document: launches straight to the document');
+  await open(p, 'General'); await sel(p, 'Open on launch', 'home');
   await p.reload(); await p.waitForSelector('.ProseMirror'); await p.waitForTimeout(200);
-  want(!!(await p.$('.home.open')), 'Open Home at launch on: launches on Home');
+  want(!!(await p.$('.home.open')), 'Open on launch Home: launches on Home');
   await p.keyboard.press('Escape');
 
   // ask before closing
   await p.keyboard.type('x');
   await p.waitForTimeout(100);
   await p.keyboard.press(`${mod}+w`); await p.waitForTimeout(150);
-  want(!!(await p.$('.cf')), 'Ask before closing unsaved files on: closing asks');
+  want(!!(await p.$('.cf')), 'Unsaved changes confirmation on: closing asks');
   await p.keyboard.press('Escape'); await p.waitForTimeout(100);
-  await open(p, 'General'); await tog(p, 'Ask before closing unsaved files'); await close(p);
+  await open(p, 'General'); await tog(p, 'Unsaved changes confirmation'); await close(p);
   await p.keyboard.press(`${mod}+w`); await p.waitForTimeout(150);
-  want(!(await p.$('.cf')) && !(await mm(p)).includes('x'), 'Ask before closing unsaved files off: closes without asking');
+  want(!(await p.$('.cf')) && !(await mm(p)).includes('x'), 'Unsaved changes confirmation off: closes without asking');
   await p.keyboard.press('Escape'); await p.waitForTimeout(100);
 
   // crash recovery
@@ -112,17 +111,17 @@ if (part('general')) {
   await close(p); await p.keyboard.press('Escape');
 
   // name for new files
-  await open(p, 'General'); await sel(p, 'Name for new files', 'date'); await close(p);
+  await open(p, 'General'); await sel(p, 'Name new files', 'date'); await close(p);
   await p.keyboard.press(`${mod}+n`); await p.waitForTimeout(100);
   const [dl] = await Promise.all([p.waitForEvent('download'), p.keyboard.press(`${mod}+s`)]);
-  want(/^\d{4}-\d\d-\d\d\.docx$/.test(dl.suggestedFilename()), `Name for new files: an Untitled doc saves as the date (${dl.suggestedFilename()})`);
-  await open(p, 'General'); await sel(p, 'Name for new files', 'speech'); await close(p);
+  want(/^\d{4}-\d\d-\d\d\.docx$/.test(dl.suggestedFilename()), `Name new files: an Untitled doc saves as the date (${dl.suggestedFilename()})`);
+  await open(p, 'General'); await sel(p, 'Name new files', 'speech'); await close(p);
   await p.keyboard.press(`${mod}+n`); await p.waitForTimeout(100);
   const [dl2] = await Promise.all([p.waitForEvent('download'), p.keyboard.press(`${mod}+s`)]);
-  want(/^Speech \d+-\d+ \d+-\d\d[AP]M\.docx$/.test(dl2.suggestedFilename()), `Name for new files: or as Speech and the time (${dl2.suggestedFilename()})`);
+  want(/^Speech \d+-\d+ \d+-\d\d[AP]M\.docx$/.test(dl2.suggestedFilename()), `Name new files: or as Speech and the time (${dl2.suggestedFilename()})`);
 
   // outline
-  await open(p, 'General'); await tog(p, 'Show outline pane');
+  await open(p, 'Editor'); await tog(p, 'Show outline pane');
   want(await p.$eval('.app', (x) => x.classList.contains('no-outline')), 'Show outline pane off hides the outline');
   await tog(p, 'Show outline pane');
   await p.click(`${row('Outline depth')} button:text-is("2")`);
@@ -143,11 +142,11 @@ if (part('reopen')) {
     window.falcon = { openPath: async (path) => ({ name, path, data: new Uint8Array(data) }) };
   }, arg: [data, name] };
   const p = await fresh({ init });
-  await open(p, 'General'); await tog(p, 'Reopen last files');
+  await open(p, 'General'); await tog(p, 'Restore open files');
   await p.evaluate((name) => localStorage.setItem('falcon.session', JSON.stringify([`/files/${name}`])), name);
   await p.reload(); await p.waitForSelector('.ProseMirror'); await p.waitForTimeout(800);
   const rows = await p.$$eval('.doc-row .doc-nm', (r) => r.map((x) => x.getAttribute('aria-label')));
-  want(rows.includes(name.replace(/\.docx$/, '')), `Reopen last files: the last session's file opens at launch (${rows})`);
+  want(rows.includes(name.replace(/\.docx$/, '')), `Restore open files: the last session's file opens at launch (${rows})`);
   await p.context().close();
 }
 
@@ -168,11 +167,11 @@ if (part('appearance')) {
   await p.keyboard.press(`${mod}+0`);
 
   await open(p, 'Appearance');
-  await tog(p, 'Dark page');
+  await seg(p, 'Document paper', 'Dark');
   want((await css(p, '.f-scroll', 'backgroundColor')) === 'rgb(30, 30, 32)' && (await css(p, '.ProseMirror p', 'color')) === 'rgb(230, 230, 230)', 'Dark page: dark page, light text');
   want((await css(p, '.f-shading', 'color')) === 'rgb(17, 17, 17)', 'Dark page: shaded text keeps dark ink');
   await p.screenshot({ path: `${shots}/settings-check-dark.png` });
-  await tog(p, 'Dark page');
+  await seg(p, 'Document paper', 'White');
   await seg(p, 'Text width', 'Narrow');
   want((await css(p, '.page', 'maxWidth')) === '680px', 'Text width Narrow caps the text at 680px');
   await seg(p, 'Margins', 'Wide');
@@ -194,15 +193,15 @@ if (part('appearance')) {
   await tog(p, 'Reduce motion');
   want((await css(p, '.toast', 'transitionDuration')) !== '0s', 'Reduce motion off: transitions are back');
 
-  await open(p, 'Text and styles');
+  await open(p, 'Formatting');
   await sel(p, 'Font', 'verdana');
   want((await css(p, '.ProseMirror', 'fontFamily')).startsWith('Verdana'), 'Font Verdana');
   await seg(p, 'Line spacing', '1.5');
   want((await css(p, '.ProseMirror', 'lineHeight')) === `${(11 * 4 / 3) * 1.5}px`, `Line spacing 1.5 (${await css(p, '.ProseMirror', 'lineHeight')})`);
   for (const [label, selector, pt] of [['Body text', '.ProseMirror', 11], ['Pocket', '.f-pocket', 26], ['Hat', '.f-hat', 22], ['Block', '.f-block', 16], ['Tag', '.f-tag', 13], ['Cite', '.f-cite', 13], ['Analytic', '.f-analytic', 13], ['Undertag', '.f-undertag', 11]]) {
-    await more(p, `${label} size`);
+    await sel(p, label, pt + 2);
     const px = parseFloat(await css(p, selector, 'fontSize'));
-    want(Math.abs(px - (pt + 1) * 4 / 3) < 0.05, `${label} size + shows ${label.toLowerCase()} at ${pt + 1} pt (${px}px)`);
+    want(Math.abs(px - (pt + 2) * 4 / 3) < 0.05, `${label} at ${pt + 2} pt shows ${label.toLowerCase()} at ${pt + 2} pt (${px}px)`);
   }
   await p.fill(`${row('Analytic color')} input`, '#aa0000');
   want((await css(p, '.f-analytic', 'color')) === 'rgb(170, 0, 0)', 'Analytic color');
@@ -210,8 +209,8 @@ if (part('appearance')) {
   want((await css(p, '.f-undertag', 'color')) === 'rgb(0, 0, 170)', 'Undertag color');
   await tog(p, 'Bold cites');
   want((await css(p, '.f-cite', 'fontWeight')) === '400', 'Bold cites off: cites at normal weight');
-  await tog(p, 'Box around emphasis');
-  want((await css(p, '.f-emphasis', 'borderTopWidth')) === '0px', 'Box around emphasis off');
+  await sel(p, 'Emphasis', 'bold');
+  want((await css(p, '.f-emphasis', 'borderTopWidth')) === '0px', 'Emphasis Bold only: no box');
   await tog(p, 'Box around pockets');
   want((await css(p, '.f-pocket', 'borderTopWidth')) === '0px', 'Box around pockets off');
   await seg(p, 'Hat underline', 'Single');
@@ -226,7 +225,7 @@ if (part('appearance')) {
   await open(p, 'General');
   const found = async (q) => { await p.fill('.st-search input', q); return (await p.$$eval('.st-row .st-txt > span', (x) => x.map((e) => e.textContent))).join(','); };
   await p.keyboard.press('/');
-  for (const [q, rows] of [['dark', 'Dark page'], ['¶', 'F3 condenses to,Small ¶ marks'], ['words per minute', 'Reader 1,Reader 2'], ['marker', 'Read marker,Marker color,Marker shows the time']]) {
+  for (const [q, rows] of [['dark', 'Document paper'], ['¶', 'F3 condenses to,Small ¶ marks'], ['words per minute', 'Reader 1,Reader 2'], ['marker', 'Marker color,Marker shows the time,Read marker']]) {
     const got = await found(q);
     want(got === rows, `search "${q}" finds ${rows} (${got})`);
   }
@@ -262,7 +261,7 @@ if (part('editor')) {
   // shrink
   await setDoc(p, [['tag', 'T'], ['normal', 'cite'], ['normal', 'read this [Table Omitted] not this']]);
   await pick(p, 'read this'); await key(p, 'F9');
-  await open(p, 'Editor'); await seg(p, 'Shrink down to', '8 pt'); await close(p);
+  await open(p, 'Formatting'); await sel(p, 'Unread text', 8); await close(p);
   await pick(p, 'not', 1); await key(p, `${mod}+8`);
   const once = (await body())[2];
   await key(p, `${mod}+8`);
@@ -342,7 +341,7 @@ if (part('read')) {
   const flows = () => p.$$eval('.f-read-flow', (x) => x.length);
   want(!(await vis('Undertag note')) && !(await vis('qualifications')) && !(await vis('shaded')) && (await flows()) === 2, 'read mode by default hides undertags, the rest of the cite and background color, and runs paragraphs together');
   // changed while reading: redraws at once
-  await open(p, 'Read mode');
+  await open(p, 'Editor');
   await tog(p, 'Keep paragraphs apart');
   want((await flows()) === 0, 'Keep paragraphs apart: paragraphs stay on their own lines (live)');
   await tog(p, 'Show the whole cite');
@@ -376,21 +375,22 @@ if (part('timers')) {
   const timer = async () => { await p.clock.runFor(50); return p.$eval('.b.timer:not(.prep)', (x) => x.textContent); };
   const prepClock = async () => { await p.clock.runFor(50); return p.$eval('.b.timer.prep', (x) => x.textContent); };
   await open(p, 'Speech and timers');
-  await seg(p, 'Timer preset', 'College');
-  want((await timer()) === '9:00', 'Timer preset College: 9:00 speeches');
+  await seg(p, 'Event', 'College');
+  want((await timer()) === '9:00', 'Event College: 9:00 speeches');
   await tog(p, 'Prep timer');
   want((await prepClock()) === 'Prep 10:00', 'Prep timer shows, at College prep (10:00)');
   await sel(p, 'Prep time', 5);
   want((await prepClock()) === 'Prep 5:00', 'Prep time 5:00');
-  await seg(p, 'Timer preset', 'High school');
-  want((await timer()) === '8:00' && (await prepClock()) === 'Prep 8:00', 'Timer preset High school: 8:00 and 8:00 prep');
+  await seg(p, 'Event', 'High school');
+  want((await timer()) === '8:00' && (await prepClock()) === 'Prep 8:00', 'Event High school: 8:00 and 8:00 prep');
   await sel(p, 'Speech length', 1);
-  await seg(p, 'Flash when time is low', '1 min');
-  await tog(p, 'Sound when time is up');
+  await open(p, 'General');
+  await seg(p, 'Low time flash', '1 min');
+  await tog(p, 'Timer sound');
   await close(p);
   await p.click('.b.timer:not(.prep)');
   await p.clock.runFor(2000);
-  want(await p.$eval('.b.timer:not(.prep)', (x) => x.classList.contains('low') && getComputedStyle(x).color === 'rgb(255, 107, 107)'), 'Flash when time is low: the running clock flashes red in its last minute');
+  want(await p.$eval('.b.timer:not(.prep)', (x) => x.classList.contains('low') && getComputedStyle(x).color === 'rgb(255, 107, 107)'), 'Low time flash: the running clock flashes red in its last minute');
   await p.click('.b.timer.prep');
   await p.clock.runFor(3000);
   want((await prepClock()) === 'Prep 7:57', `the prep timer counts down (${await prepClock()})`);
@@ -409,8 +409,8 @@ if (part('timers')) {
   const status = () => p.$eval('.status', (x) => x.textContent);
   const before = await status();
   await open(p, 'Speech and timers');
-  for (let i = 0; i < 10; i++) await more(p, 'Reader 1');
-  for (let i = 0; i < 10; i++) await more(p, 'Reader 2');
+  await sel(p, 'Reader 1', 300);
+  await sel(p, 'Reader 2', 400);
   await p.waitForTimeout(100);
   const after = await status();
   want(before.includes('Reader 1: 2:06 · Reader 2: 1:24') && after.includes('Reader 1: 1:24 · Reader 2: 1:03'), `Reader 1 and 2 speeds set the read times (${before.match(/Reader.*?\d:\d\d.*?\d:\d\d/)} -> ${after.match(/Reader.*?\d:\d\d.*?\d:\d\d/)})`);

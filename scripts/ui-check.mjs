@@ -94,11 +94,11 @@ want(sz0 === '13' && sz1 === '18', `font size box shows 13 on a tag, then 18 aft
 await page.click('.fstrip [aria-label="Settings"]');
 await page.waitForSelector('.st');
 await page.screenshot({ path: `${shots}/5-settings.png` });
-want(await page.$$eval('.st-navb', (x) => x.map((b) => b.textContent).join(',')) === 'General,Appearance,Text and styles,Editor,Keybindings,Read mode,Speech and timers', 'Settings lists General, Appearance, Text and styles, Editor, Keybindings, Read mode, Speech and timers');
+want(await page.$$eval('.st-navb', (x) => x.map((b) => b.textContent).join(',')) === 'General,Appearance,Editor,Formatting,Keybindings,Speech and timers', 'Settings lists General, Appearance, Editor, Formatting, Keybindings, Speech and timers');
 await page.click('.st-navb:has-text("Speech and timers")');
 await page.selectOption('select[aria-label="Speech length"]', '9');
 want(await page.$eval('.b.timer', (x) => x.textContent) === '9:00', 'speech timer length follows Settings');
-await page.click('.st-navb:has-text("General")');
+await page.click('.st-navb:has-text("Editor")'); // the outline settings
 await page.click('.st [aria-label="Show outline pane"]');
 want(await page.$eval('.app', (x) => x.classList.contains('no-outline')), 'Settings switch hides the outline');
 await page.click('.st-seg[aria-label="Outline depth"] button:has-text("2")');
