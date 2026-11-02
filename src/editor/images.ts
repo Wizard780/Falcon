@@ -1,5 +1,6 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection, Plugin, type Command } from 'prosemirror-state';
+import { ReplaceAroundStep, ReplaceStep } from 'prosemirror-transform';
 import type { EditorView, NodeView } from 'prosemirror-view';
 import { schema } from './schema';
 
@@ -186,17 +187,9 @@ class ImageView implements NodeView {
  * Web pictures in pasted HTML arrive as addresses. Each one is fetched once and embedded, so the saved file
  * carries the picture itself; when a site refuses, the picture stays linked (Word shows linked pictures too).
  */
-const tried = new Set<string>();
-function embedWebImages(view: EditorView) {
-  const srcs = new Set<string>();
-  view.state.doc.descendants((n) => {
-    // web pictures, and pasted embedded ones in a format Word can't hold (redrawn as PNG)
-    const src: string = n.attrs.src;
-    if (n.type.name === 'image' && (/^https?:/i.test(src) || !WORD_TYPES.test(src)) && !tried.has(src)) srcs.add(src);
-    return true;
-  });
+const needsEmbed = (src: string) => /^https?:/i.test(src) || !WORD_TYPES.test(src);
+function embedWebImages(view: EditorView, srcs: readonly string[]) {
   for (const src of srcs) {
-    tried.add(src);
     fetch(src).then((r) => (r.ok ? r.blob() : null)).then(async (blob) => {
       if (!blob || !/^image\//.test(blob.type) || view.isDestroyed) return;
       const raw = await readAsDataUrl(blob);
@@ -216,9 +209,22 @@ function embedWebImages(view: EditorView) {
 }
 
 /** Pictures: resizable, pasted or dropped as files (screenshots too), web pictures embedded. */
-export const imagePlugin = new Plugin<boolean>({
-  // whether the last transaction was a paste or drop (the only way new web pictures arrive while editing)
-  state: { init: () => false, apply: (tr) => /^(paste|drop)$/.test(tr.getMeta('uiEvent') ?? '') },
+const NONE: readonly string[] = [];
+export const imagePlugin = new Plugin<readonly string[]>({
+  // the pictures a paste or drop just brought in: only those are fetched, never the ones a file was opened with
+  state: {
+    init: () => NONE,
+    apply: (tr) => {
+      if (!/^(paste|drop)$/.test(tr.getMeta('uiEvent') ?? '')) return NONE;
+      const srcs = new Set<string>();
+      for (const step of tr.steps) {
+        if (step instanceof ReplaceStep || step instanceof ReplaceAroundStep) {
+          step.slice.content.descendants((n) => { if (n.type.name === 'image' && needsEmbed(n.attrs.src)) srcs.add(n.attrs.src); });
+        }
+      }
+      return srcs.size ? [...srcs] : NONE;
+    },
+  },
   props: {
     nodeViews: { image: (node, view, getPos) => new ImageView(node, view, getPos) },
     handlePaste(view, ev) {
@@ -240,6 +246,10 @@ export const imagePlugin = new Plugin<boolean>({
       return true;
     },
   },
-  // only pasted or dropped pictures are fetched: opening a file never reaches out to the addresses inside it
-  view: () => ({ update: (v) => { if (imagePlugin.getState(v.state)) embedWebImages(v); } }),
+  view: () => ({
+    update: (v, prev) => {
+      const srcs = imagePlugin.getState(v.state)!;
+      if (srcs.length && srcs !== imagePlugin.getState(prev)) embedWebImages(v, srcs);
+    },
+  }),
 });
