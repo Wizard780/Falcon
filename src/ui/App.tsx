@@ -641,7 +641,9 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   const openPop = (kind: PopKind, t: HTMLElement) => {
     if (pop?.kind === kind) { setPop(null); return; }
     const r = t.getBoundingClientRect();
-    setPop({ kind, x: r.left + r.width / 2, y: r.bottom + 6, origin: 0 });
+    // the Doc and Card menus open below the whole bar, so the open Doc menu doesn't cover the Card button
+    const below = kind === 'doc' || kind === 'card' ? t.closest('.toolbar')!.getBoundingClientRect().bottom : r.bottom;
+    setPop({ kind, x: r.left + r.width / 2, y: below + 6, origin: 0 });
   };
   // center the popover under its caret, inside the window
   useLayoutEffect(() => {
