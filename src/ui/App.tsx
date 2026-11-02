@@ -712,7 +712,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
 
 function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onNew: () => void; onOpen: () => void; onSave: (as: boolean) => void; onFind: () => void; onOutline: () => void; onRead: () => void; onSpeech: () => void }) {
   const b = (icon: string, title: string, onClick: (e: React.MouseEvent) => void, on = false) => (
-    <button className="fs-b" title={title} aria-label={title.replace(/ \(.*/, '')} data-on={on || undefined} aria-pressed={on || undefined} onClick={onClick}><SvgIcon name={icon} /></button>
+    <button className="fs-b" title={title} aria-label={parseTip(title).label} data-on={on || undefined} aria-pressed={on || undefined} onClick={onClick}><SvgIcon name={icon} /></button>
   );
   return (
     <div className="tools" role="toolbar" aria-label="File and view">
@@ -724,7 +724,7 @@ function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onN
       {b('search', `Find (${MOD}F): search this file`, props.onFind)}
       {b('list', `Outline (${MOD}\\): show or hide the list of pockets, hats, blocks and tags`, props.onOutline, props.outline)}
       {b('eye', `Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'}): show only what's read aloud`, props.onRead, props.reading)}
-      {b('mic', 'Speech doc (~): make this file the speech doc, where ~ sends the selection. Click again to unmark it', props.onSpeech, props.speech)}
+      {b('mic', 'Speech doc: make this file the speech doc, where ~ sends the selection. Click again to unmark it', props.onSpeech, props.speech)}
     </div>
   );
 }

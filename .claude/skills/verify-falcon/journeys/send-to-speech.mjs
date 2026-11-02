@@ -99,6 +99,7 @@ want((await rows())[1].label === SPEECH, 'the speech doc is marked again');
 
 await goto('seed');
 await page.keyboard.press(`${MOD}+f`);
+await page.waitForSelector('.findbar input[placeholder="Find"]:focus');
 await page.keyboard.press('Shift+Backquote');
 want((await page.inputValue('.findbar input[placeholder="Find"]')) === '~', 'a text box still takes a typed ~');
 await page.keyboard.press('Escape');
