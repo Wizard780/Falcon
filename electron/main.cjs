@@ -12,8 +12,10 @@ const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a win
 globalThis.falconSkipUnloadGuard = HEADLESS;
 if (process.env.FALCON_USER_DATA) app.setPath('userData', process.env.FALCON_USER_DATA);
 // One Falcon per profile: a second launch (Windows opens a double-clicked file that way) hands its
-// files to the running one and quits. The lock lives in userData, so test runs never collide with it.
-if (!app.requestSingleInstanceLock()) app.exit(0);
+// files to the running one and quits. The lock lives in userData, so test runs (their own profile) never
+// collide with it; dev runs skip it, so several checkouts can run at once.
+const primary = DEV || app.requestSingleInstanceLock();
+if (!primary) app.quit();
 
 // The theme's background, kept from the last run, so the window opens in it instead of flashing graphite.
 const themeFile = () => path.join(app.getPath('userData'), 'theme.json');
@@ -71,6 +73,10 @@ function createWindow() {
     const items = contextMenu(win.webContents, p);
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
+  // a reload or crash drops the page's listener: hold OS opens until the new page asks again
+  const unlisten = () => { if (openTarget === win.webContents) openTarget = null; };
+  win.webContents.on('did-start-loading', unlisten);
+  win.webContents.on('render-process-gone', unlisten);
   // the app is one page: block every navigation away from it
   win.webContents.on('will-navigate', (e, url) => {
     if (url !== win.webContents.getURL()) e.preventDefault();
@@ -102,16 +108,19 @@ const DOCX = [{ name: 'Word documents', extensions: ['docx'] }];
 const MAX_RECENT = 50;
 const recentFile = () => path.join(app.getPath('userData'), 'recent-paths.json');
 let recentPaths = null;
-async function loadRecent() {
-  if (recentPaths) return recentPaths;
-  try { recentPaths = JSON.parse(await fs.readFile(recentFile(), 'utf8')).filter((p) => typeof p === 'string'); }
-  catch { recentPaths = []; }
-  return recentPaths;
+let recentLoad = null; // one read, shared: several files opened at once must not each start from their own copy
+function loadRecent() {
+  recentLoad ??= fs.readFile(recentFile(), 'utf8')
+    .then((t) => JSON.parse(t).filter((p) => typeof p === 'string'), () => [])
+    .then((list) => { recentPaths = list; });
+  return recentLoad.then(() => recentPaths); // the current list, not the one first read
 }
+let recentWrite = Promise.resolve(); // writes in order, so the file ends with the latest list
 async function rememberPath(p) {
-  const list = await loadRecent();
-  recentPaths = [p, ...list.filter((x) => x !== p)].slice(0, MAX_RECENT);
-  try { await fs.writeFile(recentFile(), JSON.stringify(recentPaths)); } catch { /* recents are a convenience */ }
+  await loadRecent();
+  recentPaths = [p, ...recentPaths.filter((x) => x !== p)].slice(0, MAX_RECENT);
+  recentWrite = recentWrite.then(() => fs.writeFile(recentFile(), JSON.stringify(recentPaths))).catch(() => { /* recents are a convenience */ });
+  await recentWrite;
 }
 
 // Files the OS asks us to open: a double-click in Finder or Explorer, or Open With. macOS sends
@@ -137,10 +146,12 @@ function flushOpens() {
   if (win && !HEADLESS) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
   if (pendingOpens.length) openTarget.send('falcon:open-paths', pendingOpens.splice(0));
 }
-app.on('open-file', (e, p) => { e.preventDefault(); void requestOpen([p]); });
-app.on('second-instance', (_e, argv) => { void requestOpen(argv.slice(1)); flushOpens(); });
-ipcMain.on('falcon:open-paths-ready', (e) => { openTarget = e.sender; flushOpens(); });
-void requestOpen(process.argv.slice(1));
+if (primary) {
+  app.on('open-file', (e, p) => { e.preventDefault(); void requestOpen([p]); });
+  app.on('second-instance', (_e, argv) => { void requestOpen(argv.slice(1)); flushOpens(); });
+  ipcMain.on('falcon:open-paths-ready', (e) => { openTarget = e.sender; flushOpens(); });
+  void requestOpen(process.argv.slice(1));
+}
 
 // File search: the folders allowed in Settings (see indexer.cjs)
 let fileIndex = null;
@@ -261,7 +272,7 @@ ipcMain.on('falcon:menu-keys', (_e, keys) => {
   try { buildMenu(clean); } catch { buildMenu(); }
 });
 
-app.whenReady().then(() => {
+if (primary) app.whenReady().then(() => {
   buildMenu();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

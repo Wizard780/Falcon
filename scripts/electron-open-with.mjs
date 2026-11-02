@@ -15,7 +15,8 @@ const seed = '.claude/skills/verify-falcon/fixtures/seed.docx';
 const first = path.join(dir, 'Clicked First.docx');
 const second = path.join(dir, 'Clicked Second.docx');
 const third = path.join(dir, 'Clicked Third.docx');
-for (const f of [first, second, third]) fs.copyFileSync(seed, f);
+const many = [1, 2, 3].map((i) => path.join(dir, `Many ${i}.docx`));
+for (const f of [first, second, third, ...many]) fs.copyFileSync(seed, f);
 const exe = process.env.FALCON_EXE;
 const opts = { env: { ...env, FALCON_HEADLESS: '1' } };
 const app = await electron.launch(exe ? { ...opts, executablePath: exe, args: [first] } : { ...opts, args: ['.', first] });
@@ -38,7 +39,15 @@ const bin = exe ?? createRequire(import.meta.url)('electron');
 const child = spawn(bin, exe ? [third] : ['.', third], { env: { ...env, FALCON_HEADLESS: '1' }, stdio: 'ignore' });
 const childExited = await new Promise((ok) => { child.on('exit', () => ok(true)); setTimeout(() => { child.kill(); ok(false); }, 8000); });
 const handedOver = await waitTab('Clicked Third');
+// several files picked in Finder at once arrive as open-file events back to back: every one opens
+await app.evaluate(({ app }, ps) => { for (const p of ps) app.emit('open-file', { preventDefault() {} }, p); }, many);
+const allMany = (await Promise.all(['Many 1', 'Many 2', 'Many 3'].map(waitTab))).every(Boolean);
+// a file sent while the page reloads waits for the new page instead of being dropped
 await app.evaluate(() => { globalThis.falconSkipUnloadGuard = true; });
+const reloadFile = path.join(dir, 'After Reload.docx'); fs.copyFileSync(seed, reloadFile);
+await app.evaluate(({ app, BrowserWindow }, p) => { BrowserWindow.getAllWindows()[0].webContents.reload(); app.emit('open-file', { preventDefault() {} }, p); }, reloadFile);
+await win.waitForSelector('.ProseMirror');
+const afterReload = await waitTab('After Reload');
 await app.close();
 
 console.log('tabs:', after, '| active:', active);
@@ -47,5 +56,7 @@ want(launched && textOk, 'a .docx on the launch command line opens as a tab with
 want(whileRunning, 'open-file while running opens the file');
 want(after.filter((t) => t === 'Clicked First').length === 1 && active === 'Clicked First', `opening an already-open file switches to it, no duplicate: ${after} / ${active}`);
 want(childExited && handedOver, `a second launch with a file hands it to the running app and quits: exited ${childExited}, opened ${handedOver}`);
+want(allMany, 'several files opened at once all open');
+want(afterReload, 'a file sent during a page reload opens in the reloaded page');
 want(!errors.length, `page errors: ${errors.join('; ')}`);
 if (!process.exitCode) console.log('open-with: all checks pass');
