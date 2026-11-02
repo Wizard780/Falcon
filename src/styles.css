@@ -153,6 +153,15 @@ button.b:active { transform: scale(.97); }
 /* the font size: a box spanning both rows, beside the bigger/smaller buttons */
 .bar .g > .b.fsz { grid-row: span 2; align-self: center; height: 32px; min-width: 52px; padding: 0 6px 0 10px; font: 500 13px/1 var(--mono); font-variant-numeric: tabular-nums; box-shadow: inset 0 0 0 1px #2c2c30; border-radius: 8px; }
 .b.fsz svg { width: 14px; height: 14px; color: #85858c; }
+.b.mn { gap: 2px; padding: 0 8px 0 12px; color: #ececee; }
+.b.mn svg { width: 14px; height: 14px; color: #85858c; }
+.pop.menu { display: block; max-width: none; min-width: 240px; padding: 6px; }
+.pop .mn-sec + .mn-sec { margin-top: 6px; }
+.pop .mn-h { padding: 6px 10px 4px; font: 500 11px/1 var(--mono); color: #85858c; }
+.pop .mn-i { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; height: 30px; padding: 0 10px; border-radius: 6px; font: 500 13px/1 -apple-system, Inter, 'Segoe UI', sans-serif; color: #ececee; text-align: left; cursor: pointer; }
+.pop .mn-i:hover { background: rgba(255, 255, 255, .06); }
+.pop .mn-i kbd { font: 11px/1 var(--mono); color: #85858c; }
+.pop .mn-none { margin: 0; padding: 8px 10px; font: 13px/1.3 -apple-system, Inter, sans-serif; color: #85858c; }
 .pop.sizes { display: grid; grid-template-columns: repeat(4, 40px); gap: 2px; padding: 6px; }
 .pop .szi { height: 30px; border-radius: 6px; font: 13px var(--mono); color: #ececee; cursor: pointer; }
 .pop .szi:hover { background: rgba(255, 255, 255, .06); }

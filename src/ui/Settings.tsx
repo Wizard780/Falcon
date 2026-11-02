@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
 import { HIGHLIGHTS } from '../editor/schema';
 import { SvgIcon } from './icons';
+import { docToolShortcuts } from '../editor/doc-tools';
+import { cardToolShortcuts } from '../editor/card-tools';
+import { navShortcuts } from '../editor/nav-keys';
 
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 /** "Mod-Shift-8" as ⌘ ⇧ 8 on macOS, Ctrl Shift 8 elsewhere: one chip per key. */
@@ -28,7 +31,10 @@ const SHORTCUTS: [string, [string, string][]][] = [
   ['Moving around', [
     ['PageUp', 'Previous heading'], ['PageDown', 'Next heading'], ['Mod-Alt-ArrowUp', 'Move card up'], ['Mod-Alt-ArrowDown', 'Move card down'],
     ['Mod-Shift-R', 'Read mode'], ['Mod-Shift-D', 'Read marker'],
+    ...navShortcuts,
   ]],
+  ['Doc tools', docToolShortcuts],
+  ['Card tools', cardToolShortcuts],
 ];
 
 const PENS = ['yellow', 'green', 'cyan', 'magenta', 'lightGray'];
@@ -88,7 +94,7 @@ export function Settings(props: Props) {
           seg('Outline depth', [1, 2, 3, 4].map((n) => [String(n), props.depth === n, () => props.onDepth(n)])) },
       ]],
     ] },
-    { id: 'keys', title: 'Keybindings', icon: 'keyboard', sections: SHORTCUTS.map(([g, ks]) => [g, ks.map(([k, what]) => ({ label: what, control: keys(k) }))]) },
+    { id: 'keys', title: 'Keybindings', icon: 'keyboard', sections: SHORTCUTS.filter(([, ks]) => ks.length).map(([g, ks]) => [g, ks.map(([k, what]) => ({ label: what, control: keys(k) }))]) },
     { id: 'speech', title: 'Speech and timers', icon: 'timer', group: 'Debate', sections: [
       ['Timer', [
         { label: 'Speech length', hint: 'Where the speech timer in the top bar starts.', control: (

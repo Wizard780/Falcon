@@ -11,6 +11,9 @@ import { schema } from './schema';
 import { activeColors, pastePlainFromClipboard } from './host';
 import { moveByHeading, moveByParagraph, moveContainer } from './motion';
 import { toggleMarker, toggleRead } from './read';
+import { docToolKeys } from './doc-tools';
+import { cardToolKeys } from './card-tools';
+import { navKeys } from './nav-keys';
 
 const M = schema.marks;
 const cardHead = (n: PMNode | null | undefined) => !!n && (n.attrs.style === 'tag' || n.attrs.style === 'analytic');
@@ -140,6 +143,10 @@ export const falconKeys: Record<string, Command> = {
   'Shift-PageDown': moveByHeading(1, true),
   'Mod-Alt-ArrowUp': moveContainer(-1),
   'Mod-Alt-ArrowDown': moveContainer(1),
+  // each feature keeps its own keys in its own file
+  ...docToolKeys,
+  ...cardToolKeys,
+  ...navKeys,
 };
 
 export const falconKeymap = () => keymap(falconKeys);
