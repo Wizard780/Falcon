@@ -139,6 +139,17 @@ describe('paste in', () => {
     expect(paste(html)).toBe('normal: [Smith 24]{bold} under [it]{italic} lit');
     expect(cleanPastedHTML(html)).not.toMatch(/f-(cite|underline|highlight)/);
   });
+  it('edge shapes: wrapped headings, blank lines, <pre>, bordered cells, a shrunk cite', () => {
+    expect(paste('<h2><div>Title</div></h2><div class="pmd-analytic"><p>An analytic</p></div>')).toBe('hat: Title\nanalytic: An analytic');
+    expect(paste('<div>one</div><div><br></div><div>two<br></div>')).toBe('normal: one\nnormal: \nnormal: two');
+    expect(cleanPastedHTML('<pre>line one\nline two</pre>')).toBe('<p>line one<br>line two</p>');
+    expect(paste('<table><tr><td style="border:1px solid #000"><u>x</u></td></tr></table>')).toBe('normal: [x]{underline}');
+    // a cite shrunk by Create Reference, after an app dropped the classes
+    expect(paste('<p><span style="font-size:13pt;font-weight:bold"><span style="font-size:8pt">Smith 24</span></span> rest</p>')).toBe('normal: [Smith 24]{cite+size:8pt} rest');
+  });
+  it("a pasted color can't carry extra CSS", () => {
+    expect(paste('<p class="f-normal"><span class="f-color" data-color="red;background:url(//x)">a</span><span class="f-color" data-color="#FF0000">b</span></p>')).toBe('normal: a[b]{color}');
+  });
   it('maps colors to Word highlight names only when they are one', () => {
     expect(highlightName('#FFFF00')).toBe('yellow');
     expect(highlightName('rgb(0, 255, 255)')).toBe('cyan');

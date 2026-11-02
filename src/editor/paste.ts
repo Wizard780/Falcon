@@ -16,7 +16,7 @@ export function cleanPastedHTML(html: string, smart = pref(P.smartPaste)): strin
   const doc = new DOMParser().parseFromString(html, 'text/html');
   doc.querySelectorAll('style, meta, link, script, title, xml, head').forEach((n) => n.remove());
   // our own copy: the classes say it all, the inline styles were only for other apps
-  if (doc.body.querySelector('[class^="f-"], [class*=" f-"]')) {
+  if (doc.body.querySelector(OWN)) {
     doc.body.querySelectorAll('[class^="f-"], [class*=" f-"]').forEach((el) => el.removeAttribute('style'));
     return doc.body.innerHTML;
   }
@@ -25,10 +25,15 @@ export function cleanPastedHTML(html: string, smart = pref(P.smartPaste)): strin
   return emit(doc, blocks(doc.body, smart, word), smart);
 }
 
+/** Falcon's paragraph classes: every copy of ours has at least one. */
+const OWN = ['normal', 'pocket', 'hat', 'block', 'tag', 'analytic', 'undertag'].map((s) => `[class~="f-${s}"]`).join(', ');
+
 type Run = {
   text?: string; br?: boolean;
   bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; box?: boolean; va?: 'sup' | 'sub';
   pt?: number; ptUnit?: boolean; hl?: string; unbold?: boolean;
+  /** the size where the bold was set: a cite shrunk to 8pt inside is still a 13pt bold cite */
+  boldPt?: number;
   /** a character style named by a class (Word, CardMirror): beats what the inline style implies */
   named?: 'cite' | 'underline' | 'emphasis';
 };
@@ -56,27 +61,35 @@ function blocks(body: HTMLElement, smart: boolean, word: boolean): Block[] {
     out.push(cur);
     return cur;
   };
-  const walk = (node: Node) => {
+  const memo = new Map<HTMLElement, Run>();
+  const walk = (node: Node, inherit: ParaStyle) => {
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType === 3) {
         const text = child.textContent ?? '';
         if (!cur && !/\S/.test(text)) continue; // whitespace between paragraphs
-        (cur ?? open()).runs.push({ text, ...resolve(child.parentElement!, smart, word) });
+        const b = cur ?? open(inherit), look = resolve(child.parentElement!, smart, word, memo);
+        // preformatted text keeps its line breaks
+        const lines = child.parentElement!.closest('pre') ? text.split('\n') : [text];
+        lines.forEach((line, i) => { if (i) b.runs.push({ br: true }); if (line) b.runs.push({ text: line, ...look }); });
       } else if (child.nodeType === 1) {
         const el = child as HTMLElement;
         if (el.tagName === 'BR') { if (cur) cur.runs.push({ br: true }); else { open(); cur = null; } continue; } // a lone <br> between paragraphs is an empty line
         if (BLOCK_TAGS.test(el.tagName)) {
           cur = null;
-          const style = blockStyle(el, smart, word);
-          // a wrapper (a list, a table row, CardMirror's card div) makes no paragraph of its own
-          if (style !== 'normal' || !Array.from(el.children).some((c) => BLOCK_TAGS.test(c.tagName))) open(style);
-          walk(el);
+          const own = blockStyle(el, smart, word), style = own === 'normal' ? inherit : own;
+          // a wrapper (a list, a table row, CardMirror's card div, <h2><div>) makes no paragraph of its own; its style goes to the ones inside
+          if (Array.from(el.children).some((c) => BLOCK_TAGS.test(c.tagName))) walk(el, style);
+          else {
+            const b = open(style);
+            walk(el, style);
+            if (b.runs[b.runs.length - 1]?.br) b.runs.pop(); // <div><br></div> is an empty line, <p>text<br></p> ends at the text
+          }
           cur = null;
-        } else walk(el);
+        } else walk(el, inherit);
       }
     }
   };
-  walk(body);
+  walk(body, 'normal');
   return out;
 }
 
@@ -98,7 +111,12 @@ export function highlightName(value: string): string | null {
   return Object.keys(HIGHLIGHTS).find((k) => k.toLowerCase() === v) ?? null; // Word's own names: darkBlue, lightGray
 }
 
-const prop = (style: string, name: string) => style.match(new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`, 'i'))?.[1].trim().toLowerCase();
+const PROPS = new Map<string, RegExp>();
+const prop = (style: string, name: string) => {
+  let re = PROPS.get(name);
+  if (!re) PROPS.set(name, (re = new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`, 'i')));
+  return style.match(re)?.[1].trim().toLowerCase();
+};
 
 /** What the element itself says about its text. Undefined = it doesn't say; the parent decides. */
 function own(el: HTMLElement, smart: boolean, word: boolean): Run {
@@ -139,7 +157,8 @@ function own(el: HTMLElement, smart: boolean, word: boolean): Run {
   if (smart && /underline/.test(td)) r.underline = true;
   if (/line-through/.test(td)) r.strike = true;
   const border = prop(style, 'border');
-  if (smart && border && !/none|hidden|^0(px|pt)?\b/.test(border)) r.box = true;
+  // a box around a run, not a bordered table cell or card div
+  if (smart && border && !BLOCK_TAGS.test(tag) && !/none|hidden|^0(px|pt)?\b/.test(border)) r.box = true;
   const size = prop(style, 'font-size')?.match(/^([\d.]+)(pt|px)$/);
   if (size && r.pt === undefined) { r.pt = size[2] === 'px' ? Number(size[1]) * 0.75 : Number(size[1]); r.ptUnit = size[2] === 'pt'; }
   const va = prop(style, 'vertical-align');
@@ -149,10 +168,14 @@ function own(el: HTMLElement, smart: boolean, word: boolean): Run {
 }
 
 /** A text run's look: each property from the nearest element that sets it, like CSS inheritance. */
-function resolve(from: HTMLElement, smart: boolean, word: boolean): Run {
+function resolve(from: HTMLElement, smart: boolean, word: boolean, memo: Map<HTMLElement, Run>): Run {
   const r: Run = {};
+  let boldSeen = false;
   for (let el: HTMLElement | null = from; el && el.tagName !== 'BODY'; el = el.parentElement) {
-    const o = own(el, smart, word);
+    let o = memo.get(el);
+    if (!o) memo.set(el, (o = own(el, smart, word)));
+    if (r.bold === undefined && o.bold) boldSeen = true;
+    if (boldSeen && r.boldPt === undefined && o.pt !== undefined) r.boldPt = o.pt;
     for (const k of Object.keys(o) as (keyof Run)[]) if (r[k] === undefined) (r as Record<string, unknown>)[k] = o[k];
   }
   return r;
@@ -181,7 +204,7 @@ function emit(doc: Document, list: Block[], smart: boolean): string {
       if (r.bold && !char && !b.heading) wrap('strong');
       if (r.unbold && (char === 'cite' || b.heading)) wrap('span', 'f-unbold');
       // a shrunk run (card text condensed to 8pt) keeps its size; a page's own font sizes don't count
-      if (r.pt && r.ptUnit && r.pt < 10.5 && b.style === 'normal' && char !== 'cite') wrap('span', 'f-size', { pt: String(Math.round(r.pt * 2) / 2) });
+      if (r.pt && r.ptUnit && r.pt < 10.5 && b.style === 'normal') wrap('span', 'f-size', { pt: String(Math.round(r.pt * 2) / 2) });
       if (r.hl) wrap('span', 'f-highlight', { color: r.hl });
       if (char) wrap('span', `f-${char}`);
       p.append(node);
@@ -197,6 +220,6 @@ function charStyle(r: Run, b: Block): Run['named'] {
   if (b.heading) return undefined; // a heading is bold (and a block underlined) already
   if (r.underline && (r.bold || r.box)) return 'emphasis';
   if (r.underline) return 'underline';
-  if (r.bold && (r.pt ?? 0) >= 12.5) return 'cite';
+  if (r.bold && (r.boldPt ?? r.pt ?? 0) >= 12.5) return 'cite';
   return undefined;
 }
