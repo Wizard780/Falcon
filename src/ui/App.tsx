@@ -47,6 +47,7 @@ function autosave(list: Backup[]): boolean {
   return keep.some((b) => b.active);
 }
 function loadBackups(): Backup[] {
+  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return []; } // turned off in Settings
   try {
     const v2 = localStorage.getItem(AUTOSAVE_KEY);
     if (v2) return (JSON.parse(v2) as { meta: DocMeta; doc: unknown; active: boolean }[]).map((b) => ({ ...b, doc: PMNode.fromJSON(schema, b.doc) }));
@@ -768,6 +769,9 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   // a new length from Settings resets an idle timer
   useEffect(() => { if (!running) setLeft(SPEECH_SECONDS); }, [SPEECH_SECONDS]);
   useEffect(() => { if (!prepRunning) setPrepLeft(PREP_SECONDS); }, [PREP_SECONDS]);
+  const showPrep = pref(P.showPrep);
+  // hiding the prep timer stops and resets it
+  useEffect(() => { if (!showPrep) { setPrepRunning(false); setPrepLeft(PREP_SECONDS); } }, [showPrep]);
   const countdown = (on: boolean, setOn: (b: boolean) => void, setLeftOf: (f: (s: number) => number) => void, what: string) => {
     if (!on) return;
     const t = window.setInterval(() => setLeftOf((s) => {
@@ -815,7 +819,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
             onContextMenu={(e) => { e.preventDefault(); setRunning(false); setLeft(SPEECH_SECONDS); }}>
             {clock(left)}
           </button>
-          {pref(P.showPrep) && (
+          {showPrep && (
             <button className={`b timer prep${low(prepRunning, prepLeft)}`} data-on={prepRunning || undefined} title="Prep timer: click to start or pause. Right-click to reset"
               onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (prepLeft === 0) setPrepLeft(PREP_SECONDS); setPrepRunning((r) => !r); } }}
               onContextMenu={(e) => { e.preventDefault(); setPrepRunning(false); setPrepLeft(PREP_SECONDS); }}>

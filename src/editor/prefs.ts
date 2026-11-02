@@ -122,4 +122,5 @@ export function onPrefs(f: () => void): () => void {
   return () => removeEventListener(EVENT, f);
 }
 // another window changed them
-if (typeof window !== 'undefined') addEventListener('storage', (e) => { if (!e.key || e.key.startsWith('falcon.')) { cache.clear(); changed(); } });
+const KEYS = new Set(Object.values(P).map((p) => p.key));
+if (typeof window !== 'undefined') addEventListener('storage', (e) => { if (!e.key || KEYS.has(e.key)) { cache.clear(); changed(); } });

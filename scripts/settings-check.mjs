@@ -105,6 +105,10 @@ if (part('general')) {
   await seg(p, 'Recent files', '24');
   const n24 = await homeRows();
   want(n12 === 12 && n6 === 6 && n24 === 20, `Recent files: Home lists 12, then 6, then all 20 (${n12}, ${n6}, ${n24})`);
+  await seg(p, 'Recent files', '6'); await close(p);
+  await p.reload(); await p.waitForSelector('.home.open'); await p.waitForTimeout(200);
+  want((await p.evaluate(() => JSON.parse(localStorage.getItem('falcon.recents.v1')).length)) === 20, 'Recent files 6 keeps the rest of the list for later');
+  await p.keyboard.press(`${mod}+,`); await p.waitForSelector('.st'); await open(p, 'General'); await seg(p, 'Recent files', '12');
   await close(p); await p.keyboard.press('Escape');
 
   // name for new files
@@ -386,7 +390,7 @@ if (part('timers')) {
   await close(p);
   await p.click('.b.timer:not(.prep)');
   await p.clock.runFor(2000);
-  want(await p.$eval('.b.timer:not(.prep)', (x) => x.classList.contains('low')), 'Flash when time is low: the running clock flashes in its last minute');
+  want(await p.$eval('.b.timer:not(.prep)', (x) => x.classList.contains('low') && getComputedStyle(x).color === 'rgb(255, 107, 107)'), 'Flash when time is low: the running clock flashes red in its last minute');
   await p.click('.b.timer.prep');
   await p.clock.runFor(3000);
   want((await prepClock()) === 'Prep 7:57', `the prep timer counts down (${await prepClock()})`);

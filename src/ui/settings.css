@@ -36,7 +36,7 @@
 
 /* timers: the prep clock, and the last seconds flashing */
 .b.timer.prep { min-width: 84px; }
-.b.timer.low { color: #ff6b6b; animation: tm-low 1s steps(1) infinite; }
+.b.timer.low, .b.timer.low[data-on] { color: #ff6b6b; animation: tm-low 1s steps(1) infinite; }
 @keyframes tm-low { 50% { opacity: .4; } }
 
 /* Settings controls beyond the base ones in styles.css */

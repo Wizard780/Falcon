@@ -19,6 +19,8 @@ const isMarker = (marks: readonly { type: { name: string }; attrs: Record<string
     return c === '#FF0000' || c === pref(P.markerColor).toUpperCase();
   });
 const MARKER_TEXT = /^ ?Marked( \d{1,2}:\d{2})? ?$/;
+/** Read mode shows red text (as it always has) and markers in the color Settings picks, but not other text in that color. */
+const shownMarker = (n: PMNode) => n.marks.some((m) => m.type.name === 'color' && String(m.attrs.color).toUpperCase() === '#FF0000') || (isMarker(n.marks) && MARKER_TEXT.test(n.text ?? ''));
 
 /**
  * Every text run gets a class: f-read-shown, or f-read-hidden (plus f-read-gap when it sits between two
@@ -29,7 +31,7 @@ const MARKER_TEXT = /^ ?Marked( \d{1,2}:\d{2})? ?$/;
 function hideUnread(doc: PMNode): DecorationSet {
   const decos: Decoration[] = [];
   const keepParas = pref(P.readParas), wholeCite = pref(P.readWholeCite), undertags = pref(P.readUndertags), shading = pref(P.readShading);
-  const isRead = (n: PMNode) => n.marks.some((m) => m.type.name === 'highlight' || m.type.name === 'cite' || (shading && m.type.name === 'shading')) || isMarker(n.marks);
+  const isRead = (n: PMNode) => n.marks.some((m) => m.type.name === 'highlight' || m.type.name === 'cite' || (shading && m.type.name === 'shading')) || shownMarker(n);
   let inCard = false, cardHasShown = false;
   doc.forEach((para, pos) => {
     const level = LEVEL[para.attrs.style as ParaStyle];
