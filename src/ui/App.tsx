@@ -903,7 +903,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
       </aside>
       <div className="grow" />
       {props.update && <UpdateButton u={props.update} onInstall={props.onUpdate} />}
-      <button className="fs-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /></button>
+      <button className="fs-b gear-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /></button>
     </nav>
   );
 }
