@@ -1,0 +1,81 @@
+/* Mod-Shift-Space: CardMirror's Search Everything layout (low over the page, results above the box, a hint
+   strip under it, the page left in view so a peeked heading shows) in Falcon's own look */
+.cc-back { position: fixed; inset: 0; z-index: 3050; -webkit-app-region: no-drag; }
+.cc { position: fixed; bottom: 124px; left: 50%; width: min(640px, 92vw); transform: translateX(-50%); display: flex; flex-direction: column;
+  border-radius: 14px; overflow: hidden; background: var(--u-pop); color: var(--u-tx); font-family: var(--ui-font); user-select: none;
+  box-shadow: var(--u-top), 0 0 0 1px var(--u-line), 0 2px 6px rgba(0, 0, 0, calc(.2 * var(--u-sh))), 0 22px 56px rgba(0, 0, 0, calc(.5 * var(--u-sh)));
+  animation: cc-in 180ms var(--u-ease); }
+@keyframes cc-in { from { opacity: 0; transform: translate(-50%, 10px) scale(.985); } }
+.reduce-motion .cc { animation: none; }
+.cc svg { flex: none; }
+.cc kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 5px;
+  background: var(--u-ctl); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, calc(.3 * var(--u-sh))), inset 0 0 0 1px var(--u-line);
+  color: var(--u-tx2); font: 500 10.5px/1 var(--mono); }
+
+/* results */
+.cc-list { position: relative; max-height: min(380px, 52vh); overflow-y: auto; padding: 6px; scrollbar-width: thin; }
+.cc-act { position: absolute; left: 6px; right: 6px; top: 0; border-radius: 9px; pointer-events: none; opacity: 0;
+  background: var(--u-raised); box-shadow: var(--u-top), inset 2px 0 0 var(--ink, #00e5ff); }
+.cc-list[data-ready] .cc-act { transition: transform 160ms var(--u-ease), height 160ms var(--u-ease), opacity 120ms ease-out; }
+.reduce-motion .cc-act { transition: none !important; }
+.cc-head { position: relative; padding: 10px 10px 4px; font: 11px/14px var(--mono); color: var(--u-mut); }
+.cc-row { position: relative; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 9px; color: var(--u-tx2); font-size: 13.5px; cursor: pointer; }
+.cc-row[data-on] { color: var(--u-tx); }
+.cc-row[data-dim] .cc-nm, .cc-row[data-dim] .cc-badge { opacity: .4; }
+.cc-nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-nm b { color: var(--u-tx); font-weight: 650; }
+.cc-row[data-src="arg"] .cc-nm { color: var(--u-tx); font-weight: 550; }
+.cc-meta { flex: 0 1 auto; max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--u-mut); }
+
+/* badges: CardMirror's labels, each kind its own tint */
+.cc-badge { --t: var(--u-mut); flex: none; width: 36px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: 5px;
+  font: 600 9.5px/1 var(--mono); letter-spacing: .05em; color: color-mix(in srgb, var(--t) 80%, var(--u-tx));
+  background: color-mix(in srgb, var(--t) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t) 26%, transparent); }
+.cc-badge[data-b="TOG"] { --t: #3fb47c; }
+.cc-badge[data-b="CYC"] { --t: #5b8def; }
+.cc-badge[data-b="SET"] { --t: #d79b33; }
+.cc-badge[data-b="GO"], .cc-badge[data-b="FIND"] { --t: var(--u-tx); }
+.cc-badge[data-b="POC"], .cc-badge[data-b="HAT"], .cc-badge[data-b="BLK"] { --t: #a07be3; }
+.cc-badge[data-b="TAG"], .cc-badge[data-b="ANL"] { --t: #d0679b; }
+
+/* what a setting is now */
+/* the Settings switch, small (.cc in front: styles.css loads after this file) */
+.cc .cc-tog { width: 30px; height: 18px; padding: 2px; border-radius: 9px; cursor: inherit; }
+.cc .cc-tog i { width: 14px; height: 14px; }
+.cc .cc-tog[aria-checked="true"] i { transform: translateX(12px); }
+.cc-cyc { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 6px; background: var(--u-ctl);
+  font-size: 11.5px; color: var(--u-mut); white-space: nowrap; }
+.cc-cyc b { color: var(--u-tx); font-weight: 550; }
+.cc-cyc i { font-style: normal; opacity: .7; }
+.cc-now svg { width: 16px; height: 16px; fill: none; stroke: var(--u-tx); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.cc-keys { flex: none; display: inline-flex; gap: 3px; }
+.cc-go { width: 14px; height: 14px; fill: none; stroke: var(--u-mut); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.cc-row[data-on] .cc-go { stroke: var(--u-tx); }
+
+/* empty box: the prefixes as chips you can click */
+.cc-start { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 8px 8px 10px; font-size: 12.5px; color: var(--u-mut); }
+.cc-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.cc-chips button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px 0 4px; border-radius: 8px; background: var(--u-card);
+  box-shadow: inset 0 0 0 1px var(--u-line); color: var(--u-tx2); font: 12.5px var(--ui-font); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
+.cc-chips button:hover { background: var(--u-raised); color: var(--u-tx); }
+.cc-more { position: relative; width: 100%; height: 30px; margin-top: 2px; border-radius: 8px; background: none; color: var(--u-tx2); font: 12.5px var(--ui-font); cursor: pointer; }
+.cc-more span { margin-left: 6px; color: var(--u-mut); }
+.cc-more:hover { background: var(--u-hover); color: var(--u-tx); }
+.cc-none { margin: 0; padding: 10px; font-size: 13px; color: var(--u-mut); }
+
+/* the box */
+.cc-bar { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 16px; border-top: 1px solid var(--u-line); background: var(--u-panel); color: var(--u-mut); cursor: text; }
+.cc-bar > svg { width: 16px; height: 16px; }
+.cc-input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--u-tx); font: 16px var(--ui-font); }
+.cc-input::placeholder { color: var(--u-mut); }
+.cc-chip { flex: none; display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 7px; background: var(--u-raised);
+  box-shadow: var(--u-top); color: var(--u-tx); font: 500 12.5px var(--ui-font); cursor: pointer; }
+.cc-chip::after { content: '›'; margin-left: 6px; color: var(--u-mut); }
+.cc-chip.src { cursor: default; }
+.cc-chip.src::after { content: none; }
+
+.cc-hints { display: flex; align-items: center; gap: 14px; height: 32px; padding: 0 16px; background: var(--u-panel); border-top: 1px solid var(--u-line);
+  font-size: 11.5px; color: var(--u-mut); }
+.cc-why { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-hint { flex: none; display: inline-flex; align-items: center; gap: 5px; }
+.cc-hint kbd { height: 17px; min-width: 17px; font-size: 10px; }

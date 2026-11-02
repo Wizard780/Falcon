@@ -61,6 +61,8 @@ type Props = {
   open: boolean; onClose: () => void;
   /** the page to show when Settings opens (default: the last one shown) */
   startPage?: string;
+  /** what to search for when Settings opens (the command center's Tab) */
+  startQuery?: string;
   zoom: number; onZoom: (z: number) => void;
   speechMin: number; onSpeechMin: (m: number) => void;
   showOutline: boolean; onShowOutline: (s: boolean) => void;
@@ -87,7 +89,7 @@ export function Settings(props: Props) {
   const [query, setQuery] = useState('');
   const [, setSpecTick] = useState(0); // a feature setting changed: redraw its row
   const [keyNote, setKeyNote] = useState<KeyNote>(null); // the recorder's note under a shortcut's label
-  useEffect(() => { if (props.open) { setQuery(''); if (props.startPage) setPageId(props.startPage); ref.current?.focus({ preventScroll: true }); } }, [props.open, props.startPage]);
+  useEffect(() => { if (props.open) { setQuery(props.startQuery ?? ''); if (props.startPage) setPageId(props.startPage); ref.current?.focus({ preventScroll: true }); } }, [props.open, props.startPage, props.startQuery]);
   // File search folders live in the desktop app's main process, not in prefs
   const [folders, setFolders] = useState<IndexFolder[] | null>(null);
   useEffect(() => {
