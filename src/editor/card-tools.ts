@@ -1,5 +1,5 @@
 import type { Command } from 'prosemirror-state';
-import type { ToolSection } from './tools';
+import type { SettingSpec, ToolSection } from './tools';
 
 /** The toolbar's Card menu: operations on the card at the cursor. */
 export const CARD_TOOLS: ToolSection[] = [];
@@ -7,3 +7,5 @@ export const CARD_TOOLS: ToolSection[] = [];
 export const cardToolKeys: Record<string, Command> = {};
 /** [key, what it does] rows for Settings > Keybindings. */
 export const cardToolShortcuts: [string, string][] = [];
+/** This feature's rows in Settings > Editor. */
+export const cardToolSettings: SettingSpec[] = [];

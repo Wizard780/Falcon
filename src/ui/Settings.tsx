@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
 import { HIGHLIGHTS } from '../editor/schema';
 import { SvgIcon } from './icons';
-import { docToolShortcuts } from '../editor/doc-tools';
-import { cardToolShortcuts } from '../editor/card-tools';
-import { navShortcuts } from '../editor/nav-keys';
+import { docToolSettings, docToolShortcuts } from '../editor/doc-tools';
+import { cardToolSettings, cardToolShortcuts } from '../editor/card-tools';
+import { navSettings, navShortcuts } from '../editor/nav-keys';
+import { readSetting, type SettingSpec } from '../editor/tools';
 
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 /** "Mod-Shift-8" as ⌘ ⇧ 8 on macOS, Ctrl Shift 8 elsewhere: one chip per key. */
@@ -39,6 +40,8 @@ const SHORTCUTS: [string, [string, string][]][] = [
 
 const PENS = ['yellow', 'green', 'cyan', 'magenta', 'lightGray'];
 const PEN_NAMES: Record<string, string> = { yellow: 'Yellow', green: 'Green', cyan: 'Cyan', magenta: 'Magenta', lightGray: 'Gray' };
+/** Settings the features declare in their own files (see SettingSpec), shown on the Editor page. */
+const FEATURE_SETTINGS: SettingSpec[] = [...navSettings, ...docToolSettings, ...cardToolSettings];
 export const DEFAULTS = { zoom: 1, speechMin: 8, showOutline: true, depth: 3, highlight: 'yellow' };
 
 type Props = {
@@ -57,6 +60,7 @@ export function Settings(props: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pageId, setPageId] = useState('appearance');
   const [query, setQuery] = useState('');
+  const [, setSpecTick] = useState(0); // a feature setting changed: redraw its row
   useEffect(() => { if (props.open) { setQuery(''); ref.current?.focus({ preventScroll: true }); } }, [props.open]);
   if (!props.open) return null;
 
@@ -69,6 +73,18 @@ export function Settings(props: Props) {
       {opts.map(([n, on, pick]) => <button key={n} data-on={on || undefined} aria-pressed={on} onClick={pick}>{n}</button>)}
     </span>
   );
+  const setSpec = (spec: SettingSpec, v: string | boolean) => {
+    localStorage.setItem(spec.key, typeof v === 'boolean' ? (v ? 'on' : 'off') : v);
+    setSpecTick((t) => t + 1);
+  };
+  const specRow = (spec: SettingSpec): Row => {
+    const v = readSetting(spec);
+    return { label: spec.label, hint: spec.hint, control: spec.kind === 'toggle'
+      ? toggle(spec.label, v as boolean, (on) => setSpec(spec, on))
+      : seg(spec.label, spec.options.map(([o, n]) => [n, v === o, () => setSpec(spec, o)])) };
+  };
+  const specSections = [...new Set(FEATURE_SETTINGS.map((x) => x.section))]
+    .map((sec): [string, Row[]] => [sec, FEATURE_SETTINGS.filter((x) => x.section === sec).map(specRow)]);
   const keys = (k: string) => <span className="st-kbd">{keyChips(k).map((c, i) => <kbd key={i}>{c}</kbd>)}</span>;
 
   const pages: Page[] = [
@@ -93,6 +109,7 @@ export function Settings(props: Props) {
         { label: 'Outline depth', hint: 'How many heading levels the outline shows: pockets, hats, blocks, tags.', control:
           seg('Outline depth', [1, 2, 3, 4].map((n) => [String(n), props.depth === n, () => props.onDepth(n)])) },
       ]],
+      ...specSections,
     ] },
     { id: 'keys', title: 'Keybindings', icon: 'keyboard', sections: SHORTCUTS.filter(([, ks]) => ks.length).map(([g, ks]) => [g, ks.map(([k, what]) => ({ label: what, control: keys(k) }))]) },
     { id: 'speech', title: 'Speech and timers', icon: 'timer', group: 'Debate', sections: [
@@ -118,6 +135,8 @@ export function Settings(props: Props) {
   const restore = () => {
     props.onZoom(DEFAULTS.zoom); props.onSpeechMin(DEFAULTS.speechMin); props.onShowOutline(DEFAULTS.showOutline);
     props.onDepth(DEFAULTS.depth); props.onHighlight(DEFAULTS.highlight);
+    FEATURE_SETTINGS.forEach((x) => localStorage.removeItem(x.key));
+    setSpecTick((t) => t + 1);
   };
 
   let lastGroup: string | undefined;
