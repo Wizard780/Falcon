@@ -1,6 +1,6 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { LEVEL, schema, type ParaStyle } from './schema';
-import { isMarker, readView } from './read';
+import { readView, shownMarker } from './read';
 
 /** The four ways Save As can write the doc. Only As-Is is the document itself; the rest are copies. */
 export type SaveMode = 'asis' | 'send' | 'read' | 'marked';
@@ -8,10 +8,14 @@ export type SaveMode = 'asis' | 'send' | 'read' | 'marked';
 const level = (p: PMNode) => LEVEL[p.attrs.style as ParaStyle];
 const docOf = (paras: PMNode[]) => (paras.length ? schema.node('doc', null, paras) : null);
 
-/** Send Doc: the file for the other team, without analytics and undertags. */
+/** Send Doc: the file for the other team, without analytics (and any text under them) and undertags. */
 export function sendDoc(doc: PMNode): PMNode | null {
   const keep: PMNode[] = [];
-  doc.forEach((p) => { if (p.attrs.style !== 'analytic' && p.attrs.style !== 'undertag') keep.push(p); });
+  let inAnalytic = false;
+  doc.forEach((p) => {
+    if (level(p) > 0) inAnalytic = p.attrs.style === 'analytic';
+    if (!inAnalytic && p.attrs.style !== 'undertag') keep.push(p);
+  });
   return docOf(keep);
 }
 
@@ -51,10 +55,10 @@ export function readDoc(doc: PMNode): PMNode | null {
   return docOf(keep);
 }
 
-/** A card (a tag or analytic and the paragraphs under it) is marked when any of its text is red. */
+/** A card (a tag or analytic and the paragraphs under it) is marked when it has red text, or a marker in the Settings color: what read mode counts. */
 const hasMarked = (p: PMNode) => {
   let red = false;
-  p.forEach((n) => { if (n.isText && isMarker(n.marks)) red = true; });
+  p.forEach((n) => { if (n.isText && shownMarker(n)) red = true; });
   return red;
 };
 

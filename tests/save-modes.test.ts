@@ -24,6 +24,10 @@ describe('Send Doc', () => {
     const d = doc(p('block', 'AT: Econ'), p('analytic', 'They concede growth'), p('tag', 'Growth is high'), p('undertag', 'read this first'), p('normal', 'Smith 24'), p('normal', 'body'));
     expect(lines(sendDoc(d))).toEqual(['block: AT: Econ', 'tag: Growth is high', 'normal: Smith 24', 'normal: body']);
   });
+  it('drops the text under an analytic with it', () => {
+    const d = doc(p('tag', 'A'), p('normal', 'a body'), p('analytic', 'B'), p('normal', 'b more'), p('tag', 'C'), p('normal', 'c body'));
+    expect(lines(sendDoc(d))).toEqual(['tag: A', 'normal: a body', 'tag: C', 'normal: c body']);
+  });
   it('keeps formatting on what stays', () => {
     const d = doc(p('tag', 'T'), p('normal', ['read', [hl()]], ' skip'));
     expect(sendDoc(d)!.child(1).eq(d.child(1))).toBe(true);
