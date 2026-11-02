@@ -14,6 +14,7 @@ import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
 import { readPlugin } from './read';
+import { navPlugins } from './nav-keys';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -123,6 +124,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       wordSelection(),
       selectionClasses,
       findPlugin,
+      ...navPlugins,
     ],
   });
 }
