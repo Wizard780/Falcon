@@ -214,7 +214,7 @@ ipcMain.handle('falcon:dict-remove', async (e, w) => {
   return (await dictWords(e)).filter((x) => x !== w); // the list can lag the removal by a moment
 });
 ipcMain.handle('falcon:index-files', () => index().files());
-ipcMain.handle('falcon:save-file', async (e, opts) => {
+async function saveFile(e, opts) {
   if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
   // Save writes straight into the document's own file, wherever it lives, as long as it's still there.
   // A file that was moved or deleted gets Save As, opened in its old folder (writing to the stale path
@@ -231,29 +231,25 @@ ipcMain.handle('falcon:save-file', async (e, opts) => {
     await rememberPath(p);
   }
   if (!p.toLowerCase().endsWith('.docx')) throw new Error('Falcon only saves .docx files');
-  await writeInTurn(p, Buffer.from(opts.data));
+  // write to a temp file first so a crash mid-save never truncates the real file
+  const tmp = `${p}.falcon-tmp`;
+  try {
+    await fs.writeFile(tmp, Buffer.from(opts.data));
+    await fs.rename(tmp, p);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
   return { path: p, name: path.basename(p) };
-});
-// Saves of one file run one at a time, in the order asked, so a quick second save can't mix its bytes into the
-// first one's temp file or be overwritten by it. Each goes to a temp file first: a crash mid-save never truncates the real file.
-const writing = new Map();
-function writeInTurn(p, data) {
-  const write = async () => {
-    const tmp = `${p}.falcon-tmp`;
-    try {
-      await fs.writeFile(tmp, data);
-      await fs.rename(tmp, p);
-    } catch (err) {
-      await fs.rm(tmp, { force: true });
-      throw err;
-    }
-  };
-  const turn = (writing.get(p) ?? Promise.resolve()).then(write);
-  const settled = turn.catch(() => {});
-  writing.set(p, settled);
-  settled.then(() => { if (writing.get(p) === settled) writing.delete(p); });
-  return turn;
 }
+// Saves run one at a time, in the order asked: a quick second save of a file can't mix its bytes into the first
+// one's temp file, or finish first and be overwritten by the older copy.
+let saving = Promise.resolve();
+ipcMain.handle('falcon:save-file', (e, opts) => {
+  const turn = saving.then(() => saveFile(e, opts));
+  saving = turn.catch(() => {});
+  return turn;
+});
 
 // "Mod-Shift-s" (a keymap name, as Settings saves it) as an Electron accelerator, "Cmd+Shift+S"
 const ACC = { Mod: 'Cmd', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Shift', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', ' ': 'Space' };
