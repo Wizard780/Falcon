@@ -16,6 +16,7 @@ import { clearFind, findInfo, setQuery, step } from '../editor/find';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
 import { Settings } from './Settings';
+import { Tips, parseTip } from './Tips';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active }]: the open doc and every unsaved one
@@ -450,7 +451,7 @@ export function App() {
 
       <OutlinePane active={activeId}
         shown={showOutline} items={outline} depth={depth} cur={cur}
-        onDepth={setDepth} onJump={jump} onShow={setShowOutline} />
+        onDepth={setDepth} onJump={jump} />
 
       <div ref={scrollRef} className="f-scroll" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); viewRef.current?.focus(); } }}>
         <div className="page"><div ref={mountRef} /></div>
@@ -465,9 +466,9 @@ export function App() {
               else if (e.key === 'Escape') { e.preventDefault(); clearFind(view); setFindOpen(false); view.focus(); }
             }} />
           <span className="count">{(() => { const f = findInfo(view.state); return f && f.query ? (f.matches.length ? `${f.index + 1}/${f.matches.length}` : 'No results') : ''; })()}</span>
-          <button title="Previous (Shift-Enter)" onMouseDown={(e) => { e.preventDefault(); step(view, -1); }}><Icon name="chevronUp" /></button>
-          <button title="Next (Enter)" onMouseDown={(e) => { e.preventDefault(); step(view, 1); }}><Icon name="chevron" /></button>
-          <button title="Close (Esc)" onMouseDown={(e) => { e.preventDefault(); clearFind(view); setFindOpen(false); view.focus(); }}><Icon name="x" /></button>
+          <button title="Previous (⇧Enter): go to the match above" onMouseDown={(e) => { e.preventDefault(); step(view, -1); }}><Icon name="chevronUp" /></button>
+          <button title="Next (Enter): go to the match below" onMouseDown={(e) => { e.preventDefault(); step(view, 1); }}><Icon name="chevron" /></button>
+          <button title="Close find (Esc)" onMouseDown={(e) => { e.preventDefault(); clearFind(view); setFindOpen(false); view.focus(); }}><Icon name="x" /></button>
         </div>
       )}
 
@@ -477,9 +478,9 @@ export function App() {
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
-        <button title={`Zoom out (${MOD}−)`} onClick={() => zoomBy(-0.1)}>−</button>
-        <button className="zoom" title={`Actual size (${MOD}0)`} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
-        <button title={`Zoom in (${MOD}+)`} onClick={() => zoomBy(0.1)}>+</button>
+        <button title={`Zoom out (${MOD}−): make the page smaller`} onClick={() => zoomBy(-0.1)}>−</button>
+        <button className="zoom" title={`Actual size (${MOD}0): back to 100%`} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+        <button title={`Zoom in (${MOD}+): make the page bigger`} onClick={() => zoomBy(0.1)}>+</button>
       </footer>
       </div>
 
@@ -491,6 +492,7 @@ export function App() {
         showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth}
         highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} />
       <div className={`toast${toast ? ' show' : ''}`}>{toast}</div>
+      <Tips />
     </div>
   );
 }
@@ -501,33 +503,34 @@ const mmss = (min: number) => { const s = Math.round(min * 60); return `${Math.f
 
 type DocRow = { id: number; name: string; path?: string; dirty: boolean };
 function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void }) {
-  // the hovered document's name, fixed beside the rail so the outline pane can't clip it
-  const [tip, setTip] = useState<{ id: number; y: number } | null>(null);
+  // the hovered document grows into a pill with its name, fixed so the outline pane can't clip it
+  const [tip, setTip] = useState<{ id: number; x: number; y: number } | null>(null);
   const tipDoc = tip && props.docs.find((d) => d.id === tip.id);
   // opening or closing a file moves the rows under a still pointer
   useEffect(() => setTip(null), [props.docs.length]);
   return (
     <nav className="fstrip" aria-label="Open documents">
-      <button className="sb-logo" title={`Home (${MOD}T)`} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
-      <div className="fs-docs" role="tablist" aria-label="Open documents">
+      <button className="sb-logo" title={`Home (${MOD}T): recent files and new documents`} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
+      <div className="fs-docs" role="tablist" aria-label="Open documents" onScroll={() => setTip(null)}>
         {props.docs.map((d) => {
           const on = d.id === props.active && !props.home;
           return (
             <div key={d.id} className="doc-row" data-on={on || undefined}
-              onPointerEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ id: d.id, y: r.top + r.height / 2 }); }}
+              onPointerEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ id: d.id, x: r.left, y: r.top }); }}
               onPointerLeave={() => setTip(null)}>
               <button className="fs-b doc-nm" role="tab" aria-selected={on} aria-label={d.name} data-on={on || undefined}
                 onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
                 <SvgIcon name="doc" />{d.dirty && <i className="dot" aria-label="unsaved" />}
               </button>
-              <button className="doc-x" title={`Close (${MOD}W)`} aria-label={`Close ${d.name}`} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
+              <button className="doc-x" title={`Close (${MOD}W): close this file`} aria-label={`Close ${d.name}`} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
             </div>
           );
         })}
       </div>
-      {tipDoc && <div key={tipDoc.id} className="doc-tip" style={{ top: tip.y }} aria-hidden="true"><b>{tidy(tipDoc.name)}</b>{tipDoc.dirty && <small>Unsaved changes</small>}</div>}
+      {tipDoc && <div key={tipDoc.id} className="doc-tip" data-on={(tipDoc.id === props.active && !props.home) || undefined} style={{ left: tip.x, top: tip.y }} aria-hidden="true">
+        <span className="ic"><SvgIcon name="doc" /></span><b>{tidy(tipDoc.name)}</b>{tipDoc.dirty && <small>Unsaved</small>}</div>}
       <div className="grow" />
-      <button className="fs-b" title={`Settings (${MOD},)`} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /></button>
+      <button className="fs-b" title={`Settings (${MOD},): highlight color, speech time, keys and more`} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /></button>
     </nav>
   );
 }
@@ -540,14 +543,14 @@ function Tools(props: { outline: boolean; reading: boolean; onNew: () => void; o
   );
   return (
     <div className="tools" role="toolbar" aria-label="File and view">
-      {b('plus', `New document (${MOD}N)`, props.onNew)}
-      {b('open', `Open… (${MOD}O)`, props.onOpen)}
-      {b('save', `Save (${MOD}S)`, (e) => props.onSave(e.shiftKey))}
-      {b('saveAs', `Save As… (${IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S'})`, () => props.onSave(true))}
+      {b('plus', `New document (${MOD}N): start a blank file`, props.onNew)}
+      {b('open', `Open… (${MOD}O): open a .docx file`, props.onOpen)}
+      {b('save', `Save (${MOD}S): save this file. Shift-click to save a copy`, (e) => props.onSave(e.shiftKey))}
+      {b('saveAs', `Save As… (${IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S'}): save a copy under a new name`, () => props.onSave(true))}
       <span className="sep" />
-      {b('search', `Find (${MOD}F)`, props.onFind)}
-      {b('list', `Outline (${MOD}\\)`, props.onOutline, props.outline)}
-      {b('eye', `Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'})`, props.onRead, props.reading)}
+      {b('search', `Find (${MOD}F): search this file`, props.onFind)}
+      {b('list', `Outline (${MOD}\\): show or hide the list of pockets, hats, blocks and tags`, props.onOutline, props.outline)}
+      {b('eye', `Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'}): show only what's read aloud`, props.onRead, props.reading)}
     </div>
   );
 }
@@ -567,13 +570,14 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   const [fontColor, setFontColor] = useState<string | null>(() => localStorage.getItem('falcon.fontColor'));
   const popRef = useRef<HTMLDivElement>(null);
 
-  const style = (s: ParaStyle, key: string, label: string, cls: string) => (
-    <button className="b" data-on={sel?.style === s || undefined} title={`${label} (${key})`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys[key]); }}>
+  const keyName = (k: string) => k.replace('Mod-', MOD);
+  const style = (s: ParaStyle, key: string, label: string, cls: string, desc: string) => (
+    <button className="b" data-on={sel?.style === s || undefined} title={`${label} (${keyName(key)}): ${desc}`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys[key]); }}>
       <span className={cls}>{label}</span>
     </button>
   );
-  const mark = (name: string, key: string, label: string, cls: string) => (
-    <button className="b" data-on={sel?.marks.has(name) || undefined} title={`${label} (${key})`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys[key]); }}>
+  const mark = (name: string, key: string, label: string, cls: string, desc: string) => (
+    <button className="b" data-on={sel?.marks.has(name) || undefined} title={`${label} (${keyName(key)}): ${desc}`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys[key]); }}>
       <span className={cls}>{label}</span>
     </button>
   );
@@ -608,10 +612,10 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   };
   const pair = (kind: PopKind, glyph: React.ReactNode, label: string, onMain: () => void, bar: string | undefined, armed = false) => (
     <span className="pair">
-      <button className="b ic" data-on={armed || undefined} aria-label={label} title={label} onMouseDown={(e) => { e.preventDefault(); onMain(); }}>
+      <button className="b ic" data-on={armed || undefined} aria-label={parseTip(label).label} title={label} onMouseDown={(e) => { e.preventDefault(); onMain(); }}>
         <span className="glyph">{glyph}<i className={bar === undefined ? 'none' : ''} style={{ background: bar }} /></span>
       </button>
-      <button className="b cr" data-pop={kind} aria-label={`${label} options`} aria-haspopup="menu" aria-expanded={pop?.kind === kind}
+      <button className="b cr" data-pop={kind} aria-label={`${parseTip(label).label} options`} title={`${parseTip(label).label} colors: pick the color`} aria-haspopup="menu" aria-expanded={pop?.kind === kind}
         onMouseDown={(e) => { e.preventDefault(); openPop(kind, e.currentTarget); }}><SvgIcon name="caret" /></button>
     </span>
   );
@@ -646,28 +650,28 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
     <header className="toolbar">
       <div className="bar">
         <div className="g">
-          {style('pocket', 'F4', 'Pocket', 'pv box')}{style('tag', 'F7', 'Tag', 'pv')}
-          {style('hat', 'F5', 'Hat', 'pv uu')}{style('block', 'F6', 'Block', 'pv u')}
-          {style('analytic', 'Mod-F7', 'Analytic', 'pv an')}{style('undertag', 'Mod-F8', 'Undertag', 'ut')}
+          {style('pocket', 'F4', 'Pocket', 'pv box', 'turn this line into a pocket, the biggest heading')}{style('tag', 'F7', 'Tag', 'pv', 'turn this line into a card tag')}
+          {style('hat', 'F5', 'Hat', 'pv uu', 'turn this line into a hat, the heading above blocks')}{style('block', 'F6', 'Block', 'pv u', 'turn this line into a block heading')}
+          {style('analytic', 'Mod-F7', 'Analytic', 'pv an', 'turn this line into an analytic, a tag with no card')}{style('undertag', 'Mod-F8', 'Undertag', 'ut', 'turn this line into an undertag, the note under a tag')}
         </div>
         <div className="g">
-          {mark('cite', 'F8', 'Cite', 'pv')}{mark('underline', 'F9', 'Underline', 'u')}
-          {mark('emphasis', 'F10', 'Emphasis', 'pv u box')}
-          <button className="b" title="Clear (F12)" onMouseDown={(e) => { e.preventDefault(); run(falconKeys.F12); }}>Clear</button>
+          {mark('cite', 'F8', 'Cite', 'pv', 'mark the selection as the cite')}{mark('underline', 'F9', 'Underline', 'u', 'underline the selection')}
+          {mark('emphasis', 'F10', 'Emphasis', 'pv u box', 'bold, underline and box the selection')}
+          <button className="b" title="Clear (F12): remove formatting from the selection, or this line" onMouseDown={(e) => { e.preventDefault(); run(falconKeys.F12); }}>Clear</button>
         </div>
         <div className="g">
-          {pair('highlight', <SvgIcon name="pen" />, 'Highlight (F11): with nothing selected, a paintbrush', () => props.onColor('highlight'), swatch('highlight'), props.brush === 'highlight')}
-          {pair('shading', <SvgIcon name="bucket" />, `Background color (${MOD}F11)`, () => props.onColor('shading'), swatch('shading'), props.brush === 'shading')}
-          {pair('font', <b className="fa">A</b>, 'Font color', () => applyFont(fontColor), fontColor ?? '#ececee')}
-          <button className="b sm" title={`Shrink card (${MOD}8)`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys['Mod-8']); }}>Shrink</button>
-          <button className="b fsz" data-pop="size" title="Font size" aria-label={`Font size ${fontSize ?? 11} pt`} aria-haspopup="menu" aria-expanded={pop?.kind === 'size'}
+          {pair('highlight', <SvgIcon name="pen" />, 'Highlight (F11): highlight the selection. With nothing selected, turns on a paintbrush', () => props.onColor('highlight'), swatch('highlight'), props.brush === 'highlight')}
+          {pair('shading', <SvgIcon name="bucket" />, `Background color (${MOD}F11): shade the selection`, () => props.onColor('shading'), swatch('shading'), props.brush === 'shading')}
+          {pair('font', <b className="fa">A</b>, 'Font color: color the selection\'s text', () => applyFont(fontColor), fontColor ?? '#ececee')}
+          <button className="b sm" title={`Shrink (${MOD}8): make the text you don't read smaller. Press again to shrink more`} onMouseDown={(e) => { e.preventDefault(); run(falconKeys['Mod-8']); }}>Shrink</button>
+          <button className="b fsz" data-pop="size" title="Font size: pick a size for the selection" aria-label={`Font size ${fontSize ?? 11} pt`} aria-haspopup="menu" aria-expanded={pop?.kind === 'size'}
             onMouseDown={(e) => { e.preventDefault(); openPop('size', e.currentTarget); }}>{fontSize ?? 11}<SvgIcon name="caret" /></button>
-          <button className="b sz" title={`Bigger (${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(1); }}>A<SvgIcon name="up" /></button>
-          <button className="b sz" title={`Smaller (${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(-1); }}>A<SvgIcon name="caret" /></button>
+          <button className="b sz" title={`Bigger: one point bigger (now ${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(1); }}>A<SvgIcon name="up" /></button>
+          <button className="b sz" title={`Smaller: one point smaller (now ${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(-1); }}>A<SvgIcon name="caret" /></button>
         </div>
         <div className="end">
-          <button className="b" data-on={props.reading || undefined} title={`Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'}): only what's read aloud, keyboard locked; Space drops a marker`} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
-          <button className="b timer" data-on={running || undefined} title="Speech timer: click to start or pause, right-click to reset"
+          <button className="b" data-on={props.reading || undefined} title={`Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'}): show only what's read aloud. Typing is locked and Space drops a marker`} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
+          <button className="b timer" data-on={running || undefined} title="Speech timer: click to start or pause. Right-click to reset"
             onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (left === 0) setLeft(SPEECH_SECONDS); setRunning((r) => !r); } }}
             onContextMenu={(e) => { e.preventDefault(); setRunning(false); setLeft(SPEECH_SECONDS); }}>
             {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
@@ -702,49 +706,33 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
 
 // ---------- the outline: attached to the document, docked on the page's left edge ----------
 
-function OutlinePane(props: { active: number; shown: boolean; items: OutlineItem[]; depth: number; cur: number; onDepth: (n: number) => void; onJump: (item: OutlineItem, index: number) => void; onShow: (s: boolean) => void }) {
+function OutlinePane(props: { active: number; shown: boolean; items: OutlineItem[]; depth: number; cur: number; onDepth: (n: number) => void; onJump: (item: OutlineItem, index: number) => void }) {
   const { shown, items, cur } = props;
-  const [peek, setPeek] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
-  const timer = useRef(0);
   const lvRef = useRef<HTMLDivElement>(null);
   const hlRef = useRef<HTMLSpanElement>(null);
-  const peekOn = () => { if (shown) return; clearTimeout(timer.current); setPeek(true); };
-  const peekOff = () => { if (shown) return; clearTimeout(timer.current); timer.current = window.setTimeout(() => setPeek(false), 180); };
-  useEffect(() => { setPeek(false); }, [shown]);
   // the 1-4 highlight slides to the chosen level
   useLayoutEffect(() => {
     const b = lvRef.current?.querySelector<HTMLElement>(`[data-lv="${props.depth}"]`);
     if (b && hlRef.current) hlRef.current.style.transform = `translateX(${b.offsetLeft - 2}px)`;
-  }, [props.depth, shown, peek]);
-  // hidden: a strip of ticks, one per hat and block, on the page's edge
-  const ticks = useMemo(() => items.map((it, i) => ({ it, i })).filter(({ it }) => it.level === 2 || it.level === 3), [items]);
-  const curBlock = useMemo(() => { let b = -1; for (const t of ticks) { if (t.i <= cur) b = t.i; else break; } return b; }, [ticks, cur]);
-  const open = shown || peek;
+  }, [props.depth, shown]);
+  // hidden means gone: no strip on the page's edge, nothing to hover
   return (
-    <>
-      <aside className={`olp${shown ? ' shown' : ''}${peek ? ' peek' : ''}`} aria-hidden={!open} onPointerEnter={peekOn} onPointerLeave={peekOff}>
-        {!shown && <button className="olp-pin" onClick={() => props.onShow(true)}>Keep the outline open <kbd>{MOD}\</kbd></button>}
-        <div className="sb-scroll">
-          <div className="ol-head">
-            <span className="sb-label">Outline</span>
-            <div ref={lvRef} className="lv" role="group" aria-label="Outline depth">
-              <span ref={hlRef} className="lv-hl" />
-              {[1, 2, 3, 4].map((l) => <button key={l} data-lv={l} data-on={props.depth === l || undefined} aria-label={`Show ${['pockets', 'hats', 'blocks', 'tags'][l - 1]}`} onClick={() => props.onDepth(l)}>{l}</button>)}
-            </div>
-            <button className="sb-ico" title="Filter outline" onClick={() => setQuery((q) => (q === null ? '' : null))}><SvgIcon name="search" /></button>
+    <aside className={`olp${shown ? ' shown' : ''}`} aria-hidden={!shown}>
+      <div className="sb-scroll">
+        <div className="ol-head">
+          <span className="sb-label">Outline</span>
+          <div ref={lvRef} className="lv" role="group" aria-label="Outline depth">
+            <span ref={hlRef} className="lv-hl" />
+            {[1, 2, 3, 4].map((l) => { const t = `Show ${['pockets', 'down to hats', 'down to blocks', 'down to tags'][l - 1]}`; return <button key={l} data-lv={l} data-on={props.depth === l || undefined} aria-label={t} title={t} onClick={() => props.onDepth(l)}>{l}</button>; })}
           </div>
-          {query !== null && <input className="ol-q" autoFocus placeholder="Filter this outline" aria-label="Filter outline" spellCheck={false} value={query}
-            onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setQuery(null); } }} />}
-          <OutlineRows key={props.active} items={items} depth={props.depth} cur={cur} query={(query ?? '').trim().toLowerCase()} onJump={props.onJump} visible={open} />
+          <button className="sb-ico" title="Filter the outline by name" onClick={() => setQuery((q) => (q === null ? '' : null))}><SvgIcon name="search" /></button>
         </div>
-      </aside>
-      <div className={`olt${shown ? '' : ' shown'}`} title={`Show outline (${MOD}\\)`} onPointerEnter={peekOn} onPointerLeave={peekOff} onClick={() => props.onShow(true)}>
-        <div className="rail-ticks">
-          {ticks.map(({ it, i }) => <span key={it.pos} className={`rail-tick ${it.level === 2 ? 'h' : 'b'}`} data-on={i === curBlock || undefined} />)}
-        </div>
+        {query !== null && <input className="ol-q" autoFocus placeholder="Filter this outline" aria-label="Filter outline" spellCheck={false} value={query}
+          onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setQuery(null); } }} />}
+        <OutlineRows key={props.active} items={items} depth={props.depth} cur={cur} query={(query ?? '').trim().toLowerCase()} onJump={props.onJump} visible={shown} />
       </div>
-    </>
+    </aside>
   );
 }
 
