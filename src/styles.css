@@ -430,3 +430,16 @@ button.b:active { transform: scale(.97); }
 .cf-btns button:focus-visible { outline: 2px solid var(--u-tx2); outline-offset: 2px; }
 .cf-btns .cf-ok { color: #ff7a7a; }
 :root[data-chrome="light"] .cf-btns .cf-ok { color: #c62828; }
+/* Save As: the name, then four kinds of copy in a two-by-two grid */
+.cf.sa { width: min(460px, calc(100vw - 48px)); }
+.sa-name { display: block; width: 100%; box-sizing: border-box; height: 34px; margin: 6px 0 14px; padding: 0 12px; border: 0; border-radius: 8px;
+  background: var(--u-ctl2); color: var(--u-tx); font: inherit; font-size: 13px; box-shadow: var(--u-top); outline: none; user-select: text; }
+.sa-name:focus-visible { outline: 2px solid var(--u-tx2); outline-offset: 2px; }
+.sa-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sa-mode { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 10px; background: var(--u-ctl2); color: var(--u-tx);
+  text-align: left; box-shadow: var(--u-top); cursor: pointer; transition: background 150ms ease-out; }
+.sa-mode:hover { background: var(--u-ctl-on); }
+.sa-mode:focus-visible { outline: 2px solid var(--u-tx2); outline-offset: 2px; }
+.sa-mode b { font-size: 13px; font-weight: 600; line-height: 18px; }
+.sa-mode span { font-size: 12px; line-height: 17px; color: var(--u-tx2); }
+.cf.sa .cf-btns { margin-top: 16px; }
