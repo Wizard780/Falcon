@@ -40,5 +40,6 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Card formatting](./card-formatting.md) covers the F-key paragraph styles, cite, underline, emphasis, highlight and Clear, from keys and the format grid.
 - [Outline pane](./outline.md) covers heading rows, the 1-4 depth buttons, jumping by row, and stored depth.
 - [Find and replace](./find-replace.md) covers the find bar, the match counter, Replace all and its single undo.
+- [Send to speech](./send-to-speech.md) covers `~`, the speech doc in the rail, send order, the Undo toast, Mod-Z and the Speech doc button.
 - [Settings](./settings.md) covers the six panes and the highlighter pen with its stored value and effect.
 - [Desktop shell](./desktop-shell.md) covers the Electron app with no visible window: launch, keys, the preload bridge, save in place, and the close guard.
