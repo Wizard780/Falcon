@@ -47,13 +47,57 @@ const APP_IDS = ['search', 'save', 'saveAs', 'find', 'open', 'new', 'close', 'ne
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
 
+// Pictures (data URLs) are counted in characters; browser storage holds about 5M of them in all.
+const AUTOSAVE_MEDIA_MAX = 3_000_000;
+
 type Backup = { meta: DocMeta; doc: PMNode; active: boolean; dirty?: boolean; speech?: boolean };
+type Json = { type?: string; attrs?: Record<string, unknown>; content?: Json[] };
+const MEDIA_REF = 'falcon-media:';
+/** A doc's JSON with each picture's data kept once in `media` (a file can use one logo hundreds of times). */
+function packDoc(doc: PMNode, media: string[], index: Map<string, number>): Json {
+  const walk = (n: Json) => {
+    if (n.type === 'image' && typeof n.attrs?.src === 'string' && n.attrs.src.startsWith('data:')) {
+      let i = index.get(n.attrs.src);
+      if (i === undefined) { i = media.push(n.attrs.src) - 1; index.set(n.attrs.src, i); }
+      n.attrs = { ...n.attrs, src: `${MEDIA_REF}${i}` };
+    }
+    n.content?.forEach(walk);
+  };
+  const json = doc.toJSON() as Json;
+  walk(json);
+  return json;
+}
+function unpackDoc(json: Json, media: string[] | undefined): Json {
+  if (!media) return json;
+  const walk = (n: Json) => {
+    const src = n.attrs?.src;
+    if (n.type === 'image' && typeof src === 'string' && src.startsWith(MEDIA_REF)) n.attrs = { ...n.attrs, src: media[Number(src.slice(MEDIA_REF.length))] ?? '' };
+    n.content?.forEach(walk);
+  };
+  walk(json);
+  return json;
+}
+/** Characters of picture data a doc holds, each picture counted once. */
+function mediaSize(doc: PMNode): number {
+  const seen = new Set<string>();
+  let n = 0;
+  doc.descendants((node) => {
+    if (node.type.name === 'image' && !seen.has(node.attrs.src)) { seen.add(node.attrs.src); n += node.attrs.src.length; }
+    return true;
+  });
+  return n;
+}
 /** Crash-recovery copy of the open doc and every unsaved one. Docs too big to keep are left out;
  *  returns false when the active doc was one of them. */
 function autosave(list: Backup[]): boolean {
   if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return true; } // turned off in Settings
-  const keep = list.filter((b) => b.doc.content.size <= AUTOSAVE_MAX);
-  const write = (l: Backup[]) => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(l.map((b) => ({ meta: b.meta, active: b.active, dirty: b.dirty, speech: b.speech, doc: b.doc.toJSON() }))));
+  // a doc whose pictures don't fit is left out whole: a copy without its pictures, saved, would lose them
+  const keep = list.filter((b) => b.doc.content.size <= AUTOSAVE_MAX && mediaSize(b.doc) <= AUTOSAVE_MEDIA_MAX);
+  const write = (l: Backup[]) => {
+    const media: string[] = [], index = new Map<string, number>();
+    const docs = l.map((b) => ({ meta: b.meta, active: b.active, dirty: b.dirty, speech: b.speech, doc: packDoc(b.doc, media, index) }));
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(media.length ? docs.map((d, i) => (i === 0 ? { ...d, media } : d)) : docs));
+  };
   try { write(keep); }
   catch { // storage full: the active doc alone is the most useful copy
     try { write(keep.filter((b) => b.active)); } catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
@@ -65,7 +109,11 @@ function loadBackups(): Backup[] {
   if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return []; } // turned off in Settings
   try {
     const v2 = localStorage.getItem(AUTOSAVE_KEY);
-    if (v2) return (JSON.parse(v2) as { meta: DocMeta; doc: unknown; active: boolean; dirty?: boolean; speech?: boolean }[]).map((b) => ({ ...b, doc: PMNode.fromJSON(schema, b.doc) }));
+    if (v2) {
+      const list = JSON.parse(v2) as { meta: DocMeta; doc: Json; active: boolean; dirty?: boolean; speech?: boolean; media?: string[] }[];
+      const media = list[0]?.media;
+      return list.map(({ media: _m, ...b }) => ({ ...b, doc: PMNode.fromJSON(schema, unpackDoc(b.doc, media)) }));
+    }
     const v1 = localStorage.getItem(OLD_AUTOSAVE_KEY);
     if (v1) return [{ meta: JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' }, doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
   } catch { /* corrupt autosave: start blank */ }

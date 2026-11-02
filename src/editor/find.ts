@@ -31,13 +31,17 @@ function search(doc: PMNode, query: string): Match[] {
   const q = norm(query);
   if (!q) return [];
   const out: Match[] = [];
-  doc.forEach((para, offset) => {
+  // every paragraph, including the ones in table cells
+  doc.descendants((para, pos) => {
+    if (!para.isTextblock) return true;
+    const offset = pos;
     const text = norm(para.textBetween(0, para.content.size, undefined, '￼'));
     let cat = -1;
     for (let i = text.indexOf(q); i >= 0; i = text.indexOf(q, i + q.length)) {
       if (cat < 0) cat = category(para);
       out.push({ from: offset + 1 + i, to: offset + 1 + i + q.length, cat });
     }
+    return false;
   });
   return out;
 }

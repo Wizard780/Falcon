@@ -30,6 +30,8 @@ const OWN = ['normal', 'pocket', 'hat', 'block', 'tag', 'analytic', 'undertag'].
 
 type Run = {
   text?: string; br?: boolean;
+  /** a picture: kept with its size (the schema only takes embedded pictures and web addresses) */
+  img?: { src: string; width?: number; height?: number; alt: string };
   bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; box?: boolean; va?: 'sup' | 'sub';
   pt?: number; ptUnit?: boolean; hl?: string; unbold?: boolean;
   /** the size where the bold was set: a cite shrunk to 8pt inside is still a 13pt bold cite */
@@ -38,6 +40,24 @@ type Run = {
   named?: 'cite' | 'underline' | 'emphasis';
 };
 type Block = { style: ParaStyle; heading: boolean; runs: Run[] };
+/** A pasted table: each cell holds its own paragraphs (a table inside a cell flattens into them). */
+type Cell = { colspan: number; rowspan: number; width?: number; bg?: string; header: boolean; blocks: Block[] };
+type TableBlock = { table: Cell[][] };
+type Item = Block | TableBlock;
+const isTable = (b: Item): b is TableBlock => 'table' in b;
+
+const px = (v: string | null | undefined) => {
+  const m = v?.match(/^\s*([\d.]+)\s*(px|pt)?\s*$/i);
+  return m ? Math.round(Number(m[1]) * (m[2]?.toLowerCase() === 'pt' ? 96 / 72 : 1)) || undefined : undefined;
+};
+/** A cell's background as #RRGGBB (white and anything unreadable are no background). */
+function cellColor(el: HTMLElement): string | undefined {
+  const v = (el.getAttribute('bgcolor') ?? prop(el.getAttribute('style') ?? '', 'background-color') ?? prop(el.getAttribute('style') ?? '', 'background') ?? '').trim().toLowerCase();
+  let hex = NAMED[v] ?? (/^#[0-9a-f]{6}$/.test(v) ? v.toUpperCase() : undefined);
+  const rgb = v.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+  if (!hex && rgb && (rgb[4] === undefined || Number(rgb[4]) > 0)) hex = `#${rgb.slice(1, 4).map((n) => Number(n).toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+  return hex && hex !== '#FFFFFF' ? hex : undefined;
+}
 
 const BLOCK_TAGS = /^(P|DIV|H[1-6]|LI|UL|OL|BLOCKQUOTE|PRE|TABLE|TBODY|THEAD|TR|TD|TH|SECTION|ARTICLE|HEADER|FOOTER|DL|DT|DD|FIGURE|ADDRESS)$/;
 const HEADING: Record<string, ParaStyle> = { H1: 'pocket', H2: 'hat', H3: 'block', H4: 'tag', H5: 'tag', H6: 'tag' };
@@ -53,8 +73,8 @@ function blockStyle(el: HTMLElement, smart: boolean, word: boolean): ParaStyle {
 }
 
 /** Flatten the body into paragraphs of styled runs. Nested blocks (CardMirror's card divs, lists, tables) each end a paragraph. */
-function blocks(body: HTMLElement, smart: boolean, word: boolean): Block[] {
-  const out: Block[] = [];
+function blocks(body: HTMLElement, smart: boolean, word: boolean, inCell = false): Item[] {
+  const out: Item[] = [];
   let cur: Block | null = null;
   const open = (style: ParaStyle = 'normal') => {
     cur = { style, heading: style !== 'normal' && style !== 'undertag', runs: [] };
@@ -73,6 +93,17 @@ function blocks(body: HTMLElement, smart: boolean, word: boolean): Block[] {
         lines.forEach((line, i) => { if (i) b.runs.push({ br: true }); if (line) b.runs.push({ text: line, ...look }); });
       } else if (child.nodeType === 1) {
         const el = child as HTMLElement;
+        // a real table stays a table; a one-cell table is a web page's or an email's layout box: its text comes through
+        if (el.tagName === 'TABLE' && !inCell && el.querySelectorAll('td, th').length > 1) { cur = null; out.push(tableOf(el, smart, word)); cur = null; continue; }
+        if (el.tagName === 'IMG') {
+          const src = el.getAttribute('src') ?? '';
+          if (/^(data:image\/|https?:\/\/)/i.test(src)) {
+            const width = px(el.getAttribute('width')) ?? px(prop(el.getAttribute('style') ?? '', 'width'));
+            const height = px(el.getAttribute('height')) ?? px(prop(el.getAttribute('style') ?? '', 'height'));
+            (cur ?? open(inherit)).runs.push({ img: { src, width, height: width && height ? height : undefined, alt: el.getAttribute('alt') ?? '' } });
+          }
+          continue;
+        }
         if (el.tagName === 'BR') { if (cur) cur.runs.push({ br: true }); else { open(); cur = null; } continue; } // a lone <br> between paragraphs is an empty line
         if (BLOCK_TAGS.test(el.tagName)) {
           cur = null;
@@ -91,6 +122,22 @@ function blocks(body: HTMLElement, smart: boolean, word: boolean): Block[] {
   };
   walk(body, 'normal');
   return out;
+}
+
+/** A pasted table's rows and cells, with spans, widths, shading and header cells. */
+function tableOf(table: HTMLElement, smart: boolean, word: boolean): TableBlock {
+  const rows = Array.from(table.querySelectorAll('tr')).filter((tr) => tr.closest('table') === table);
+  return {
+    table: rows.map((tr) => Array.from(tr.children).filter((c): c is HTMLElement => c.tagName === 'TD' || c.tagName === 'TH').map((td) => {
+      const colspan = Math.max(1, Number(td.getAttribute('colspan')) || 1);
+      const style = td.getAttribute('style') ?? '';
+      return {
+        colspan, rowspan: Math.max(1, Number(td.getAttribute('rowspan')) || 1), header: td.tagName === 'TH',
+        width: colspan === 1 ? px(td.getAttribute('width')) ?? px(prop(style, 'width')) : undefined,
+        bg: cellColor(td), blocks: blocks(td, smart, word, true) as Block[],
+      };
+    })).filter((r) => r.length),
+  };
 }
 
 const NAMED: Record<string, string> = {
@@ -181,13 +228,38 @@ function resolve(from: HTMLElement, smart: boolean, word: boolean, memo: Map<HTM
   return r;
 }
 
-function emit(doc: Document, list: Block[], smart: boolean): string {
-  const root = doc.createElement('div');
+function emit(doc: Document, list: Item[], smart: boolean, root: HTMLElement = doc.createElement('div')): string {
   for (const b of list) {
+    if (isTable(b)) {
+      // Falcon's own table markup, which the schema reads: spans, data-colwidth, data-bg, th
+      const t = doc.createElement('table');
+      for (const row of b.table) {
+        const tr = t.appendChild(doc.createElement('tr'));
+        for (const c of row) {
+          const td = tr.appendChild(doc.createElement(c.header ? 'th' : 'td'));
+          if (c.colspan > 1) td.setAttribute('colspan', String(c.colspan));
+          if (c.rowspan > 1) td.setAttribute('rowspan', String(c.rowspan));
+          if (c.width) td.dataset.colwidth = String(c.width);
+          if (c.bg) td.dataset.bg = c.bg;
+          if (c.blocks.length) emit(doc, c.blocks, smart, td);
+        }
+      }
+      if (t.rows.length) root.append(t);
+      continue;
+    }
     const p = doc.createElement('p');
     if (b.style !== 'normal') p.dataset.style = b.style;
     for (const r of b.runs) {
       if (r.br) { p.append(doc.createElement('br')); continue; }
+      if (r.img) {
+        const img = doc.createElement('img');
+        img.setAttribute('src', r.img.src);
+        if (r.img.alt) img.setAttribute('alt', r.img.alt);
+        if (r.img.width) img.setAttribute('width', String(r.img.width));
+        if (r.img.height) img.setAttribute('height', String(r.img.height));
+        p.append(img);
+        continue;
+      }
       let node: Node = doc.createTextNode(r.text!);
       const wrap = (tag: string, cls?: string, data?: Record<string, string>) => {
         const el = doc.createElement(tag);

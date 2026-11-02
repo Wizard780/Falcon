@@ -41,6 +41,15 @@ export function freezeStyles(root: ParentNode) {
     // toDOM's own inline style (an indent, a highlight color) comes last, so it wins
     el.setAttribute('style', own ? `${add};${own}` : add);
   }
+  // tables: cell lines, padding and column widths (Falcon draws these from its stylesheet)
+  for (const t of Array.from(root.querySelectorAll<HTMLElement>('table.f-table'))) {
+    t.setAttribute('style', 'border-collapse:collapse');
+    const line = t.classList.contains('f-noborder') ? 'none' : '1px solid #a3a3a8';
+    for (const c of Array.from(t.querySelectorAll<HTMLElement>('td, th'))) {
+      const w = Number(c.dataset.colwidth?.split(',')[0]);
+      c.setAttribute('style', `border:${line};padding:3px 6px;vertical-align:top${w ? `;width:${w}px` : ''}${c.getAttribute('style') ? `;${c.getAttribute('style')}` : ''}`);
+    }
+  }
 }
 
 /** The editor's clipboard serializer: the schema's DOM plus the inline look. Covers copy, cut and drag. */

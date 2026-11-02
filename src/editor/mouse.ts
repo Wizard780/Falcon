@@ -2,6 +2,7 @@ import { Plugin, TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { wordAt } from './commands';
 import { MultiSelection, spansOf, type Span as MSpan } from './multi';
+import { CellSelection, acrossCells } from './tables';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -30,6 +31,8 @@ export function wordSelection() {
         mousedown: (view, ev) => {
           const e = ev as MouseEvent;
           if (e.button !== 0 || e.altKey) return false;
+          // a picture or footnote reference is selected whole by a click (ProseMirror's own node selection)
+          if ((e.target as HTMLElement).closest?.('.f-img, .f-footnote, .f-notes')) return false;
           const addKey = isMac ? e.metaKey : e.ctrlKey;
           if ((e.metaKey || e.ctrlKey) && !addKey) return false;
           const hit = view.posAtCoords({ left: e.clientX, top: e.clientY });
@@ -58,6 +61,8 @@ export function wordSelection() {
             return true;
           }
           if (e.shiftKey) {
+            // shift-click from one cell to another extends a cell selection (the table plugin does that)
+            if (state.selection instanceof CellSelection || acrossCells(state.doc, state.selection.anchor, hit.pos)) return false;
             e.preventDefault();
             const anchor = state.selection.anchor;
             const forward = hit.pos >= anchor;
@@ -120,6 +125,8 @@ function startDrag(view: EditorView, pos: number, unit: Unit, setUnit: (u: Unit)
     }
     const cur = view.state.selection;
     if (cur.anchor === a && cur.head === h) return;
+    // from one table cell into another, the drag selects cells (the table plugin does that)
+    if (acrossCells(view.state.doc, a, h)) return;
     view.dispatch(view.state.tr.setSelection(textSel(view.state, a, h)).setMeta('pointer', true));
   };
   // a Ctrl/Cmd-click adds the word under it (without its trailing space); a Ctrl/Cmd-drag adds exactly what you drag

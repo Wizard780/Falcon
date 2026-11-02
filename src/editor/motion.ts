@@ -12,6 +12,7 @@ export function moveByParagraph(dir: -1 | 1, extend: boolean): Command {
     const $head = sel.$head;
     const doc = state.doc;
     if ($head.depth < 1) return false; // select-all
+    if ($head.depth > 1) return false; // in a table cell: the browser's own paragraph keys
     const idx = $head.index(0);
     let target: number;
     if (dir < 0) {

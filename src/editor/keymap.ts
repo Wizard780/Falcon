@@ -83,7 +83,8 @@ const deleteAtCardEdge: Command = (state, dispatch) => {
  *  or the style Settings picks for that heading. */
 const enter: Command = chainCommands(createParagraphNear, liftEmptyBlock, (state, dispatch) => {
   const $f = state.selection.$from;
-  const atEnd = state.selection.empty && $f.parentOffset === $f.parent.content.size && $f.parent.attrs.style !== 'normal';
+  // (a heading-styled line in a table cell splits like any line: the new line stays in the cell)
+  const atEnd = state.selection.empty && $f.depth === 1 && $f.parentOffset === $f.parent.content.size && $f.parent.attrs.style !== 'normal';
   if (!atEnd) return splitBlockKeepMarks(state, dispatch);
   if (!dispatch) return true;
   const pos = $f.after(1);

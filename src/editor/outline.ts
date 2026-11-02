@@ -1,5 +1,5 @@
 import type { Node as PMNode } from 'prosemirror-model';
-import { LEVEL, type ParaStyle } from './schema';
+import { levelOf, type ParaStyle } from './schema';
 import { norm } from './find';
 
 export type OutlineItem = { pos: number; level: number; text: string; style: ParaStyle; cards: number; hasKids: boolean };
@@ -10,7 +10,7 @@ export function buildOutline(doc: PMNode): OutlineItem[] {
   const stack: OutlineItem[] = [];
   doc.forEach((node, pos) => {
     const style = node.attrs.style as ParaStyle;
-    const level = LEVEL[style];
+    const level = levelOf(node);
     if (!level) return;
     const item: OutlineItem = { pos, level, text: node.textContent.trim(), style, cards: 0, hasKids: false };
     while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
@@ -38,17 +38,22 @@ export function currentItem(items: OutlineItem[], pos: number): number {
 export function readWords(doc: PMNode): number {
   let n = 0;
   doc.forEach((para) => {
-    const level = LEVEL[para.attrs.style as ParaStyle];
+    // a table's highlighted and cited text is read too
+    if (!para.isTextblock) { para.descendants((p) => { if (p.isTextblock) n += bodyWords(p); return !p.isTextblock; }); return; }
+    const level = levelOf(para);
     if (level === 4) { n += count(para.textContent); return; }
     if (level > 0) return;
-    let buf = '';
-    para.forEach((t) => {
-      const read = t.marks.some((m) => m.type.name === 'highlight' || m.type.name === 'cite');
-      buf += read ? (t.text ?? '') : ' ';
-    });
-    n += count(buf);
+    n += bodyWords(para);
   });
   return n;
+}
+function bodyWords(para: PMNode): number {
+  let buf = '';
+  para.forEach((t) => {
+    const read = t.marks.some((m) => m.type.name === 'highlight' || m.type.name === 'cite');
+    buf += read ? (t.text ?? '') : ' ';
+  });
+  return count(buf);
 }
 const count = (s: string) => (s.match(/[\p{L}\p{N}][\p{L}\p{N}'’.-]*/gu) ?? []).length;
 
@@ -67,7 +72,7 @@ export function searchOutline(items: OutlineItem[], doc: PMNode, query: string, 
     let h = -1;
     const stack: { i: number; lv: number }[] = [];
     doc.forEach((node) => {
-      const lv = LEVEL[node.attrs.style as ParaStyle];
+      const lv = levelOf(node);
       if (lv) {
         if (++h >= items.length) return;
         while (stack.length && stack[stack.length - 1].lv >= lv) stack.pop();

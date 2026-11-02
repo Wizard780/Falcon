@@ -130,11 +130,11 @@ describe('Standardize', () => {
   it('leaves the exception color alone (yellow by default)', () => {
     const c = colored();
     activeColors.highlight = 'cyan';
-    const s = run(caret(c, 'red'), DOC_TOOLS[1].items[2].run);
+    const s = run(caret(c, 'red'), DOC_TOOLS[2].items[2].run);
     expect(map(s)).toBe('normal: [red]{highlight:cyan} [green]{highlight:cyan} [yellow]{highlight:yellow}');
-    expect(DOC_TOOLS[1].items[2].label).toBe('Standardize Highlighting (except Yellow)');
+    expect(DOC_TOOLS[2].items[2].label).toBe('Standardize Highlighting (except Yellow)');
     localStorage.setItem('falcon.standardizeHighlightException', 'green');
-    expect(DOC_TOOLS[1].items[2].label).toBe('Standardize Highlighting (except Green)');
+    expect(DOC_TOOLS[2].items[2].label).toBe('Standardize Highlighting (except Green)');
   });
   it('does the same for background color, comparing colors case-blind', () => {
     localStorage.setItem('falcon.autoBridge', 'off');
@@ -142,7 +142,7 @@ describe('Standardize', () => {
     s = run(select(s, 'one'), K['Mod-F11']);
     activeColors.shading = '#ffff00'; s = run(select(s, 'two'), K['Mod-F11']);
     activeColors.shading = '#BFBFBF';
-    s = run(caret(s, 'one'), DOC_TOOLS[1].items[3].run);
+    s = run(caret(s, 'one'), DOC_TOOLS[2].items[3].run);
     expect(s.doc.firstChild!.child(0).marks[0].attrs.color).toBe('#BFBFBF');
     expect(s.doc.firstChild!.child(2).marks[0].attrs.color).toBe('#ffff00');
   });
