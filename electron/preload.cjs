@@ -21,5 +21,6 @@ contextBridge.exposeInMainWorld('falcon', {
     ipcRenderer.on('falcon:confirm-close', on);
     return () => ipcRenderer.removeListener('falcon:confirm-close', on);
   },
+  setTheme: (bg, dark) => ipcRenderer.send('falcon:theme', String(bg), dark === true),
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
 });

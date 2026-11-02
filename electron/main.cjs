@@ -1,5 +1,6 @@
 // Falcon main process: one window, native file dialogs, and the clipboard bridge.
-const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, shell } = require('electron');
+const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createIndex } = require('./indexer.cjs');
@@ -11,14 +12,26 @@ const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a win
 globalThis.falconSkipUnloadGuard = HEADLESS;
 if (process.env.FALCON_USER_DATA) app.setPath('userData', process.env.FALCON_USER_DATA);
 
+// The theme's background, kept from the last run, so the window opens in it instead of flashing graphite.
+const themeFile = () => path.join(app.getPath('userData'), 'theme.json');
+function lastTheme() {
+  try {
+    const t = JSON.parse(fsSync.readFileSync(themeFile(), 'utf8'));
+    if (/^#[0-9a-f]{6}$/i.test(t.bg)) return { bg: t.bg, dark: t.dark !== false };
+  } catch { /* first run, or no theme saved yet */ }
+  return { bg: '#0f0f10', dark: true };
+}
+
 function createWindow() {
+  const theme = lastTheme();
+  nativeTheme.themeSource = theme.dark ? 'dark' : 'light';
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
     minHeight: 500,
     show: false,
-    backgroundColor: '#0f0f10',
+    backgroundColor: theme.bg,
     title: 'Falcon',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 18, y: 18 },
@@ -84,6 +97,15 @@ ipcMain.on('falcon:force-close', (e, quit) => {
   if (!win) return;
   win.falconForceClose = true;
   if (quit) app.quit(); else win.close();
+});
+
+let lastThemeJson = '';
+ipcMain.on('falcon:theme', (e, bg, dark) => {
+  if (!/^#[0-9a-f]{6}$/i.test(bg)) return;
+  BrowserWindow.fromWebContents(e.sender)?.setBackgroundColor(bg);
+  nativeTheme.themeSource = dark ? 'dark' : 'light';
+  const json = JSON.stringify({ bg, dark });
+  if (json !== lastThemeJson) { lastThemeJson = json; fs.writeFile(themeFile(), json).catch(() => { /* a convenience */ }); }
 });
 
 ipcMain.handle('falcon:read-clipboard-text', () => clipboard.readText());
