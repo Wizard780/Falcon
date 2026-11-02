@@ -169,7 +169,9 @@ class NoteEditor {
     if (!note) { if (this.inner) this.close(false); return; }
     if (this.inner && note.pos === this.pos) {
       // undo or another change from outside: show what the footnote holds now
-      if (JSON.stringify(note.node.attrs.content) !== JSON.stringify(this.innerJson())) { this.close(false); this.open(note); }
+      // compared the way the little editor holds it (it merges neighbouring runs with the same marks)
+      const want = schema.nodes.paragraph.create(null, noteNodes(note.node.attrs.content)).content.toJSON() ?? [];
+      if (JSON.stringify(want) !== JSON.stringify(this.innerJson())) { this.close(false); this.open(note); }
       this.num.textContent = `Footnote ${numberAt(this.view.state, note.pos)}`;
       return;
     }

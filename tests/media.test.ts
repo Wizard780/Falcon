@@ -317,3 +317,39 @@ describe('copying tables out', () => {
     expect(markMap(docFromHTML(cleanPastedHTML(html)))).toBe(markMap(doc));
   });
 });
+
+describe('second review fixes', () => {
+  const ser = (nodes: import('prosemirror-model').Node[]) => {
+    const div = document.createElement('div');
+    div.append(DOMSerializer.fromSchema(schema).serializeFragment(schema.nodes.paragraph.create(null, nodes).content));
+    return div.innerHTML;
+  };
+
+  it('a footnote or picture cut alone (no paragraph around it) pastes back whole, crop included', () => {
+    const fn = schema.nodes.footnote.create({ content: [{ type: 'text', text: 'Note' }] });
+    expect(markMap(docFromHTML(cleanPastedHTML(ser([fn]))))).toBe('normal: [^Note]');
+    const img = schema.nodes.image.create({ src: `data:image/png;base64,${PNG_2X3}`, width: 100, height: 40, crop: { l: 0.1, t: 0.2, r: 0, b: 0 } });
+    expect(markMap(docFromHTML(cleanPastedHTML(ser([img]))))).toBe('normal: [image 100x40 crop 100,200,0,0]');
+  });
+
+  it('a picture with bad data is left out of the save instead of failing it; image/jpg is saved as JPEG', async () => {
+    const jpg = 'data:image/jpg;base64,/9j/4AAQSkZJRgABAQ==';
+    const doc = schema.node('doc', null, [schema.nodes.paragraph.create(null, [
+      schema.nodes.image.create({ src: 'data:image/png;base64,@@not base64@@', width: 10, height: 10 }),
+      schema.nodes.image.create({ src: jpg, width: 10, height: 10 }),
+    ])]);
+    const p = parts(await docToDocx(doc));
+    expect(Object.keys(p).filter((k) => k.startsWith('word/media/'))).toEqual(['word/media/image1.jpeg']);
+  });
+
+  it('a layout table wrapped around a real table: the real table comes through', () => {
+    const html = '<table><tr><td><table><tr><td>a</td><td>b</td></tr></table></td></tr></table>';
+    expect(markMap(docFromHTML(cleanPastedHTML(html)))).toBe('table 1 rows\ncell r0c0 normal: a\ncell r0c1 normal: b');
+  });
+
+  it('a Word table whose lines are set on its cells keeps them', async () => {
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const bytes = zipSync({ 'word/document.xml': strToU8(`<w:document ${W}><w:body><w:tbl><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcBorders><w:top w:val="single"/></w:tcBorders></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/></w:body></w:document>`) });
+    expect(markMap(await docxToDoc(bytes)).split('\n')[0]).toBe('table 1 rows');
+  });
+});

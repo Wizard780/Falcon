@@ -145,10 +145,13 @@ const image: NodeSpec = {
       const src = imageSrc(e.getAttribute('src'));
       if (!src) return false;
       const w = num(e.getAttribute('width')) ?? num(e.style.width.replace(/px$/, '')), h = num(e.getAttribute('height')) ?? num(e.style.height.replace(/px$/, ''));
-      return { src, width: w, height: w && h ? h : null, alt: e.getAttribute('alt') ?? '' };
+      // Word's crop, carried through copy and paste: "l,t,r,b" fractions
+      const c = (e.dataset.crop ?? '').split(',').map(Number);
+      const crop = c.length === 4 && c.every((x) => x >= 0 && x < 1) && c[0] + c[2] < 1 && c[1] + c[3] < 1 && c.some((x) => x > 0) ? { l: c[0], t: c[1], r: c[2], b: c[3] } : null;
+      return { src, width: w, height: w && h ? h : null, alt: e.getAttribute('alt') ?? '', crop };
     },
   }],
-  toDOM: (n) => ['img', { class: 'f-image', src: n.attrs.src, alt: n.attrs.alt, ...(n.attrs.width ? { width: String(n.attrs.width) } : {}), ...(n.attrs.width && n.attrs.height ? { height: String(n.attrs.height) } : {}) }],
+  toDOM: (n) => ['img', { class: 'f-image', src: n.attrs.src, alt: n.attrs.alt, ...(n.attrs.width ? { width: String(n.attrs.width) } : {}), ...(n.attrs.width && n.attrs.height ? { height: String(n.attrs.height) } : {}), ...(n.attrs.crop ? { 'data-crop': ['l', 't', 'r', 'b'].map((k) => n.attrs.crop[k]).join(',') } : {}) }],
 };
 
 /** Plain text of a footnote's content (stored as ProseMirror JSON for text and hard breaks). */

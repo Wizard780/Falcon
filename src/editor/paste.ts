@@ -26,7 +26,8 @@ export function cleanPastedHTML(html: string, smart = pref(P.smartPaste)): strin
 }
 
 /** Falcon's paragraph classes: every copy of ours has at least one. */
-const OWN = ['normal', 'pocket', 'hat', 'block', 'tag', 'analytic', 'undertag'].map((s) => `[class~="f-${s}"]`).join(', ');
+// (a cut of one footnote or picture alone has no paragraph around it: those count too)
+const OWN = [...['normal', 'pocket', 'hat', 'block', 'tag', 'analytic', 'undertag'].map((s) => `[class~="f-${s}"]`), 'sup.f-footnote', 'img.f-image', 'table.f-table'].join(', ');
 
 type Run = {
   text?: string; br?: boolean;
@@ -94,7 +95,7 @@ function blocks(body: HTMLElement, smart: boolean, word: boolean, inCell = false
       } else if (child.nodeType === 1) {
         const el = child as HTMLElement;
         // a real table stays a table; a one-cell table is a web page's or an email's layout box: its text comes through
-        if (el.tagName === 'TABLE' && !inCell && el.querySelectorAll('td, th').length > 1) { cur = null; out.push(tableOf(el, smart, word)); cur = null; continue; }
+        if (el.tagName === 'TABLE' && !inCell && Array.from((el as HTMLTableElement).rows ?? []).reduce((n, r) => n + r.cells.length, 0) > 1) { cur = null; out.push(tableOf(el, smart, word)); cur = null; continue; }
         if (el.tagName === 'IMG') {
           const src = el.getAttribute('src') ?? '';
           if (/^(data:image\/|https?:\/\/)/i.test(src)) {

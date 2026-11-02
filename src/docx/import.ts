@@ -169,7 +169,10 @@ function readImageRels(xml: string | undefined, files: Record<string, Uint8Array
     const id = r.getAttribute('Id'), target = r.getAttribute('Target');
     if (!id || !target || !/\/image$/.test(r.getAttribute('Type') ?? '')) continue;
     if (r.getAttribute('TargetMode') === 'External') { if (/^https?:\/\//i.test(target)) map.set(id, target); continue; }
-    const path = target.startsWith('/') ? target.slice(1) : `word/${target.replace(/^\.\//, '')}`;
+    // a target is relative to word/ (or absolute from the package root), and can step up with ../
+    const parts: string[] = [];
+    for (const seg of (target.startsWith('/') ? target.slice(1) : `word/${target}`).split('/')) { if (seg === '..') parts.pop(); else if (seg && seg !== '.') parts.push(seg); }
+    const path = parts.join('/');
     const bytes = files[path];
     const mime = MIME[path.split('.').pop()!.toLowerCase()];
     if (bytes && mime) map.set(id, dataUrl(bytes, mime));
@@ -389,7 +392,9 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
     const T = schema.nodes;
     // borders: the table's own border lines, or (with none set) whether a table style gives it some
     const tblPr = kid(tbl, 'tblPr'), lines = kid(tblPr, 'tblBorders');
-    const borders = lines ? kids(lines).some((b) => !['none', 'nil'].includes(val(b) ?? 'none')) : !!val(kid(tblPr, 'tblStyle'));
+    const drawn = (el: Element | undefined) => kids(el).some((b) => !['none', 'nil'].includes(val(b) ?? 'none'));
+    // lines set on the cells themselves count too
+    const borders = (lines ? drawn(lines) : !!val(kid(tblPr, 'tblStyle'))) || Array.from(tbl.getElementsByTagNameNS(W, 'tcBorders')).some(drawn);
     return T.table.create({ borders }, rows.map((r) => T.table_row.create(null, r.map((c) => (c.header ? T.table_header : T.table_cell).create(c.attrs, c.paras)))));
   };
 
