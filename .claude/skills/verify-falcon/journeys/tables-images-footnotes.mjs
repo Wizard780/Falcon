@@ -242,6 +242,18 @@ g.want(reopened === edited, 'the reopened file matches the edited document: tabl
 const widths = await g.page.evaluate(() => { const w = []; window.__falconView.state.doc.descendants((n) => { if (n.type.name === 'image') w.push([n.attrs.width, n.attrs.height]); return true; }); return w; });
 g.want(JSON.stringify(widths) === '[[480,271],[624,312]]', `picture sizes survive the save (${JSON.stringify(widths)})`);
 await g.shot('reopened');
+// crash recovery: an unsaved edit, then a reload, brings the doc back with its pictures, tables and footnotes
+await g.page.evaluate(() => { const v = window.__falconView; v.focus(); });
+await g.page.keyboard.type('x');
+const unsaved = await g.markMap();
+await g.page.waitForFunction(() => (localStorage.getItem('falcon.autosave.v2') ?? '').includes('falcon-media:'), null, { timeout: 8000 });
+const stored = await g.page.evaluate(() => localStorage.getItem('falcon.autosave.v2').length);
+g.want(stored < 600_000, `the crash-recovery copy keeps each picture once (${stored} chars)`);
+await g.page.reload();
+await g.page.waitForSelector('.ProseMirror');
+await g.page.keyboard.press('Escape');
+await g.page.waitForFunction(() => [...document.querySelectorAll('.ProseMirror .f-img img')].length === 2 && [...document.querySelectorAll('.ProseMirror .f-img img')].every((i) => i.naturalWidth > 0), null, { timeout: 8000 });
+g.want(await g.markMap() === unsaved, 'after a reload, crash recovery brings back the unsaved doc whole: pictures, tables, footnotes');
 await g.page.locator('.ProseMirror table').first().scrollIntoViewIfNeeded();
 await g.shot('reopened-table');
 await g.done();

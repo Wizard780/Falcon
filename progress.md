@@ -115,7 +115,7 @@ Done means:
 - npm test, tsc, build, every verify-falcon journey and the Electron smoke test pass.
 Results:
 - [x] 12 real debate files from ~/Downloads (up to 872 pictures, 14 tables, footnotes) round-trip exactly. python-docx opens every save. Text is unchanged except no-break hyphens (already written as characters before this) and Word's duplicate text-box fallback, now read once.
-- [x] vitest 188 pass (16 new in tests/media.test.ts). Journey tables-images-footnotes: 40 ok. The other 10 web journeys and desktop-shell pass.
+- [x] vitest 188 pass (16 new in tests/media.test.ts). Journey tables-images-footnotes: 42 ok. Typing on the 871-picture file: 16.7ms median, 20ms p90 (crash-recovery autosave stores each picture once; before that fix, p90 was over 1s). The other 10 web journeys and desktop-shell pass.
 Decisions:
 - prosemirror-tables for tables (column resizing, cell selection, fixTables), the one new dependency.
 - Pictures are data URLs in the document, so big picture-heavy files hold their bytes in memory. A web picture that can't be fetched stays a linked picture.
