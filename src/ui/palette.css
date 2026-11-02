@@ -1,0 +1,20 @@
+/* Cmd-K file search: the Settings surface, one search field over one list, sitting high like a launcher */
+.pk-back { position: fixed; inset: 0; z-index: 3050; display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh;
+  background: rgba(0, 0, 0, .4); backdrop-filter: blur(4px); animation: st-fade 140ms ease-out; -webkit-app-region: no-drag; }
+.pk { width: min(640px, calc(100vw - 48px)); display: flex; flex-direction: column; max-height: min(520px, 72vh); border-radius: 16px; overflow: hidden;
+  background: #141416; color: var(--u-tx); box-shadow: inset 0 0 0 1px #232326, 0 24px 64px rgba(0, 0, 0, .5); animation: st-in 180ms var(--u-ease); user-select: none; }
+.pk svg { width: 16px; height: 16px; flex: none; }
+.pk-search { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 20px; color: var(--u-mut); cursor: text; }
+.pk-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--u-tx); font: 16px var(--ui-font); }
+.pk-search input::placeholder { color: var(--u-mut); }
+.pk-list { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 8px; }
+.pk-head { padding: 12px 12px 6px; font: 12px/16px var(--mono); color: var(--u-mut); }
+.pk-row { height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 8px; color: var(--u-tx2); font-size: 14px; cursor: pointer; }
+.pk-row svg { color: var(--u-mut); }
+.pk-row[data-on] { background: #2a2a2d; color: var(--u-tx); box-shadow: var(--u-top); }
+.pk-row[data-on] svg { color: var(--u-tx); }
+.pk-nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-in { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--u-mut); }
+.pk-none { margin: 0; padding: 14px 12px 10px; font-size: 14px; color: var(--u-mut); }
+.pk-foot { height: 44px; padding: 0 20px; background: #19191b; color: var(--u-tx2); font-size: 13px; text-align: left; cursor: pointer; }
+.pk-foot:hover { color: var(--u-tx); }

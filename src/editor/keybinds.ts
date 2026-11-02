@@ -158,7 +158,7 @@ export const setRecording = (on: boolean) => { recording = on; };
 // ---------- the app's own commands (run by App.tsx, which looks them up by id) ----------
 
 bind('App', [
-  { id: 'home', label: 'Home', key: 'Mod-t' }, { id: 'settings', label: 'Settings', key: 'Mod-,' },
+  { id: 'home', label: 'Home', key: 'Mod-t' }, { id: 'search', label: 'Search files', key: 'Mod-k' }, { id: 'settings', label: 'Settings', key: 'Mod-,' },
   { id: 'outline', label: 'Show or hide the outline', key: 'Mod-\\' }, { id: 'find', label: 'Find', key: 'Mod-f' },
   { id: 'zoomIn', label: 'Zoom in', key: 'Mod-=' }, { id: 'zoomOut', label: 'Zoom out', key: 'Mod--' }, { id: 'zoomReset', label: 'Actual size', key: 'Mod-0' },
 ]);

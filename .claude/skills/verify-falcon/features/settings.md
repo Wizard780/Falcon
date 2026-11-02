@@ -1,10 +1,10 @@
 # Settings
 
-Settings is an overlay with six panes and a search box, opened from the gear at the bottom of the rail. Every choice applies right away, is stored in `localStorage` under a `falcon.*` key, and is still there after a reload. The highlighter pen is the most visible example: pick Green and F11 highlights in green.
+Settings is an overlay with seven panes and a search box, opened from the gear at the bottom of the rail. Every choice applies right away, is stored in `localStorage` under a `falcon.*` key, and is still there after a reload. The highlighter pen is the most visible example: pick Green and F11 highlights in green.
 
 ## Sub-features
 
-- `panes` General, Appearance, Editor, Formatting, Keybindings, Speech and timers.
+- `panes` General, File search, Appearance, Editor, Formatting, Keybindings, Speech and timers.
 - `pen` the Appearance `Highlighter` radio group (Yellow, Green, Cyan, Magenta, Gray), stored as `falcon.highlight`.
 - `effect` F11 uses the chosen pen.
 - `persist` choices survive a reload.
