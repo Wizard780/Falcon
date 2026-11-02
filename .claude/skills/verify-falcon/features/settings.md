@@ -22,7 +22,7 @@ Preconditions:
 - `falcon-verify doctor` is all `ok`, and the seed is open.
 
 - **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/settings.mjs`. It exits 0 with five `ok` lines.
-- **Open.** Click `.fstrip [aria-label="Settings"]`. `[aria-label="Settings sections"] button` lists the six panes.
+- **Open.** Click `.fstrip [aria-label="Settings"]`. `[aria-label="Settings sections"] button` lists the seven panes.
 - **Pick a pen.** Click the `Appearance` pane, then `[aria-label="Highlighter"] [role=radio][aria-label="Green"]`. Green has `aria-checked="true"`, and `localStorage['falcon.highlight']` is `green`.
 - **Effect.** Close settings, `f.select('Temperatures')`, then F11. The mark map shows `[Temperatures]{highlight:green}`.
 - **Persist.** Reload and reopen Settings > Appearance. Green is still checked.

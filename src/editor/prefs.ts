@@ -24,7 +24,8 @@ export const P = {
   openDepth: def('openDepth', 0), // 0: opening a file keeps the current depth
   // Appearance
   wheelZoom: def('wheelZoom', false),
-  pageDark: def('pageDark', false),
+  theme: def('theme', 'dark'), // a preset id, 'system', or a custom theme's id (src/ui/theme.ts)
+  paper: def<'theme' | 'white' | 'dark'>('paper', 'theme'),
   textWidth: def<'full' | 'wide' | 'narrow'>('textWidth', 'full'),
   margins: def<'narrow' | 'normal' | 'wide'>('margins', 'normal'),
   font: def('font', 'calibri'),
@@ -134,4 +135,4 @@ export function onPrefs(f: () => void): () => void {
   return () => removeEventListener(EVENT, f);
 }
 // another window changed them
-if (typeof window !== 'undefined') addEventListener('storage', (e) => { if (!e.key || KEYS.has(e.key)) { cache.clear(); changed(); } });
+if (typeof window !== 'undefined') addEventListener('storage', (e) => { if (!e.key || KEYS.has(e.key) || e.key === 'falcon.themes') { cache.clear(); changed(); } });

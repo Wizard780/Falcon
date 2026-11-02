@@ -1,6 +1,8 @@
 // Home screen effects, ported from the prototype (prototypes/src/kit.js and beam.js).
 // Dot Field and the matrix clock are adapted from EasyUI (https://easyui.site, MIT, Suraj Maurya).
 
+import { onPrefs } from '../editor/prefs';
+
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** A still canvas grid of dots that fades along a diagonal. Returns a stop function. */
@@ -14,8 +16,11 @@ export function dots(host: HTMLElement): () => void {
     const dpr = Math.min(devicePixelRatio || 1, 2), ctx = c.getContext('2d')!;
     c.width = Math.floor(w * dpr); c.height = Math.floor(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    // the theme's text color (a canvas can't read CSS variables), faded from 10% to 3% along the diagonal
+    const tx = getComputedStyle(document.documentElement).getPropertyValue('--u-tx').trim();
+    const [r0, g0, b0] = /^#[0-9a-f]{6}$/i.test(tx) ? [1, 3, 5].map((i) => parseInt(tx.slice(i, i + 2), 16)) : [237, 237, 237];
     const g = ctx.createLinearGradient(0, 0, w, h);
-    g.addColorStop(0, 'rgba(237,237,237,0.10)'); g.addColorStop(1, 'rgba(237,237,237,0.03)');
+    g.addColorStop(0, `rgba(${r0},${g0},${b0},0.10)`); g.addColorStop(1, `rgba(${r0},${g0},${b0},0.03)`);
     ctx.fillStyle = g;
     const r = 1.5, step = r + 14, cols = Math.floor(w / step), rows = Math.floor(h / step);
     const px = (w % step) / 2, py = (h % step) / 2;
@@ -29,7 +34,8 @@ export function dots(host: HTMLElement): () => void {
   draw();
   const ro = new ResizeObserver(draw);
   ro.observe(host);
-  return () => { ro.disconnect(); c.remove(); };
+  const off = onPrefs(draw); // a new theme: redraw in its text color (theme.ts applied it first, on the same event)
+  return () => { ro.disconnect(); off(); c.remove(); };
 }
 
 // each character is a 5x7 dot glyph; the unlit dots stay faintly visible
