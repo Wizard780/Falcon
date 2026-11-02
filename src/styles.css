@@ -92,6 +92,10 @@ svg { flex: none; }
 .fs-b { position: relative; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; color: var(--u-mut); cursor: pointer; transition: background 150ms ease-out, color 150ms ease-out; }
 .fs-b:hover { background: var(--u-hover); color: var(--u-tx); }
 .fs-b:active, .sb-logo:active { transform: scale(.97); }
+/* settings cog turns two teeth (120deg, so it lands back on its own shape) with a small overshoot */
+.gear-b svg { transition: transform 600ms cubic-bezier(.34, 1.45, .5, 1); }
+.gear-b:hover svg { transform: rotate(120deg); }
+@media (prefers-reduced-motion: reduce) { .gear-b svg { transition: none; } .gear-b:hover svg { transform: none; } }
 .fs-b[data-on] { color: var(--u-tx); background: var(--u-raised); box-shadow: var(--u-top); }
 .fs-b[data-on]::before { content: ''; position: absolute; left: -10px; top: 10px; bottom: 10px; width: 2px; border-radius: 1px; background: var(--ink-ui); }
 .sb-ico { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--u-mut); cursor: pointer; transition: background 150ms ease-out, color 150ms ease-out; }
