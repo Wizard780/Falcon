@@ -38,6 +38,7 @@ Or run `xattr -cr /Applications/Falcon.app` in Terminal, then open it normally.
 | F12 | Clear formatting, keeping highlights |
 | Mod-8 / Mod-Shift-8 | Shrink the card's unread text / regrow |
 | Mod-F | Find |
+| ~ | Send the selection, or the card or section at the cursor, to the speech doc (the mic button in the tool row marks which file it is). The page can't type a ~ |
 | PageUp / PageDown | Previous / next heading |
 | Mod-Alt-Up / Down | Move the card or section |
 | Ctrl/Alt-Up / Down | Previous / next paragraph |

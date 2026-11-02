@@ -27,7 +27,7 @@ const open = async (file) => {
   await page.waitForTimeout(400);
 };
 
-want(await page.$$eval('.tools button', (bs) => bs.map((x) => x.getAttribute('aria-label')).join(',')) === 'New document,Open…,Save,Save As…,Find,Outline,Read mode', 'tool row has New, Open, Save, Save As, Find, Outline, Read');
+want(await page.$$eval('.tools button', (bs) => bs.map((x) => x.getAttribute('aria-label')).join(',')) === 'New document,Open…,Save,Save As…,Find,Outline,Read mode,Speech doc', 'tool row has New, Open, Save, Save As, Find, Outline, Read, Speech doc');
 want(await page.$$eval('.fstrip > button', (bs) => bs.map((x) => x.getAttribute('aria-label')).join(',')) === 'Home,Settings', 'rail has Home, the open files, Settings');
 { const t = await page.$eval('.tools', (x) => { const r = x.getBoundingClientRect(), o = document.querySelector('.olp').getBoundingClientRect(); return r.bottom <= o.top && r.left >= o.left - 1 && r.right <= o.right + 1; });
   want(t, 'tool row sits above the outline pane'); }
