@@ -142,6 +142,14 @@ export function createView(mount: HTMLElement, onChange: (view: EditorView) => v
       onChange(view);
     },
     attributes: { spellcheck: 'false', class: 'f-page-text' },
+    // Read the page's selection before any key runs. The editor learns about a new selection from
+    // the selectionchange event, and a busy page handles a key press before that event, so a format
+    // key right after selecting (Shift-arrows, a drag) would format the old selection. ProseMirror's
+    // own keydown flush only covers pending DOM edits, not a pending selection change.
+    handleKeyDown(v) {
+      (v as unknown as { domObserver: { flush(): void } }).domObserver.flush();
+      return false;
+    },
   });
   const w = window as unknown as Record<string, unknown>;
   w.__falconView = view;

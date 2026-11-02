@@ -31,6 +31,17 @@ const selectLast = (n) => win.evaluate((n) => { const v = window.__falconView; c
 await selectLast(3); await win.keyboard.press('F9'); await win.keyboard.press('F11');
 await selectLast(11); await win.keyboard.press('F10');
 const map = await win.evaluate(() => window.__falconMarkMap());
+// select "Body" in the page and press F9 in the same task, before selectionchange can run (what a
+// busy page does with a key right after a selection): the key must format "Body", not the old selection
+const raced = await win.evaluate(() => {
+  const v = window.__falconView;
+  const walk = document.createTreeWalker(v.dom, NodeFilter.SHOW_TEXT);
+  let n; while ((n = walk.nextNode()) && !n.data.includes('Body'));
+  const r = document.createRange(); const i = n.data.indexOf('Body'); r.setStart(n, i); r.setEnd(n, i + 4);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+  v.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'F9', code: 'F9', keyCode: 120, bubbles: true, cancelable: true }));
+  return window.__falconMarkMap().split('\n')[1];
+});
 // Electron builds the window's drag region in document order: drag elements add, no-drag ones cut.
 // Replay that and list any visible button whose center ends up draggable (a click there moves the window).
 const dragged = await win.evaluate(() => {
@@ -73,4 +84,5 @@ want(process.platform === 'darwin' || menu.length === 0, 'no menu bar on Windows
 want(!dragged.length, `buttons under a window-drag region (clicks would be dead): ${dragged.join(', ')}`);
 want(savedInPlace === keptDoc && fs.readFileSync(keptDoc, 'utf8') === 'PK', `Save writes any existing .docx in place: ${savedInPlace}`);
 want(goneResult === null && askedAt === gone && !fs.existsSync(gone), `a moved file gets Save As in its old folder, not a silent recreate: ${askedAt}`);
+want(raced.startsWith('normal: [Body]{underline} text'), `a key right after a new selection formats that selection: ${raced}`);
 want(!errors.length, `page errors: ${errors.join('; ')}`);
