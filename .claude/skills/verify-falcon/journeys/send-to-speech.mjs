@@ -130,6 +130,12 @@ await page.waitForTimeout(300);
 want((await speechMap()) === `${CARD1}\n${BLOCK2}`, 'an AltGr-typed ` (Ctrl+Alt held on Windows layouts) sends too');
 
 await goto('seed');
+await caretIn('Warming Block');
+await page.evaluate(() => document.querySelector('.ProseMirror').dispatchEvent(new KeyboardEvent('keydown', { key: 'Dead', code: 'Backquote', bubbles: true, cancelable: true })));
+await page.waitForTimeout(300);
+want((await speechMap()) === `${CARD1}\n${BLOCK2}\n${BLOCK2}`, 'a dead-key ` (US International layout) sends too');
+
+await goto('seed');
 await page.keyboard.press(`${MOD}+n`);
 await page.waitForTimeout(300);
 await page.click(`.tools [aria-label="Speech doc"]`);

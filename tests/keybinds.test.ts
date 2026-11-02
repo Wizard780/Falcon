@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { commandOf, falconKeys, liveKeys } from '../src/editor/keymap';
-import { BINDINGS, keyOf, keyText, pressed, pressedId, recordKey, refusal, resetKey, setKey } from '../src/editor/keybinds';
+import { BINDINGS, IS_MAC, keyOf, keyText, pressed, pressedId, recordKey, refusal, resetKey, setKey } from '../src/editor/keybinds';
 import { resetPrefs } from '../src/editor/prefs';
 
 afterEach(() => resetPrefs());
@@ -46,6 +46,7 @@ describe('keybindings', () => {
     expect(refusal('sendToSpeech', '5')).toMatch(/Add Ctrl or Alt/);
     expect(refusal('tag', '`')).toMatch(/Add Ctrl or Alt/);
     expect(refusal('tag', 'Mod-`')).toBe(null);
+    if (!IS_MAC) expect(refusal('sendToSpeech', 'Mod-Alt-q')).toMatch(/AltGr/);
   });
 
   it('refuses keys that need a modifier, are taken, or are kept', () => {

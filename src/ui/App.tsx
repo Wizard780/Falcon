@@ -52,11 +52,13 @@ const keyLabel = (id: string) => keyText(keyOf(id));
 /** The keys that swap the document out, which read mode and Settings hold back. */
 const SWAPS = ['home', 'new', 'open', 'close', 'nextDoc', 'prevDoc'];
 /** The commands the app runs itself (the editor's keymap runs the rest). */
-/** Does this keydown send to speech? A changed key matches the way Settings recorded it (Shift-` is ~), and an AltGr-typed character counts. */
+/** Does this keydown send to speech? A changed key matches the way Settings recorded it (Shift-` is ~), an AltGr-typed character counts,
+ *  and ` still counts on layouts where it's a dead accent key (US International). */
 function sendPressed(e: KeyboardEvent) {
   const k = keyOf('sendToSpeech');
   if (!k) return false;
-  return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k);
+  return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
+    || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
 const APP_IDS = ['search', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'close', 'nextDoc', 'prevDoc', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
@@ -196,7 +198,7 @@ export function App() {
   docsRef.current = docs;
   const active = docs.find((d) => d.id === activeId) ?? docs[0];
   const meta = active.meta, dirty = active.dirty;
-  // the one open doc that `~` sends to; null until the first send or the Speech doc button
+  // the one open doc that Send to speech sends to; null until the first send or the Speech doc button
   const [speechId, setSpeechId] = useState<number | null>(null);
   const speechRef = useRef(speechId);
   speechRef.current = speechId;
@@ -736,7 +738,7 @@ export function App() {
     view, zoom, setZoom, depth, setDepth, showOutline, setShowOutline, speechMin, setSpeechMin,
     run: (cmd) => { const v = viewRef.current; if (!v) return false; setHomeOpen(false); return cmd(v.state, v.dispatch, v); },
     app: appCommand,
-    blocked: (id) => SWAPS.includes(id) && reading,
+    blocked: (id) => (SWAPS.includes(id) || id === 'sendToSpeech') && reading,
     highlight: activeColors.highlight, setHighlight: (c) => { setActiveColor('highlight', c); setTick((t) => t + 1); },
     isSpeech: speechId === activeId, toggleSpeech,
     jump: (i) => { const v = viewRef.current; const it = v && buildOutline(v.state.doc)[i]; if (it) { setHomeOpen(false); jump(it, i); } },

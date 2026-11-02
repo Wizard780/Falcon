@@ -105,7 +105,7 @@ export function heldMods(e: KeyboardEvent): string[] {
   return [(IS_MAC ? e.metaKey : e.ctrlKey) && 'Mod', IS_MAC && e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift'].filter(Boolean) as string[];
 }
 
-const APP_GROUPS = ['App', 'Files'];
+const APP_GROUPS = ['App', 'Files', 'Speech'];
 const ALONE = /^(F\d{1,2}|PageUp|PageDown|Home|End|Insert)$/;
 /** Why `key` can't be `id`'s shortcut, or null when it can. */
 export function refusal(id: string, key: string): string | null {

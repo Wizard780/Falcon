@@ -20,7 +20,7 @@ function selectedParas(doc: PMNode, from: number, to: number): PMNode[] {
   return out;
 }
 
-/** What `~` sends: the multi-selection, the selected text, or with a bare caret the card or heading section it sits in. */
+/** What Send to speech sends: the multi-selection, the selected text, or with a bare caret the card or heading section it sits in. */
 export function sendContent(state: EditorState): { content: Fragment; label: string } | null {
   const { doc, selection } = state;
   let paras: PMNode[] = [];
