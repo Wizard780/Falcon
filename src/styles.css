@@ -304,7 +304,7 @@ button.b:active { transform: scale(.97); }
 .desktop .app:has(.files[data-open]) .toolbar { -webkit-app-region: no-drag; }
 /* page */
 .page { zoom: var(--zoom); padding: 36px 20px 50vh 30px; color: var(--doc-ink); }
-.ProseMirror { outline: none; font-family: var(--doc-font); font-size: 11pt; line-height: 1.2; white-space: pre-wrap; word-wrap: break-word; caret-color: #000; min-height: 60vh; }
+.ProseMirror { outline: none; font-family: var(--doc-font); font-size: 11pt; line-height: 1.2; white-space: pre-wrap; word-wrap: break-word; caret-color: #000; min-height: 60vh; text-decoration-skip-ink: none; }
 .ProseMirror p { margin: 0; }
 .ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4 { margin: 0; font-weight: 700; }
 .f-pocket { font-size: 26pt; text-align: center; border: 3px solid #333; padding: 0.4rem 1rem; margin: 1rem 0 0.6rem !important; line-height: 1.1; }
@@ -315,8 +315,8 @@ button.b:active { transform: scale(.97); }
 .f-undertag { font-size: 11pt; font-style: italic; color: #2a6a3a; }
 .ProseMirror > :first-child { margin-top: 0 !important; }
 .f-cite { font-size: 13pt; font-weight: 700; }
-.f-underline { text-decoration: underline; text-decoration-skip-ink: none; }
-.f-emphasis { font-weight: 700; text-decoration: underline; text-decoration-skip-ink: none; border: 1px solid #222; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.f-underline { text-decoration: underline; }
+.f-emphasis { font-weight: 700; text-decoration: underline; border: 1px solid #222; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .f-unbold { font-weight: 400 !important; }
 .ProseMirror .f-size .f-underline, .ProseMirror .f-underline .f-size { text-decoration: underline; }
 .f-highlight { color: inherit; }
@@ -326,8 +326,10 @@ button.b:active { transform: scale(.97); }
 .ProseMirror-selectednode { outline: 2px solid #8cf; }
 
 
-/* big files: the browser skips layout and paint for paragraphs that are off screen */
-.ProseMirror > * { content-visibility: auto; contain-intrinsic-size: auto 1.3em; }
+/* big files: the browser skips layout and paint for paragraphs that are off screen. That brings paint
+   containment, which would clip underlines drawn below a short line box (a hat's double underline), so
+   paint may spill a little past the box, the same as when the caret's paragraph turns it off. */
+.ProseMirror > * { content-visibility: auto; contain-intrinsic-size: auto 1.3em; overflow-clip-margin: 0.5em; }
 .ProseMirror > .f-live { content-visibility: visible; }
 
 /* the card the cursor is in gets a thin bar on its left */
