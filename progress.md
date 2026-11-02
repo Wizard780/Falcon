@@ -129,3 +129,15 @@ Decisions:
 Open:
 - Word's own clipboard gives pictures as file:// paths the page can't read, so a mixed text+picture copy from Word brings the text only. Copying the picture alone, or a screenshot, works.
 - Not opened in Microsoft Word itself (no Word launch here). Package structure matches Word's own output and python-docx reads it.
+
+## Stage: command center (2026-11-02, branch command-center)
+User ask: CardMirror's Mod-Shift-Space control center, but it does everything and more. Files and the quick-card library stay out: a co-founder is building those (Cmd-K) and will join them in later.
+Done means / results:
+- [x] Mod-Shift-Space opens a bar laid out like CardMirror's Search Everything (low over the page, results above the box, hint strip, badges, one Esc closes, Enter on a toggle flips it, Enter on a cycle steps it)
+- [x] every key binding, fixed key and toolbar action is a command (unit test fails if a new binding or pref is missing); every Settings row is a Toggle or Cycle row
+- [x] beyond CardMirror: choice lists (Tab), typed choices (`light`), typed values (`zoom 150`, `14pt`, `card 12`, `depth 2`, `speech 6`), headings and cards by cite in the open file with page peeking, find/replace rows, Shift-Enter keeps it open, Mod-Z undoes the doc from it, Tab opens the row in Settings, recents, fuzzy and initials matching, dimmed rows that can't run here
+- [x] vitest 181 pass, build passes, journeys command-center 35/35 plus keybindings, settings, file-search, card-formatting, find-replace, outline all ok, electron smoke ok
+Decisions:
+- Sources live in `src/ui/cc-sources.ts`; a files/library source can be added beside them without touching the UI.
+- Settings rows read and write the same prefs as Settings; labels match Settings rows so Tab lands on them.
+- Not driven in Electron: the palette itself (the smoke test only proves the desktop app still launches and renders).

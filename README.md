@@ -37,6 +37,7 @@ Or run `xattr -cr /Applications/Falcon.app` in Terminal, then open it normally.
 | F11 / Mod-F11 | Highlight / background color toggle (click the button with nothing selected for the paintbrush) |
 | F12 | Clear formatting, keeping highlights |
 | Mod-8 / Mod-Shift-8 | Shrink the card's unread text / regrow |
+| Mod-Shift-Space | Command center: run any command, change any setting, go to any heading (CardMirror's Search Everything, minus files) |
 | Mod-F | Find |
 | ~ | Send the selection, or the card or section at the cursor, to the speech doc (the mic button in the tool row marks which file it is). The page can't type a ~ |
 | PageUp / PageDown | Previous / next heading |

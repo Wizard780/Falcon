@@ -11,13 +11,20 @@ import { activeColors, bridge, setActiveColor } from '../editor/host';
 import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
 import { buildOutline, currentItem, readWords, type OutlineItem } from '../editor/outline';
 import { toggleColorMark } from '../editor/commands';
+import { fontSizeOf, setFontSize } from '../editor/font-size';
+import { FONT_COLORS } from './swatches';
+import { TIMER_EVENT, type TimerRequest } from './cc-sources';
 import { insertIntoSpeech, sendContent } from '../editor/speech';
 import { selectionState } from './selection-state';
 import { SvgIcon } from './icons';
 import { newFileName, openDocument, openPath, saveDocument, type DocMeta } from './files';
 import { Palette } from './Palette';
+import { CommandCenter } from './CommandCenter';
+import type { Ctx } from './cc-sources';
 import type { FileHit } from './file-search';
-import { clearFind, findInfo } from '../editor/find';
+import { clearFind, findInfo, requestFind, setQuery as setFindQuery } from '../editor/find';
+import { readSetting } from '../editor/tools';
+import { findOrderSetting } from '../editor/nav-keys';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
 import { Settings } from './Settings';
@@ -44,7 +51,7 @@ const keyLabel = (id: string) => keyText(keyOf(id));
 /** The keys that swap the document out, which read mode and Settings hold back. */
 const SWAPS = ['home', 'new', 'open', 'close', 'nextDoc', 'prevDoc'];
 /** The commands the app runs itself (the editor's keymap runs the rest). */
-const APP_IDS = ['search', 'save', 'saveAs', 'find', 'open', 'new', 'close', 'nextDoc', 'prevDoc', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['search', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'close', 'nextDoc', 'prevDoc', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -192,6 +199,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<string | undefined>();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [ccOpen, setCcOpen] = useState(false);
+  const [settingsQuery, setSettingsQuery] = useState<string | undefined>();
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
   const [saveAsName, setSaveAsName] = useState<string | null>(null); // the Save As dialog is up, offering this name
@@ -505,10 +514,10 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => settingsRef.current || paletteRef.current || !!askRef.current || saveAsRef.current !== null || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
     if (askRef.current || saveAsRef.current) return; // a warning or Save As is up: it gets answered first
-    if (paletteRef.current) return; // file search is up: it gets closed first
+    if (paletteRef.current || ccRef.current) return; // file search or the command center is up: it gets closed first
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
     if (c === 'new') fileNew(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
@@ -521,6 +530,23 @@ export function App() {
     send();
     return onPrefs(send);
   }, []);
+
+  /** The app's own commands, by binding id: its keys and the command center both run them here. */
+  const appCommand = useCallback((id: string) => {
+    if (id === 'nextDoc' || id === 'prevDoc') cycle(id === 'nextDoc' ? 1 : -1);
+    else if (id === 'save' || id === 'saveAs') void fileSave(id === 'saveAs');
+    else if (id === 'find') openFind();
+    else if (id === 'open') void fileOpen();
+    else if (id === 'new') fileNew();
+    else if (id === 'close') closeDoc(activeRef.current);
+    else if (id === 'home') setHomeOpen((h) => !h);
+    else if (id === 'settings') setSettingsOpen((o) => !o);
+    else if (id === 'outline') setShowOutline((o) => !o);
+    else if (id === 'zoomIn') zoomBy(0.1);
+    else if (id === 'zoomOut') zoomBy(-0.1);
+    else if (id === 'zoomReset') setZoom(1);
+    else if (id === 'commands') setCcOpen((o) => !o);
+  }, [fileSave, fileOpen, fileNew, openFind, closeDoc, cycle, zoomBy]);
 
   // app-level shortcuts
   useEffect(() => {
@@ -549,6 +575,9 @@ export function App() {
       // Search files opens the palette (or closes it); while it's up, only its own keys get through
       if (id === 'search') { e.preventDefault(); e.stopPropagation(); if (paletteRef.current) setPaletteOpen(false); else if (!locked()) setPaletteOpen(true); return; }
       if (paletteRef.current) { if (mod && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
+      // the command center opens over anything but Settings (or closes); while it's up, its box gets the keys
+      if (id === 'commands') { e.preventDefault(); e.stopPropagation(); if (ccRef.current) setCcOpen(false); else if (!settingsRef.current) { setHomeOpen(false); setCcOpen(true); } return; }
+      if (ccRef.current) { if (mod && !/^[acvxyz]$/i.test(e.key)) e.preventDefault(); return; }
       // Settings is modal: only its own keys (Esc, its shortcut) get through
       if (settingsRef.current && !(e.key === 'Escape' || id === 'settings')) { if (mod) e.preventDefault(); return; }
       // Esc in a filled Settings search clears the search before it closes Settings
@@ -557,22 +586,12 @@ export function App() {
       if (e.key === 'Escape' && homeRef.current) { e.preventDefault(); e.stopPropagation(); setHomeOpen(false); return; }
       if (!id) return;
       e.preventDefault();
-      if (id === 'nextDoc' || id === 'prevDoc') { e.stopPropagation(); if (!locked()) cycle(id === 'nextDoc' ? 1 : -1); }
-      else if (id === 'save' || id === 'saveAs') void fileSave(id === 'saveAs');
-      else if (id === 'find') openFind();
-      else if (id === 'open') void fileOpen();
-      else if (id === 'new') fileNew();
-      else if (id === 'close') closeDoc(activeRef.current);
-      else if (id === 'home') setHomeOpen((h) => !h);
-      else if (id === 'settings') setSettingsOpen((o) => !o);
-      else if (id === 'outline') setShowOutline((o) => !o);
-      else if (id === 'zoomIn') zoomBy(0.1);
-      else if (id === 'zoomOut') zoomBy(-0.1);
-      else if (id === 'zoomReset') setZoom(1);
+      if (id === 'nextDoc' || id === 'prevDoc') { e.stopPropagation(); if (locked()) return; }
+      appCommand(id);
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [fileSave, fileOpen, fileNew, openFind, closeDoc, cycle, zoomBy, sendToSpeech]);
+  }, [appCommand, sendToSpeech]);
   const homeRef = useRef(homeOpen);
   homeRef.current = homeOpen;
   const settingsRef = useRef(settingsOpen);
@@ -581,7 +600,9 @@ export function App() {
   settingsRef.current = settingsOpen;
   const paletteRef = useRef(paletteOpen);
   paletteRef.current = paletteOpen;
-  useEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !paletteOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, paletteOpen]);
+  const ccRef = useRef(ccOpen);
+  ccRef.current = ccOpen;
+  useEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, paletteOpen, ccOpen]);
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -689,7 +710,34 @@ export function App() {
     return () => removeEventListener('wheel', onWheel);
   }, [zoomBy]);
 
-  const modal = settingsOpen || paletteOpen || !!ask || saveAsName !== null;
+  // what the command center can reach: every app action, the editor, and the state Settings shows
+  const openSettingsAt = useCallback((page: string, query?: string) => { setSettingsPage(page); setSettingsQuery(query); setSettingsOpen(true); }, []);
+  const ccCtx: Ctx = {
+    view, zoom, setZoom, depth, setDepth, showOutline, setShowOutline, speechMin, setSpeechMin,
+    run: (cmd) => { const v = viewRef.current; if (!v) return false; setHomeOpen(false); return cmd(v.state, v.dispatch, v); },
+    app: appCommand,
+    blocked: (id) => SWAPS.includes(id) && reading,
+    highlight: activeColors.highlight, setHighlight: (c) => { setActiveColor('highlight', c); setTick((t) => t + 1); },
+    isSpeech: speechId === activeId, toggleSpeech, sendToSpeech,
+    jump: (i) => { const v = viewRef.current; const it = v && buildOutline(v.state.doc)[i]; if (it) { setHomeOpen(false); jump(it, i); } },
+    peek: (i) => { const v = viewRef.current, it = outlineRef.current[i]; if (v && it && it.pos < v.state.doc.content.size) scrollToPos(v, it.pos); },
+    find: (text, replace) => {
+      const v = viewRef.current;
+      if (!v) return;
+      setFindQuery(v, text, readSetting(findOrderSetting) === 'grouped');
+      if (replace) requestFind({ replace: true }); else openFind();
+      // an open find bar keeps what it had typed: give it the new text
+      requestAnimationFrame(() => { if (findRef.current) findRef.current.value = text; });
+    },
+    openSettings: openSettingsAt,
+    docs: docList, recents, openFile: (h) => void openHit(h),
+  };
+  const saveScroll = useCallback(() => {
+    const sc = scrollRef.current, top = sc?.scrollTop ?? 0;
+    return () => { stopScroll(); if (sc) sc.scrollTop = top; };
+  }, []);
+
+  const modal = settingsOpen || paletteOpen || ccOpen || !!ask || saveAsName !== null;
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
@@ -752,7 +800,8 @@ export function App() {
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
       <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
-      <Settings open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsPage(undefined); }} startPage={settingsPage}
+      <CommandCenter open={ccOpen} onClose={() => setCcOpen(false)} ctx={ccCtx} flash={flash} saveScroll={saveScroll} />
+      <Settings open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsPage(undefined); setSettingsQuery(undefined); }} startPage={settingsPage} startQuery={settingsQuery}
         zoom={zoom} onZoom={setZoom} speechMin={speechMin} onSpeechMin={setSpeechMin}
         showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth}
         highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} />
@@ -872,7 +921,6 @@ type SelState = ReturnType<typeof selectionState>;
 type PopKind = 'highlight' | 'shading' | 'font' | 'size' | 'doc' | 'card';
 const SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48];
 const SHADES = ['#D9D9D9', '#BFBFBF', '#F2F2F2', '#FFF2CC', '#FCE4D6', '#E2EFDA', '#DDEBF7', '#EDE7F6', '#FDE2E4', '#C6E0B4', '#BDD7EE', '#F8CBAD', '#FFE699', '#A9D08E', '#9BC2E6'];
-const FONT_COLORS: [string | null, string][] = [[null, 'Automatic'], ['#1F3864', 'Dark blue'], ['#385623', 'Dark green'], ['#C00000', 'Dark red'], ['#FF0000', 'Red']];
 
 function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; reading: boolean; onRead: () => void; onSend: () => void; speechSeconds: number }) {
   const { sel, run } = props;
@@ -951,15 +999,9 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
       </div>
     ));
 
-  const STYLE_PT: Record<string, number> = { pocket: 26, hat: 22, block: 16, tag: 13, analytic: 13 };
-  const fontSize = sel?.size ?? (sel?.marks.has('cite') ? 13 : STYLE_PT[sel?.style ?? ''] ?? null);
+  const fontSize = fontSizeOf(sel);
   // with nothing selected the size applies to what you type next
-  const setSize = (pt: number) => run((state, dispatch) => {
-    const { from, to, empty } = state.selection;
-    const mark = schema.marks.size.create({ pt: Math.max(4, Math.min(72, pt)) });
-    dispatch?.(empty ? state.tr.addStoredMark(mark) : state.tr.addMark(from, to, mark));
-    return true;
-  });
+  const setSize = (pt: number) => run(setFontSize(pt));
   const bump = (d: number) => setSize((fontSize ?? 11) + d);
 
   // the speech timer (and the prep timer, when Settings shows it): click to start or pause, right-click to reset
@@ -984,6 +1026,18 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   };
   useEffect(() => countdown(running, setRunning, setLeft, 'Time is up'), [running]);
   useEffect(() => countdown(prepRunning, setPrepRunning, setPrepLeft, 'Prep is up'), [prepRunning]);
+  // the command center starts, pauses and resets the clocks the same way a click does
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { which, op } = (e as CustomEvent<TimerRequest>).detail;
+      const [full, setL, setR] = which === 'prep' ? [PREP_SECONDS, setPrepLeft, setPrepRunning] : [SPEECH_SECONDS, setLeft, setRunning];
+      if (op === 'reset') { setR(false); setL(full); return; }
+      setL((s) => (s === 0 ? full : s));
+      setR((r) => !r);
+    };
+    addEventListener(TIMER_EVENT, on);
+    return () => removeEventListener(TIMER_EVENT, on);
+  }, [SPEECH_SECONDS, PREP_SECONDS]);
   const low = (on: boolean, s: number) => (on && s <= pref(P.lowTime) ? ' low' : '');
 
   return (

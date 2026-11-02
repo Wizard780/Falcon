@@ -123,6 +123,8 @@ const FIXED: [key: string, label: string, run: Command][] = [
   ...navFixed,
 ];
 reserve(FIXED.map(([k, what]) => [k, what]));
+/** The fixed keys as commands, for the command center. */
+export const fixedCommands = FIXED.map(([key, label, run]) => ({ key, label, run }));
 
 // the commands Settings can rebind, in the order Settings lists them (App and Files come first, from keybinds.ts)
 bind('Cutting', [
