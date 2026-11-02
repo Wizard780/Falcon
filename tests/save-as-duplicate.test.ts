@@ -57,3 +57,15 @@ describe('Save As onto the file another tab has open', () => {
     expect(saveFile.mock.calls[0][0].path).toBeUndefined();
   });
 });
+
+describe('a Send, Read or Marked doc saved onto the file another tab has open', () => {
+  it('closes that tab, so its old copy can never be saved back over the export', async () => {
+    const { app, openB } = await twoFilesOpen();
+    await openB();
+    await app.menu('saveAs');
+    await app.click(document.querySelector('.sa-mode[data-mode="send"]'), 200);
+    expect(saveFile.mock.calls.at(-1)![0].path).toBeUndefined();
+    expect(app.tabs()).toEqual(['B']);
+    expect(session()).toEqual(['/x/B.docx']);
+  });
+});
