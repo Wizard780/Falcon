@@ -18,6 +18,9 @@ import { Home } from './Home';
 import { Settings } from './Settings';
 import { Confirm, nameList, type Ask } from './Confirm';
 import { Tips, parseTip } from './Tips';
+import { DOC_TOOLS } from '../editor/doc-tools';
+import { CARD_TOOLS } from '../editor/card-tools';
+import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty }]: the open doc and every unsaved one
@@ -613,7 +616,7 @@ function Tools(props: { outline: boolean; reading: boolean; onNew: () => void; o
 // ---------- the top bar: the Classic layout, a two-row grid where each button previews its style ----------
 
 type SelState = ReturnType<typeof selectionState>;
-type PopKind = 'highlight' | 'shading' | 'font' | 'size';
+type PopKind = 'highlight' | 'shading' | 'font' | 'size' | 'doc' | 'card';
 const SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48];
 const SHADES = ['#D9D9D9', '#BFBFBF', '#F2F2F2', '#FFF2CC', '#FCE4D6', '#E2EFDA', '#DDEBF7', '#EDE7F6', '#FDE2E4', '#C6E0B4', '#BDD7EE', '#F8CBAD', '#FFE699', '#A9D08E', '#9BC2E6'];
 const FONT_COLORS: [string | null, string][] = [[null, 'Automatic'], ['#1F3864', 'Dark blue'], ['#385623', 'Dark green'], ['#C00000', 'Dark red'], ['#FF0000', 'Red']];
@@ -675,6 +678,23 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
     </span>
   );
   const applyFont = (c: string | null) => run(toggleColorMark(schema.marks.color, c));
+  const menuBtn = (kind: 'doc' | 'card', label: string, tip: string) => (
+    <button className="b mn" data-pop={kind} title={tip} aria-haspopup="menu" aria-expanded={pop?.kind === kind}
+      onMouseDown={(e) => { e.preventDefault(); openPop(kind, e.currentTarget); }}>{label}<SvgIcon name="caret" /></button>
+  );
+  const toolMenu = (sections: ToolSection[]) => sections.length === 0
+    ? <p className="mn-none">Nothing here yet</p>
+    : sections.map((sec) => (
+      <div key={sec.title} className="mn-sec" role="group" aria-label={sec.title}>
+        <div className="mn-h">{sec.title}</div>
+        {sec.items.map((it) => (
+          <button key={it.label} className="mn-i" role="menuitem" title={it.hint}
+            onMouseDown={(e) => { e.preventDefault(); setPop(null); run(it.run); }}>
+            <span>{it.label}</span>{it.key && <kbd>{keyName(it.key)}</kbd>}
+          </button>
+        ))}
+      </div>
+    ));
 
   const STYLE_PT: Record<string, number> = { pocket: 26, hat: 22, block: 16, tag: 13, analytic: 13 };
   const fontSize = sel?.size ?? (sel?.marks.has('cite') ? 13 : STYLE_PT[sel?.style ?? ''] ?? null);
@@ -724,6 +744,10 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
           <button className="b sz" title={`Bigger: one point bigger (now ${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(1); }}>A<SvgIcon name="up" /></button>
           <button className="b sz" title={`Smaller: one point smaller (now ${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(-1); }}>A<SvgIcon name="caret" /></button>
         </div>
+        <div className="g tl">
+          {menuBtn('doc', 'Doc', 'Doc tools: cleanup for the whole document')}
+          {menuBtn('card', 'Card', 'Card tools: condense, extract and convert the card at the cursor')}
+        </div>
         <div className="end">
           <button className="b" data-on={props.reading || undefined} title={`Read mode (${IS_MAC ? '⌘⇧R' : 'Ctrl+Shift+R'}): show only what's read aloud. Typing is locked and Space drops a marker`} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
           <button className="b timer" data-on={running || undefined} title="Speech timer: click to start or pause. Right-click to reset"
@@ -734,8 +758,10 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
         </div>
       </div>
       {pop && (
-        <div ref={popRef} key={pop.kind} className={`pop${pop.kind === 'size' ? ' sizes' : ''}`} role="menu" style={{ top: pop.y }}>
-          {pop.kind === 'size'
+        <div ref={popRef} key={pop.kind} className={`pop${pop.kind === 'size' ? ' sizes' : pop.kind === 'doc' || pop.kind === 'card' ? ' menu' : ''}`} role="menu" aria-label={pop.kind === 'doc' ? 'Doc tools' : pop.kind === 'card' ? 'Card tools' : undefined} style={{ top: pop.y }}>
+          {pop.kind === 'doc' ? toolMenu(DOC_TOOLS)
+            : pop.kind === 'card' ? toolMenu(CARD_TOOLS)
+            : pop.kind === 'size'
             ? SIZES.map((n) => (
               <button key={n} className="szi" role="menuitem" aria-current={(fontSize ?? 11) === n || undefined}
                 onMouseDown={(e) => { e.preventDefault(); setPop(null); setSize(n); }}>{n}</button>
