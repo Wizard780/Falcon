@@ -365,11 +365,16 @@ export function App() {
   const words = useMemo(() => (view ? readWords(view.state.doc) : 0), [view, docVersion]);
   const brush = view ? brushKey.getState(view.state)?.kind ?? null : null;
 
-  // the block you're reading is the last heading above the reading line, so the outline follows the scroll
+  // The outline marks the block holding the cursor while the cursor is on screen (so an outline click
+  // or a click in the page marks what you clicked); scrolled away from it, the outline follows the
+  // scroll: the last heading above the reading line.
   const measureRead = useCallback(() => {
     const v = viewRef.current, sc = scrollRef.current;
     if (!v || !sc) return;
-    const pm = v.dom.getBoundingClientRect(), top = sc.getBoundingClientRect().top + 90;
+    const box = sc.getBoundingClientRect(), head = v.state.selection.head;
+    const caret = v.coordsAtPos(head);
+    if (caret.bottom > box.top && caret.top < box.bottom) { setReadTop(head); return; }
+    const pm = v.dom.getBoundingClientRect(), top = box.top + 90;
     if (pm.top > top) { setReadTop(0); return; }
     const hit = v.posAtCoords({ left: pm.left + 4, top: Math.min(top, pm.bottom - 2) });
     setReadTop(hit ? hit.pos : v.state.doc.content.size);
@@ -381,7 +386,7 @@ export function App() {
     sc.addEventListener('scroll', on, { passive: true });
     return () => { sc.removeEventListener('scroll', on); cancelAnimationFrame(raf); };
   }, [measureRead]);
-  useEffect(() => { requestAnimationFrame(measureRead); }, [docVersion, zoom, measureRead]);
+  useEffect(() => { requestAnimationFrame(measureRead); }, [docVersion, zoom, tick, measureRead]);
   const cur = outline.length ? Math.max(0, currentItem(outline, readTop)) : -1;
 
   const jump = useCallback((stale: OutlineItem, index: number) => {
