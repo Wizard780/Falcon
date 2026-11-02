@@ -21,6 +21,10 @@ export const P = {
   crashRecovery: def('crashRecovery', true),
   recentCount: def('recentCount', 12),
   newName: def<'untitled' | 'speech' | 'date'>('newName', 'untitled'),
+  savePrefix: def('savePrefix', true), // Save As puts the prefixes below on Send, Read and Marked Doc names
+  prefixSend: def('prefix.send', 'SEND_'),
+  prefixRead: def('prefix.read', 'READ_'),
+  prefixMarked: def('prefix.marked', 'MARKED_'),
   openDepth: def('openDepth', 0), // 0: opening a file keeps the current depth
   // Appearance
   wheelZoom: def('wheelZoom', false),

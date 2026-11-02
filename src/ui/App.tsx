@@ -30,7 +30,7 @@ import { Home } from './Home';
 import { Settings } from './Settings';
 import { Confirm, nameList, type Ask } from './Confirm';
 import { SaveAs } from './SaveAs';
-import { docForMode, type SaveMode } from '../editor/save-modes';
+import { copyName, docForMode, type SaveMode } from '../editor/save-modes';
 import { Tips, parseTip } from './Tips';
 import { OutlinePane } from './Outline';
 import { FindBar } from './FindBar';
@@ -44,6 +44,7 @@ import { readJson, safeSet } from './storage';
 import { reducedMotion } from './motion';
 
 const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
+const MODE_PREFIX = { send: P.prefixSend, read: P.prefixRead, marked: P.prefixMarked };
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty, speech }]: the open doc and every unsaved one
 const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could be open
 /** A command's key as text, for messages: ⌘S. */
@@ -465,7 +466,11 @@ export function App() {
     if (as) { setSaveAsName(!d.meta.path && (d.meta.name || 'Untitled') === 'Untitled' ? newFileName() : d.meta.name); return; }
     await writeDoc(d.meta, 'asis', false);
   }, [writeDoc]);
-  const saveCopy = (mode: SaveMode, name: string) => { setSaveAsName(null); void writeDoc({ name }, mode, true); };
+  const saveCopy = (mode: SaveMode, name: string) => {
+    setSaveAsName(null);
+    const prefix = mode !== 'asis' && pref(P.savePrefix) ? pref(MODE_PREFIX[mode]) : '';
+    void writeDoc({ name: copyName(mode, name, prefix) }, mode, true);
+  };
   const closeSaveAs = useCallback(() => setSaveAsName(null), []);
 
   const openFind = useCallback(() => { setHomeOpen(false); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);

@@ -102,3 +102,4 @@
 .st-thp.sys .st-look + .st-look { clip-path: polygon(100% 0, 100% 100%, 0 100%); }
 .st-text { width: 176px; height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--u-ctl); color: var(--u-tx); font: 14px var(--ui-font); outline: none; }
 .st-text:focus-visible { box-shadow: 0 0 0 2px #4b6bd6; }
+.st-text:disabled { opacity: .45; }
