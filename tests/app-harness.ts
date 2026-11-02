@@ -39,6 +39,7 @@ export async function mountApp(bridge: Bridge = {}) {
   window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })) as unknown as typeof matchMedia;
   Element.prototype.scrollTo = (() => {}) as unknown as typeof Element.prototype.scrollTo;
   Element.prototype.scrollIntoView = () => {};
+  globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
 
   for (const k of Object.keys(fake)) delete fake[k];
   let onMenu: (c: string) => void = () => {};
