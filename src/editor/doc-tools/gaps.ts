@@ -165,10 +165,21 @@ const BRIDGED = new Set<MarkType>([M.underline, M.emphasis, M.cite, M.highlight,
  * to a formatted word reads as one stretch. Rides along in the same undo step. Gaps inside the selection
  * are left exactly as the command set them.
  */
+let clearing = false;
 export const autoBridgePlugin = new Plugin({
+  props: {
+    handleDOMEvents: {
+      // F12 (clear formatting) never bridges, as in CardMirror. DOM handlers run before the keymap, and the
+      // keymap dispatches synchronously, so the flag is up exactly while F12's transaction is applied.
+      keydown: (_view, ev) => {
+        if (ev.key === 'F12') { clearing = true; setTimeout(() => { clearing = false; }); }
+        return false;
+      },
+    },
+  },
   appendTransaction(trs, old, state) {
     const tr = trs[0];
-    if (trs.length !== 1 || !tr.docChanged || tr.getMeta(NO_BRIDGE) || isHistoryTransaction(tr) || !readSetting(autoBridgeSetting)) return null;
+    if (trs.length !== 1 || clearing || !tr.docChanged || tr.getMeta(NO_BRIDGE) || isHistoryTransaction(tr) || !readSetting(autoBridgeSetting)) return null;
     let named = false;
     for (const s of tr.steps) {
       if (!(s instanceof AddMarkStep || s instanceof RemoveMarkStep) || !BRIDGED.has(s.mark.type)) return null;
