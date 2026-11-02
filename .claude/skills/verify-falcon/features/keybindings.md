@@ -16,7 +16,7 @@ Settings > Keybindings lists every shortcut as its keys. Click a shortcut and pr
 
 ## Driving it with falcon-verify
 
-- **Journey.** `$V run .claude/skills/verify-falcon/journeys/keybindings.mjs`. It exits 0 with 21 `ok` lines.
+- **Journey.** `$V run .claude/skills/verify-falcon/journeys/keybindings.mjs`. It exits 0 with 24 `ok` lines.
 - **Field handle.** `.st-keyb[aria-label^="Tag:"]` (aria-label is `<label>: <keys>. Change shortcut`); listening adds `data-listen`; the reset arrow is `.st-keyreset` in the same `.st-row`.
 - **Proof.** `evidence/keybindings/` has the page, listening with ⌘⇧ held, the rebound row, the refusal, the new key tagging a line, and the restored page.
 - **Mac menu.** Only the desktop shell shows it: launch with `_electron`, set `falcon.key.save`, reload, read `Menu.getApplicationMenu()` File > Save's `accelerator`.

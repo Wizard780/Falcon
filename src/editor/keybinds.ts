@@ -105,6 +105,7 @@ export function heldMods(e: KeyboardEvent): string[] {
   return [(IS_MAC ? e.metaKey : e.ctrlKey) && 'Mod', IS_MAC && e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift'].filter(Boolean) as string[];
 }
 
+const APP_GROUPS = ['App', 'Files'];
 const ALONE = /^(F\d{1,2}|PageUp|PageDown|Home|End|Insert)$/;
 /** Why `key` can't be `id`'s shortcut, or null when it can. */
 export function refusal(id: string, key: string): string | null {
@@ -112,6 +113,10 @@ export function refusal(id: string, key: string): string | null {
   const k = parts[parts.length - 1];
   const mods = parts.slice(0, -1).filter((m) => m !== 'Shift' && m !== 'Meta');
   if (!IS_MAC && parts.includes('Meta')) return 'The Windows key belongs to the system';
+  // Option+E, U, I, N and ` on a Mac start an accent (key "Dead"); an IME is composing: no key the keymap can match
+  if (/^(Dead|Process|Unidentified|Compose)$/.test(k)) return 'That key types an accent or character here. Try another letter';
+  // Ctrl+Alt is AltGr on Windows keyboards, which the app leaves to typing
+  if (!IS_MAC && APP_GROUPS.includes(byId.get(id)?.group ?? '') && parts.includes('Mod') && parts.includes('Alt')) return 'Ctrl+Alt is AltGr on many keyboards. Try Ctrl+Shift';
   if (!mods.length && !ALONE.test(k)) return IS_MAC ? 'Add ⌘, ⌥ or ⌃ (a function key can stand alone)' : 'Add Ctrl or Alt (a function key can stand alone)';
   const n = norm(key);
   const kept = RESERVED.get(n);

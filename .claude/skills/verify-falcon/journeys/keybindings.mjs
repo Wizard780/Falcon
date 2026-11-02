@@ -93,6 +93,22 @@ await page.waitForTimeout(150);
 want(await page.locator('.findbar').count() === 1, 'the new Find key opens Find');
 await page.keyboard.press('Escape');
 
+// read mode locks the keyboard, but its rebound key still turns it on and back off
+await openKeys();
+await field('Read mode').click();
+await page.keyboard.press(`${MOD}+Alt+KeyR`);
+await page.waitForTimeout(150);
+want(await stored('read') === `${M}-Alt-r`, `Read mode stored as ${await stored('read')}`);
+await close();
+await page.click('.ProseMirror');
+const reading = () => page.$eval('.ProseMirror', (x) => x.classList.contains('f-read'));
+await page.keyboard.press(`${MOD}+Alt+KeyR`);
+await page.waitForTimeout(150);
+want(await reading(), 'the new Read mode key turns read mode on');
+await page.keyboard.press(`${MOD}+Alt+KeyR`);
+await page.waitForTimeout(150);
+want(!(await reading()), 'and, with the keyboard locked, turns it back off');
+
 // survives a reload; Restore defaults brings everything back
 await page.reload(); await page.waitForSelector('.ProseMirror'); await page.keyboard.press('Escape');
 await openKeys();

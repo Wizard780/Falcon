@@ -47,6 +47,9 @@ describe('keybindings', () => {
     expect(refusal('tag', 'F7')).toBe(null); // its own key
     expect(refusal('tag', 'Mod-Shift-t')).toBe(null);
     expect(refusal('nextHeading', 'End')).toBe(null);
+    expect(refusal('tag', 'Alt-Dead')).toMatch(/accent/);
+    expect(refusal('find', 'Mod-Alt-k')).toMatch(/AltGr/); // jsdom isn't a Mac
+    expect(refusal('tag', 'Mod-Alt-k')).toBe(null); // the editor's keymap still takes Ctrl+Alt
   });
 
   it('a new key replaces the old one in the live keymap, and reset puts it back', () => {
