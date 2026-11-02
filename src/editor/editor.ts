@@ -15,7 +15,7 @@ import { P, PREFS_META, onPrefs, pref } from './prefs';
 import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
-import { readPlugin } from './read';
+import { isReading, readPlugin } from './read';
 import { docToolPlugins } from './doc-tools';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
@@ -152,8 +152,9 @@ export function createView(mount: HTMLElement, onChange: (view: EditorView) => v
       view.updateState(next);
       onChange(view);
     },
-    // read again on every update, so the Check spelling setting applies at once
-    attributes: () => ({ spellcheck: pref(P.spellcheck) ? 'true' : 'false', class: 'f-page-text' }),
+    // read again on every update, so the Check spelling setting applies at once; read mode is never
+    // checked (no underlines while reading, and no guesses to click that would edit the locked doc)
+    attributes: (state) => ({ spellcheck: pref(P.spellcheck) && !isReading(state) ? 'true' : 'false', class: 'f-page-text' }),
     // Read the page's selection before any key runs. The editor learns about a new selection from
     // the selectionchange event, and a busy page handles a key press before that event, so a format
     // key right after selecting (Shift-arrows, a drag) would format the old selection. ProseMirror's

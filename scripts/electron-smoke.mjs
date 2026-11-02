@@ -109,6 +109,19 @@ await win.click('[role=switch][aria-label="Check spelling"]');
 const spellOff = await spellAttr();
 await win.click('[role=switch][aria-label="Check spelling"]');
 await win.click('[aria-label="Close settings"]');
+// read mode locks the doc: no spellcheck (so no guesses to click), and the menu's Cut deletes nothing.
+// Control first: the same Cut outside read mode does cut, then undo puts it back.
+const docText = () => win.evaluate(() => window.__falconView.state.doc.textContent);
+const cutLast = async () => { await selectLast(4); await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.cut()); await win.waitForTimeout(300); };
+const before = await docText();
+await cutLast();
+const cutWorks = (await docText()) !== before;
+await win.keyboard.press(`${mod}+z`); await win.waitForTimeout(200);
+await win.click('.tools [aria-label="Read mode"]'); await win.waitForTimeout(300);
+const readSpell = await spellAttr();
+await cutLast();
+const readCutKept = (await docText()) === before;
+await win.click('.tools [aria-label="Read mode"]'); await win.waitForTimeout(300);
 const bridge = await win.evaluate(() => Object.keys(window.falcon || {}).sort().join(','));
 const platform = await win.evaluate(() => window.falcon?.platform);
 const visible = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.isVisible()));
@@ -154,6 +167,7 @@ const want = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.
 want(map === 'tag: Electron tag\nnormal: Body text in the [desktop ]{emphasis}[app]{emphasis+highlight:yellow}', `marks: ${JSON.stringify(map)}`);
 want(bridge === 'addIndexFolder,dictionaryWords,forceClose,indexFolders,indexedFiles,onConfirmClose,onMenu,openFile,openPath,platform,readClipboardText,removeDictionaryWord,removeIndexFolder,saveFile,setMenuKeys,setTheme', `preload bridge: ${bridge}`);
 want(spellOn === 'true' && spellOff === 'false', `the page is spellchecked, and Check spelling turns it off: ${spellOn} ${spellOff}`);
+want(cutWorks && readSpell === 'false' && readCutKept, `read mode: no spellcheck, and the menu's Cut leaves the doc alone (control cut worked: ${cutWorks}): ${readSpell} ${readCutKept}`);
 want(spellMenu === 'Nystrom,Nyström,-,Add to Dictionary,-,cut,copy,paste', `a misspelled word's right-click menu: ${spellMenu}`);
 want(wordListed && wordGone && wordsAfter.length === 0, `Add to Dictionary lists the word in Settings, and removing it there takes it out: ${wordListed} ${wordGone} ${wordsAfter}`);
 want(folderRow, 'Settings > File search > Add folder lists the folder with its file count');
