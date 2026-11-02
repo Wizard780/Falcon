@@ -55,6 +55,14 @@ describe('find', () => {
     expect(f.matches[f.order[f.index]].from).toBe(4);
   });
 
+  it('replacing with nothing goes on to the next match of the same kind', () => {
+    const v = viewOf([['tag', 'foo one'], ['tag', 'foo two'], ['tag', 'foo three'], ['normal', 'Smith foo', true]]);
+    setQuery(v, 'foo', true);
+    replaceOne(v, '');
+    const f = findInfo(v.state)!;
+    expect(v.state.doc.resolve(f.matches[f.order[f.index]].from).parent.textContent).toBe('foo two');
+  });
+
   it('replace all is one undo step', () => {
     const v = viewOf(PARAS);
     setQuery(v, 'nuclear');

@@ -66,7 +66,9 @@ export const sectionsSlice = (doc: PMNode, heads: number[]) => new Slice(section
 export function moveSections(state: EditorState, heads: number[], gap: number, copy = false): Transaction | null {
   const doc = state.doc, secs = topSections(doc, heads);
   if (!canDrop(doc, secs, gap)) return null;
-  if (!copy && secs.length === 1 && (gap === secs[0].from || gap === secs[0].to)) return null;
+  // dropped at its own edge (several adjacent sections included): nothing moves
+  const together = secs.every((s, i) => i === 0 || secs[i - 1].to === s.from);
+  if (!copy && together && (gap === secs[0].from || gap === secs[secs.length - 1].to)) return null;
   const tr = state.tr.insert(gap, sectionsContent(doc, secs));
   if (!copy) {
     for (const s of [...secs].reverse()) tr.delete(tr.mapping.map(s.from, 1), tr.mapping.map(s.to, -1));

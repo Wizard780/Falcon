@@ -112,8 +112,8 @@ export function replaceOne(view: EditorView, text: string) {
   view.dispatch(tr);
   // the next match is the first one past the replacement, in the same order
   const now = findKey.getState(view.state)!;
-  const past = keyOf({ ...m, from: m.from + text.length - 1 }, now.anchor, now.grouped);
-  const i = now.order.findIndex((k) => cmp(keyOf(now.matches[k], now.anchor, now.grouped), past) > 0);
+  const past = keyOf({ ...m, from: m.from + text.length }, now.anchor, now.grouped);
+  const i = now.order.findIndex((k) => cmp(keyOf(now.matches[k], now.anchor, now.grouped), past) >= 0);
   view.dispatch(view.state.tr.setMeta(findKey, { index: i < 0 ? 0 : i }));
   reveal(view);
 }

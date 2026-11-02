@@ -55,6 +55,12 @@ describe('sections', () => {
     expect(moveSections(s, [pos(s, 'B1')], pos(s, 'T3'))).toBeNull();
   });
 
+  it('dropping several adjacent sections at their own edge does nothing', () => {
+    const s = make(DOC);
+    expect(moveSections(s, [pos(s, 'T1'), pos(s, 'T2')], pos(s, 'T1'))).toBeNull();
+    expect(moveSections(s, [pos(s, 'T1'), pos(s, 'T2')], pos(s, 'B2'))).toBeNull();
+  });
+
   it('copies instead of moving', () => {
     const s = make(DOC);
     expect(lines(apply(s, moveSections(s, [pos(s, 'T5')], pos(s, 'T1'), true)))).toBe('B1 T5 T1 b1 T2 b2 B2 T3 b3 A4 H B3 T5');

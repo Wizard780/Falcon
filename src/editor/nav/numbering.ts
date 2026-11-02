@@ -85,9 +85,11 @@ function remap(marks: Map<number, NumMark>, tr: Transaction, oldDoc: PMNode): { 
     if (node && levelOf(node) === levelOf(old) && node.textContent === old.textContent) out.set(r.pos, m);
     else lost.set(old, m);
   }
-  if (lost.size) doc.forEach((n, p) => { const m = lost.get(n); if (m && !out.has(p)) out.set(p, m); });
-  // what's still missing was deleted: remember it by node, so undo brings the number back
-  for (const [n, m] of lost) ghosts.set(n, m);
+  const refound = new Set<PMNode>();
+  if (lost.size) doc.forEach((n, p) => { const m = lost.get(n); if (m && !out.has(p)) { out.set(p, m); refound.add(n); } });
+  // what's still missing was deleted: remember it by node, so undo brings the number back (a moved
+  // heading isn't remembered, or undoing the move would bring back a number removed since)
+  for (const [n, m] of lost) if (!refound.has(n)) ghosts.set(n, m);
   const revived = revive(tr, out);
   return { marks: out, shifted: out.size === marks.size && !lost.size && !revived };
 }

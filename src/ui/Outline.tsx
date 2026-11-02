@@ -113,7 +113,7 @@ type RowsProps = {
   items: OutlineItem[]; depth: number; cur: number; hits: number[] | null; hide: boolean; step: number; numbers: string[];
   getView: () => EditorView | null; onJump: (item: OutlineItem, index: number) => void; flash: (msg: string) => void; visible: boolean;
 };
-type Drag = { heads: number[]; x: number; y: number; on: boolean; gap: number | null; raf: number };
+type Drag = { heads: number[]; x: number; y: number; on: boolean; gap: number | null; raf: number; end?: (ok: boolean) => void };
 
 const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, step, numbers, getView, onJump, flash, visible }: RowsProps) {
   const [folded, setFolded] = useState<Set<string>>(new Set());
@@ -339,13 +339,15 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
       if (tr) { v.dispatch(tr); setSel(new Set()); }
       v.focus();
     };
+    d.end = end;
     const up = (ev: MouseEvent) => end(true, ev);
     const key = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); end(false); } };
     document.addEventListener('mousemove', move, true);
     document.addEventListener('mouseup', up, true);
     document.addEventListener('keydown', key, true);
   };
-  useEffect(() => () => { if (dragRef.current) cancelAnimationFrame(dragRef.current.raf); }, []);
+  // unmounted mid-drag (the doc was switched): drop the drag, so its mouseup can't move the new doc's sections
+  useEffect(() => () => { dragRef.current?.end?.(false); }, []);
 
   // ---- the right-click menu ----
   const [menuRows, setMenuRows] = useState<number[]>([]);
