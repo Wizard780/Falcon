@@ -683,6 +683,10 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
     <button className="b mn" data-pop={kind} title={tip} aria-haspopup="menu" aria-expanded={pop?.kind === kind}
       onMouseDown={(e) => { e.preventDefault(); openPop(kind, e.currentTarget); }}>{label}<SvgIcon name="caret" /></button>
   );
+  // "Mod-Alt-F3" as ⌘⌥F3 on macOS, Ctrl+Alt+F3 elsewhere
+  const menuKey = (k: string) => IS_MAC
+    ? k.split('-').map((p) => ({ Mod: '⌘', Alt: '⌥', Shift: '⇧', Ctrl: '⌃' }[p] ?? p)).join('')
+    : k.replace(/Mod/g, 'Ctrl').replace(/-/g, '+');
   const toolMenu = (sections: ToolSection[]) => sections.length === 0
     ? <p className="mn-none">Nothing here yet</p>
     : sections.map((sec) => (
@@ -691,7 +695,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
         {sec.items.map((it) => (
           <button key={it.label} className="mn-i" role="menuitem" title={it.hint}
             onMouseDown={(e) => { e.preventDefault(); setPop(null); run(it.run); }}>
-            <span>{it.label}</span>{it.key && <kbd>{keyName(it.key)}</kbd>}
+            <span>{it.label}</span>{it.key && <kbd>{menuKey(it.key)}</kbd>}
           </button>
         ))}
       </div>
