@@ -4,7 +4,7 @@ import { undo } from 'prosemirror-history';
 import { make, caret, select, run } from './helpers';
 import { alphabetize, canDrop, deleteSections, gotoStyle, moveSections, sectionAt, sectionsSlice, selectSections, topSections } from '../src/editor/nav/sections';
 import { compute, letters, numberMarks, outlineNumbers, toggleRestart, toggleRole, setNavScope } from '../src/editor/nav/numbering';
-import { navKeys } from '../src/editor/nav-keys';
+import { falconKeys as navKeys } from '../src/editor/keymap';
 import type { ParaStyle } from '../src/editor/schema';
 import { buildOutline, searchOutline } from '../src/editor/outline';
 

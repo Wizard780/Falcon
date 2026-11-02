@@ -1,20 +1,21 @@
 import { chainCommands, deleteSelection, joinBackward, joinForward, selectAll, splitBlockKeepMarks, createParagraphNear, liftEmptyBlock } from 'prosemirror-commands';
 import { redo, undo } from 'prosemirror-history';
-import { keymap } from 'prosemirror-keymap';
-import { TextSelection, type Command } from 'prosemirror-state';
+import { keydownHandler } from 'prosemirror-keymap';
+import { Plugin, TextSelection, type Command } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
 import {
   applyEmphasis, clearFormatting, condense, copyPreviousCite, indent, regrow, setParaStyle, shrink,
-  toggleBold, toggleCase, toggleCharMark, toggleColorMark, toggleTypingMark, uncondense,
+  toggleBold, toggleCase, toggleCharMark, toggleColorMark, toggleTypingMark,
 } from './commands';
 import { schema } from './schema';
-import { ENTER_AFTER, P, pref } from './prefs';
+import { ENTER_AFTER, P, onPrefs, pref } from './prefs';
 import { activeColors, pastePlainFromClipboard } from './host';
 import { moveByHeading, moveByParagraph, moveContainer } from './motion';
 import { toggleMarker, toggleRead } from './read';
-import { docToolKeys } from './doc-tools';
-import { cardToolKeys } from './card-tools';
-import { navKeys } from './nav-keys';
+import { DOC_TOOLS } from './doc-tools';
+import { CARD_TOOLS } from './card-tools';
+import { navBinds, navFixed } from './nav-keys';
+import { BINDINGS, bind, bindingOf, isRecording, keyOf, reserve } from './keybinds';
 
 const M = schema.marks;
 const cardHead = (n: PMNode | null | undefined) => !!n && (n.attrs.style === 'tag' || n.attrs.style === 'analytic');
@@ -95,62 +96,90 @@ const enter: Command = chainCommands(createParagraphNear, liftEmptyBlock, (state
 const highlight: Command = (state, dispatch) => toggleColorMark(M.highlight, activeColors.highlight)(state, dispatch);
 const shading: Command = (state, dispatch) => toggleColorMark(M.shading, activeColors.shading)(state, dispatch);
 
-export const falconKeys: Record<string, Command> = {
-  F2: (_s, _d, view) => { if (view) void pastePlainFromClipboard(view); return true; },
-  // F3 runs the condense Settings picks; Alt-F3 and Mod-Alt-F3 always merge
-  F3: (state, dispatch) => condense(pref(P.condense))(state, dispatch),
-  'Alt-F3': condense('merge'),
-  'Mod-Alt-F3': condense('pilcrows'),
-  'Mod-Alt-Shift-F3': uncondense,
-  'Shift-F3': toggleCase,
-  F4: setParaStyle('pocket'),
-  F5: setParaStyle('hat'),
-  F6: setParaStyle('block'),
-  F7: setParaStyle('tag'),
-  'Mod-F7': setParaStyle('analytic'),
-  'Mod-F8': setParaStyle('undertag'),
-  F8: toggleCharMark(M.cite, { skipHeadings: true }),
-  'Alt-F8': copyPreviousCite,
-  F9: toggleCharMark(M.underline),
-  F10: applyEmphasis,
-  F11: highlight,
-  'Mod-F11': shading,
-  F12: clearFormatting,
-  'Mod-u': toggleTypingMark(M.underline),
-  'Mod-b': toggleBold,
-  'Mod-i': toggleTypingMark(M.italic),
-  'Mod-8': shrink,
-  'Mod-Shift-8': regrow,
-  'Mod-Shift-=': toggleTypingMark(M.sup),
-  'Mod-z': undo,
-  'Mod-Shift-z': redo,
-  'Mod-y': redo,
-  Tab: indent(1),
-  'Shift-Tab': indent(-1),
-  Enter: enter,
-  Backspace: chainCommands(deleteSelection, backspaceAtCardEdge, joinBackward),
-  Delete: chainCommands(deleteSelection, deleteAtCardEdge, joinForward),
-  'Mod-a': selectAll,
-  'Ctrl-ArrowUp': moveByParagraph(-1, false),
-  'Ctrl-ArrowDown': moveByParagraph(1, false),
-  'Ctrl-Shift-ArrowUp': moveByParagraph(-1, true),
-  'Ctrl-Shift-ArrowDown': moveByParagraph(1, true),
-  'Alt-ArrowUp': moveByParagraph(-1, false),
-  'Alt-ArrowDown': moveByParagraph(1, false),
-  'Alt-Shift-ArrowUp': moveByParagraph(-1, true),
-  'Alt-Shift-ArrowDown': moveByParagraph(1, true),
-  'Mod-Shift-d': toggleMarker,
-  'Mod-Shift-r': toggleRead,
-  PageUp: moveByHeading(-1, false),
-  PageDown: moveByHeading(1, false),
-  'Shift-PageUp': moveByHeading(-1, true),
-  'Shift-PageDown': moveByHeading(1, true),
-  'Mod-Alt-ArrowUp': moveContainer(-1),
-  'Mod-Alt-ArrowDown': moveContainer(1),
-  // each feature keeps its own keys in its own file
-  ...docToolKeys,
-  ...cardToolKeys,
-  ...navKeys,
-};
+/** Keys that stay put: typing, undo, and the second keys that move by paragraph. Settings can't take them. */
+const FIXED: [key: string, label: string, run: Command][] = [
+  ['Mod-u', 'Underline as you type', toggleTypingMark(M.underline)],
+  ['Mod-b', 'Bold', toggleBold],
+  ['Mod-i', 'Italic', toggleTypingMark(M.italic)],
+  ['Mod-Shift-=', 'Superscript', toggleTypingMark(M.sup)],
+  ['Mod-z', 'Undo', undo],
+  ['Mod-Shift-z', 'Redo', redo],
+  ['Mod-y', 'Redo', redo],
+  ['Tab', 'Indent', indent(1)],
+  ['Shift-Tab', 'Outdent', indent(-1)],
+  ['Enter', 'New line', enter],
+  ['Backspace', 'Delete back', chainCommands(deleteSelection, backspaceAtCardEdge, joinBackward)],
+  ['Delete', 'Delete forward', chainCommands(deleteSelection, deleteAtCardEdge, joinForward)],
+  ['Mod-a', 'Select all', selectAll],
+  ['Ctrl-ArrowUp', 'Previous paragraph', moveByParagraph(-1, false)],
+  ['Ctrl-ArrowDown', 'Next paragraph', moveByParagraph(1, false)],
+  ['Ctrl-Shift-ArrowUp', 'Select to the previous paragraph', moveByParagraph(-1, true)],
+  ['Ctrl-Shift-ArrowDown', 'Select to the next paragraph', moveByParagraph(1, true)],
+  ['Alt-ArrowUp', 'Previous paragraph', moveByParagraph(-1, false)],
+  ['Alt-ArrowDown', 'Next paragraph', moveByParagraph(1, false)],
+  ['Alt-Shift-ArrowUp', 'Select to the previous paragraph', moveByParagraph(-1, true)],
+  ['Alt-Shift-ArrowDown', 'Select to the next paragraph', moveByParagraph(1, true)],
+  ['Shift-PageUp', 'Select to the previous heading', moveByHeading(-1, true)],
+  ['Shift-PageDown', 'Select to the next heading', moveByHeading(1, true)],
+  ...navFixed,
+];
+reserve(FIXED.map(([k, what]) => [k, what]));
 
-export const falconKeymap = () => keymap(falconKeys);
+// the commands Settings can rebind, in the order Settings lists them (App and Files come first, from keybinds.ts)
+bind('Cutting', [
+  { id: 'pastePlain', label: 'Paste as plain text', key: 'F2', run: (_s, _d, view) => { if (view) void pastePlainFromClipboard(view); return true; } },
+  // F3 runs the condense Settings picks; Alt-F3 and Mod-Alt-F3 always merge (Card tools)
+  { id: 'condense', label: 'Condense paragraph', key: 'F3', run: (state, dispatch) => condense(pref(P.condense))(state, dispatch) },
+  { id: 'changeCase', label: 'Change case', key: 'Shift-F3', run: toggleCase },
+  { id: 'pocket', label: 'Pocket', key: 'F4', run: setParaStyle('pocket') },
+  { id: 'hat', label: 'Hat', key: 'F5', run: setParaStyle('hat') },
+  { id: 'block', label: 'Block', key: 'F6', run: setParaStyle('block') },
+  { id: 'tag', label: 'Tag', key: 'F7', run: setParaStyle('tag') },
+  { id: 'analytic', label: 'Analytic', key: 'Mod-F7', run: setParaStyle('analytic') },
+  { id: 'undertag', label: 'Undertag', key: 'Mod-F8', run: setParaStyle('undertag') },
+  { id: 'cite', label: 'Cite', key: 'F8', run: toggleCharMark(M.cite, { skipHeadings: true }) },
+  { id: 'copyCite', label: 'Copy previous cite', key: 'Alt-F8', run: copyPreviousCite },
+  { id: 'underline', label: 'Underline', key: 'F9', run: toggleCharMark(M.underline) },
+  { id: 'emphasis', label: 'Emphasis', key: 'F10', run: applyEmphasis },
+  { id: 'highlight', label: 'Highlight', key: 'F11', run: highlight },
+  { id: 'shading', label: 'Background color', key: 'Mod-F11', run: shading },
+  { id: 'clear', label: 'Clear formatting', key: 'F12', run: clearFormatting },
+  { id: 'shrink', label: 'Shrink card', key: 'Mod-8', run: shrink },
+  { id: 'regrow', label: 'Undo shrink', key: 'Mod-Shift-8', run: regrow },
+]);
+bind('Moving around', [
+  { id: 'prevHeading', label: 'Previous heading', key: 'PageUp', run: moveByHeading(-1, false) },
+  { id: 'nextHeading', label: 'Next heading', key: 'PageDown', run: moveByHeading(1, false) },
+  { id: 'cardUp', label: 'Move card up', key: 'Mod-Alt-ArrowUp', run: moveContainer(-1) },
+  { id: 'cardDown', label: 'Move card down', key: 'Mod-Alt-ArrowDown', run: moveContainer(1) },
+  { id: 'read', label: 'Read mode', key: 'Mod-Shift-r', run: toggleRead },
+  { id: 'marker', label: 'Read marker', key: 'Mod-Shift-d', run: toggleMarker },
+  // each feature keeps its own keys in its own file
+  ...navBinds,
+]);
+bind('Doc tools', DOC_TOOLS.flatMap((s) => s.items));
+bind('Card tools', CARD_TOOLS.flatMap((s) => s.items));
+
+/** The command a binding runs (toolbar buttons run the same command their key does). */
+export const commandOf = (id: string): Command => bindingOf(id)?.run ?? (() => false);
+
+/** Every key with its default binding: the keymap as it ships (tests and the CardMirror probe use it). */
+export const falconKeys: Record<string, Command> = Object.fromEntries([
+  ...FIXED.map(([k, , run]) => [k, run]),
+  ...BINDINGS.filter((b) => b.run && b.key).map((b) => [b.key, b.run!]),
+]);
+
+/** The keymap as Settings has it now: fixed keys plus each binding at its current key. */
+export function liveKeys(): Record<string, Command> {
+  const m: Record<string, Command> = Object.fromEntries(FIXED.map(([k, , run]) => [k, run]));
+  for (const b of BINDINGS) {
+    const k = keyOf(b.id);
+    if (b.run && k) m[k] = b.run;
+  }
+  return m;
+}
+let handler = keydownHandler(liveKeys());
+onPrefs(() => { handler = keydownHandler(liveKeys()); });
+
+/** The editor's keymap, following Settings > Keybindings as it changes. */
+export const falconKeymap = () => new Plugin({ props: { handleKeyDown: (view, e) => !isRecording() && handler(view, e) } });
