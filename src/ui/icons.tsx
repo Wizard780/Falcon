@@ -46,6 +46,7 @@ const P16: Record<string, string> = {
   sliders: '<path d="M2.5 5h6M11.5 5h2M2.5 11h2M7.5 11h6"/><circle cx="10" cy="5" r="1.5"/><circle cx="6" cy="11" r="1.5"/>',
   format: '<path d="M3.5 12.5 7 3.5h2l3.5 9M5 9h6"/>',
   mic: '<rect x="6" y="1.8" width="4" height="7" rx="2"/><path d="M3.8 7.5a4.2 4.2 0 0 0 8.4 0M8 11.7v2M5.8 13.7h4.4"/>',
+  download: '<path d="M8 2.5v7.5M5 7l3 3 3-3"/><path d="M2.5 10.5v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-1.5"/>',
   gear: '<circle cx="8" cy="8" r="2"/><path d="M6.9 1.8h2.2l.4 1.7 1.1.6 1.7-.5 1.1 1.9-1.3 1.2v1.2l1.3 1.2-1.1 1.9-1.7-.5-1.1.6-.4 1.7H6.9l-.4-1.7-1.1-.6-1.7.5-1.1-1.9 1.3-1.2V7.4L2.6 6.2l1.1-1.9 1.7.5 1.1-.6z"/>',
 };
 // the Head mark (logo/build-brand.mjs makes every other brand asset from the same path)

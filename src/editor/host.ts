@@ -43,8 +43,13 @@ type FalconBridge = {
   /** The theme changed: the window's own background (shown before the page paints) and native menus follow it.
    *  system: the theme is System, so native stays on the OS setting (forcing it would freeze prefers-color-scheme). */
   setTheme?: (bg: string, dark: boolean, system: boolean) => void;
+  /** A newer Falcon, downloaded and ready to install (null: none). Fires with the current state on subscribe. Returns an unsubscribe. */
+  onUpdate?: (f: (u: UpdateInfo | null) => void) => () => void;
+  /** Install the downloaded update and restart (or open its disk image when Falcon can't replace itself). */
+  installUpdate?: () => Promise<void>;
   platform?: string;
 };
+export type UpdateInfo = { version: string; date: string; notes: string; url: string; state: 'ready' | 'installing' | 'error'; manual: boolean; error?: string };
 export const bridge: FalconBridge = (globalThis as unknown as { falcon?: FalconBridge }).falcon ?? {};
 
 /** F2: paste the clipboard as plain text. */

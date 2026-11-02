@@ -4,6 +4,7 @@ const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createIndex } = require('./indexer.cjs');
+const updater = require('./updater.cjs');
 
 const DEV = process.env.FALCON_DEV === '1';
 const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a window
@@ -288,6 +289,7 @@ ipcMain.on('falcon:menu-keys', (_e, keys) => {
 if (primary) app.whenReady().then(() => {
   buildMenu();
   createWindow();
+  updater.start();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
