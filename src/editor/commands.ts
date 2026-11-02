@@ -260,6 +260,28 @@ export function cardAround(doc: PMNode, pos: number): { head: number; start: num
   return { head, start: head + 1, end };
 }
 
+const hasCite = (n: PMNode) => { let yes = false; n.forEach((c) => { if (M.cite.isInSet(c.marks)) yes = true; }); return yes; };
+
+/**
+ * The card (tag or analytic plus its body) around `pos`, as paragraph indexes; null under a pocket, hat or block.
+ * Falcon has no cite node, so the cite line is the first non-empty body paragraph that isn't an undertag;
+ * under an analytic, where that paragraph is often just the argument, only when it carries a cite mark.
+ */
+export function cardAt(doc: PMNode, pos: number) {
+  const c = cardAround(doc, pos);
+  if (!c) return null;
+  const head = doc.child(c.head);
+  if (!isCardHead(head)) return null;
+  let cite: number | null = null;
+  for (let i = c.start; i < c.end; i++) {
+    const n = doc.child(i);
+    if (n.attrs.style === 'undertag' || n.content.size === 0) continue;
+    if (head.attrs.style === 'tag' || hasCite(n)) cite = i;
+    break;
+  }
+  return { ...c, cite };
+}
+
 function posOfIndex(doc: PMNode, index: number): number {
   let pos = 0;
   for (let i = 0; i < index; i++) pos += doc.child(i).nodeSize;
@@ -352,20 +374,21 @@ export const toggleCase: Command = (state, dispatch) => {
 export function condense(mode: CondenseMode): Command {
   return (state, dispatch) => {
     let range: Range | null;
-    let skipCite = false;
+    let citePos = -1;
     if (state.selection.empty) {
       const c = cardAround(state.doc, state.selection.from);
       if (!c || c.start >= c.end) return false;
       range = { from: posOfIndex(state.doc, c.start), to: posOfIndex(state.doc, c.end) };
-      skipCite = isCardHead(state.doc.child(c.head)) && c.end - c.start > 1;
+      // a card's only paragraph is condensed, cite line or not
+      const cite = c.end - c.start > 1 ? cardAt(state.doc, state.selection.from)?.cite : null;
+      if (cite != null) citePos = posOfIndex(state.doc, cite);
     } else range = { from: state.selection.from, to: state.selection.to };
 
     const paras: [PMNode, number][] = [];
     state.doc.nodesBetween(range.from, range.to, (node, pos) => {
-      if (node.isTextblock) { if (!isHeading(node)) paras.push([node, pos]); return false; }
+      if (node.isTextblock) { if (!isHeading(node) && pos !== citePos) paras.push([node, pos]); return false; }
       return true;
     });
-    if (skipCite && paras.length) paras.shift();
     if (!paras.length) return false;
 
     const tr = state.tr;
@@ -431,8 +454,6 @@ export const uncondense: Command = (state, dispatch) => {
   return finish(state, tr, dispatch);
 };
 
-const hasCite = (n: PMNode) => { let yes = false; n.forEach((c) => { if (M.cite.isInSet(c.marks)) yes = true; }); return yes; };
-
 /** Alt-F8: copy the previous card's cite paragraph to the cursor. */
 export const copyPreviousCite: Command = (state, dispatch) => {
   const doc = state.doc;
@@ -444,27 +465,25 @@ export const copyPreviousCite: Command = (state, dispatch) => {
     if (!isCardHead(n)) continue;
     tags++;
     if (tags < 2 && i <= here && cardAround(doc, state.selection.from)?.head === i) continue;
-    for (let j = i + 1; j < doc.childCount && !isHeading(doc.child(j)); j++) {
-      const cite = doc.child(j);
-      if (cite.content.size === 0) continue;
-      // "nearest cite only" off: also the cite-marked lines right after it (a cite split over lines)
-      const more: PMNode[] = [];
-      if (!pref(P.citeNearest)) {
-        for (let k = j + 1; k < doc.childCount; k++) {
-          const n = doc.child(k);
-          if (isHeading(n) || !n.content.size || !hasCite(n)) break;
-          more.push(schema.nodes.paragraph.create(null, n.content));
-        }
+    const j = cardAt(doc, posOfIndex(doc, i))?.cite;
+    if (j == null) return false;
+    const cite = doc.child(j);
+    // "nearest cite only" off: also the cite-marked lines right after it (a cite split over lines)
+    const more: PMNode[] = [];
+    if (!pref(P.citeNearest)) {
+      for (let k = j + 1; k < doc.childCount; k++) {
+        const n = doc.child(k);
+        if (isHeading(n) || !n.content.size || !hasCite(n)) break;
+        more.push(schema.nodes.paragraph.create(null, n.content));
       }
-      const $f = state.selection.$from;
-      const tr = state.tr;
-      if ($f.parent.content.size === 0 && !isHeading($f.parent)) {
-        tr.replaceWith($f.start(), $f.end(), cite.content);
-        if (more.length) tr.insert(tr.mapping.map($f.after(1)), more);
-      } else tr.insert(state.selection.$to.after(1), [schema.nodes.paragraph.create(null, cite.content), ...more]);
-      return finish(state, tr, dispatch);
     }
-    return false;
+    const $f = state.selection.$from;
+    const tr = state.tr;
+    if ($f.parent.content.size === 0 && !isHeading($f.parent)) {
+      tr.replaceWith($f.start(), $f.end(), cite.content);
+      if (more.length) tr.insert(tr.mapping.map($f.after(1)), more);
+    } else tr.insert(state.selection.$to.after(1), [schema.nodes.paragraph.create(null, cite.content), ...more]);
+    return finish(state, tr, dispatch);
   }
   return false;
 };
