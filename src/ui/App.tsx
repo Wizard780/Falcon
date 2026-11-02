@@ -34,6 +34,7 @@ import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 import { P, onPrefs, pref } from '../editor/prefs';
 import { readJson, safeSet } from './storage';
+import { reducedMotion } from './motion';
 
 const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty, speech }]: the open doc and every unsaved one
@@ -126,7 +127,6 @@ function loadBackups(): Backup[] {
   return [];
 }
 const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 0));
-const reducedMotion = () => pref(P.reduceMotion) || matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Smooth-scroll the page so `pos` sits just below the top. Paragraphs off screen have estimated
  *  heights (content-visibility), so the target moves as they render: the animation re-reads it every frame. */
