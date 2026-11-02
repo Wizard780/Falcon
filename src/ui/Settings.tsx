@@ -8,6 +8,7 @@ import { navSettings, navShortcuts } from '../editor/nav-keys';
 import { readSetting, type SettingSpec } from '../editor/tools';
 import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
 import { newFileName } from './files';
+import { bridge, type IndexFolder } from '../editor/host';
 import './settings.css';
 
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -19,7 +20,7 @@ const keyChips = (k: string) => k.split('-').filter(Boolean).map((p) => ({
 
 const SHORTCUTS: [string, [string, string][]][] = [
   ['App', [
-    ['Mod-T', 'Home'], ['Mod-,', 'Settings'], ['Mod-\\', 'Show or hide the outline'], ['Mod-F', 'Find'],
+    ['Mod-T', 'Home'], ['Mod-K', 'Search files'], ['Mod-,', 'Settings'], ['Mod-\\', 'Show or hide the outline'], ['Mod-F', 'Find'],
     ['Mod-=', 'Zoom in'], ['Mod--', 'Zoom out'], ['Mod-0', 'Actual size'],
   ]],
   ['Files', [
@@ -85,13 +86,15 @@ const MARKERS: [string, string][] = [['#FF0000', 'Red'], ['#0070C0', 'Blue'], ['
 
 type Props = {
   open: boolean; onClose: () => void;
+  /** the page to show when Settings opens (default: the last one shown) */
+  startPage?: string;
   zoom: number; onZoom: (z: number) => void;
   speechMin: number; onSpeechMin: (m: number) => void;
   showOutline: boolean; onShowOutline: (s: boolean) => void;
   depth: number; onDepth: (d: number) => void;
   highlight: string | null; onHighlight: (c: string) => void;
 };
-type Row = { label: string; hint?: string; preview?: ReactNode; control: ReactNode };
+type Row = { label: string; hint?: string; preview?: ReactNode; control: ReactNode; path?: boolean };
 type Page = { id: string; title: string; icon: string; group?: string; sections: [string, Row[]][] };
 
 /** Settings, laid out like the prototype's: a section list on the left, cards of rows on the right. */
@@ -100,7 +103,16 @@ export function Settings(props: Props) {
   const [pageId, setPageId] = useState('general');
   const [query, setQuery] = useState('');
   const [, setSpecTick] = useState(0); // a feature setting changed: redraw its row
-  useEffect(() => { if (props.open) { setQuery(''); ref.current?.focus({ preventScroll: true }); } }, [props.open]);
+  useEffect(() => { if (props.open) { setQuery(''); if (props.startPage) setPageId(props.startPage); ref.current?.focus({ preventScroll: true }); } }, [props.open, props.startPage]);
+  // File search folders live in the desktop app's main process, not in prefs
+  const [folders, setFolders] = useState<IndexFolder[] | null>(null);
+  useEffect(() => {
+    if (!props.open || !bridge.indexFolders) return;
+    let live = true;
+    const load = () => bridge.indexFolders!().then((f) => { if (!live) return; setFolders(f); if (f.some((x) => x.count === null)) setTimeout(load, 500); }, () => {});
+    void load();
+    return () => { live = false; };
+  }, [props.open]);
   useEffect(() => onPrefs(() => setSpecTick((t) => t + 1)), []);
   if (!props.open) return null;
 
@@ -183,6 +195,20 @@ export function Settings(props: Props) {
         { label: 'Name new files', hint: 'What an Untitled document is called when you first save it.', control:
           select('Name new files', pref(P.newName), (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), (h) => setPref(P.newName, h as 'untitled')) },
       ]],
+    ] },
+    { id: 'search', title: 'File search', icon: 'search', sections: [
+      ['Folders', !bridge.indexFolders
+        ? [{ label: 'Search folders', hint: `File search reaches into your folders in the desktop app. Here, ${IS_MAC ? '⌘K' : 'Ctrl+K'} searches open and recent files.`, control: null }]
+        : [
+          ...(folders ?? []).map((f): Row => ({ label: f.path.split(/[\\/]/).filter(Boolean).pop() ?? f.path, hint: f.path, path: true, control: (
+            <span className="st-fold">
+              <output>{f.missing ? 'Not found' : f.count === null ? 'Indexing…' : `${f.count.toLocaleString('en-US')} ${f.count === 1 ? 'file' : 'files'}`}</output>
+              <button className="sb-ico" aria-label={`Remove ${f.path}`} title="Remove from file search"
+                onClick={() => void bridge.removeIndexFolder!(f.path).then(setFolders)}><SvgIcon name="x" /></button>
+            </span>) })),
+          { label: folders?.length ? 'Add another folder' : 'No folders yet', hint: `Files in these folders, and the folders inside them, show up in ${IS_MAC ? '⌘K' : 'Ctrl+K'}. Only .docx files are listed.`, control: (
+            <button className="st-btn" onClick={() => void bridge.addIndexFolder!().then(setFolders)}><SvgIcon name="plus" />Add folder…</button>) },
+        ]],
     ] },
     { id: 'appearance', title: 'Appearance', icon: 'contrast', sections: [
       ['Theme', [
@@ -351,8 +377,8 @@ export function Settings(props: Props) {
                 <h3>{title}</h3>
                 <div className="st-card">
                   {rows.map((r) => (
-                    <div key={r.label} className="st-row">
-                      <div className="st-txt"><span>{r.label}</span>{r.hint && <small>{r.hint}</small>}</div>
+                    <div key={r.path ? r.hint : r.label} className="st-row">
+                      <div className="st-txt"><span>{r.label}</span>{r.hint && (r.path ? <small className="path"><span dir="ltr">{r.hint}</span></small> : <small>{r.hint}</small>)}</div>
                       {r.preview}
                       {r.control}
                     </div>
