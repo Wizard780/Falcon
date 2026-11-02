@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { Fragment, Slice } from 'prosemirror-model';
 import { Selection } from 'prosemirror-state';
 import { falconKeys as K } from '../src/editor/keymap';
-import { caret, make, map, run, select } from './helpers';
+import { insertPlainText } from '../src/editor/commands';
+import { createView } from '../src/editor/editor';
+import { MultiSelection } from '../src/editor/multi';
+import { at, caret, make, map, run, select } from './helpers';
 
 const BODY = 'The rapid expansion of AI has pushed utilities to their limits.';
 const card = () => make([['tag', 'Grid tag here'], ['normal', 'Smith 24, Professor at MIT'], ['normal', BODY]]);
@@ -133,6 +137,23 @@ describe('the cite line, for condense and Alt-F8', () => {
     const s0 = make([['tag', 'Prev'], ['undertag', 'my note'], ['normal', 'Smith 24'], ['normal', 'body'], ['tag', 'New'], ['normal', '']]);
     const s = run(s0.apply(s0.tr.setSelection(Selection.atEnd(s0.doc))), K['Alt-F8']);
     expect(map(s).split('\n').slice(4)).toEqual(['tag: New', 'normal: Smith 24']);
+  });
+});
+
+describe('multi-selection', () => {
+  it('typing, F2 and paste all land at the last stretch, with the cursor after them', () => {
+    let s0 = make([['normal', 'one two three four']]);
+    s0 = s0.apply(s0.tr.setSelection(MultiSelection.create(s0.doc, [{ from: at(s0, 'two'), to: at(s0, 'two', 3) }, { from: at(s0, 'four'), to: at(s0, 'four', 4) }])));
+    const view = createView(document.createElement('div'), () => {}, s0.doc);
+    view.dispatch(view.state.tr.setSelection(MultiSelection.create(view.state.doc, (s0.selection as MultiSelection).spans)));
+    view.dom.dispatchEvent(new KeyboardEvent('keypress', { charCode: 'Z'.charCodeAt(0), bubbles: true, cancelable: true }));
+    const typed = view.state;
+    const f2 = run(s0, insertPlainText('Z'));
+    const pasted = s0.apply(s0.tr.replaceSelection(new Slice(Fragment.from(s0.schema.node('paragraph', null, [s0.schema.text('Z')])), 1, 1)));
+    for (const s of [typed, f2, pasted]) {
+      expect(map(s)).toBe('normal: one  three Z');
+      expect([s.selection.empty, s.selection.from]).toEqual([true, at(s, 'Z', 1)]);
+    }
   });
 });
 
