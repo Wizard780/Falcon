@@ -302,7 +302,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
           // links to a web address (through the relationships file); links to a bookmark in the file stay plain text
           const href = rels.links.get(c.getAttributeNS(R, 'id') ?? c.getAttribute('r:id') ?? '');
           readRuns(c, href ? M.link.create({ href }) : link);
-        } else if (ln === 'smartTag' || ln === 'ins' || ln === 'fldSimple' || ln === 'customXml' || ln === 'sdtContent') {
+        } else if (ln === 'smartTag' || ln === 'ins' || ln === 'moveTo' || ln === 'dir' || ln === 'bdo' || ln === 'fldSimple' || ln === 'customXml' || ln === 'sdtContent') {
           readRuns(c, link);
         } else if (ln === 'sdt') {
           readRuns(kid(c, 'sdtContent') ?? c, link);
