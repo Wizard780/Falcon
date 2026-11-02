@@ -2,6 +2,7 @@
 const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { createIndex } = require('./indexer.cjs');
 
 const DEV = process.env.FALCON_DEV === '1';
 const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a window
@@ -72,6 +73,10 @@ async function rememberPath(p) {
   try { await fs.writeFile(recentFile(), JSON.stringify(recentPaths)); } catch { /* recents are a convenience */ }
 }
 
+// File search: the folders allowed in Settings (see indexer.cjs)
+let fileIndex = null;
+const index = () => (fileIndex ??= createIndex(path.join(app.getPath('userData'), 'index-folders.json')));
+
 let quitting = false; // the window is closing because the app is quitting (Cmd-Q), not just the window
 app.on('before-quit', () => { quitting = true; });
 ipcMain.on('falcon:force-close', (e, quit) => {
@@ -93,11 +98,25 @@ ipcMain.handle('falcon:open-file', async (e) => {
 ipcMain.handle('falcon:open-path', async (_e, p) => {
   if (typeof p !== 'string') throw new Error('bad open request');
   const abs = path.resolve(p);
-  if (!abs.toLowerCase().endsWith('.docx') || !(await loadRecent()).includes(abs)) throw new Error('Open this file with Open first');
+  if (!abs.toLowerCase().endsWith('.docx')) throw new Error('Falcon only opens .docx files');
+  if (!(await loadRecent()).includes(abs) && !(await index().allows(abs))) throw new Error('Open this file with Open first');
   const data = new Uint8Array(await fs.readFile(abs));
   await rememberPath(abs);
   return { name: path.basename(abs), path: abs, data };
 });
+ipcMain.handle('falcon:index-folders', () => index().folders());
+ipcMain.handle('falcon:index-add', async (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const r = await dialog.showOpenDialog(win, { title: 'Add folders to file search', buttonLabel: 'Add', properties: ['openDirectory', 'multiSelections'] });
+  if (!r.canceled && r.filePaths.length) await index().add(r.filePaths);
+  return index().folders();
+});
+ipcMain.handle('falcon:index-remove', async (_e, p) => {
+  if (typeof p !== 'string') throw new Error('bad remove request');
+  await index().remove(p);
+  return index().folders();
+});
+ipcMain.handle('falcon:index-files', () => index().files());
 ipcMain.handle('falcon:save-file', async (e, opts) => {
   if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
   // Save writes straight into the document's own file, wherever it lives, as long as it's still there.

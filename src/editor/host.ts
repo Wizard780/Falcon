@@ -12,11 +12,20 @@ export function setActiveColor(kind: 'highlight' | 'shading', color: string | nu
   else localStorage.setItem(`falcon.${kind}`, color);
 }
 
+export type IndexFolder = { path: string; count: number | null; missing: boolean };
+export type IndexedFile = { path: string; root: string; mtime: number };
 type FalconBridge = {
   readClipboardText?: () => Promise<string>;
   openFile?: () => Promise<{ name: string; path: string; data: Uint8Array } | null>;
   openPath?: (path: string) => Promise<{ name: string; path: string; data: Uint8Array }>;
   saveFile?: (opts: { path?: string; name: string; data: Uint8Array }) => Promise<{ path: string; name: string } | null>;
+  /** File search (Cmd-K): the folders allowed in Settings, with file counts (null while the first scan runs). */
+  indexFolders?: () => Promise<IndexFolder[]>;
+  /** Pick folders in the native dialog and allow them. Returns the new list. */
+  addIndexFolder?: () => Promise<IndexFolder[]>;
+  removeIndexFolder?: (path: string) => Promise<IndexFolder[]>;
+  /** Every .docx in the allowed folders (openPath opens any of them). */
+  indexedFiles?: () => Promise<IndexedFile[]>;
   /** Mac File menu clicks ('new', 'open', 'save', 'saveAs', 'close', 'settings'). Returns an unsubscribe. */
   onMenu?: (f: (cmd: string) => void) => () => void;
   /** Closing the window (quit = quitting the app) with unsaved docs: the page asks. Returns an unsubscribe. */

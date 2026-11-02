@@ -7,6 +7,10 @@ contextBridge.exposeInMainWorld('falcon', {
   openFile: () => ipcRenderer.invoke('falcon:open-file'),
   openPath: (p) => ipcRenderer.invoke('falcon:open-path', p),
   saveFile: (opts) => ipcRenderer.invoke('falcon:save-file', opts),
+  indexFolders: () => ipcRenderer.invoke('falcon:index-folders'),
+  addIndexFolder: () => ipcRenderer.invoke('falcon:index-add'),
+  removeIndexFolder: (p) => ipcRenderer.invoke('falcon:index-remove', p),
+  indexedFiles: () => ipcRenderer.invoke('falcon:index-files'),
   onMenu: (f) => {
     const on = (_e, cmd) => { if (typeof cmd === 'string') f(cmd); };
     ipcRenderer.on('falcon:menu', on);
