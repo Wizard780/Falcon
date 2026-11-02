@@ -22,7 +22,7 @@ svg { flex: none; }
 .icon { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
 .app { position: relative; display: grid; grid-template-columns: var(--strip-w) var(--nav-w) 1fr; grid-template-rows: var(--bar-h) 1fr var(--status-h); height: 100%; }
-.app.no-outline { --nav-w: 28px; }
+.app.no-outline { --nav-w: 0px; }
 
 /* the rail: file and view buttons, always visible */
 .fstrip { grid-column: 1; grid-row: 1 / 4; position: relative; z-index: 270; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 18px 0 12px; background: var(--u-deep); user-select: none; }
@@ -40,11 +40,24 @@ svg { flex: none; }
 .fstrip .doc-x svg { width: 10px; height: 10px; }
 .doc-row:hover .doc-x, .doc-x:focus-visible { opacity: 1; transform: none; }
 .doc-x:hover { color: var(--u-tx); background: #3a3a3f; }
-.doc-tip { position: fixed; left: calc(var(--strip-w) + 2px); z-index: 2000; transform: translateY(-50%); display: flex; flex-direction: column; gap: 2px; max-width: 320px; padding: 6px 10px; border-radius: 8px;
-  background: var(--u-raised); box-shadow: var(--u-top), 0 8px 24px rgba(0, 0, 0, .35); font-size: 12.5px; pointer-events: none; animation: tip-in 120ms 200ms ease-out both; }
-.doc-tip b { font-weight: 500; color: var(--u-tx); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.doc-tip small { font-size: 11.5px; color: var(--u-mut); }
-@keyframes tip-in { from { opacity: 0; transform: translate(-4px, -50%); } }
+.doc-tip { position: fixed; z-index: 1; height: 36px; display: flex; align-items: center; gap: 2px; max-width: 340px; padding-right: 14px; border-radius: 8px;
+  background: var(--u-raised); box-shadow: var(--u-top), 0 8px 24px rgba(0, 0, 0, .35); font-size: 13px; color: var(--u-tx); pointer-events: none;
+  animation: pill-out 220ms 60ms var(--u-ease) both; }
+.doc-tip .ic { flex: none; width: 36px; height: 36px; display: grid; place-items: center; }
+.doc-tip b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-tip small { flex: none; margin-left: 8px; font-size: 11.5px; color: var(--u-mut); }
+.doc-row .doc-x { z-index: 2; }
+@keyframes pill-out { from { clip-path: inset(0 calc(100% - 36px) 0 0 round 8px); } to { clip-path: inset(0 0 0 0 round 8px); } }
+/* the tooltip every button shares: name, key, and what it does */
+.tip { position: fixed; z-index: 3000; max-width: 280px; padding: 7px 10px; border-radius: 8px; background: var(--u-raised); color: var(--u-tx); box-shadow: var(--u-top), 0 8px 24px rgba(0, 0, 0, .35);
+  font-size: 12.5px; line-height: 1.35; pointer-events: none; animation: tip-in 120ms ease-out both; }
+.tip[data-from="bottom"] { animation-name: tip-up; }
+.tip-h { display: flex; align-items: center; gap: 8px; }
+.tip-h b { font-weight: 500; }
+.tip kbd { font: 11px var(--mono); color: var(--u-mut); }
+.tip p { margin: 2px 0 0; color: var(--u-tx2); }
+@keyframes tip-in { from { opacity: 0; transform: translateY(-3px); } }
+@keyframes tip-up { from { opacity: 0; transform: translateY(3px); } }
 /* file and view buttons, in a row above the outline, level with the toolbar's second row */
 .tools { position: absolute; top: calc(var(--bar-h) / 2 + 2px); left: var(--strip-w); z-index: 260; width: var(--tools-w); height: 32px; display: flex; align-items: center; gap: 2px; padding: 0 12px; user-select: none; }
 .tools .fs-b { width: 32px; height: 32px; }
@@ -77,11 +90,7 @@ svg { flex: none; }
 /* the outline: attached to the document, docked on the page's left edge */
 .olp { position: absolute; top: var(--bar-h); bottom: var(--status-h); left: var(--strip-w); width: 280px; z-index: 240; display: flex; flex-direction: column; background: var(--u-deep); color: var(--u-tx); user-select: none;
   transform: translateX(-100%); opacity: 0; pointer-events: none; transition: transform 220ms var(--u-ease), opacity 150ms var(--u-ease); }
-.olp.shown, .olp.peek { transform: none; opacity: 1; pointer-events: auto; }
-.olp.peek { box-shadow: 0 8px 24px rgba(0, 0, 0, .16); }
-.olp-pin { flex: none; height: 28px; margin: 10px 12px 0; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border-radius: 8px; color: var(--u-mut); font-size: 12.5px; cursor: pointer; }
-.olp-pin:hover { background: var(--u-hover); color: var(--u-tx); }
-.olp-pin kbd { font: 11px var(--mono); }
+.olp.shown { transform: none; opacity: 1; pointer-events: auto; }
 .ol-head { display: flex; align-items: center; gap: 6px; padding: 4px 0 8px; }
 .ol-head .sb-label { flex: 1; padding: 0 0 0 10px; }
 .ol-head .sb-ico { width: 26px; height: 26px; }
@@ -104,14 +113,6 @@ svg { flex: none; }
 .sb-row.ol.l3 { color: var(--u-tx2); }
 .sb-row.ol.l4 { color: var(--u-mut); }
 .sb-row.ol.l3[data-on], .sb-row.ol.l4[data-on] { color: var(--u-tx); }
-/* hidden: a strip of ticks, one per hat and block, on the page's edge; hovering it peeks the outline */
-.olt { position: absolute; top: var(--bar-h); bottom: var(--status-h); left: var(--strip-w); width: 28px; z-index: 230; display: flex; align-items: center; justify-content: center; background: var(--u-deep); cursor: pointer;
-  opacity: 0; pointer-events: none; transition: opacity 150ms ease-out; overflow: hidden; }
-.olt.shown { opacity: 1; pointer-events: auto; }
-.rail-ticks { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding: 12px 0; }
-.rail-tick { display: block; height: 2px; border-radius: 1px; background: #3a3a3f; transition: background 150ms ease-out, width 200ms var(--u-ease); }
-.rail-tick.h { width: 20px; } .rail-tick.b { width: 12px; }
-.rail-tick[data-on] { background: var(--u-tx); width: 20px; }
 
 /* the top bar: Classic, a two-row grid where each button previews its style */
 .toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: safe center; background: var(--u-deep); user-select: none; min-width: 0; overflow: hidden; }
@@ -254,7 +255,8 @@ button.b:active { transform: scale(.97); }
 @media (max-width: 900px) { .hm-acts { grid-template-columns: 1fr; } .hm-row { grid-template-columns: 16px minmax(0, 1fr) 80px; } .hm-row .fd, .hm-row .ct { display: none; } .hm-head { grid-template-columns: 1fr; } .hm-clock { display: none; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .olp, .olt, .rail-tick, .lv-hl, .sb-list[data-ready] .sb-act, .sb-row.ol .tw svg, .b, .b::before, .b::after, .pop, .pop *, .toast, .home, .home.open, .hm-peek, .hm-undo { transition: none !important; }
+  .olp, .lv-hl, .sb-list[data-ready] .sb-act, .sb-row.ol .tw svg, .b, .b::before, .b::after, .pop, .pop *, .toast, .home, .home.open, .hm-peek, .hm-undo { transition: none !important; }
+  .tip, .doc-tip { animation: none !important; }
   button.b:active { transform: none; }
 }
 
