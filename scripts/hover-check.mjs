@@ -59,6 +59,16 @@ await page.screenshot({ path: `${shots}/2-tip-pocket.png`, clip: { x: 300, y: 0,
 await page.mouse.down(); await page.mouse.up();
 want(await tipText() === null, 'clicking a button hides its tip');
 
+// clicking Bigger changes its title ("now 12 pt"); the native title must not come back
+await page.mouse.move(700, 600); await page.waitForTimeout(500);
+await page.hover('.toolbar .b.sz >> nth=0');
+await page.waitForTimeout(450);
+const before = await page.$eval('.toolbar .b.sz', (x) => x.dataset.tip);
+await page.mouse.down(); await page.mouse.up();
+await page.waitForTimeout(300);
+const after = await page.$eval('.toolbar .b.sz', (x) => ({ title: x.getAttribute('title'), tip: x.dataset.tip }));
+want(after.title === null && after.tip !== before, `Bigger after a click: no native title, tip text updated (${before} -> ${after.tip})`);
+
 // the outline hidden: no strip, nothing to hover, the page against the rail
 await page.mouse.move(700, 600);
 await page.click('.tools [aria-label="Outline"]');

@@ -511,7 +511,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
   return (
     <nav className="fstrip" aria-label="Open documents">
       <button className="sb-logo" title={`Home (${MOD}T): recent files and new documents`} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
-      <div className="fs-docs" role="tablist" aria-label="Open documents">
+      <div className="fs-docs" role="tablist" aria-label="Open documents" onScroll={() => setTip(null)}>
         {props.docs.map((d) => {
           const on = d.id === props.active && !props.home;
           return (
