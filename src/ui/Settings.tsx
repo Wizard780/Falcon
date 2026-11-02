@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
 import { HIGHLIGHTS } from '../editor/schema';
 import { SvgIcon } from './icons';
@@ -59,7 +59,7 @@ export function Settings(props: Props) {
   const [query, setQuery] = useState('');
   const [, setSpecTick] = useState(0); // a feature setting changed: redraw its row
   const [keyNote, setKeyNote] = useState<KeyNote>(null); // the recorder's note under a shortcut's label
-  useEffect(() => { if (props.open) { setQuery(props.startQuery ?? ''); if (props.startPage) setPageId(props.startPage); ref.current?.focus({ preventScroll: true }); } }, [props.open, props.startPage, props.startQuery]);
+  useLayoutEffect(() => { if (props.open) { setQuery(props.startQuery ?? ''); if (props.startPage) setPageId(props.startPage); ref.current?.focus({ preventScroll: true }); } }, [props.open, props.startPage, props.startQuery]);
   // File search folders live in the desktop app's main process, not in prefs
   const [folders, setFolders] = useState<IndexFolder[] | null>(null);
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { beam, clock, dots } from './home-fx';
 import { whenLabel, type Recent } from './recents';
 import { keyOf, keyText } from '../editor/keybinds';
@@ -27,7 +27,7 @@ export function Home(props: {
   const [undo, setUndo] = useState<Recent[] | null>(null);
 
   // the effects run only while home is showing
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     scRef.current!.scrollTop = 0;
     homeRef.current!.focus({ preventScroll: true }); // Tab starts inside Home, not in the covered editor

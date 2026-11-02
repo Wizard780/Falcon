@@ -54,7 +54,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
   const [indexed, setIndexed] = useState<IndexedFile[]>([]);
   const peeked = useRef(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     setQuery(''); setAt(0); setSub(null); setLimit(PAGE);
     peeked.current = false;

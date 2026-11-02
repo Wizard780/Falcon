@@ -353,7 +353,7 @@ export function App() {
   const view = viewRef.current;
   // home covers the editor: the editor gives up the keyboard while it shows, and gets it back after
   const hasView = tick > 0;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const v = viewRef.current;
     if (!v) return;
     if (homeOpen) (v.dom as HTMLElement).blur(); else v.focus();
@@ -667,7 +667,7 @@ export function App() {
   paletteRef.current = paletteOpen;
   const ccRef = useRef(ccOpen);
   ccRef.current = ccOpen;
-  useEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, paletteOpen, ccOpen]);
+  useLayoutEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, paletteOpen, ccOpen]);
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
