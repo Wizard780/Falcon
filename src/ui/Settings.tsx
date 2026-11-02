@@ -2,44 +2,16 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
 import { HIGHLIGHTS } from '../editor/schema';
 import { SvgIcon } from './icons';
-import { docToolSettings, docToolShortcuts } from '../editor/doc-tools';
-import { cardToolSettings, cardToolShortcuts } from '../editor/card-tools';
-import { navSettings, navShortcuts } from '../editor/nav-keys';
+import { docToolSettings } from '../editor/doc-tools';
+import { cardToolSettings } from '../editor/card-tools';
+import { navSettings } from '../editor/nav-keys';
+import '../editor/keymap'; // registers the editor's bindings
+import { BINDINGS, IS_MAC, keyOf, keyText } from '../editor/keybinds';
+import { KeyField, type KeyNote } from './KeyField';
 import { readSetting, type SettingSpec } from '../editor/tools';
 import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
 import { newFileName } from './files';
 import './settings.css';
-
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
-/** "Mod-Shift-8" as ⌘ ⇧ 8 on macOS, Ctrl Shift 8 elsewhere: one chip per key. */
-const keyChips = (k: string) => k.split('-').filter(Boolean).map((p) => ({
-  Mod: IS_MAC ? '⌘' : 'Ctrl', Ctrl: IS_MAC ? '⌃' : 'Ctrl', Alt: IS_MAC ? '⌥' : 'Alt', Shift: IS_MAC ? '⇧' : 'Shift',
-  ArrowUp: '↑', ArrowDown: '↓', PageUp: 'Page Up', PageDown: 'Page Down',
-}[p] ?? p)).concat(k.endsWith('--') ? ['−'] : []);
-
-const SHORTCUTS: [string, [string, string][]][] = [
-  ['App', [
-    ['Mod-T', 'Home'], ['Mod-,', 'Settings'], ['Mod-\\', 'Show or hide the outline'], ['Mod-F', 'Find'],
-    ['Mod-=', 'Zoom in'], ['Mod--', 'Zoom out'], ['Mod-0', 'Actual size'],
-  ]],
-  ['Files', [
-    ['Mod-N', 'New document'], ['Mod-O', 'Open'], ['Mod-S', 'Save'], ['Mod-Shift-S', 'Save As'], ['Mod-W', 'Close document'],
-    ['Ctrl-Tab', 'Next open document'], ['Ctrl-Shift-Tab', 'Previous open document'],
-  ]],
-  ['Cutting', [
-    ['F2', 'Paste as plain text'], ['F3', 'Condense paragraph'], ['Shift-F3', 'Change case'],
-    ['F4', 'Pocket'], ['F5', 'Hat'], ['F6', 'Block'], ['F7', 'Tag'], ['Mod-F7', 'Analytic'], ['Mod-F8', 'Undertag'],
-    ['F8', 'Cite'], ['Alt-F8', 'Copy previous cite'], ['F9', 'Underline'], ['F10', 'Emphasis'], ['F11', 'Highlight'],
-    ['Mod-F11', 'Background color'], ['F12', 'Clear formatting'], ['Mod-8', 'Shrink card'], ['Mod-Shift-8', 'Undo shrink'],
-  ]],
-  ['Moving around', [
-    ['PageUp', 'Previous heading'], ['PageDown', 'Next heading'], ['Mod-Alt-ArrowUp', 'Move card up'], ['Mod-Alt-ArrowDown', 'Move card down'],
-    ['Mod-Shift-R', 'Read mode'], ['Mod-Shift-D', 'Read marker'],
-    ...navShortcuts,
-  ]],
-  ['Doc tools', docToolShortcuts],
-  ['Card tools', cardToolShortcuts],
-];
 
 const PENS = ['yellow', 'green', 'cyan', 'magenta', 'lightGray'];
 const PEN_NAMES: Record<string, string> = { yellow: 'Yellow', green: 'Green', cyan: 'Cyan', magenta: 'Magenta', lightGray: 'Gray' };
@@ -91,7 +63,7 @@ type Props = {
   depth: number; onDepth: (d: number) => void;
   highlight: string | null; onHighlight: (c: string) => void;
 };
-type Row = { label: string; hint?: string; preview?: ReactNode; control: ReactNode };
+type Row = { label: string; hint?: string; bad?: boolean; search?: string; preview?: ReactNode; control: ReactNode };
 type Page = { id: string; title: string; icon: string; group?: string; sections: [string, Row[]][] };
 
 /** Settings, laid out like the prototype's: a section list on the left, cards of rows on the right. */
@@ -100,6 +72,7 @@ export function Settings(props: Props) {
   const [pageId, setPageId] = useState('general');
   const [query, setQuery] = useState('');
   const [, setSpecTick] = useState(0); // a feature setting changed: redraw its row
+  const [keyNote, setKeyNote] = useState<KeyNote>(null); // the recorder's note under a shortcut's label
   useEffect(() => { if (props.open) { setQuery(''); ref.current?.focus({ preventScroll: true }); } }, [props.open]);
   useEffect(() => onPrefs(() => setSpecTick((t) => t + 1)), []);
   if (!props.open) return null;
@@ -161,7 +134,12 @@ export function Settings(props: Props) {
   };
   const specSections = [...new Set(FEATURE_SETTINGS.map((x) => x.section))]
     .map((sec): [string, Row[]] => [sec, FEATURE_SETTINGS.filter((x) => x.section === sec).map(specRow)]);
-  const keys = (k: string) => <span className="st-kbd">{keyChips(k).map((c, i) => <kbd key={i}>{c}</kbd>)}</span>;
+  const keyRows = (group: string): Row[] => BINDINGS.filter((b) => b.group === group).map((b) => {
+    const note = keyNote?.id === b.id ? keyNote : null;
+    return { label: b.label, hint: note?.text, bad: note?.bad, search: `${keyOf(b.id)} ${keyText(keyOf(b.id))}`,
+      control: <KeyField id={b.id} label={b.label} onNote={setKeyNote} /> };
+  });
+  const keyLabel = (id: string) => keyText(keyOf(id)) || 'no shortcut';
   const prep = pref(P.prepMin);
   const profile = (speech: number, prepMin: number) => () => { props.onSpeechMin(speech); setPref(P.prepMin, prepMin); };
 
@@ -195,7 +173,7 @@ export function Settings(props: Props) {
           </span>) },
       ]],
       ['Layout', [
-        { label: 'Zoom', hint: `How big the page is. Also ${IS_MAC ? '⌘+ and ⌘−' : 'Ctrl+ and Ctrl−'}.`, control: (
+        { label: 'Zoom', hint: `How big the page is. Also ${keyLabel('zoomIn')} and ${keyLabel('zoomOut')}.`, control: (
           <span className="st-step">
             <button aria-label="Less zoom" onClick={() => zoomTo(props.zoom - 0.1)}>−</button>
             <output>{Math.round(props.zoom * 100)}%</output>
@@ -214,7 +192,7 @@ export function Settings(props: Props) {
     ] },
     { id: 'editor', title: 'Editor', icon: 'doc', sections: [
       ['Outline', [
-        { label: 'Show outline pane', hint: `The nav pane on the document's left edge. Also ${IS_MAC ? '⌘\\' : 'Ctrl+\\'}.`, control: toggle('Show outline pane', props.showOutline, props.onShowOutline) },
+        { label: 'Show outline pane', hint: `The nav pane on the document's left edge. Also ${keyLabel('outline')}.`, control: toggle('Show outline pane', props.showOutline, props.onShowOutline) },
         { label: 'Outline depth', hint: 'How many heading levels the outline shows.', control:
           seg('Outline depth', [1, 2, 3, 4].map((n) => [String(n), props.depth === n, () => props.onDepth(n)])) },
         pickNum(P.openDepth, 'Depth for opened files', 'The depth a file opens at. Keep leaves it as it is.', [[0, 'Keep'], [1, '1'], [2, '2'], [3, '3'], [4, '4']]),
@@ -273,7 +251,7 @@ export function Settings(props: Props) {
         tog(P.shadingDots, 'Dots on background color', 'A faint dot pattern, so background color can be told from highlighting.'),
       ]],
     ] },
-    { id: 'keys', title: 'Keybindings', icon: 'keyboard', sections: SHORTCUTS.filter(([, ks]) => ks.length).map(([g, ks]) => [g, ks.map(([k, what]) => ({ label: what, control: keys(k) }))]) },
+    { id: 'keys', title: 'Keybindings', icon: 'keyboard', sections: [...new Set(BINDINGS.map((b) => b.group))].map((g) => [g, keyRows(g)]) },
     { id: 'speech', title: 'Speech and timers', icon: 'timer', group: 'Debate', sections: [
       ['Format', [
         { label: 'Event', hint: 'High school: 8 minute speeches, 8 of prep. College: 9 and 10.', control:
@@ -295,7 +273,7 @@ export function Settings(props: Props) {
   const page = pages.find((p) => p.id === pageId) ?? pages[0];
   // searching shows every matching row, under its page and section
   const shown: [string, Row[]][] = q
-    ? pages.flatMap((p) => p.sections.map(([s, rows]) => [`${p.title} · ${s}`, rows.filter((r) => `${r.label} ${r.hint ?? ''} ${s} ${p.title}`.toLowerCase().includes(q))] as [string, Row[]]))
+    ? pages.flatMap((p) => p.sections.map(([s, rows]) => [`${p.title} · ${s}`, rows.filter((r) => `${r.label} ${r.hint ?? ''} ${r.search ?? ''} ${s} ${p.title}`.toLowerCase().includes(q))] as [string, Row[]]))
       .filter(([, rows]) => rows.length)
     : page.sections;
   const restore = () => {
@@ -304,6 +282,7 @@ export function Settings(props: Props) {
     FEATURE_SETTINGS.forEach((x) => localStorage.removeItem(x.key));
     resetPrefs();
     setSpecTick((t) => t + 1);
+    setKeyNote(null);
   };
 
   let lastGroup: string | undefined;
@@ -352,7 +331,7 @@ export function Settings(props: Props) {
                 <div className="st-card">
                   {rows.map((r) => (
                     <div key={r.label} className="st-row">
-                      <div className="st-txt"><span>{r.label}</span>{r.hint && <small>{r.hint}</small>}</div>
+                      <div className="st-txt"><span>{r.label}</span>{r.hint && <small data-bad={r.bad || undefined}>{r.hint}</small>}</div>
                       {r.preview}
                       {r.control}
                     </div>

@@ -403,6 +403,29 @@ button.b:active { transform: scale(.97); }
 .st-kbd { display: flex; gap: 6px; }
 .st-kbd kbd { min-width: 26px; height: 26px; padding: 0 7px; display: grid; place-items: center; border-radius: 6px; background: #26262a; box-shadow: var(--u-top); font: 12px var(--mono); color: var(--u-tx2); }
 .st .st-row:has(.st-kbd) { min-height: 48px; }
+/* Keybindings: a shortcut is its keys; click them and press new ones (KeyField.tsx) */
+.st-keyf { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.st-keyb { align-items: center; min-height: 34px; padding: 4px; margin: -4px; border-radius: 9px; cursor: pointer; }
+.st-keyb:hover { background: var(--u-hover); }
+.st-keyb:focus-visible { outline: 2px solid #6a8dff; outline-offset: 0; }
+.st-keys { display: flex; align-items: center; gap: 6px; }
+.st-keytype { display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: 13px; color: var(--u-mut); }
+.st-keytype i { display: none; }
+.st-keyb[data-listen] { background: rgba(255, 92, 92, .12); }
+.st-keyb[data-listen] .st-keytype { color: #ff8a8a; }
+.st-keyb[data-listen] .st-keytype i { display: block; width: 6px; height: 6px; border-radius: 50%; background: #ff5c5c; animation: st-breathe 1.4s ease-in-out infinite; }
+.st-keyb[data-listen] kbd { color: #ffb3b3; }
+.st-keys[data-anim="shake"] { animation: st-shake 320ms var(--u-ease); }
+.st-keys[data-anim="shake"] kbd { animation: st-refused 900ms ease-out; }
+.st-keys[data-anim="bob"] kbd { animation: st-bob 260ms var(--u-ease) backwards; }
+.st-keyreset { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: var(--u-mut); cursor: pointer; }
+.st-keyreset:hover { background: var(--u-hover); color: var(--u-tx); }
+.st-txt small[data-bad] { color: #ff8a8a; }
+@keyframes st-breathe { 50% { opacity: .35; transform: scale(.8); } }
+@keyframes st-shake { 20% { transform: translateX(-5px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+@keyframes st-refused { from { color: #ff5c5c; background: rgba(255, 92, 92, .18); } }
+@keyframes st-bob { 40% { transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .st-keys, .st-keys kbd, .st-keytype i { animation: none !important; } }
 
 /* narrow windows: the tools row takes the toolbar's left 280px, so the groups pack closer, and past that the bar scrolls sideways */
 @media (max-width: 1190px) {
