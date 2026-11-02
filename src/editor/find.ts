@@ -16,8 +16,14 @@ type Meta = { query?: string; index?: number; anchor?: number; grouped?: boolean
 
 export const findKey = new PluginKey<FindState>('find');
 
+// No character lowercases shorter, so equal lengths mean every character mapped one to one. 'İ' lowercases
+// to two; it stays as it is, so offsets into the result are offsets into the text.
+const lower = (s: string) => {
+  const l = s.toLowerCase();
+  return l.length === s.length ? l : s.replace(/./gsu, (c) => (c.toLowerCase().length === c.length ? c.toLowerCase() : c));
+};
 // case and curly-vs-straight quotes don't matter
-export const norm = (s: string) => s.toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
+export const norm = (s: string) => lower(s).replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
 
 const CAT: Record<string, number> = { pocket: 0, hat: 0, block: 0, tag: 1, analytic: 2, undertag: 3 };
 function category(para: PMNode): number {
