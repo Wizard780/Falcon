@@ -366,6 +366,7 @@ export function Settings(props: Props) {
           seg('Event', [['High school', props.speechMin === 8 && prep === 8, profile(8, 8)], ['College', props.speechMin === 9 && prep === 10, profile(9, 10)]]) },
         { label: 'Speech length', hint: 'Where the speech timer in the top bar starts.', control:
           select('Speech length', props.speechMin, Array.from({ length: 30 }, (_, i) => [i + 1, `${i + 1}:00`]), (m) => props.onSpeechMin(Number(m))) },
+        tog(P.showSend, 'Send button', `A Send button beside Read in the top bar. ${keyLabel('sendToSpeech')} sends either way.`),
         tog(P.showPrep, 'Prep timer', 'A prep clock beside the speech timer. Click to start or pause, right-click to reset.'),
         { label: 'Prep time', hint: 'Where the prep timer starts.', control:
           select('Prep time', prep, Array.from({ length: 15 }, (_, i) => [i + 1, `${i + 1}:00`]), (m) => setPref(P.prepMin, Number(m))) },

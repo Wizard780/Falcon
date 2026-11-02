@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { commandOf, falconKeys, liveKeys } from '../src/editor/keymap';
-import { BINDINGS, keyOf, keyText, pressed, pressedId, recordKey, refusal, resetKey, setKey } from '../src/editor/keybinds';
+import { BINDINGS, IS_MAC, keyOf, keyText, pressed, pressedId, recordKey, refusal, resetKey, setKey } from '../src/editor/keybinds';
 import { resetPrefs } from '../src/editor/prefs';
 
 afterEach(() => resetPrefs());
@@ -35,6 +35,18 @@ describe('keybindings', () => {
     expect(pressedId(ev('T', 84, { ctrlKey: true, shiftKey: true }), ['home'])).toBe(undefined);
     expect(pressed(ev('S', 83, { ctrlKey: true, shiftKey: true }), 'Mod-Shift-s')).toBe(true);
     expect(pressed(ev('-', 189, { ctrlKey: true }), 'Mod--')).toBe(true);
+  });
+
+  it('lets Send to speech be one symbol key, and nothing else', () => {
+    expect(keyOf('sendToSpeech')).toBe('`');
+    expect(refusal('sendToSpeech', '`')).toBe(null);
+    expect(refusal('sendToSpeech', 'Shift-`')).toBe(null); // ~
+    expect(refusal('sendToSpeech', '/')).toBe(null);
+    expect(refusal('sendToSpeech', 'a')).toMatch(/Add Ctrl or Alt/);
+    expect(refusal('sendToSpeech', '5')).toMatch(/Add Ctrl or Alt/);
+    expect(refusal('tag', '`')).toMatch(/Add Ctrl or Alt/);
+    expect(refusal('tag', 'Mod-`')).toBe(null);
+    if (!IS_MAC) expect(refusal('sendToSpeech', 'Mod-Alt-q')).toMatch(/AltGr/);
   });
 
   it('refuses keys that need a modifier, are taken, or are kept', () => {

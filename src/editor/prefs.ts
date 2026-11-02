@@ -80,6 +80,7 @@ export const P = {
   markerTime: def('markerTime', true),
   // Speech and timers
   showPrep: def('showPrep', false),
+  showSend: def('showSend', false), // the Send button beside Read; the send key works either way
   prepMin: def('prepMin', 8),
   lowTime: def('lowTime', 0), // seconds left when the timer starts flashing; 0 = never
   beep: def('beep', false),

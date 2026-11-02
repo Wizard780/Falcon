@@ -26,7 +26,7 @@ function fake(start: EditorState) {
     zoom: 1, setZoom: (z) => calls.push(`zoom:${z}`), depth: 3, setDepth: (d) => calls.push(`depth:${d}`),
     showOutline: true, setShowOutline: () => {}, speechMin: 8, setSpeechMin: (m) => calls.push(`speech:${m}`),
     highlight: 'yellow', setHighlight: (c) => calls.push(`pen:${c}`),
-    isSpeech: false, toggleSpeech: () => {}, sendToSpeech: () => calls.push('send'),
+    isSpeech: false, toggleSpeech: () => {},
     jump: (i) => calls.push(`jump:${i}`), peek: () => {},
     find: (t, r) => calls.push(`find:${t}:${r}`), openSettings: (p, q) => calls.push(`settings:${p}:${q}`),
   };

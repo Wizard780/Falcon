@@ -6,7 +6,7 @@ import { Node as PMNode } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
 import { commandOf } from '../editor/keymap';
-import { IS_MAC, isRecording, keyOf, keyText, pressedId, titled } from '../editor/keybinds';
+import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
 import { activeColors, bridge, setActiveColor, type UpdateInfo } from '../editor/host';
 import { ago, releaseNotes } from './update';
 import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
@@ -53,6 +53,14 @@ const keyLabel = (id: string) => keyText(keyOf(id));
 /** The keys that swap the document out, which read mode and Settings hold back. */
 const SWAPS = ['home', 'new', 'open', 'close', 'nextDoc', 'prevDoc'];
 /** The commands the app runs itself (the editor's keymap runs the rest). */
+/** Does this keydown send to speech? A changed key matches the way Settings recorded it (Shift-` is ~), an AltGr-typed character counts,
+ *  and ` still counts on layouts where it's a dead accent key (US International). */
+function sendPressed(e: KeyboardEvent) {
+  const k = keyOf('sendToSpeech');
+  if (!k) return false;
+  return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
+    || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
+}
 const APP_IDS = ['search', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'close', 'nextDoc', 'prevDoc', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
@@ -191,7 +199,7 @@ export function App() {
   docsRef.current = docs;
   const active = docs.find((d) => d.id === activeId) ?? docs[0];
   const meta = active.meta, dirty = active.dirty;
-  // the one open doc that `~` sends to; null until the first send or the Speech doc button
+  // the one open doc that Send to speech sends to; null until the first send or the Speech doc button
   const [speechId, setSpeechId] = useState<number | null>(null);
   const speechRef = useRef(speechId);
   speechRef.current = speechId;
@@ -489,7 +497,7 @@ export function App() {
   const openFind = useCallback(() => { setHomeOpen(false); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
   const zoomBy = useCallback((d: number) => setZoom((z) => Math.max(0.5, Math.min(3, +(z + d).toFixed(2)))), []);
 
-  /** `~`: copy the selection (or the card or section at the caret) into the speech doc without leaving this file. */
+  /** Send to speech: copy the selection (or the card or section at the caret) into the speech doc without leaving this file. */
   const sendToSpeech = useCallback(() => {
     const v = viewRef.current;
     if (!v) return;
@@ -564,7 +572,8 @@ export function App() {
     else if (id === 'zoomOut') zoomBy(-0.1);
     else if (id === 'zoomReset') setZoom(1);
     else if (id === 'commands') setCcOpen((o) => !o);
-  }, [fileSave, fileOpen, fileNew, openFind, closeDoc, cycle, zoomBy]);
+    else if (id === 'sendToSpeech') sendToSpeech();
+  }, [fileSave, fileOpen, fileNew, openFind, closeDoc, cycle, zoomBy, sendToSpeech]);
 
   // app-level shortcuts
   useEffect(() => {
@@ -575,8 +584,8 @@ export function App() {
       if (askRef.current) { if (e.ctrlKey || e.metaKey) e.preventDefault(); return; }
       // Save As is up: its name field keeps text editing keys, nothing else
       if (saveAsRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
-      // ~ sends to the speech doc, so the page can never type one (AltGr layouts too: their ~ arrives with Ctrl+Alt held). Boxes with their own text field keep it.
-      if (e.key === '~' && (!e.ctrlKey || e.getModifierState?.('AltGraph')) && !e.metaKey && !settingsRef.current && !e.isComposing && !homeRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
+      // Send to speech (` unless changed in Settings), so the page can't type that key (AltGr layouts too: their character arrives with Ctrl+Alt held). Boxes with their own text field keep it.
+      if (sendPressed(e) && !settingsRef.current && !e.isComposing && !homeRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
         e.preventDefault(); e.stopPropagation();
         if (!e.repeat) sendToSpeech();
         return;
@@ -734,9 +743,9 @@ export function App() {
     view, zoom, setZoom, depth, setDepth, showOutline, setShowOutline, speechMin, setSpeechMin,
     run: (cmd) => { const v = viewRef.current; if (!v) return false; setHomeOpen(false); return cmd(v.state, v.dispatch, v); },
     app: appCommand,
-    blocked: (id) => SWAPS.includes(id) && reading,
+    blocked: (id) => (SWAPS.includes(id) || id === 'sendToSpeech') && reading,
     highlight: activeColors.highlight, setHighlight: (c) => { setActiveColor('highlight', c); setTick((t) => t + 1); },
-    isSpeech: speechId === activeId, toggleSpeech, sendToSpeech,
+    isSpeech: speechId === activeId, toggleSpeech,
     jump: (i) => { const v = viewRef.current; const it = v && buildOutline(v.state.doc)[i]; if (it) { setHomeOpen(false); jump(it, i); } },
     peek: (i) => { const v = viewRef.current, it = outlineRef.current[i]; if (v && it && it.pos < v.state.doc.content.size) scrollToPos(v, it.pos); },
     find: (text, replace) => {
@@ -962,7 +971,7 @@ function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onN
       {b('search', titled('Find', 'find', 'search this file'), props.onFind)}
       {b('list', titled('Outline', 'outline', 'show or hide the list of pockets, hats, blocks and tags'), props.onOutline, props.outline)}
       {b('eye', titled('Read mode', 'read', 'show only what\'s read aloud'), props.onRead, props.reading)}
-      {b('mic', 'Speech doc: make this file the speech doc, where ~ sends the selection. Click again to unmark it', props.onSpeech, props.speech)}
+      {b('mic', `Speech doc: make this file the speech doc, where ${keyOf('sendToSpeech') ? keyText(keyOf('sendToSpeech')) : 'Send'} sends the selection. Click again to unmark it`, props.onSpeech, props.speech)}
     </div>
   );
 }
@@ -1126,7 +1135,9 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
             onContextMenu={(e) => { e.preventDefault(); setRunning(false); setLeft(SPEECH_SECONDS); }}>
             {clock(left)}
           </button>
-          <button className="b" title="Send to speech (~): copy the selection, or the card or section at the caret, into the speech doc. The file isn't changed, and the page can't type ~" onMouseDown={(e) => { e.preventDefault(); props.onSend(); }}>Send</button>
+          {pref(P.showSend) && (
+            <button className="b" title={titled('Send to speech', 'sendToSpeech', 'copy the selection, or the card or section at the caret, into the speech doc. The file isn\'t changed. Change the key in Settings > Keybindings')} onMouseDown={(e) => { e.preventDefault(); props.onSend(); }}>Send</button>
+          )}
           {showPrep && (
             <button className={`b timer prep${low(prepRunning, prepLeft)}`} data-on={prepRunning || undefined} title="Prep timer: click to start or pause. Right-click to reset"
               onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (prepLeft === 0) setPrepLeft(PREP_SECONDS); setPrepRunning((r) => !r); } }}
