@@ -436,15 +436,15 @@ export function App() {
     try {
       const m = await saveDocument(out, meta, as);
       if (!m) return;
-      if (mode !== 'asis') { flash(`Saved ${MODE_NAME[mode]} ${m.name}`); return; }
-      // typing during the save keeps the doc marked unsaved
-      const now = activeRef.current === id ? viewRef.current!.state.doc : docsRef.current.find((x) => x.id === id)?.state?.doc;
       // another tab on this file would overwrite it on Save: close it if clean, else keep its edits but unbind it.
-      // dropDoc sets the tab list from a snapshot, so this runs before patch(id) or it would undo the new path
+      // dropDoc sets the tab list from a snapshot, so this runs before patch(id) below or it would undo the new path
       for (const o of docsRef.current) {
         if (o.id === id || !m.path || o.meta.path !== m.path) continue;
         if (o.dirty) patch(o.id, { meta: { name: o.meta.name } }); else dropDoc(o.id);
       }
+      if (mode !== 'asis') { flash(`Saved ${MODE_NAME[mode]} ${m.name}`); return; }
+      // typing during the save keeps the doc marked unsaved
+      const now = activeRef.current === id ? viewRef.current!.state.doc : docsRef.current.find((x) => x.id === id)?.state?.doc;
       patch(id, { meta: m, dirty: now !== saved });
       setRecents((list) => noteRecent(list, saved, m));
       flash(`Saved ${m.name}`);
