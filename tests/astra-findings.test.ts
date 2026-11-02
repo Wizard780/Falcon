@@ -47,3 +47,8 @@ test('every paragraph pasted into a footnote is kept in the note', async () => {
   expect(content.map((n) => n.text ?? '¶')).toEqual(['first paragraph', '¶', 'second paragraph']);
   view.destroy();
 });
+
+test('a size set on cite text inside a heading survives a save', async () => {
+  const doc = await reopen('<p data-style="pocket"><span class="f-cite"><span class="f-size" data-pt="26">cited</span></span></p>');
+  expect(markMap(doc)).toContain('size:26pt');
+});
