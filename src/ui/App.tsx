@@ -14,6 +14,8 @@ import { insertIntoSpeech, sendContent } from '../editor/speech';
 import { selectionState } from './selection-state';
 import { Icon, SvgIcon } from './icons';
 import { openDocument, openPath, saveDocument, type DocMeta } from './files';
+import { Palette } from './Palette';
+import type { FileHit } from './file-search';
 import { clearFind, findInfo } from '../editor/find';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
@@ -126,6 +128,8 @@ export function App() {
   const [findOpen, setFindOpen] = useState(false);
   const [homeOpen, setHomeOpen] = useState(() => pref(P.openHome));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<string | undefined>();
+  const [paletteOpen, setPaletteOpen] = useState(false);
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
   const askRef = useRef(ask);
@@ -342,6 +346,16 @@ export function App() {
     try { opened(await openPath(r.path)); }
     catch (e) { flash(`Couldn't open ${r.name}: ${(e as Error).message}`); }
   }, [opened, fileOpen, switchTo, flash]);
+  // Cmd-K: an open doc switches to it; anything else opens by path (indexed folders and recents are allowed)
+  const openHit = useCallback(async (h: FileHit) => {
+    setHomeOpen(false);
+    if (h.docId !== undefined && docsRef.current.some((d) => d.id === h.docId)) { switchTo(h.docId); return; }
+    const already = openedPath(h.path);
+    if (already) { switchTo(already.id); return; }
+    if (!h.path || !bridge.openPath) { void fileOpen(); return; }
+    try { opened(await openPath(h.path)); }
+    catch (e) { flash(`Couldn't open ${h.name}: ${(e as Error).message}`); }
+  }, [opened, fileOpen, switchTo, flash]);
   const fileSave = useCallback(async (as = false) => {
     const v = viewRef.current!;
     const id = activeRef.current;
@@ -404,9 +418,10 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => settingsRef.current || !!askRef.current || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => settingsRef.current || paletteRef.current || !!askRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
     if (askRef.current) return; // a warning is up: it gets answered first
+    if (paletteRef.current) return; // file search is up: it gets closed first
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
     if (c === 'new') fileNew(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
@@ -433,6 +448,10 @@ export function App() {
       // read mode locks the keyboard: nothing that swaps the document out
       if (v && isReading(v.state) && (/^[notw]$/i.test(e.key) || /^Bracket/.test(e.code))) return;
       const mod = IS_MAC ? e.metaKey : e.ctrlKey; // Ctrl-N/O/F are caret keys on macOS
+      const k0 = e.key.toLowerCase();
+      // Cmd-K opens file search (or closes it); while it's up, only its own keys get through
+      if (mod && k0 === 'k' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); if (paletteRef.current) setPaletteOpen(false); else if (!locked()) setPaletteOpen(true); return; }
+      if (paletteRef.current) { if (mod && !/^[acvxz]$/.test(k0)) e.preventDefault(); return; }
       // Settings is modal: only its own keys (Esc, Mod-,) get through
       if (settingsRef.current && !(e.key === 'Escape' || (mod && e.key === ','))) { if (mod) e.preventDefault(); return; }
       // Esc in a filled Settings search clears the search before it closes Settings
@@ -460,7 +479,9 @@ export function App() {
   homeRef.current = homeOpen;
   const settingsRef = useRef(settingsOpen);
   settingsRef.current = settingsOpen;
-  useEffect(() => { if (!settingsOpen && !ask && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask]);
+  const paletteRef = useRef(paletteOpen);
+  paletteRef.current = paletteOpen;
+  useEffect(() => { if (!settingsOpen && !ask && !paletteOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, paletteOpen]);
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -558,7 +579,7 @@ export function App() {
     return () => removeEventListener('wheel', onWheel);
   }, [zoomBy]);
 
-  const modal = settingsOpen || !!ask;
+  const modal = settingsOpen || paletteOpen || !!ask;
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
@@ -619,7 +640,9 @@ export function App() {
       <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents.slice(0, pref(P.recentCount))}
         onNew={fileNew} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)}
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
-      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)}
+      <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
+        onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
+      <Settings open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsPage(undefined); }} startPage={settingsPage}
         zoom={zoom} onZoom={setZoom} speechMin={speechMin} onSpeechMin={setSpeechMin}
         showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth}
         highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} />

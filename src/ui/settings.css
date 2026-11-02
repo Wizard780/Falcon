@@ -66,3 +66,12 @@
 .st-pv.emph.nobox .s > span { outline: 0; }
 .st-pv.small { font-size: 8px; color: #8e8e93; }
 .st .st-row + .st-row { border-top: 0; }
+
+/* Settings, File search: one row per allowed folder */
+.st-btn { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px; background: #26262a; color: var(--u-tx); font-size: 13px; box-shadow: var(--u-top); cursor: pointer; }
+.st-btn:hover { background: #2f2f33; }
+.st-fold { display: flex; align-items: center; gap: 16px; }
+.st-fold output { font: 13px var(--mono); font-variant-numeric: tabular-nums; color: var(--u-mut); white-space: nowrap; }
+.st-fold .sb-ico { color: var(--u-mut); }
+.st-fold .sb-ico:hover { color: var(--u-tx); }
+.st-txt small.path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
