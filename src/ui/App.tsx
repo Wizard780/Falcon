@@ -33,7 +33,7 @@ import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 import { P, onPrefs, pref } from '../editor/prefs';
-import { safeSet } from './storage';
+import { readJson, safeSet } from './storage';
 
 const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty, speech }]: the open doc and every unsaved one
@@ -121,7 +121,7 @@ function loadBackups(): Backup[] {
       return list.map(({ media: _m, ...b }) => ({ ...b, doc: PMNode.fromJSON(schema, unpackDoc(b.doc, media)) }));
     }
     const v1 = localStorage.getItem(OLD_AUTOSAVE_KEY);
-    if (v1) return [{ meta: JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' }, doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
+    if (v1) return [{ meta: readJson<DocMeta>('falcon.meta', { name: 'Untitled' }), doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
   } catch { /* corrupt autosave: start blank */ }
   return [];
 }
@@ -658,12 +658,12 @@ export function App() {
   const queueRef = useRef(queueOpens);
   queueRef.current = queueOpens;
   // reopen last files: the files open at the last quit, read before the list below is rewritten
-  const lastSession = useRef<string[]>(JSON.parse(localStorage.getItem('falcon.session') ?? '[]'));
+  const [lastSession] = useState(() => readJson<string[]>('falcon.session', []));
   const reopened = useRef(false);
   useEffect(() => {
     if (!hasView || reopened.current) return;
     reopened.current = true;
-    if (pref(P.reopen) && bridge.openPath) queueOpens(lastSession.current, true); // moved or deleted since: skipped
+    if (pref(P.reopen) && bridge.openPath) queueOpens(lastSession, true); // moved or deleted since: skipped
   }, [hasView]); // eslint-disable-line react-hooks/exhaustive-deps
   // files double-clicked in Finder/Explorer (or Open With): open each, or switch to it if it's already open
   useEffect(() => (hasView ? bridge.onOpenPaths?.((ps) => queueRef.current(ps, false)) : undefined), [hasView]);
