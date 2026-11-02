@@ -1,6 +1,12 @@
 import { HIGHLIGHTS } from './schema';
 import { P, pref } from './prefs';
 
+const toHex = (c: string): string | null => {
+  const m = c.trim().match(/^#([0-9a-f]{6})$/i);
+  if (m) return `#${m[1].toUpperCase()}`;
+  const rgb = c.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+  return rgb ? `#${[rgb[1], rgb[2], rgb[3]].map((x) => Number(x).toString(16).padStart(2, '0')).join('').toUpperCase()}` : null;
+};
 const HL_BY_HEX: Record<string, string> = Object.fromEntries(Object.entries(HIGHLIGHTS).map(([k, v]) => [v.toLowerCase(), k]));
 
 /**
@@ -42,6 +48,23 @@ export function cleanPastedHTML(html: string, smart = pref(P.smartPaste)): strin
       if (/font-style:\s*italic/.test(style)) keep.push('font-style:italic');
       keep.length ? el.setAttribute('style', keep.join(';')) : el.removeAttribute('style');
       if (!el.className.startsWith('f-')) el.removeAttribute('class');
+    } else if (el.tagName === 'TD' || el.tagName === 'TH') {
+      // a pasted table keeps its cell shading and column widths (spans are attributes, which stay)
+      const bg = el.getAttribute('bgcolor') ?? style.match(/background(?:-color)?:\s*(#[0-9a-f]{6}|rgb\([^)]*\))/)?.[1];
+      const hexBg = bg && toHex(bg);
+      if (hexBg && hexBg !== '#FFFFFF') el.dataset.bg = hexBg;
+      const w = Number(el.getAttribute('width')) || Number(style.match(/(?:^|;)\s*width:\s*([\d.]+)px/)?.[1]) || Number(style.match(/(?:^|;)\s*width:\s*([\d.]+)pt/)?.[1]) * 96 / 72;
+      if (w > 0 && !el.dataset.colwidth && (Number(el.getAttribute('colspan')) || 1) === 1) el.dataset.colwidth = String(Math.round(w));
+      el.removeAttribute('style');
+      el.removeAttribute('class');
+    } else if (el.tagName === 'IMG') {
+      // a picture keeps the size it had where it was copied from
+      for (const k of ['width', 'height'] as const) {
+        const px = Number(style.match(new RegExp(`(?:^|;)\\s*${k}:\\s*([\\d.]+)px`))?.[1]);
+        if (px > 0 && !el.getAttribute(k)) el.setAttribute(k, String(Math.round(px)));
+      }
+      el.removeAttribute('style');
+      el.removeAttribute('class');
     } else if (!/^(H[1-6]|P|B|STRONG|I|EM|U|BR|SUP|SUB|S|DEL)$/.test(el.tagName)) {
       el.removeAttribute('style');
       el.removeAttribute('class');

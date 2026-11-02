@@ -1,5 +1,7 @@
 import { baseKeymap } from 'prosemirror-commands';
 import { dropCursor } from 'prosemirror-dropcursor';
+import { gapCursor } from 'prosemirror-gapcursor';
+import { fixTables } from 'prosemirror-tables';
 import { history } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { DOMParser as PMDOMParser, Slice, type Node as PMNode } from 'prosemirror-model';
@@ -10,13 +12,16 @@ import { activeColors, disarmPlainPaste, plainPasteArmed } from './host';
 import { falconKeymap } from './keymap';
 import { navPlugins } from './nav-keys';
 import { wordSelection } from './mouse';
-import { schema } from './schema';
+import { footnoteText, schema } from './schema';
 import { PREFS_META, onPrefs } from './prefs';
 import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
 import { readPlugin } from './read';
 import { docToolPlugins } from './doc-tools';
+import { tablePlugins } from './tables';
+import { imagePlugin } from './images';
+import { footnotePlugin } from './footnotes';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -117,12 +122,13 @@ export function emptyDoc(): PMNode {
 }
 
 export function createState(doc: PMNode = emptyDoc()) {
-  return EditorState.create({
+  const state = EditorState.create({
     doc,
     plugins: [
       readPlugin, // first, so its keyboard lock runs before the formatting keys
       multiSelectionPlugin,
       ...navPlugins, // card numbers, dragging cards on the page
+      ...tablePlugins, // before the keymap (Tab moves between cells) and mouse selection (column edges, cell drags)
       falconKeymap(),
       keymap(baseKeymap),
       history({ newGroupDelay: 500 }),
@@ -130,12 +136,18 @@ export function createState(doc: PMNode = emptyDoc()) {
       brush,
       pastePlugin,
       ...docToolPlugins, // before wordSelection: Cmd/Ctrl-click on a link opens it
+      imagePlugin,
+      footnotePlugin,
       wordSelection(),
+      gapCursor(),
       selectionClasses,
       findPlugin,
       prefsWatch,
     ],
   });
+  // tables from other programs can have short rows or overlapping spans: square them up once, on open
+  const fix = fixTables(state);
+  return fix ? state.apply(fix.setMeta('addToHistory', false)) : state;
 }
 
 export function docFromHTML(html: string): PMNode {
@@ -168,13 +180,19 @@ export function createView(mount: HTMLElement, onChange: (view: EditorView) => v
   return view;
 }
 
-/** Normalized text+marks listing, the same shape the probe builds for CardMirror. */
+/**
+ * Normalized text+marks listing, the same shape the probe builds for CardMirror. Pictures show as
+ * [image WxH], footnotes as [^note text], and a table as one `table` line with a line per cell paragraph
+ * (`cell r0c1 2x1 normal: ...`, span shown only when it isn't 1x1).
+ */
 export function markMap(doc: PMNode): string {
   const out: string[] = [];
-  doc.forEach((para) => {
+  const para = (p: PMNode, prefix = '') => {
     const runs: [string, string][] = [];
-    para.forEach((n) => {
-      const text = n.isText ? n.text! : '';
+    p.forEach((n) => {
+      const text = n.isText ? n.text!
+        : n.type.name === 'image' ? `[image ${n.attrs.width ?? '?'}x${n.attrs.height ?? '?'}]`
+        : n.type.name === 'footnote' ? `[^${footnoteText(n.attrs.content)}]` : '';
       const mk = n.marks
         .map((m) => (m.type.name === 'highlight' ? `highlight:${m.attrs.color}` : m.type.name === 'size' ? `size:${m.attrs.pt}pt` : m.type.name))
         .sort()
@@ -183,7 +201,16 @@ export function markMap(doc: PMNode): string {
       if (last && last[1] === mk) last[0] += text;
       else runs.push([text, mk]);
     });
-    out.push(`${para.attrs.style}: ` + runs.map(([t, m]) => (m ? `[${t}]{${m}}` : t)).join(''));
+    out.push(`${prefix}${p.attrs.style}: ` + runs.map(([t, m]) => (m ? `[${t}]{${m}}` : t)).join(''));
+  };
+  doc.forEach((node) => {
+    if (node.isTextblock) return para(node);
+    out.push(`table ${node.childCount} rows`);
+    node.forEach((row, _o, r) => row.forEach((cell, _p, c) => {
+      const { colspan, rowspan, background } = cell.attrs;
+      const tag = `cell r${r}c${c}${colspan > 1 || rowspan > 1 ? ` ${colspan}x${rowspan}` : ''}${background ? ` bg${background}` : ''}${cell.type.name === 'table_header' ? ' head' : ''} `;
+      cell.forEach((p) => para(p, tag));
+    }));
   });
   return out.join('\n');
 }

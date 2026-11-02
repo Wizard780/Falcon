@@ -8,6 +8,9 @@ import { schema } from './schema';
 import { readSetting, type SettingSpec, type ToolSection } from './tools';
 import { NO_BRIDGE, autoBridgePlugin, autoBridgeSetting, fixFormattingGaps, gapClassSetting, scopeOf } from './doc-tools/gaps';
 import { linkClickPlugin, linkUrls, removeHyperlinks } from './doc-tools/links';
+import { insertTable } from './tables';
+import { insertPicture } from './images';
+import { insertFootnote } from './footnotes';
 
 const M = schema.marks;
 
@@ -113,6 +116,11 @@ const shading = () => activeColors.shading?.toUpperCase() ?? null;
 
 /** The toolbar's Doc menu: whole-document cleanup. Each tool acts on the selection when there is one. */
 export const DOC_TOOLS: ToolSection[] = [
+  { title: 'Insert', items: [
+    { id: 'insertTable', label: 'Insert Table', run: insertTable(3, 3), hint: 'A 3 × 3 table below the cursor. Drag column edges to resize; the bar above it adds rows and columns' },
+    { id: 'insertPicture', label: 'Insert Picture…', run: insertPicture, hint: 'Pick picture files. You can also paste or drop pictures straight into the page' },
+    { id: 'insertFootnote', label: 'Insert Footnote', run: insertFootnote, key: 'Mod-Alt-f', hint: 'A numbered footnote at the cursor; click any footnote number to edit it' },
+  ] },
   { title: 'Cleanup', items: [
     { id: 'analyticsToTags', label: 'Convert Analytics to Tags', run: analyticsToTags(false), hint: 'Turn analytics into tags: the selected ones, or every one in the document' },
     { id: 'citedAnalyticsToTags', label: 'Convert Cited Analytics to Tags', run: analyticsToTags(true), hint: 'Turn analytics into tags, only those with a cite under them' },
