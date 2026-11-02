@@ -27,6 +27,7 @@ import { findOrderSetting } from '../editor/nav-keys';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
 import './display'; // the display settings (fonts, sizes, root classes) apply at startup
+import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
 import { Confirm, nameList, type Ask } from './Confirm';
 import { SaveAs } from './SaveAs';
 import { copyName, docForMode, type SaveMode } from '../editor/save-modes';
@@ -47,12 +48,13 @@ import { reducedMotion } from './motion';
 // app is up), so the first screen downloads and starts less code; so does the .docx code (files.ts)
 function later<T extends { open: boolean }>(load: () => Promise<ComponentType<T>>) {
   let C: ComponentType<T> | null = null, loading: Promise<void> | null = null;
-  const preload = () => (loading ??= load().then((c) => { C = c; }));
+  // a failed load (offline, a newer build's chunk names) is tried again on the next open
+  const preload = () => (loading ??= load().then((c) => { C = c; }, (e) => { loading = null; throw e; }));
   /** Mounts the component the first time `open` is true, and keeps it after (its closing animation needs it). */
   function Later(props: T) {
     const ever = useRef(false), [, loaded] = useState(0);
     if (props.open) ever.current = true;
-    useEffect(() => { if (ever.current && !C) void preload().then(() => loaded((n) => n + 1)); });
+    useEffect(() => { if (ever.current && !C) preload().then(() => loaded((n) => n + 1), () => {}); });
     return ever.current && C ? <C {...props} /> : null;
   }
   return Object.assign(Later, { preload });
@@ -60,7 +62,7 @@ function later<T extends { open: boolean }>(load: () => Promise<ComponentType<T>
 const Settings = later(() => import('./Settings').then((m) => m.Settings));
 const CommandCenter = later(() => import('./CommandCenter').then((m) => m.CommandCenter));
 const Palette = later(() => import('./Palette').then((m) => m.Palette));
-export const prefetch = () => Promise.all([Settings.preload(), CommandCenter.preload(), Palette.preload(), import('../docx/import'), import('../docx/export')]);
+export const prefetch = () => Promise.all([Settings.preload(), CommandCenter.preload(), Palette.preload(), import('../docx/import'), import('../docx/export')]).catch(() => {}); // a miss loads again when used
 
 const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
 const MODE_PREFIX = { send: P.prefixSend, read: P.prefixRead, marked: P.prefixMarked };

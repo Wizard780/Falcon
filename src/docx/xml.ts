@@ -64,7 +64,7 @@ function decode(s: string): string {
   return s.replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (m, e: string) => {
     if (e[0] === '#') {
       const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-      return Number.isFinite(n) ? String.fromCodePoint(n) : m;
+      return Number.isFinite(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m;
     }
     return ENT[e] ?? m;
   });
@@ -86,7 +86,7 @@ export function parseXml(src: string): XDoc {
     const c1 = src.charCodeAt(lt + 1);
     if (c1 === 47) { // </name>
       const gt = src.indexOf('>', lt);
-      if (gt < 0 || stack.length < 2) throw new Error('bad XML');
+      if (gt < 0 || stack.length < 2 || src.slice(lt + 2, gt).trim() !== top.tagName) throw new Error('bad XML');
       stack.pop();
       top = stack[stack.length - 1];
       i = gt + 1;
