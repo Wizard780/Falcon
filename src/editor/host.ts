@@ -32,6 +32,8 @@ type FalconBridge = {
   onConfirmClose?: (f: (quit: boolean) => void) => () => void;
   /** The user said close anyway: close the window (or quit) past the unsaved-docs guard. */
   forceClose?: (quit: boolean) => void;
+  /** The theme changed: the window's own background (shown before the page paints) and native menus follow it. */
+  setTheme?: (bg: string, dark: boolean) => void;
   platform?: string;
 };
 export const bridge: FalconBridge = (globalThis as unknown as { falcon?: FalconBridge }).falcon ?? {};

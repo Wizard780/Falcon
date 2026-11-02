@@ -10,8 +10,7 @@
 .ProseMirror .f-cite { font-size: var(--sz-cite, 13pt); }
 .f-scroll .page { max-width: var(--text-w, none); margin: 0 auto; padding-left: var(--margin-x, 30px); padding-right: var(--margin-x, 20px); }
 
-/* dark page: light ink, and dark ink on highlighted or shaded text so it stays readable */
-:root.page-dark { --page: #1e1e20; --doc-ink: #e6e6e6; }
+/* dark page (the theme's paper is dark; theme.ts sets the class and the colors): light ink, and dark ink on highlighted or shaded text so it stays readable */
 .page-dark .ProseMirror:not(.f-read) { caret-color: #fff; }
 .page-dark .ProseMirror .f-pocket, .page-dark .ProseMirror .f-emphasis { border-color: currentColor; }
 .page-dark .ProseMirror .f-highlight, .page-dark .ProseMirror .f-shading { color: #111; }
@@ -38,16 +37,17 @@
 .b.timer.prep { min-width: 84px; }
 .b.timer.low, .b.timer.low[data-on] { color: #ff6b6b; animation: tm-low 1s steps(1) infinite; }
 @keyframes tm-low { 50% { opacity: .4; } }
+:root[data-chrome="light"] .b.timer.low { color: #d32f2f; }
 
 /* Settings controls beyond the base ones in styles.css */
 .st-color { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
 .st-color::-webkit-color-swatch-wrapper { padding: 0; }
-.st-color::-webkit-color-swatch { border: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14); }
+.st-color::-webkit-color-swatch { border: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--u-tx) 14%, transparent); }
 .st .st-step output { min-width: 72px; }
 .st .st-seg button { white-space: nowrap; }
 
-/* Formatting: each style previewed in its own look (light ink: the panel is dark), following the display settings */
-.st-row .st-pv { flex: none; width: 236px; margin-left: auto; text-align: right; color: #e9e9ea; font-family: var(--doc-font, Calibri, Carlito, 'Helvetica Neue', Arial, sans-serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Formatting: each style previewed in its own look (in the chrome's text color), following the display settings */
+.st-row .st-pv { flex: none; width: 236px; margin-left: auto; text-align: right; color: var(--u-tx); font-family: var(--doc-font, Calibri, Carlito, 'Helvetica Neue', Arial, sans-serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .st-row .st-pv + * { margin-left: 0; }
 .st-pv.pocket { font-size: 22px; font-weight: 700; }
 .st-pv.pocket.box .s { padding: 0 6px; box-shadow: inset 0 0 0 1.5px currentColor; }
@@ -55,8 +55,8 @@
 .st-pv.hat.single { text-decoration-style: solid; }
 .st-pv.block { font-size: 16px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .st-pv.tag { font-size: 14px; font-weight: 700; }
-.st-pv.analytic { font-size: 14px; font-weight: 700; color: var(--c-analytic, #8aa4d6); }
-.st-pv.undertag { font-size: 13px; font-style: italic; color: var(--c-undertag, #8fae7a); }
+.st-pv.analytic { font-size: 14px; font-weight: 700; color: var(--c-analytic, var(--u-an)); }
+.st-pv.undertag { font-size: 13px; font-style: italic; color: var(--c-undertag, var(--u-ut)); }
 .st-pv.cite { font-size: 14px; }
 .st-pv.cite b { font-weight: 700; }
 .st-pv.cite.plain b { font-weight: 400; }
@@ -64,14 +64,40 @@
 .st-pv.emph { font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .st-pv.emph .s > span { outline: 1px solid currentColor; outline-offset: 1px; }
 .st-pv.emph.nobox .s > span { outline: 0; }
-.st-pv.small { font-size: 8px; color: #8e8e93; }
+.st-pv.small { font-size: 8px; color: var(--u-mut); }
 .st .st-row + .st-row { border-top: 0; }
 
 /* Settings, File search: one row per allowed folder */
-.st-btn { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px; background: #26262a; color: var(--u-tx); font-size: 13px; box-shadow: var(--u-top); cursor: pointer; }
-.st-btn:hover { background: #2f2f33; }
+.st-btn { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px; background: var(--u-ctl); color: var(--u-tx); font-size: 13px; box-shadow: var(--u-top); cursor: pointer; }
+.st-btn:hover { background: var(--u-ctl2); }
 .st-fold { display: flex; align-items: center; gap: 16px; }
 .st-fold output { font: 13px var(--mono); font-variant-numeric: tabular-nums; color: var(--u-mut); white-space: nowrap; }
 .st-fold .sb-ico { color: var(--u-mut); }
 .st-fold .sb-ico:hover { color: var(--u-tx); }
 .st-txt small.path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+/* themes: a tile per theme, each a small picture of its chrome around a strip of its paper */
+.st .st-row.wide { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px 0 16px; }
+.st-themes { display: flex; flex-wrap: wrap; gap: 14px 10px; }
+.st-th { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 78px; color: var(--u-mut); font-size: 12px; white-space: nowrap; cursor: pointer; transition: color 150ms ease-out; }
+.st-th:hover, .st-th[aria-checked="true"] { color: var(--u-tx); }
+.st-thp { position: relative; display: grid; place-items: center; width: 78px; height: 52px; border-radius: 10px; overflow: hidden; background: var(--u-ctl);
+  transition: transform 150ms var(--u-ease), box-shadow 150ms ease-out; }
+.st-th:hover .st-thp { transform: translateY(-1px); }
+.st-th[aria-checked="true"] .st-thp { box-shadow: 0 0 0 2px var(--u-panel), 0 0 0 4px var(--u-tx); }
+/* a hairline over the picture, so a light theme's tile still has an edge on light chrome */
+.st-thp::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--u-tx) 10%, transparent); pointer-events: none; }
+.st-th.add .st-thp { color: var(--u-mut); }
+.st-th.add .st-thp::after { display: none; }
+.st-th.add:hover .st-thp { color: var(--u-tx); background: var(--u-ctl-on); }
+.st-look { position: absolute; inset: 0; }
+.st-look > i { position: absolute; left: 8px; width: 12px; height: 2px; border-radius: 1px; opacity: .5; }
+.st-look > i:first-child { top: 12px; }
+.st-look > i:nth-child(2) { top: 18px; width: 9px; }
+.st-look > b { position: absolute; left: 26px; right: 0; top: 10px; bottom: 0; border-top-left-radius: 4px; padding: 9px 0 0 8px; }
+.st-look > b > i { display: block; width: 30px; height: 2px; margin-bottom: 5px; border-radius: 1px; opacity: .7; }
+.st-look > b > i:nth-child(2) { width: 38px; }
+.st-look > b > i:nth-child(3) { width: 20px; }
+/* System: Dark and Light, split corner to corner */
+.st-thp.sys .st-look + .st-look { clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+.st-text { width: 176px; height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--u-ctl); color: var(--u-tx); font: 14px var(--ui-font); outline: none; }
+.st-text:focus-visible { box-shadow: 0 0 0 2px #4b6bd6; }
