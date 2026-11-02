@@ -8,13 +8,13 @@ import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { cardAround, paintColorMark, pastedText } from './commands';
 import { activeColors, disarmPlainPaste, plainPasteArmed } from './host';
 import { falconKeymap } from './keymap';
+import { PREFS_META, onPrefs } from './prefs';
 import { wordSelection } from './mouse';
 import { schema } from './schema';
 import { cleanPastedHTML } from './paste';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
 import { readPlugin } from './read';
-import { PREFS_META, onPrefs } from './prefs';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
