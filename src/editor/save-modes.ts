@@ -98,6 +98,11 @@ export function markedDoc(doc: PMNode): PMNode | null {
   return docOf(keep);
 }
 
+/** The name a Save As copy gets: `prefix` in front, unless the name already starts with it (saving SEND_x as a send doc again). */
+export function copyName(mode: SaveMode, name: string, prefix: string): string {
+  return mode === 'asis' || !prefix || name.startsWith(prefix) ? name : prefix + name;
+}
+
 export function docForMode(doc: PMNode, mode: SaveMode): PMNode | null {
   return mode === 'send' ? sendDoc(doc) : mode === 'read' ? readDoc(doc) : mode === 'marked' ? markedDoc(doc) : doc;
 }

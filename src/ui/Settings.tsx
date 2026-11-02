@@ -161,6 +161,12 @@ export function Settings(props: Props) {
     label, hint, control: <input type="color" className="st-color" aria-label={label} value={pref(p) || fallback} onChange={(e) => setPref(p, e.target.value)} />,
   });
 
+  const prefixRow = (p: Pref<string>, kind: string): Row => ({
+    label: `${kind} filename prefix`, hint: `Prepended to ${kind} saves when the option above is on. Default ${p.default}. Leave empty for no prefix.`,
+    control: <input className="st-text" aria-label={`${kind} filename prefix`} spellCheck={false} maxLength={40} value={pref(p)}
+      disabled={!pref(P.savePrefix)} onChange={(e) => setPref(p, e.target.value)} />,
+  });
+
   const setSpec = (spec: SettingSpec, v: string | boolean) => {
     safeSet(spec.key, typeof v === 'boolean' ? (v ? 'on' : 'off') : v);
     setSpecTick((t) => t + 1);
@@ -223,6 +229,8 @@ export function Settings(props: Props) {
         pickNum(P.recentCount, 'Recent files', 'How many files Home lists.', [[6, '6'], [12, '12'], [24, '24']]),
         { label: 'Name new files', hint: 'What an Untitled document is called when you first save it.', control:
           select('Name new files', pref(P.newName), (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), (h) => setPref(P.newName, h as 'untitled')) },
+        tog(P.savePrefix, 'Prefix Save As copies', 'Send, Read and Marked Doc copies start with a prefix, so you can tell them apart from the file.'),
+        prefixRow(P.prefixSend, 'Send Doc'), prefixRow(P.prefixRead, 'Read Doc'), prefixRow(P.prefixMarked, 'Marked Doc'),
       ]],
     ] },
     { id: 'search', title: 'File search', icon: 'search', sections: [
