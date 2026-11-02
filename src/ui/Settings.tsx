@@ -25,7 +25,7 @@ export const DEFAULTS = { zoom: 1, speechMin: 8, showOutline: true, depth: 3, hi
 
 const FONTS: [string, string, string][] = [
   ['calibri', 'Calibri', ''], ['arial', 'Arial', 'Arial, Helvetica, sans-serif'], ['verdana', 'Verdana', 'Verdana, Geneva, sans-serif'],
-  ['georgia', 'Georgia', 'Georgia, serif'], ['times', 'Times New Roman', "'Times New Roman', Times, serif"],
+  ['georgia', 'Georgia', 'Georgia, serif'], ['times', 'Times', "'Times New Roman', Times, serif"],
   ['comic', 'Comic Sans', "'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', sans-serif"],
 ];
 /** Interface fonts: the chrome only (menus, tooltips, Settings, the bar). '' keeps the system font from styles.css. */
@@ -127,6 +127,16 @@ export function Settings(props: Props) {
       <SvgIcon name="chev" />
     </span>
   );
+  /** a font choice as tiles, each drawing "Aa" in its own font (empty css = the stylesheet's default stack) */
+  const fontTiles = (p: Pref<string>, label: string, hint: string, fonts: [string, string, string][], fallback: string): Row => ({
+    label, hint, wide: true, control: (
+      <span className="st-themes" role="radiogroup" aria-label={label}>
+        {fonts.map(([id, n, css]) => (
+          <button key={id} className="st-th" role="radio" aria-checked={pref(p) === id} aria-label={n} title={n} onClick={() => setPref(p, id)}>
+            <span className="st-thp st-aa" style={{ fontFamily: css || fallback }}>Aa</span><span>{n}</span>
+          </button>
+        ))}
+      </span>) });
   const stepper = (label: string, value: number, show: string, less: () => void, more: () => void) => (
     <span className="st-step" role="group" aria-label={label}>
       <button aria-label={`Less ${label.toLowerCase()}`} onClick={less}>−</button>
@@ -257,7 +267,7 @@ export function Settings(props: Props) {
           </span>) },
       ]],
       ['Fonts', [
-        pick(P.uiFont, 'Interface font', 'Menus, tooltips, Settings and the top bar. The document\'s font is under Formatting.', UI_FONTS.map(([id, n]) => [id, n])),
+        fontTiles(P.uiFont, 'Interface font', 'Menus, tooltips, Settings and the top bar. The document\'s font is under Formatting.', UI_FONTS, "system-ui, 'Segoe UI', sans-serif"),
       ]],
       ['Layout', [
         { label: 'Zoom', hint: `How big the page is. Also ${keyLabel('zoomIn')} and ${keyLabel('zoomOut')}.`, control: (
@@ -335,7 +345,7 @@ export function Settings(props: Props) {
           select('Shrink down to', pref(P.shrinkMin), [[4, '4 pt'], [6, '6 pt'], [8, '8 pt']], (o) => setPref(P.shrinkMin, Number(o))), 'The smallest size Shrink steps down to.'),
       ]],
       ['Look', [
-        pick(P.font, 'Editor font', 'The document\'s text. Verdana and Comic Sans are easier for some readers with dyslexia.', FONTS.map(([id, n]) => [id, n])),
+        fontTiles(P.font, 'Editor font', 'The document\'s text. Verdana and Comic Sans are easier for some readers with dyslexia.', FONTS, 'Calibri, Carlito, Arial, sans-serif'),
         pick(P.lineHeight, 'Line spacing', 'Space between the lines of a paragraph.', [['1', '1.0'], ['1.2', '1.2'], ['1.5', '1.5'], ['2', '2.0']]),
         tog(P.pocketBox, 'Box around pockets', 'Draw the box around pocket headings.'),
         pick(P.hatLine, 'Hat underline', 'Hats are underlined twice, or once.', [['double', 'Double'], ['single', 'Single']]),
