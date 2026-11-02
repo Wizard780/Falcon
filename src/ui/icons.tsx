@@ -43,6 +43,8 @@ const P16: Record<string, string> = {
   keyboard: '<rect x="1.8" y="4" width="12.4" height="8" rx="1.5"/><path d="M4.5 6.8h.01M6.8 6.8h.01M9.2 6.8h.01M11.5 6.8h.01M5.5 9.4h5"/>',
   timer: '<circle cx="8" cy="9" r="5"/><path d="M8 9V6.5M6.5 2h3"/>',
   undo: '<path d="M3.5 3.5v3h3"/><path d="M3.8 6.5A5 5 0 1 1 3 9"/>',
+  sliders: '<path d="M2.5 5h6M11.5 5h2M2.5 11h2M7.5 11h6"/><circle cx="10" cy="5" r="1.5"/><circle cx="6" cy="11" r="1.5"/>',
+  format: '<path d="M3.5 12.5 7 3.5h2l3.5 9M5 9h6"/>',
   gear: '<circle cx="8" cy="8" r="2"/><path d="M6.9 1.8h2.2l.4 1.7 1.1.6 1.7-.5 1.1 1.9-1.3 1.2v1.2l1.3 1.2-1.1 1.9-1.7-.5-1.1.6-.4 1.7H6.9l-.4-1.7-1.1-.6-1.7.5-1.1-1.9 1.3-1.2V7.4L2.6 6.2l1.1-1.9 1.7.5 1.1-.6z"/>',
 };
 // the Head mark (logo/build-brand.mjs makes every other brand asset from the same path)
