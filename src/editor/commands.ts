@@ -493,7 +493,7 @@ export function insertPlainText(text: string): Command {
       let pos = tr.selection.$from.depth ? tr.selection.from : Selection.atStart(tr.doc).from;
       lines.forEach((line, i) => {
         if (i > 0) { tr.split(pos); pos += 2; tr.setNodeMarkup(pos - 1, undefined, { style: 'normal', indent: 0 }); }
-        if (line) { tr.insertText(line, pos); pos += line.length; }
+        if (line) { tr.insert(pos, schema.text(line, marks)); pos += line.length; }
       });
       tr.setSelection(TextSelection.create(tr.doc, pos));
     }
