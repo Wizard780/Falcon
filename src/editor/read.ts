@@ -13,7 +13,7 @@ import { keyOf, pressed } from './keybinds';
 export const readKey = new PluginKey<{ on: boolean; decos: DecorationSet }>('read');
 
 // markers are red unless Settings picks another color; red ones still count after a change
-const isMarker = (marks: readonly { type: { name: string }; attrs: Record<string, unknown> }[]) =>
+export const isMarker = (marks: readonly { type: { name: string }; attrs: Record<string, unknown> }[]) =>
   marks.some((m) => {
     if (m.type.name !== 'color') return false;
     const c = String(m.attrs.color).toUpperCase();
@@ -23,28 +23,48 @@ const MARKER_TEXT = /^ ?Marked( \d{1,2}:\d{2})? ?$/;
 /** Read mode shows red text (as it always has) and markers in the color Settings picks, but not other text in that color. */
 const shownMarker = (n: PMNode) => n.marks.some((m) => m.type.name === 'color' && String(m.attrs.color).toUpperCase() === '#FF0000') || (isMarker(n.marks) && MARKER_TEXT.test(n.text ?? ''));
 
+/** What read mode shows of one paragraph: a flag per child node, and whether it runs into the shown paragraph above. */
+export type ReadPara = { heading: boolean; shown: boolean[]; flow: boolean };
+
 /**
- * Every text run gets a class: f-read-shown, or f-read-hidden (plus f-read-gap when it sits between two
- * shown runs, so the reader sees one space instead of glued words). After a card's first shown paragraph
- * (its cite), shown paragraphs get f-read-flow and run together the way CardMirror's read mode does,
- * unless Settings keeps paragraphs apart. Settings can also show undertags, whole cites and background color.
+ * The read-mode view of the doc, one entry per paragraph. Headings show whole. In a card, cites,
+ * highlighted text and red reading markers show; the rest hides. After a card's first shown paragraph
+ * (its cite), shown paragraphs flow together the way CardMirror's read mode does, unless Settings keeps
+ * paragraphs apart. Settings can also show undertags, whole cites and background color.
+ * The on-screen read mode and the Read Doc export both come from this, so they never disagree.
  */
-function hideUnread(doc: PMNode): DecorationSet {
-  const decos: Decoration[] = [];
+export function readView(doc: PMNode): ReadPara[] {
+  const out: ReadPara[] = [];
   const keepParas = pref(P.readParas), wholeCite = pref(P.readWholeCite), undertags = pref(P.readUndertags), shading = pref(P.readShading);
   const isRead = (n: PMNode) => n.marks.some((m) => m.type.name === 'highlight' || m.type.name === 'cite' || (shading && m.type.name === 'shading')) || shownMarker(n);
   let inCard = false, cardHasShown = false;
-  doc.forEach((para, pos) => {
+  doc.forEach((para) => {
     const level = LEVEL[para.attrs.style as ParaStyle];
-    if (level > 0) { inCard = level === 4; cardHasShown = false; return; }
+    if (level > 0) { inCard = level === 4; cardHasShown = false; out.push({ heading: true, shown: [], flow: false }); return; }
     const shown: boolean[] = [];
     const under = para.attrs.style === 'undertag';
     // the card's cite line, shown whole: the first shown paragraph, when it has cite-marked text
     const cite = wholeCite && !cardHasShown && !under && para.content.content.some((n) => n.marks.some((m) => m.type.name === 'cite'));
     para.forEach((n) => shown.push(n.isText && inCard && (under ? undertags : cite || isRead(n))));
+    const any = shown.some(Boolean);
+    out.push({ heading: false, shown, flow: any && cardHasShown && !keepParas });
+    if (any && !under) cardHasShown = true;
+  });
+  return out;
+}
+
+/**
+ * Every text run gets a class: f-read-shown, or f-read-hidden (plus f-read-gap when it sits between two
+ * shown runs, so the reader sees one space instead of glued words); flowing paragraphs get f-read-flow.
+ */
+function hideUnread(doc: PMNode): DecorationSet {
+  const decos: Decoration[] = [];
+  const view = readView(doc);
+  doc.forEach((para, pos, idx) => {
+    const { heading, shown, flow } = view[idx];
+    if (heading) return;
     if (!shown.some(Boolean)) { decos.push(Decoration.node(pos, pos + para.nodeSize, { class: 'f-read-hidden' })); return; }
-    if (cardHasShown && !keepParas) decos.push(Decoration.node(pos, pos + para.nodeSize, { class: 'f-read-flow' }));
-    if (!under) cardHasShown = true;
+    if (flow) decos.push(Decoration.node(pos, pos + para.nodeSize, { class: 'f-read-flow' }));
     const lastShown = shown.lastIndexOf(true);
     para.forEach((n, off, i) => {
       const from = pos + 1 + off, to = from + n.nodeSize;

@@ -14,7 +14,7 @@ import { toggleColorMark } from '../editor/commands';
 import { insertIntoSpeech, sendContent } from '../editor/speech';
 import { selectionState } from './selection-state';
 import { Icon, SvgIcon } from './icons';
-import { openDocument, openPath, saveDocument, type DocMeta } from './files';
+import { newFileName, openDocument, openPath, saveDocument, type DocMeta } from './files';
 import { Palette } from './Palette';
 import type { FileHit } from './file-search';
 import { clearFind, findInfo } from '../editor/find';
@@ -22,6 +22,8 @@ import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
 import { Settings } from './Settings';
 import { Confirm, nameList, type Ask } from './Confirm';
+import { SaveAs } from './SaveAs';
+import { docForMode, type SaveMode } from '../editor/save-modes';
 import { Tips, parseTip } from './Tips';
 import { OutlinePane } from './Outline';
 import { FindBar } from './FindBar';
@@ -32,6 +34,7 @@ import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 import { P, onPrefs, pref } from '../editor/prefs';
 
+const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty, speech }]: the open doc and every unsaved one
 const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could be open
 /** A command's key as text, for messages: ⌘S. */
@@ -137,6 +140,7 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
+  const [saveAsName, setSaveAsName] = useState<string | null>(null); // the Save As dialog is up, offering this name
   const askRef = useRef(ask);
   askRef.current = ask;
   const confirmAsk = useCallback((a: Omit<Ask, 'done'>) => new Promise<boolean>((resolve) => {
@@ -361,14 +365,20 @@ export function App() {
     try { opened(await openPath(h.path)); }
     catch (e) { flash(`Couldn't open ${h.name}: ${(e as Error).message}`); }
   }, [opened, fileOpen, switchTo, flash]);
-  const fileSave = useCallback(async (as = false) => {
+  /**
+   * Write the active doc. As-Is is the document itself, so the open file takes its new name and path;
+   * Send, Read and Marked docs are copies and the open file stays as it was.
+   */
+  const writeDoc = useCallback(async (meta: DocMeta, mode: SaveMode, as: boolean) => {
     const v = viewRef.current!;
     const id = activeRef.current;
-    const d = docsRef.current.find((x) => x.id === id)!;
     const saved = v.state.doc;
+    const out = docForMode(saved, mode);
+    if (!out) { flash(mode === 'marked' ? 'No marked cards: mark one with red text first' : 'Nothing to save'); return; }
     try {
-      const m = await saveDocument(saved, d.meta, as);
+      const m = await saveDocument(out, meta, as);
       if (!m) return;
+      if (mode !== 'asis') { flash(`Saved ${MODE_NAME[mode]} ${m.name}`); return; }
       // typing during the save keeps the doc marked unsaved
       const now = activeRef.current === id ? viewRef.current!.state.doc : docsRef.current.find((x) => x.id === id)?.state?.doc;
       patch(id, { meta: m, dirty: now !== saved });
@@ -376,6 +386,14 @@ export function App() {
       flash(`Saved ${m.name}`);
     } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
   }, [patch, flash]);
+  /** Save writes the open file; Save As opens the dialog, which calls `saveCopy`. */
+  const fileSave = useCallback(async (as = false) => {
+    const d = docsRef.current.find((x) => x.id === activeRef.current)!;
+    if (as) { setSaveAsName(!d.meta.path && (d.meta.name || 'Untitled') === 'Untitled' ? newFileName() : d.meta.name); return; }
+    await writeDoc(d.meta, 'asis', false);
+  }, [writeDoc]);
+  const saveCopy = (mode: SaveMode, name: string) => { setSaveAsName(null); void writeDoc({ name }, mode, true); };
+  const closeSaveAs = useCallback(() => setSaveAsName(null), []);
 
   const openFind = useCallback(() => { setHomeOpen(false); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
   const zoomBy = useCallback((d: number) => setZoom((z) => Math.max(0.5, Math.min(3, +(z + d).toFixed(2)))), []);
@@ -423,9 +441,9 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => settingsRef.current || paletteRef.current || !!askRef.current || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => settingsRef.current || paletteRef.current || !!askRef.current || saveAsRef.current !== null || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
-    if (askRef.current) return; // a warning is up: it gets answered first
+    if (askRef.current || saveAsRef.current) return; // a warning or Save As is up: it gets answered first
     if (paletteRef.current) return; // file search is up: it gets closed first
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
@@ -447,6 +465,8 @@ export function App() {
       if (isRecording()) return;
       // a warning is up: its own keys (Tab, Enter, Esc) and nothing else
       if (askRef.current) { if (e.ctrlKey || e.metaKey) e.preventDefault(); return; }
+      // Save As is up: its name field keeps text editing keys, nothing else
+      if (saveAsRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // ~ sends to the speech doc, so the page can never type one (AltGr layouts too: their ~ arrives with Ctrl+Alt held). Boxes with their own text field keep it.
       if (e.key === '~' && (!e.ctrlKey || e.getModifierState?.('AltGraph')) && !e.metaKey && !settingsRef.current && !e.isComposing && !homeRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
         e.preventDefault(); e.stopPropagation();
@@ -492,10 +512,12 @@ export function App() {
   const homeRef = useRef(homeOpen);
   homeRef.current = homeOpen;
   const settingsRef = useRef(settingsOpen);
+  const saveAsRef = useRef(saveAsName);
+  saveAsRef.current = saveAsName;
   settingsRef.current = settingsOpen;
   const paletteRef = useRef(paletteOpen);
   paletteRef.current = paletteOpen;
-  useEffect(() => { if (!settingsOpen && !ask && !paletteOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, paletteOpen]);
+  useEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !paletteOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, paletteOpen]);
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -593,7 +615,7 @@ export function App() {
     return () => removeEventListener('wheel', onWheel);
   }, [zoomBy]);
 
-  const modal = settingsOpen || paletteOpen || !!ask;
+  const modal = settingsOpen || paletteOpen || !!ask || saveAsName !== null;
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
@@ -662,6 +684,7 @@ export function App() {
         highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} />
       </div>
       <Confirm ask={ask} />
+      <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
       <div className={`toast${toast ? ' show' : ''}${toast?.action ? ' has-action' : ''}`} role="status">
         {toast?.msg}
         {toast?.action && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const a = toast.action!; setToast(null); a.run(); }}>{toast.action.label}</button>}
@@ -757,8 +780,8 @@ function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onN
     <div className="tools" role="toolbar" aria-label="File and view">
       {b('plus', titled('New document', 'new', 'start a blank file'), props.onNew)}
       {b('open', titled('Open…', 'open', 'open a .docx file'), props.onOpen)}
-      {b('save', titled('Save', 'save', 'save this file. Shift-click to save a copy'), (e) => props.onSave(e.shiftKey))}
-      {b('saveAs', titled('Save As…', 'saveAs', 'save a copy under a new name'), () => props.onSave(true))}
+      {b('save', titled('Save', 'save', 'save this file. Shift-click for Save As'), (e) => props.onSave(e.shiftKey))}
+      {b('saveAs', titled('Save As…', 'saveAs', 'save a copy, as-is or as a send, read or marked doc'), () => props.onSave(true))}
       <span className="sep" />
       {b('search', titled('Find', 'find', 'search this file'), props.onFind)}
       {b('list', titled('Outline', 'outline', 'show or hide the list of pockets, hats, blocks and tags'), props.onOutline, props.outline)}
