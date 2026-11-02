@@ -185,6 +185,16 @@ await page.click(`.doc-nm[aria-label*="${base(b)}"]`);
 await page.waitForTimeout(150);
 const kept = await page.evaluate(() => window.__falconView.state.doc.textContent.slice(0, 6));
 want(r.length === 2 && kept === 'KEEPME', `after a reload both files come back, unsaved edit included: ${JSON.stringify(r)} ${kept}`);
+// the file that was only opened comes back clean: closing it doesn't ask
+{
+  const dot = (n) => page.$(`.doc-row:has(.doc-nm[aria-label*="${n}"]) .dot`).then((x) => !!x);
+  const [cleanDot, editedDot] = [await dot(base(a)), await dot(base(b))];
+  await page.click(`.doc-nm[aria-label*="${base(a)}"]`);
+  await page.keyboard.press(`${mod}+w`);
+  await page.waitForTimeout(200);
+  const asked = !!(await page.$('[role=alertdialog]'));
+  want(!cleanDot && editedDot && !asked, `after a reload an untouched file isn't marked unsaved (dot ${cleanDot}, edited dot ${editedDot}, close asked ${asked})`);
+}
 
 want(!errors.length, `no page errors ${errors.join(' | ')}`);
 console.log(results.join('\n'));

@@ -20,7 +20,7 @@ import { Confirm, nameList, type Ask } from './Confirm';
 import { Tips, parseTip } from './Tips';
 import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
 
-const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active }]: the open doc and every unsaved one
+const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty }]: the open doc and every unsaved one
 const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could be open
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = IS_MAC ? '⌘' : 'Ctrl+';
@@ -28,12 +28,12 @@ const MOD = IS_MAC ? '⌘' : 'Ctrl+';
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
 
-type Backup = { meta: DocMeta; doc: PMNode; active: boolean };
+type Backup = { meta: DocMeta; doc: PMNode; active: boolean; dirty?: boolean };
 /** Crash-recovery copy of the open doc and every unsaved one. Docs too big to keep are left out;
  *  returns false when the active doc was one of them. */
 function autosave(list: Backup[]): boolean {
   const keep = list.filter((b) => b.doc.content.size <= AUTOSAVE_MAX);
-  const write = (l: Backup[]) => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(l.map((b) => ({ meta: b.meta, active: b.active, doc: b.doc.toJSON() }))));
+  const write = (l: Backup[]) => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(l.map((b) => ({ meta: b.meta, active: b.active, dirty: b.dirty, doc: b.doc.toJSON() }))));
   try { write(keep); }
   catch { // storage full: the active doc alone is the most useful copy
     try { write(keep.filter((b) => b.active)); } catch { localStorage.removeItem(AUTOSAVE_KEY); return false; }
@@ -44,7 +44,7 @@ function autosave(list: Backup[]): boolean {
 function loadBackups(): Backup[] {
   try {
     const v2 = localStorage.getItem(AUTOSAVE_KEY);
-    if (v2) return (JSON.parse(v2) as { meta: DocMeta; doc: unknown; active: boolean }[]).map((b) => ({ ...b, doc: PMNode.fromJSON(schema, b.doc) }));
+    if (v2) return (JSON.parse(v2) as { meta: DocMeta; doc: unknown; active: boolean; dirty?: boolean }[]).map((b) => ({ ...b, doc: PMNode.fromJSON(schema, b.doc) }));
     const v1 = localStorage.getItem(OLD_AUTOSAVE_KEY);
     if (v1) return [{ meta: JSON.parse(localStorage.getItem('falcon.meta') ?? 'null') ?? { name: 'Untitled' }, doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
   } catch { /* corrupt autosave: start blank */ }
@@ -140,15 +140,16 @@ export function App() {
   const backup = useCallback(() => autosave(docsRef.current.flatMap((d) => {
     const isActive = d.id === activeRef.current;
     const doc = isActive ? viewRef.current?.state.doc : d.state?.doc;
-    return doc && (isActive || d.dirty) ? [{ meta: d.meta, doc, active: isActive }] : [];
+    return doc && (isActive || d.dirty) ? [{ meta: d.meta, doc, active: isActive, dirty: d.dirty }] : [];
   })), []);
   const backupSoon = useRef(() => {});
   useEffect(() => {
     const backups = loadBackups();
     const first = backups.find((b) => b.active) ?? backups[0];
     const doc = first?.doc;
-    // recovered docs aren't saved anywhere yet, so closing them must ask first
-    const restored: OpenDoc[] = backups.map((b) => ({ id: b === first ? 1 : nextDocId++, meta: b.meta, dirty: b !== first || !!b.doc.textContent.trim(), state: b === first ? null : createState(b.doc), scroll: 0 }));
+    // a recovered doc with unsaved changes must ask before closing; the file you last had open, untouched
+    // since its save, comes back clean (backups from before the flag guess: anything with text is unsaved)
+    const restored: OpenDoc[] = backups.map((b) => ({ id: b === first ? 1 : nextDocId++, meta: b.meta, dirty: b.dirty ?? (b !== first || !!b.doc.textContent.trim()), state: b === first ? null : createState(b.doc), scroll: 0 }));
     if (restored.length) setDocs(restored);
     let saveTimer = 0, outlineTimer = 0;
     backupSoon.current = () => { window.clearTimeout(saveTimer); saveTimer = window.setTimeout(() => whenIdle(() => { if (!backup()) warnBig(); }), 800); };
