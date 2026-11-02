@@ -33,7 +33,7 @@ Preconditions:
 - `falcon-verify doctor` is all `ok`.
 - `fixtures/media.docx` exists. Rebuild it with `node .claude/skills/verify-falcon/bin/make-media-fixture.mjs`. It holds a 4-row table (header row, D9D9D9 header shading, a 1x2 row merge, a 2x1 span with FFF2CC shading), a 360×203 chart, and two footnotes.
 
-- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/tables-images-footnotes.mjs`. It exits 0 with 42 `ok` lines across the main and reopen folders (the reopen folder also checks crash recovery).
+- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/tables-images-footnotes.mjs`. It exits 0 with 43 `ok` lines across the main and reopen folders (the reopen folder also checks crash recovery).
 - **Open.** The page has one `table`, `td[colspan="2"]`, `td[rowspan="2"]`, three `th`, a `.f-img img` 360px wide, `.f-footnote` numbered `1` and `2`, and two `.f-notes li`.
 - **Column edge.** `page.mouse` moves onto a cell's right edge until `.column-resize-handle` shows, then down, move and up. Widths are read from the cells' `colwidth`.
 - **Table bar.** `.f-tbar button:text-is("Row ↓")`, `"Merge"`, `"Col →"`. The bar takes mousedown, so the editor keeps its selection.
