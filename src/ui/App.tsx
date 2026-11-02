@@ -412,10 +412,10 @@ export function App() {
 
   const openedPath = (p?: string) => (p ? docsRef.current.find((d) => d.meta.path === p) : undefined);
   const opened = useCallback((r: { doc: PMNode; meta: DocMeta }, source: DocSource) => {
-    track('doc_opened', { source });
     setRecents((list) => noteRecent(list, r.doc, r.meta));
     const already = openedPath(r.meta.path);
     if (already) { switchTo(already.id); flash(`${r.meta.name} is already open`); return; }
+    if (source !== 'restore') track('doc_opened', { source }); // reopening last session's files isn't a user action
     if (pref(P.openDepth)) setDepth(pref(P.openDepth));
     flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${keyLabel('save')}).`);
   }, [addDoc, switchTo, flash]);

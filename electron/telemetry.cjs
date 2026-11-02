@@ -14,12 +14,16 @@ const HOST = 'https://us.i.posthog.com';
 const EVENTS = new Set(['app_opened', 'doc_new', 'doc_opened', 'doc_saved']);
 const PROP = /^[a-z_]{1,24}$/;
 
+// one random id per install. If it can't be kept, send nothing: a new id each launch would count as a new user
 let id;
 function installId() {
-  if (id) return id;
+  if (id !== undefined) return id;
   const file = path.join(app.getPath('userData'), 'telemetry-id');
   try { id = fs.readFileSync(file, 'utf8').trim(); } catch {}
-  if (!id) { id = crypto.randomUUID(); try { fs.writeFileSync(file, id); } catch {} }
+  if (!/^[0-9a-f-]{36}$/.test(id ?? '')) {
+    id = crypto.randomUUID();
+    try { fs.writeFileSync(file, id); } catch { id = null; }
+  }
   return id;
 }
 
@@ -35,16 +39,17 @@ function clean(props) {
   return out;
 }
 
-function enabled({ dev, headless }) {
-  return !!KEY && app.isPackaged && !dev && !headless;
+function enabled({ dev, headless, key = KEY }) {
+  return !!key && app.isPackaged && !dev && !headless;
 }
 
 function track(event, props) {
-  if (!EVENTS.has(event)) return;
+  const distinct_id = EVENTS.has(event) ? installId() : null;
+  if (!distinct_id) return;
   const body = {
     api_key: KEY,
     event,
-    distinct_id: installId(),
+    distinct_id,
     properties: {
       ...clean(props),
       app_version: app.getVersion(),

@@ -39,9 +39,13 @@ test('drops events it does not know', () => {
   expect(fetch).not.toHaveBeenCalled();
 });
 
-test('stays off in dev, tests and unpackaged runs', () => {
-  expect(telemetry.enabled({ dev: true, headless: false })).toBe(false);
-  expect(telemetry.enabled({ dev: false, headless: true })).toBe(false);
+test('stays off in dev, tests and unpackaged runs, and with no project key', () => {
+  const key = 'phc_test';
+  expect(telemetry.enabled({ dev: false, headless: false, key })).toBe(true);
+  expect(telemetry.enabled({ dev: false, headless: false, key: '' })).toBe(false);
+  expect(telemetry.enabled({ dev: true, headless: false, key })).toBe(false);
+  expect(telemetry.enabled({ dev: false, headless: true, key })).toBe(false);
   app.isPackaged = false;
-  expect(telemetry.enabled({ dev: false, headless: false })).toBe(false);
+  expect(telemetry.enabled({ dev: false, headless: false, key })).toBe(false);
+  app.isPackaged = true;
 });

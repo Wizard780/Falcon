@@ -132,7 +132,8 @@ export function clearPref(p: Pref<string | number | boolean>) {
 }
 /** Restore defaults: forget every setting here. */
 export function resetPrefs() {
-  for (const p of [...Object.values(P), ...EXTRA]) localStorage.removeItem(p.key);
+  // an opt-out of usage statistics survives Restore defaults
+  for (const p of [...Object.values(P), ...EXTRA]) if (p !== P.usageStats) localStorage.removeItem(p.key);
   cache.clear();
   changed();
 }
