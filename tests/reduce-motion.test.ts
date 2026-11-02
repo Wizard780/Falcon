@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { freshStorage, mountApp, unmountAll } from './app-harness';
 
-beforeEach(async () => { await freshStorage(); });
 afterEach(async () => {
   await unmountAll();
   vi.restoreAllMocks();
@@ -20,6 +19,7 @@ async function withHeadings(app: Awaited<ReturnType<typeof mountApp>>) {
 
 describe('outline scrolling the current heading into view', () => {
   it('is smooth by default', async () => {
+    await freshStorage();
     const app = await mountApp();
     const scrollTo = await withHeadings(app);
     expect(scrollTo).toHaveBeenCalled();
@@ -27,7 +27,7 @@ describe('outline scrolling the current heading into view', () => {
   });
 
   it('jumps instead when Reduce motion is on in Settings', async () => {
-    localStorage.setItem('falcon.reduceMotion', 'on');
+    await freshStorage({ 'falcon.reduceMotion': 'on' });
     const app = await mountApp();
     const scrollTo = await withHeadings(app);
     expect(scrollTo).toHaveBeenCalled();

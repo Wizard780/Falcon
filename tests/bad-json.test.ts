@@ -29,8 +29,7 @@ describe('storage holding text that is not JSON', () => {
 
 describe('reopening last session', () => {
   it('opens the files listed, reading the list once however often the app re-renders', async () => {
-    localStorage.setItem('falcon.reopen', 'on');
-    localStorage.setItem('falcon.session', JSON.stringify(['/x/A.docx']));
+    await freshStorage({ 'falcon.reopen': 'on', 'falcon.session': JSON.stringify(['/x/A.docx']) });
     const openPath = vi.fn(async () => ({ name: 'A.docx', path: '/x/A.docx', data: await docxBytes('aaa') }));
     const get = Storage.prototype.getItem;
     let reads = 0;

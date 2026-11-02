@@ -17,13 +17,14 @@ export async function docxBytes(...texts: string[]) {
   return docToDocx(schema.node('doc', null, texts.map((t) => schema.node('paragraph', { style: 'tag' }, [schema.text(t)]))));
 }
 
-/** Forget every setting and stored value, the way a fresh install starts. */
+/** Forget every setting and stored value, the way a fresh install starts, then store `extra`. Set stored values here, not after: settings are cached on first read. */
 export async function freshStorage(extra: Record<string, string> = {}) {
   const { resetPrefs } = await import('../src/editor/prefs');
   resetPrefs();
   localStorage.clear();
   localStorage.setItem('falcon.openHome', 'off');
   for (const [k, v] of Object.entries(extra)) localStorage.setItem(k, v);
+  dispatchEvent(new Event('storage')); // what another window's change does: drop the settings cache
 }
 
 /**
