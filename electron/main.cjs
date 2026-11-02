@@ -52,8 +52,6 @@ function createWindow() {
 }
 
 const DOCX = [{ name: 'Word documents', extensions: ['docx'] }];
-// Files picked in a dialog this session. The page can only save over these or the recent list, and only .docx.
-const userPaths = new Set();
 // Files picked in a dialog in earlier sessions, so Home and the files panel can reopen them.
 // Only paths in this list (and only .docx) can be opened without a dialog.
 const MAX_RECENT = 50;
@@ -66,7 +64,6 @@ async function loadRecent() {
   return recentPaths;
 }
 async function rememberPath(p) {
-  userPaths.add(p);
   const list = await loadRecent();
   recentPaths = [p, ...list.filter((x) => x !== p)].slice(0, MAX_RECENT);
   try { await fs.writeFile(recentFile(), JSON.stringify(recentPaths)); } catch { /* recents are a convenience */ }
@@ -91,14 +88,16 @@ ipcMain.handle('falcon:open-path', async (_e, p) => {
 });
 ipcMain.handle('falcon:save-file', async (e, opts) => {
   if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
-  // Save writes in place to any file the user picked before, this run or an earlier one (a document
-  // restored after a relaunch keeps its path, but userPaths starts empty).
-  const asked = typeof opts.path === 'string' ? path.resolve(opts.path) : null;
-  let p = asked && (userPaths.has(asked) || (await loadRecent()).includes(asked)) ? asked : null;
+  // Save writes straight into the document's own file, wherever it lives, as long as it's still there.
+  // A file that was moved or deleted gets Save As, opened in its old folder (writing to the stale path
+  // would quietly recreate it there).
+  const asked = typeof opts.path === 'string' && opts.path.toLowerCase().endsWith('.docx') ? path.resolve(opts.path) : null;
+  let p = asked && (await fs.stat(asked).then((s) => s.isFile(), () => false)) ? asked : null;
   if (!p) {
     const win = BrowserWindow.fromWebContents(e.sender);
     const name = typeof opts.name === 'string' ? path.basename(opts.name) : 'Untitled.docx';
-    const r = await dialog.showSaveDialog(win, { defaultPath: name, filters: DOCX });
+    const dir = asked && (await fs.stat(path.dirname(asked)).then((s) => s.isDirectory(), () => false)) ? path.dirname(asked) : null;
+    const r = await dialog.showSaveDialog(win, { defaultPath: dir ? path.join(dir, name) : name, filters: DOCX });
     if (r.canceled || !r.filePath) return null;
     p = path.resolve(r.filePath.toLowerCase().endsWith('.docx') ? r.filePath : `${r.filePath}.docx`);
     await rememberPath(p);
