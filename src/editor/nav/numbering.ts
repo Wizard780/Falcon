@@ -211,10 +211,3 @@ export const toggleRestart: Command = (state, dispatch) => {
   const all = heads.every((h) => numberMarks(state).get(h)?.flip);
   return setMarks(state, heads, (m) => ({ ...m, flip: !all }), dispatch);
 };
-
-/** Take every number off this document. */
-export const clearNumbering: Command = (state, dispatch) => {
-  if (!numberMarks(state).size) return false;
-  dispatch?.(state.tr.setMeta(numberingKey, new Map()).setMeta('addToHistory', false));
-  return true;
-};

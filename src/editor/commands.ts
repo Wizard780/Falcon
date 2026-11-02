@@ -5,7 +5,7 @@ import { P, pref, type CondenseMode } from './prefs';
 
 const M = schema.marks;
 export const isHeading = (n: PMNode) => levelOf(n) > 0;
-const isCardHead = (n: PMNode) => n.attrs.style === 'tag' || n.attrs.style === 'analytic';
+export const isCardHead = (n: PMNode) => n.attrs.style === 'tag' || n.attrs.style === 'analytic';
 
 type Range = { from: number; to: number };
 

@@ -10,6 +10,7 @@ import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { cardAround, paintColorMark, pastedText } from './commands';
 import { activeColors, disarmPlainPaste, plainPasteArmed } from './host';
 import { falconKeymap } from './keymap';
+import { IS_MAC } from './keybinds';
 import { navPlugins } from './nav-keys';
 import { wordSelection } from './mouse';
 import { footnoteText, schema } from './schema';
@@ -45,7 +46,7 @@ const brush = new Plugin<{ kind: 'highlight' | 'shading' | null }>({
         setTimeout(() => {
           const { from, to, empty } = view.state.selection;
           if (empty) return;
-          const strip = (ev as MouseEvent).altKey || (navigator.platform.startsWith('Mac') && (ev as MouseEvent).ctrlKey);
+          const strip = (ev as MouseEvent).altKey || (IS_MAC && (ev as MouseEvent).ctrlKey);
           const color = strip ? null : activeColors[kind];
           paintColorMark(schema.marks[kind], color, from, to)(view.state, view.dispatch);
           view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, to)));
