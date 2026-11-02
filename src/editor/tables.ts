@@ -1,11 +1,12 @@
 import './media.css';
 import { keymap } from 'prosemirror-keymap';
 import type { Node as PMNode } from 'prosemirror-model';
-import { Plugin, TextSelection, type Command, type EditorState } from 'prosemirror-state';
+import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import {
-  CellSelection, TableMap, addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, columnResizing, deleteColumn, deleteRow,
+  CellSelection, TableMap, addColumnAfter, columnResizingPluginKey, addColumnBefore, addRowAfter, addRowBefore, columnResizing, deleteColumn, deleteRow,
   deleteTable, findTable, goToNextCell, isInTable, mergeCells, selectedRect, setCellAttr, splitCell, tableEditing, toggleHeaderRow,
 } from 'prosemirror-tables';
+import { ReplaceAroundStep } from 'prosemirror-transform';
 import type { EditorView } from 'prosemirror-view';
 import { schema } from './schema';
 
@@ -165,12 +166,105 @@ const tableKeys = keymap({
   'Shift-Tab': (state, dispatch) => isInTable(state) && (goToNextCell(-1)(state, dispatch) || true),
 });
 
+/** Each column's width in a table (null where no cell sets one). */
+function colWidths(table: PMNode): (number | null)[] {
+  const map = TableMap.get(table);
+  const out: (number | null)[] = Array(map.width).fill(null);
+  map.map.forEach((pos, i) => {
+    const col = i % map.width, cw: number[] | null = table.nodeAt(pos)!.attrs.colwidth;
+    if (out[col] === null && cw?.[col - map.colCount(pos)]) out[col] = cw[col - map.colCount(pos)];
+  });
+  return out;
+}
+
+/**
+ * Dragging an inner column edge moves the edge, like Word: the column to its right gives up (or takes) the
+ * width, so the table keeps its width instead of growing past the page. The last edge still widens the table.
+ * Resizing only changes cell attributes, so typing (which replaces text) never gets here.
+ */
+const widthKey = new PluginKey('keepTableWidth');
+const keepTableWidth = new Plugin({
+  key: widthKey,
+  appendTransaction(trs, old, state): Transaction | null {
+    if (!trs.some((t) => t.docChanged) || !trs.every((t) => t.steps.every((st) => st instanceof ReplaceAroundStep))) return null;
+    if (trs.some((t) => t.getMeta(widthKey))) return null;
+    const tr = state.tr;
+    const seen = new Set<number>();
+    for (const t of trs) for (const st of t.steps) {
+      const at = (st as ReplaceAroundStep).from;
+      const found = findTable(state.doc.resolve(Math.min(at + 1, state.doc.content.size)));
+      if (!found || seen.has(found.pos)) continue;
+      seen.add(found.pos);
+      const before = old.doc.nodeAt(found.pos);
+      if (!before || before.type !== T.table) continue;
+      const a = colWidths(before), b = colWidths(found.node);
+      if (a.length !== b.length) continue;
+      const changed = a.map((w, i) => (w !== b[i] ? i : -1)).filter((i) => i >= 0);
+      if (changed.length !== 1) continue;
+      const i = changed[0];
+      if (i === a.length - 1 || a[i] === null || b[i] === null || a[i + 1] === null) continue;
+      const total = a[i]! + a[i + 1]!;
+      const left = Math.min(b[i]!, total - 32), right = total - left;
+      const map = TableMap.get(found.node);
+      const done = new Set<string>();
+      for (const [col, w] of [[i, left], [i + 1, right]] as const) {
+        for (let r = 0; r < map.height; r++) {
+          const rel = map.map[r * map.width + col];
+          if (done.has(`${rel}:${col}`)) continue; // a cell spanning rows
+          done.add(`${rel}:${col}`);
+          // attribute changes keep positions, so the table's own offsets hold in tr.doc
+          const attrs = tr.doc.nodeAt(found.start + rel)!.attrs;
+          const cw = (attrs.colwidth as number[] | null)?.slice() ?? Array(attrs.colspan).fill(0);
+          cw[col - map.colCount(rel)] = w;
+          tr.setNodeMarkup(found.start + rel, null, { ...attrs, colwidth: cw });
+        }
+      }
+    }
+    return tr.docChanged ? tr.setMeta(widthKey, true) : null;
+  },
+  // while the edge is dragged, the next column shrinks with it on screen too, so what you see is what you get
+  view: (view) => {
+    let frame = 0;
+    const preview = () => {
+      frame = 0;
+      const drag = columnResizingPluginKey.getState(view.state);
+      if (!drag?.dragging || drag.activeHandle < 0) return;
+      const $cell = view.state.doc.resolve(drag.activeHandle);
+      const table = $cell.node(-1), map = TableMap.get(table);
+      const col = map.colCount($cell.pos - $cell.start(-1)) + $cell.nodeAfter!.attrs.colspan - 1;
+      const w = colWidths(table);
+      if (col >= map.width - 1 || w[col] === null || w[col + 1] === null) return;
+      let dom: Node | null = view.domAtPos($cell.start(-1)).node;
+      while (dom && dom.nodeName !== 'TABLE') dom = dom.parentNode;
+      const cols = (dom as HTMLTableElement | null)?.querySelector('colgroup')?.children as HTMLCollectionOf<HTMLElement> | undefined;
+      if (!dom || !cols?.[col + 1]) return;
+      const total = w[col]! + w[col + 1]!;
+      const left = Math.min(parseFloat(cols[col].style.width) || w[col]!, total - 32);
+      cols[col].style.width = `${left}px`;
+      cols[col + 1].style.width = `${total - left}px`;
+      (dom as HTMLElement).style.width = `${w.reduce<number>((a, x) => a + (x ?? 32), 0)}px`;
+    };
+    const onMove = () => { if (!frame) frame = requestAnimationFrame(preview); };
+    window.addEventListener('mousemove', onMove);
+    return { destroy: () => { window.removeEventListener('mousemove', onMove); if (frame) cancelAnimationFrame(frame); } };
+  },
+});
+
+/** The document always ends with a line to type on, never with a table (Word keeps one there too). */
+const lineAfterTable = new Plugin({
+  appendTransaction: (trs, _old, state) => trs.some((t) => t.docChanged) && state.doc.lastChild?.type === T.table
+    ? state.tr.insert(state.doc.content.size, T.paragraph.create())
+    : null,
+});
+
 /**
  * Tables: drag a column's edge to resize it, drag across cells to select several (then Merge, or format
  * them all at once), Tab between cells, and the table bar for rows, columns and the rest.
  */
 export const tablePlugins: Plugin[] = [
   columnResizing({ cellMinWidth: 32, lastColumnResizable: true }),
+  keepTableWidth,
+  lineAfterTable,
   tableEditing(),
   tableKeys,
   new Plugin({ view: (view) => new TableBar(view) }),

@@ -103,3 +103,26 @@ User recording: move the rail's file/view buttons into a row above the outline, 
 - [x] Settings: section nav with search (/), breadcrumb, Restore defaults, cards of rows; only settings that work (highlighter, zoom, outline, depth, speech length, keybindings)
 - [x] checks: ui-check 28/28, vitest 32 pass, electron smoke passes, review fixes (inert behind Settings, rail overflow, stale tooltip)
 - Note: the toolbar needs a ~1100px window to show in full; narrower, it packs closer and scrolls sideways.
+
+## Stage: tables, pictures and footnotes (2026-11-02, branch tables-images)
+Gap from cardmirror-gap.md: opening a file with tables, images or footnotes and saving it flattened or lost them,
+the only gap that could destroy a user's work. The user also asked for easier editing and resizing, and for
+pasted tables and pictures to be easy to edit.
+Done means:
+- Real files open with their tables (spans, merges, shading, header rows), pictures and footnotes, and a save → reopen gives the same document.
+- Saved files are valid Word packages (python-docx reads them, every part is well-formed XML) with no text lost against the originals.
+- Columns and pictures resize by mouse. The table bar, Tab between cells, footnote editing and insert, and paste of tables and screenshots all work in the real app.
+- npm test, tsc, build, every verify-falcon journey and the Electron smoke test pass.
+Results:
+- [x] 12 real debate files from ~/Downloads (up to 872 pictures, 14 tables, footnotes) round-trip exactly. python-docx opens every save. Text is unchanged except no-break hyphens (already written as characters before this) and Word's duplicate text-box fallback, now read once.
+- [x] vitest 188 pass (16 new in tests/media.test.ts). Journey tables-images-footnotes: 40 ok. The other 10 web journeys and desktop-shell pass.
+Decisions:
+- prosemirror-tables for tables (column resizing, cell selection, fixTables), the one new dependency.
+- Pictures are data URLs in the document, so big picture-heavy files hold their bytes in memory. A web picture that can't be fetched stays a linked picture.
+- Footnotes are one-character atoms carrying their note as JSON, so find, read times and positions are unaffected and cut/paste/undo carry the note whole.
+- Floating pictures open in line with the text (their position is lost, the picture isn't). Text boxes come out as paragraphs after their line. Tables nested in a cell are flattened into that cell.
+- An inner column edge takes width from its neighbour, like Word, so a table stays page-wide. A document always ends with a paragraph after a final table.
+- Table borders save as plain single lines: custom border colours aren't kept. Cell shading, widths, spans and header rows are kept.
+Open:
+- Word's own clipboard gives pictures as file:// paths the page can't read, so a mixed text+picture copy from Word brings the text only. Copying the picture alone, or a screenshot, works.
+- Not opened in Microsoft Word itself (no Word launch here). Package structure matches Word's own output and python-docx reads it.

@@ -99,8 +99,9 @@ describe('tables, pictures and footnotes in .docx', () => {
 
   it('a document ending in a table gets the paragraph Word needs after it', async () => {
     const s = run(createState(), insertTable(2, 2));
-    expect(s.doc.lastChild!.type.name).toBe('table');
-    const xml = parts(await docToDocx(s.doc))['word/document.xml'];
+    expect(s.doc.lastChild!.type.name).toBe('paragraph'); // Insert Table leaves a line under it
+    const doc = schema.node('doc', null, [s.doc.firstChild!]);
+    const xml = parts(await docToDocx(doc))['word/document.xml'];
     expect(xml).toMatch(/<\/w:tbl><w:p\/><w:sectPr>/);
   });
 });
@@ -109,6 +110,7 @@ describe('editing tables, pictures and footnotes', () => {
   it('Insert Table turns an empty line into a page-wide 3 × 3 table with the cursor in the first cell', () => {
     const s = run(createState(), insertTable(3, 3));
     expect(markMap(s.doc).split('\n')[0]).toBe('table 3 rows');
+    expect(markMap(s.doc).split('\n').pop()).toBe('normal: ');
     expect(s.selection.$from.node(s.selection.$from.depth - 1).type.name).toBe('table_cell');
     let widths = 0;
     s.doc.descendants((n) => { if (n.type.name === 'table_cell') widths += n.attrs.colwidth[0]; return true; });
@@ -123,6 +125,26 @@ describe('editing tables, pictures and footnotes', () => {
     const ws: number[] = [];
     s.doc.descendants((n) => { if (n.type.name === 'table_cell') ws.push(n.attrs.colwidth[0]); return true; });
     expect(ws).toEqual([312, 312, 312, 312]);
+  });
+
+  it('dragging an inner column edge moves the edge: the next column gives up the width, the table keeps its size', () => {
+    let s = run(createState(), insertTable(2, 3));
+    const widths = () => { const ws: number[] = []; s.doc.firstChild!.firstChild!.forEach((c) => ws.push(c.attrs.colwidth[0])); return ws; };
+    // what the column drag commits: every cell in column 1 gets the new width
+    const tr = s.tr;
+    s.doc.firstChild!.forEach((row, rowOff) => {
+      const pos = 1 + rowOff + 1;
+      tr.setNodeMarkup(pos, null, { ...row.firstChild!.attrs, colwidth: [298] });
+    });
+    s = s.applyTransaction(tr).state;
+    expect(widths()).toEqual([298, 118, 208]);
+    // the last edge still widens the table
+    const tr2 = s.tr;
+    s.doc.firstChild!.forEach((row, rowOff) => {
+      row.forEach((cell, off, i) => { if (i === 2) tr2.setNodeMarkup(1 + rowOff + 1 + off, null, { ...cell.attrs, colwidth: [260] }); });
+    });
+    s = s.applyTransaction(tr2).state;
+    expect(widths()).toEqual([298, 118, 260]);
   });
 
   it('Insert Footnote puts a numbered reference at the cursor and selects it (its editor opens)', () => {
