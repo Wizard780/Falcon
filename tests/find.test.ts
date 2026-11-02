@@ -4,6 +4,7 @@ import { undo } from 'prosemirror-history';
 import { schema, type ParaStyle } from '../src/editor/schema';
 import { createState } from '../src/editor/editor';
 import { findInfo, replaceAll, replaceOne, setGrouped, setQuery, step } from '../src/editor/find';
+import { toggleRead } from '../src/editor/read';
 
 function viewOf(paras: [ParaStyle, string, boolean?][]) {
   const doc = schema.node('doc', null, paras.map(([style, text, cite]) => schema.node('paragraph', { style }, [schema.text(text, cite ? [schema.marks.cite.create()] : [])])));
@@ -69,6 +70,15 @@ describe('find', () => {
     expect(replaceAll(v, 'atomic')).toBe(6);
     expect(v.state.doc.textContent).not.toMatch(/nuclear/i);
     undo(v.state, v.dispatch);
+    expect(v.state.doc.textContent).toBe(PARAS.map((p) => p[1]).join(''));
+  });
+
+  it('replace and replace all change nothing in read mode', () => {
+    const v = viewOf(PARAS);
+    toggleRead(v.state, v.dispatch);
+    setQuery(v, 'nuclear');
+    replaceOne(v, 'atomic');
+    expect(replaceAll(v, 'atomic')).toBe(0);
     expect(v.state.doc.textContent).toBe(PARAS.map((p) => p[1]).join(''));
   });
 });
