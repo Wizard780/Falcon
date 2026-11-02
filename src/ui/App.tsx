@@ -418,9 +418,10 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => settingsRef.current || !!askRef.current || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => settingsRef.current || paletteRef.current || !!askRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
     if (askRef.current) return; // a warning is up: it gets answered first
+    if (paletteRef.current) return; // file search is up: it gets closed first
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
     if (c === 'new') fileNew(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);

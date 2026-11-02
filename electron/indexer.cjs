@@ -67,7 +67,9 @@ function createIndex(storeFile) {
   return {
     /** The allowed folders, each with how many files it holds (null while its first scan runs). */
     async folders() {
-      return (await load()).map((p) => {
+      const list = await load();
+      for (const f of list) if (!cache.get(f)?.at) void rescan(f); // after a restart: start the first scan, so the count arrives
+      return list.map((p) => {
         const c = cache.get(p);
         return { path: p, count: c && c.at ? c.files.length : null, missing: c?.error === 'missing' };
       });
