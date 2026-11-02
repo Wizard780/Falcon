@@ -32,6 +32,8 @@ type FalconBridge = {
   removeDictionaryWord?: (word: string) => Promise<string[]>;
   /** Mac File menu clicks ('new', 'open', 'save', 'saveAs', 'close', 'settings'). Returns an unsubscribe. */
   onMenu?: (f: (cmd: string) => void) => () => void;
+  /** Files the OS asked Falcon to open (double-click, Open With). Subscribing says the page is ready. Returns an unsubscribe. */
+  onOpenPaths?: (f: (paths: string[]) => void) => () => void;
   /** The keys the Mac menu shows beside its items, by command ('save': 'Mod-s'; '' shows none). */
   setMenuKeys?: (keys: Record<string, string>) => void;
   /** Closing the window (quit = quitting the app) with unsaved docs: the page asks. Returns an unsubscribe. */
