@@ -50,6 +50,7 @@ export const P = {
   cardBar: def('cardBar', true),
   reduceMotion: def('reduceMotion', false),
   // Editor
+  spellcheck: def('spellcheck', true),
   condense: def<CondenseMode>('condense', 'integrity'),
   smallPilcrows: def('smallPilcrows', false),
   pasteCondense: def('pasteCondense', false),
