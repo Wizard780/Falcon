@@ -73,8 +73,9 @@ await f.done();                              // writes results.txt, sets the exi
 
 Stable handles (from `src/ui/App.tsx`, `Outline.tsx`, `FindBar.tsx`, `Settings.tsx`):
 
-- Tool row: `.tools [aria-label="New document" | "Open…" | "Save" | "Save As…" | "Find" | "Outline" | "Read mode"]`.
-- Rail: `.fstrip [aria-label="Home"]`, `.fstrip [aria-label="Settings"]`; open docs are `.doc-row .doc-nm[aria-label="<name>"]`, with `i[aria-label="unsaved"]` when dirty.
+- Tool row: `.tools [aria-label="New document" | "Open…" | "Save" | "Save As…" | "Find" | "Outline" | "Read mode" | "Speech doc"]`.
+- Rail: `.fstrip [aria-label="Home"]`, `.fstrip [aria-label="Settings"]`; open docs are `.doc-row .doc-nm[aria-label="<name>"]`, with `i[aria-label="unsaved"]` when dirty. The speech doc's label is `<name> (speech doc)` and its button holds `i.spk` (`S`).
+- Toast: `.toast` (`role="status"`); a send's toast holds an `Undo` button, `.toast button`.
 - Format grid buttons carry a `title` that starts with the label and key, e.g. `Tag (F7): …`. Keys: F4 pocket, F5 hat, F6 block, F7 tag, Mod-F7 analytic, Mod-F8 undertag, F8 cite, F9 underline, F10 emphasis, F11 highlight, F12 clear.
 - Outline rows: `.sb-row.ol.l1`–`.l4` (`data-i`, lit row has `data-on`); depth buttons `[aria-label="Show pockets" | "Show down to hats" | "Show down to blocks" | "Show down to tags"]`.
 - Find bar: `.findbar`, inputs `input[placeholder="Find"]` and `.findbar .fb-with` (`placeholder="Replace with"`), match counter `.findbar .count` (`1/1`).
