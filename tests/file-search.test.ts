@@ -41,7 +41,7 @@ describe('file search ranking', () => {
     expect(parentName('C:\\Debate\\Neg\\Cap K.docx')).toBe('Neg');
     expect(parentName('/d/Aff/x.docx')).toBe('Aff');
   });
-  it('starred files come first, beat other matches and hide their copies in other search folders', () => {
+  it('starred files beat other matches and hide their copies in other search folders', () => {
     const dropboxes = [
       { path: '/Users/a/Dropbox/DA/Impact Defense.docx', root: '/Users/a/Dropbox', mtime: 1 },
       { path: '/Users/a/Team Dropbox/DA/Impact Defense.docx', root: '/Users/a/Team Dropbox/', mtime: 9 },
@@ -52,7 +52,7 @@ describe('file search ranking', () => {
     expect(rankHits(plain, 'impact').map((h) => h.source)).toEqual(['Team Dropbox', 'Team Dropbox', 'Dropbox']); // newest first
 
     const hits = collectHits([], [], dropboxes, ['/Users/a/Dropbox/DA/Impact Defense.docx']);
-    expect(hits[0]).toMatchObject({ name: 'Impact Defense', source: 'Dropbox', starred: true, hidden: 1 });
+    expect(hits.find((h) => h.starred)).toMatchObject({ name: 'Impact Defense', source: 'Dropbox', hidden: 1 });
     expect(hits.filter((h) => h.name === 'Impact Defense')).toHaveLength(1);
     expect(rankHits(hits, 'impact').map((h) => `${h.name} ${h.source}`)).toEqual(['Impact Defense Dropbox', 'Impact Turns Team Dropbox']);
   });
@@ -66,6 +66,23 @@ describe('file search ranking', () => {
   });
   it('an open copy of a starred file still shows, and a star on a missing file does nothing', () => {
     const hits = collectHits([{ id: 1, name: 'Impact Defense', path: '/t/Impact Defense.docx' }], [], [{ path: '/d/Impact Defense.docx', mtime: 1 }], ['/d/Impact Defense.docx', '/gone.docx']);
-    expect(hits.map((h) => `${h.kind}${h.starred ? '*' : ''}`)).toEqual(['file*', 'open']);
+    expect(hits.map((h) => `${h.kind}${h.starred ? '*' : ''}`)).toEqual(['open', 'file*']);
+  });
+  it('starred files keep their place until a search, pinned ones always come first', () => {
+    const files = [
+      { path: '/d/DA/Politics.docx', root: '/d', mtime: 3 },
+      { path: '/d/T/Topicality.docx', root: '/d', mtime: 1 },
+      { path: '/d/T/Topicality Old.docx', root: '/d', mtime: 9 },
+      { path: '/d/K/Cap K.docx', root: '/d', mtime: 2 },
+      { path: '/e/K/Cap K.docx', root: '/e', mtime: 8 },
+    ];
+    const hits = collectHits([], [{ name: 'Notes', folder: '', when: 5 }], files, ['/d/T/Topicality Old.docx'], ['/d/K/Cap K.docx']);
+    // pinned first (with its copy hidden), then the rest in their usual order, the starred one where it was
+    expect(hits.map((h) => `${h.name}${h.pinned ? '^' : ''}${h.starred ? '*' : ''}${h.hidden ? h.hidden : ''}`))
+      .toEqual(['Cap K^1', 'Notes', 'Politics', 'Topicality', 'Topicality Old*']);
+    // searching puts the starred match on top, even over an exact name match
+    expect(rankHits(hits, 'topicality').map((h) => h.name)).toEqual(['Topicality Old', 'Topicality']);
+    expect(rankHits(collectHits([], [], files), 'topicality').map((h) => h.name)).toEqual(['Topicality', 'Topicality Old']);
+    expect(rankHits(hits, 'cap')[0]).toMatchObject({ name: 'Cap K', pinned: true });
   });
 });
