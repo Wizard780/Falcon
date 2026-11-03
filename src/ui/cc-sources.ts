@@ -154,6 +154,12 @@ const STYLES: [string, string][] = [['normal', 'Normal text'], ['pocket', 'Pocke
 const range = (from: number, to: number, step: number, unit: (n: number) => string): [number, string][] =>
   Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => [from + i * step, unit(from + i * step)]);
 const pt = (n: number) => `${n} pt`, min = (n: number) => `${n}:00`;
+/** Reading speeds in 25 wpm steps, plus the saved one when it was typed in Settings (237), so it shows and cycles from there. */
+const speeds = (p: Pref<number>, same?: string): [number, string][] => {
+  const v = pref(p), out = range(150, 425, 25, (n) => `${n} wpm`);
+  if (v && !out.some(([n]) => n === v)) out.push([v, `${v} wpm`]), out.sort((a, b) => a[0] - b[0]);
+  return same ? [[0, same], ...out] : out;
+};
 
 /** Every setting the Settings panel has, labeled the way its row is, so Tab can find the row there. */
 export function settingDefs(ctx: Ctx): SettingDef[] {
@@ -250,10 +256,10 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.showSend, 'Send button', 'speech', 'A Send button beside Read in the top bar.'),
     tog(P.showPrep, 'Prep timer', 'speech', 'A prep clock beside the speech timer.'),
     pick(P.prepMin, 'Prep time', 'speech', range(1, 15, 1, min)),
-    pick(P.wpm1, 'Reader 1: cards', 'speech', range(150, 425, 25, (n) => `${n} wpm`), 'How fast Reader 1 reads highlighted card text.'),
-    pick(P.wpm1Tags, 'Reader 1: tags and analytics', 'speech', [[0, 'Same as cards'], ...range(150, 425, 25, (n) => `${n} wpm`)], 'How fast Reader 1 reads tags, analytics and cites.'),
-    pick(P.wpm2, 'Reader 2: cards', 'speech', range(150, 425, 25, (n) => `${n} wpm`), 'How fast Reader 2 reads highlighted card text.'),
-    pick(P.wpm2Tags, 'Reader 2: tags and analytics', 'speech', [[0, 'Same as cards'], ...range(150, 425, 25, (n) => `${n} wpm`)], 'How fast Reader 2 reads tags, analytics and cites.'),
+    pick(P.wpm1, 'Reader 1: cards', 'speech', speeds(P.wpm1), 'How fast Reader 1 reads highlighted card text.'),
+    pick(P.wpm1Tags, 'Reader 1: tags and analytics', 'speech', speeds(P.wpm1Tags, 'Same as cards'), 'How fast Reader 1 reads tags, analytics and cites.'),
+    pick(P.wpm2, 'Reader 2: cards', 'speech', speeds(P.wpm2), 'How fast Reader 2 reads highlighted card text.'),
+    pick(P.wpm2Tags, 'Reader 2: tags and analytics', 'speech', speeds(P.wpm2Tags, 'Same as cards'), 'How fast Reader 2 reads tags, analytics and cites.'),
   ];
 }
 

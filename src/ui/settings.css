@@ -133,6 +133,8 @@
 .st-text { width: 176px; height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--u-ctl); color: var(--u-tx); font: 14px var(--ui-font); outline: none; }
 .st-text:focus-visible { box-shadow: 0 0 0 2px #4b6bd6; }
 .st-text:disabled { opacity: .45; }
+.st-num { position: relative; display: inline-flex; }
+.st-num .st-unit { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--u-mut); font: 14px var(--ui-font); pointer-events: none; }
 .st-text.st-wide { width: 100%; font-family: var(--mono, ui-monospace, monospace); }
 /* color choices (the Standardize exceptions): a row of dots, wrapping when there's lots */
 .st-sws { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 290px; }

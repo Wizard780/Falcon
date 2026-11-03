@@ -26,8 +26,6 @@ export const DEFAULTS = { zoom: 1, speechMin: 8, showOutline: true, depth: 3, hi
 import { FONTS, SIZE_PREFS, UI_FONTS } from './display';
 
 const STYLE_OPTS: [string, string][] = [['normal', 'Normal text'], ['pocket', 'Pocket'], ['hat', 'Hat'], ['block', 'Block'], ['tag', 'Tag'], ['analytic', 'Analytic'], ['undertag', 'Undertag']];
-const WPM: [number, string][] = Array.from({ length: 12 }, (_, i) => [150 + i * 25, `${150 + i * 25} wpm`]);
-const WPM_TAGS: [number, string][] = [[0, 'Same as cards'], ...WPM];
 const MARKERS: [string, string][] = [['#FF0000', 'Red'], ['#0070C0', 'Blue'], ['#00B050', 'Green'], ['#7030A0', 'Purple']];
 
 type Props = {
@@ -51,6 +49,32 @@ function ThemeLook({ t }: { t: Theme }) {
     <span className="st-look" style={{ background: t.bg }}>
       <i style={{ background: t.text }} /><i style={{ background: t.text }} />
       <b style={{ background: t.paper }}><i style={{ background: t.paperInk }} /><i style={{ background: t.paperInk }} /><i style={{ background: t.paperInk }} /></b>
+    </span>
+  );
+}
+
+/**
+ * A reading speed typed as a number, saved on Enter or leaving the box. Escape while typing puts the saved one
+ * back (App lets that Escape through instead of closing Settings: `data-draft`).
+ * With `blank`, an empty box saves 0, which the read time takes as "same as cards".
+ */
+function WpmField({ p, label, blank }: { p: Pref<number>; label: string; blank?: string }) {
+  const saved = pref(p);
+  const shown = saved || blank === undefined ? String(saved) : '';
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    const n = parseInt(draft, 10);
+    if (Number.isFinite(n) && n > 0) setPref(p, Math.min(1000, Math.max(50, n)));
+    else if (blank !== undefined && !draft.trim()) setPref(p, 0);
+  };
+  return (
+    <span className="st-num">
+      <input className="st-text" aria-label={label} inputMode="numeric" maxLength={4} spellCheck={false} placeholder={blank}
+        value={draft ?? shown} onChange={(e) => setDraft(e.target.value.replace(/\D/g, ''))} data-draft={draft === null ? undefined : ''} onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') setDraft(null); }} />
+      {(draft ?? shown) && <span className="st-unit">wpm</span>}
     </span>
   );
 }
@@ -148,6 +172,8 @@ export function Settings(props: Props) {
       ? select(label, pref(p), opts, (o) => setPref(p, Number(o)))
       : seg(label, opts.map(([o, n]) => [n, pref(p) === o, () => setPref(p, o)])),
   });
+  const wpm = (p: Pref<number>, label: string, hint: string, tags = false): Row =>
+    ({ label, hint, control: <WpmField key={p.key} p={p} label={label} blank={tags ? 'Same as cards' : undefined} /> });
   const sizes = (p: Pref<number>, label: string, from: number, to: number, step = 1) =>
     select(label, pref(p), Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => [from + i * step, `${from + i * step} pt`]), (o) => setPref(p, Number(o)));
   /** A style shown in its own look, beside the control that changes it. */
@@ -432,10 +458,10 @@ export function Settings(props: Props) {
           select('Prep time', prep, Array.from({ length: 15 }, (_, i) => [i + 1, `${i + 1}:00`]), (m) => setPref(P.prepMin, Number(m))) },
       ]],
       ['Reading speed', [
-        pickNum(P.wpm1, 'Reader 1: cards', 'How fast Reader 1 reads highlighted card text. The first read time in the status bar.', WPM),
-        pickNum(P.wpm1Tags, 'Reader 1: tags and analytics', 'How fast Reader 1 reads tags, analytics and cites, usually faster than cards.', WPM_TAGS),
-        pickNum(P.wpm2, 'Reader 2: cards', 'How fast Reader 2 reads highlighted card text. The second read time.', WPM),
-        pickNum(P.wpm2Tags, 'Reader 2: tags and analytics', 'How fast Reader 2 reads tags, analytics and cites.', WPM_TAGS),
+        wpm(P.wpm1, 'Reader 1: cards', 'How fast Reader 1 reads highlighted card text. The first read time in the status bar.'),
+        wpm(P.wpm1Tags, 'Reader 1: tags and analytics', 'How fast Reader 1 reads tags, analytics and cites, usually faster than cards.', true),
+        wpm(P.wpm2, 'Reader 2: cards', 'How fast Reader 2 reads highlighted card text. The second read time.'),
+        wpm(P.wpm2Tags, 'Reader 2: tags and analytics', 'How fast Reader 2 reads tags, analytics and cites.', true),
       ]],
     ] },
   ];
