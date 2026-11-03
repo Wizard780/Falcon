@@ -43,5 +43,23 @@ contextBridge.exposeInMainWorld('falcon', {
   installUpdate: () => ipcRenderer.invoke('falcon:update-install'),
   checkUpdate: () => ipcRenderer.invoke('falcon:update-check'),
   track: (event, props) => ipcRenderer.send('falcon:track', String(event), props ?? {}),
+  // SpeechDrop: each call answers { ok, value } or { ok: false, error } (a SpeechDrop error code)
+  speechdrop: {
+    room: (room) => ipcRenderer.invoke('falcon:sd-room', room),
+    make: (name) => ipcRenderer.invoke('falcon:sd-make', name),
+    upload: (room, name, data) => ipcRenderer.invoke('falcon:sd-upload', { room, name, data }),
+    remove: (room, index) => ipcRenderer.invoke('falcon:sd-delete', room, index),
+    pick: () => ipcRenderer.invoke('falcon:sd-pick'),
+    open: (room, index, name) => ipcRenderer.invoke('falcon:sd-open', room, index, name),
+    download: (room, index, name) => ipcRenderer.invoke('falcon:sd-download', room, index, name),
+    archive: (room, title) => ipcRenderer.invoke('falcon:sd-archive', room, title),
+    // the live list of `room` (null stops); returns an unsubscribe
+    watch: (room, files, f) => {
+      const on = (_e, u) => { if (u && u.room === room) f(u); };
+      ipcRenderer.on('falcon:sd-files', on);
+      ipcRenderer.send('falcon:sd-watch', room, files);
+      return () => { ipcRenderer.removeListener('falcon:sd-files', on); ipcRenderer.send('falcon:sd-watch', null); };
+    },
+  },
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
 });

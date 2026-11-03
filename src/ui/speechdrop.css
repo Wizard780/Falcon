@@ -1,0 +1,69 @@
+/* the rail row's mark for files you haven't seen: the unsaved dot, in the pen color */
+.dot.new { background: var(--ink-ui) !important; }
+
+/* The SpeechDrop tab: covers the page like Home does, in Home's type and rows */
+.sd { position: absolute; top: 0; bottom: 0; left: var(--strip-w); right: 0; z-index: 265; overflow: auto; background: var(--u-deep); color: var(--u-tx); font: 14px/1.4 var(--ui-font);
+  opacity: 0; transform: translateY(8px); pointer-events: none; visibility: hidden; transition: opacity 200ms var(--u-ease), transform 300ms var(--u-ease), visibility 0s 300ms; }
+.sd.open { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition: opacity 200ms var(--u-ease), transform 300ms var(--u-ease), visibility 0s; }
+.sd svg { width: 16px; height: 16px; }
+.sd-in { position: relative; max-width: 760px; min-height: 100%; margin: 0 auto; padding: 72px 48px 56px; }
+.sd-head { padding-bottom: 28px; }
+.sd-lab { margin: 0 0 10px; font: 12px/16px var(--mono); color: var(--u-mut); }
+.sd-hi { margin: 0; font-size: 32px; line-height: 1.15; font-weight: 500; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.sd-sub { display: flex; align-items: center; gap: 14px; margin: 10px 0 0; font-size: 14px; color: var(--u-tx2); }
+.sd-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.sd .hm-act:disabled { opacity: .5; cursor: progress; }
+.sd-up svg { color: var(--ink-ui) !important; }
+.sd-up span { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-leave { color: var(--u-tx2) !important; }
+.sd-code { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; margin-left: -8px; border-radius: 6px; font: 15px var(--mono); letter-spacing: .06em; color: var(--u-tx); cursor: pointer; transition: background 150ms var(--u-ease); }
+.sd-code svg { color: var(--u-mut); width: 14px; height: 14px; }
+.sd-code:hover { background: var(--u-hover); }
+.sd-busy { min-height: 20px; margin: 0 12px 8px; font-size: 13px; color: var(--u-mut); }
+
+/* the files: Home's rows, the name over nothing, the time on the right; a hover shows Download (and Delete on your own) */
+.sd-list { display: flex; flex-direction: column; gap: 2px; }
+.sd-row { position: relative; display: flex; align-items: center; border-radius: 10px; transition: background 150ms var(--u-ease); }
+.sd-row:hover { background: var(--u-hover); }
+.sd-row[data-on] { background: var(--u-card); box-shadow: inset 0 0 0 1px var(--u-line), var(--u-top); }
+.sd-row[data-on]::before { content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 2px; border-radius: 1px; background: var(--ink-ui); }
+.sd-f { flex: 1; min-width: 0; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; column-gap: 14px; align-items: center; height: 52px; padding: 0 12px; border-radius: 10px; text-align: left; color: var(--u-tx); cursor: pointer; }
+.sd-f:focus-visible { outline: none; }
+.sd-f .ic { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: var(--u-card); box-shadow: inset 0 0 0 1px var(--u-line), var(--u-top); color: var(--u-mut); }
+.sd-row[data-on] .ic { color: var(--ink-ui); }
+.sd-f .nm { font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sd-f .wh { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--u-mut); font-variant-numeric: tabular-nums; }
+.sd-row[data-fresh] .wh { color: var(--u-tx); }
+.sd-new { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-ui); }
+.sd-x { flex: none; width: 32px; height: 32px; margin-right: 6px; display: grid; place-items: center; border-radius: 8px; color: var(--u-mut); cursor: pointer; opacity: 0; transition: opacity 150ms var(--u-ease), background 150ms var(--u-ease), color 150ms var(--u-ease); }
+.sd-row:hover .sd-x, .sd-row[data-on] .sd-x, .sd-x:focus-visible { opacity: 1; }
+.sd-x:hover { background: var(--u-hover); color: var(--u-tx); }
+.sd .hm-keys { margin-top: 16px; }
+
+/* a file dragged over the room */
+.sd-drop { position: fixed; inset: 16px 16px 16px calc(var(--strip-w) + 16px); z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 16px;
+  background: color-mix(in srgb, var(--u-deep) 86%, transparent); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ink-ui) 60%, transparent); color: var(--u-tx); font-size: 15px;
+  opacity: 0; pointer-events: none; transition: opacity 150ms var(--u-ease); }
+.sd-drop svg { width: 28px; height: 28px; color: var(--ink-ui); }
+.sd-drop b { font-weight: 500; }
+.sd-drop.on { opacity: 1; }
+
+/* the lobby: the code box, rooms joined before, and making a room */
+.sd-form { margin-bottom: 28px; }
+.sd input { width: 100%; height: 44px; padding: 0 14px; border: 0; border-radius: 10px; outline: none; background: var(--u-card); box-shadow: inset 0 0 0 1px var(--u-line), var(--u-top); color: var(--u-tx); font: 15px var(--ui-font);
+  transition: box-shadow 150ms var(--u-ease); }
+.sd input:focus { box-shadow: inset 0 0 0 1px var(--u-ctl-on), var(--u-top); }
+.sd input::placeholder { color: var(--u-mut); }
+.sd .sd-in-code { max-width: 260px; height: 52px; font: 22px var(--mono); letter-spacing: .12em; }
+.sd .sd-in-code::placeholder { font: 16px var(--ui-font); letter-spacing: 0; }
+.sd .sd-in-code[data-bad] { box-shadow: inset 0 0 0 1px #c25454, var(--u-top); }
+.sd-hint { margin: 8px 2px 0; font-size: 13px; color: var(--u-mut); }
+.sd-recent { margin-bottom: 28px; }
+.sd-rr:hover { background: var(--u-hover); }
+.sd .hm-lab { margin: 0 2px 8px; }
+.sd-mk { display: flex; gap: 8px; }
+.sd-mk .hm-act { flex: none; height: 44px; }
+.sd button:focus-visible { outline: 2px solid color-mix(in srgb, var(--u-tx) 50%, transparent); outline-offset: -2px; }
+.sd .sd-f:focus-visible { outline: none; }
+
+@media (prefers-reduced-motion: reduce) { .sd, .sd.open, .sd-drop, .sd-x { transition: none !important; } }

@@ -12,6 +12,7 @@ export function Home(props: {
   recents: Recent[];
   onNew: () => void;
   onNewSpeech: () => void;
+  onSpeechDrop: () => void;
   onOpen: () => void;
   onRecent: (r: Recent) => void;
   onClear: (keep: Recent[] | null) => void;
@@ -90,6 +91,7 @@ export function Home(props: {
                 <button className="hm-act" onClick={props.onNew}><SvgIcon name="plus" /><span>New document</span>{keyOf('new') && <kbd>{keyText(keyOf('new'))}</kbd>}</button>
                 <button className="hm-act" onClick={props.onNewSpeech}><SvgIcon name="mic" /><span>New speech doc</span>{keyOf('newSpeech') && <kbd>{keyText(keyOf('newSpeech'))}</kbd>}</button>
                 <button className="hm-act" onClick={props.onOpen}><SvgIcon name="open" /><span>Open…</span>{keyOf('open') && <kbd>{keyText(keyOf('open'))}</kbd>}</button>
+                <button className="hm-act" onClick={props.onSpeechDrop}><SvgIcon name="inbox" /><span>SpeechDrop</span>{keyOf('speechdrop') && <kbd>{keyText(keyOf('speechdrop'))}</kbd>}</button>
               </div>
             </div>
             <div ref={clockRef} className="hm-clock" aria-live="off" />
