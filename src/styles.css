@@ -85,6 +85,9 @@ svg { flex: none; }
 .files-l { position: absolute; left: 0; right: 0; bottom: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 12px 12px 4px; }
 .files-l::-webkit-scrollbar { width: 0; }
 .files-r { position: relative; flex: none; }
+/* a file being dragged to a new slot (both lists): lifted, and the grab cursor everywhere till it drops */
+.doc-row[data-drag] .doc-nm, .files-r[data-drag] .files-b { background: var(--u-raised); box-shadow: var(--u-top), 0 4px 12px rgba(0, 0, 0, calc(.3 * var(--u-sh))); }
+:root:has([data-drag]), :root:has([data-drag]) * { cursor: grabbing !important; user-select: none !important; }
 .files-b { width: 100%; height: 36px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 8px; color: var(--u-tx); text-align: left; cursor: pointer; transition: background 150ms ease-out; }
 .files-b svg { color: var(--u-mut); }
 .files-b:hover { background: var(--u-hover); }

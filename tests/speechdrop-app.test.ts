@@ -112,10 +112,14 @@ describe('SpeechDrop tab', () => {
 
   it('next and previous doc walk through the SpeechDrop tab', async () => {
     const { app } = await joined();
+    await app.press(']', { ctrlKey: true, shiftKey: true, code: 'BracketRight' });
+    expect(panel()?.classList.contains('open')).toBe(false);
+    await app.press(']', { ctrlKey: true, shiftKey: true, code: 'BracketRight' });
+    expect(panel()?.classList.contains('open')).toBe(true);
+    // Ctrl-Tab (recent docs) from the tab goes back to the doc you were in
     await app.press('Tab', { ctrlKey: true });
     expect(panel()?.classList.contains('open')).toBe(false);
-    await app.press('Tab', { ctrlKey: true });
-    expect(panel()?.classList.contains('open')).toBe(true);
+    expect(app.tab('Untitled')?.hasAttribute('data-on')).toBe(true);
   });
 
   it('Upload sends the doc you came from as a .docx, unsaved', async () => {

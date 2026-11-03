@@ -48,6 +48,7 @@ import { track, type DocSource } from './analytics';
 import { readJson, safeSet } from './storage';
 import { RAIL_MAX, RAIL_MIN, RAIL_NAMES, loadRail, railMax, railWidth, saveRail } from './rail';
 import { reducedMotion } from './motion';
+import { Switcher, holdMods, recentOrder, type Mod } from './Switcher';
 
 // Settings, the command center and file search load the first time they open (and in the background once the
 // app is up), so the first screen downloads and starts less code; so does the .docx code (files.ts)
@@ -77,7 +78,7 @@ const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could 
 /** A command's key as text, for messages: ⌘S. */
 const keyLabel = (id: string) => keyText(keyOf(id));
 /** The keys that swap the document out, which read mode and Settings hold back. */
-const SWAPS = ['home', 'new', 'newSpeech', 'open', 'close', 'nextDoc', 'prevDoc', 'speechdrop'];
+const SWAPS = ['home', 'new', 'newSpeech', 'open', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop'];
 /** The commands the app runs itself (the editor's keymap runs the rest). */
 /** Does this keydown send to speech? A changed key matches the way Settings recorded it (Shift-` is ~), an AltGr-typed character counts,
  *  and ` still counts on layouts where it's a dead accent key (US International). */
@@ -87,7 +88,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'speechdrop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -399,6 +400,14 @@ export function App() {
     v.focus();
   }, []);
 
+  /** Where the page on screen starts: the doc position at the top of the view, for the switcher's previews. */
+  const topPos = () => {
+    const v = viewRef.current, sc = scrollRef.current;
+    if (!v || !sc) return 0;
+    const box = sc.getBoundingClientRect(), pm = v.dom.getBoundingClientRect();
+    try { return v.posAtCoords({ left: pm.left + 4, top: Math.min(Math.max(box.top + 4, pm.top + 2), pm.bottom - 2) })?.pos ?? 0; } catch { return 0; }
+  };
+  const tops = useRef(new Map<number, number>());
   /** Put `state` in the editor as document `id`. The caller has already stashed the outgoing doc. */
   const show = useCallback((id: number, state: EditorState, scroll: number) => {
     const v = viewRef.current!;
@@ -421,6 +430,7 @@ export function App() {
   /** The outgoing doc, ready to stash: its state and where it was scrolled to. */
   const stash = () => {
     const v = viewRef.current!;
+    tops.current.set(activeRef.current, topPos());
     if (findInfo(v.state)) clearFind(v);
     setFindOpen(false);
     return { state: v.state, scroll: scrollRef.current?.scrollTop ?? 0 };
@@ -470,6 +480,17 @@ export function App() {
     setDocs(rest.map((x) => (x.id === next.id ? { ...x, state: null } : x)));
     show(next.id, next.state!, next.scroll);
   }, [show]);
+  // dragging a file in the rail or the files panel moves it to slot `to`
+  const moveDoc = useCallback((id: number, to: number) => {
+    setDocs((ds) => {
+      const i = ds.findIndex((d) => d.id === id);
+      if (i < 0 || i === to) return ds;
+      const n = [...ds];
+      n.splice(to, 0, ...n.splice(i, 1));
+      return n;
+    });
+    backupSoon.current();
+  }, []);
   const closeDoc = useCallback((id: number) => {
     const d = docsRef.current.find((x) => x.id === id);
     if (!d) return;
@@ -478,6 +499,46 @@ export function App() {
     void confirmAsk({ title: `Close ${name} without saving?`, body: 'Your changes will be lost.', ok: 'Close Without Saving' })
       .then((yes) => { if (yes) dropDoc(id); });
   }, [dropDoc, confirmAsk]);
+
+  // Ctrl-Tab's order: docs by when you were last on them
+  const mru = useRef<number[]>([]);
+  useEffect(() => { mru.current = [activeId, ...mru.current.filter((x) => x !== activeId)]; }, [activeId]);
+  // the switcher: up while its keys are held (it draws after a moment, so a quick tap just flips to the last doc)
+  type Sw = { ids: number[]; sel: number; shown: boolean; mods: Mod[] };
+  const [sw, setSwState] = useState<Sw | null>(null);
+  const swRef = useRef<Sw | null>(null);
+  const swTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const setSw = (s: Sw | null) => { swRef.current = s; setSwState(s); };
+  /** Recent docs, one step `dir` from this one; with `mods` held, the switcher stays up until they're let go. */
+  const recent = useCallback((dir: 1 | -1, mods: Mod[] = []) => {
+    if (sdOnRef.current) { switchTo(activeRef.current); return; } // from the SpeechDrop tab: back to the doc you were in
+    const ids = recentOrder(docsRef.current.map((d) => d.id), mru.current, activeRef.current);
+    if (ids.length < 2) return;
+    const sel = dir > 0 ? 1 : ids.length - 1;
+    if (!mods.length) { switchTo(ids[sel]); return; }
+    tops.current.set(activeRef.current, topPos());
+    setSw({ ids, sel, shown: false, mods });
+    clearTimeout(swTimer.current);
+    swTimer.current = setTimeout(() => { if (swRef.current) setSw({ ...swRef.current, shown: true }); }, 150);
+  }, [switchTo]);
+  const endSw = useCallback((go: boolean, at?: number) => {
+    const s = swRef.current;
+    if (!s) return;
+    clearTimeout(swTimer.current);
+    setSw(null);
+    const i = at ?? s.sel;
+    if (go && s.ids[i] !== undefined && s.ids[i] !== activeRef.current) switchTo(s.ids[i]); else viewRef.current?.focus();
+  }, [switchTo]);
+  // a doc opened, closed or switched to some other way under the switcher: its list is stale, so it closes
+  useEffect(() => { if (swRef.current && swRef.current.ids[0] !== activeId) endSw(false); }, [activeId, endSw]);
+  useEffect(() => { if (swRef.current && swRef.current.ids.length !== docs.length) endSw(false); }, [docs.length, endSw]);
+  useEffect(() => {
+    const up = (e: KeyboardEvent) => { const s = swRef.current; if (s && !s.mods.some((m) => e[m])) endSw(true); };
+    const blur = () => endSw(false);
+    addEventListener('keyup', up, true);
+    addEventListener('blur', blur);
+    return () => { removeEventListener('keyup', up, true); removeEventListener('blur', blur); };
+  }, [endSw]);
 
   // the SpeechDrop tab (-1) comes after the docs, as its row does in the rail
   const cycle = useCallback((dir: 1 | -1) => {
@@ -676,6 +737,7 @@ export function App() {
   // nothing swaps the document out behind Settings or during a read-mode speech
   const locked = () => compareRef.current !== null || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
+    if (swRef.current) { endSw(false); return; } // a menu key or click while Ctrl-Tab is held: the switcher closes on the current doc
     if (askRef.current || saveAsRef.current || speechAskRef.current) return; // a warning, Save As or New speech doc is up: it gets answered first
     if (paletteRef.current || ccRef.current) return; // file search or the command center is up: it gets closed first
     if (c === 'settings') { setSettingsOpen(true); return; }
@@ -694,6 +756,7 @@ export function App() {
   /** The app's own commands, by binding id: its keys and the command center both run them here. */
   const appCommand = useCallback((id: string) => {
     if (id === 'nextDoc' || id === 'prevDoc') cycle(id === 'nextDoc' ? 1 : -1);
+    else if (id === 'recentDoc' || id === 'recentDocBack') recent(id === 'recentDoc' ? 1 : -1);
     else if (id === 'save' || id === 'saveAs') void fileSave(id === 'saveAs');
     else if (id === 'find') openFind();
     else if (id === 'open') void fileOpen();
@@ -710,13 +773,24 @@ export function App() {
     else if (id === 'commands') setCcOpen((o) => !o);
     else if (id === 'searchCards') setPaletteOpen('cards');
     else if (id === 'sendToSpeech') sendToSpeech();
-  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, zoomBy, sendToSpeech, openSd, closeSd]);
+  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, sendToSpeech, openSd, closeSd]);
 
   // app-level shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Settings is listening for a new shortcut: every key goes to it
       if (isRecording()) return;
+      // the switcher is up: Tab (its keys) and the arrows move, Enter opens, Esc stays put; nothing reaches the page
+      const s = swRef.current;
+      if (s) {
+        e.preventDefault(); e.stopPropagation();
+        const hit = pressedId(e, ['recentDoc', 'recentDocBack']), n = s.ids.length;
+        const step = hit ? (hit === 'recentDoc' ? 1 : -1) : /^Arrow(Right|Down)$/.test(e.key) ? 1 : /^Arrow(Left|Up)$/.test(e.key) ? -1 : 0;
+        if (step) setSw({ ...s, sel: (s.sel + step + n) % n });
+        else if (e.key === 'Escape') endSw(false);
+        else if (e.key === 'Enter') endSw(true);
+        return;
+      }
       // a warning is up: its own keys (Tab, Enter, Esc) and nothing else
       if (askRef.current) { if (e.ctrlKey || e.metaKey) e.preventDefault(); return; }
       // Save As is up: its name field keeps text editing keys, nothing else
@@ -761,11 +835,12 @@ export function App() {
       if (!id) return;
       e.preventDefault();
       if (id === 'nextDoc' || id === 'prevDoc') { e.stopPropagation(); if (locked()) return; }
+      if (id === 'recentDoc' || id === 'recentDocBack') { e.stopPropagation(); if (!locked() && !e.repeat) recent(id === 'recentDoc' ? 1 : -1, holdMods(keyOf(id))); return; }
       appCommand(id);
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [appCommand, sendToSpeech]);
+  }, [appCommand, sendToSpeech, recent, endSw]);
   const homeRef = useRef(homeOpen);
   homeRef.current = homeOpen;
   const settingsRef = useRef(settingsOpen);
@@ -934,7 +1009,7 @@ export function App() {
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
-      <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
+      <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc} onMove={moveDoc}
         sd={sdTab ? { on: sdOn, name: sdInfo.room?.name ?? 'SpeechDrop', fresh: sdInfo.fresh } : null} onSd={openSd} onSdClose={closeSd}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
@@ -1001,6 +1076,11 @@ export function App() {
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
       <CardSearch open={paletteOpen === 'cards'} onClose={() => setPaletteOpen(false)} onPick={(h, insert) => void pickCard(h, insert)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
+      {sw?.shown && <Switcher sel={sw.sel} onHover={(i) => { if (swRef.current) setSw({ ...swRef.current, sel: i }); }} onPick={(i) => endSw(true, i)} onCancel={() => endSw(false)}
+        docs={sw.ids.flatMap((id) => {
+          const d = docs.find((x) => x.id === id), doc = id === activeId ? viewRef.current?.state.doc : d?.state?.doc;
+          return d && doc ? [{ id, name: d.meta.name || 'Untitled', dirty: d.dirty, doc, top: tops.current.get(id) ?? 0 }] : [];
+        })} />}
       <CommandCenter open={ccOpen} onClose={() => setCcOpen(false)} ctx={ccCtx} flash={flash} saveScroll={saveScroll} />
       <Settings open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsPage(undefined); setSettingsQuery(undefined); }} startPage={settingsPage} startQuery={settingsQuery}
         zoom={zoom} onZoom={setZoom} speechMin={speechMin} onSpeechMin={setSpeechMin}
@@ -1044,7 +1124,7 @@ const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor
 type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech: boolean };
 /** The SpeechDrop tab's row: lit or not, the room's name, and how many files came that you haven't seen. */
 type SdRow = { on: boolean; name: string; fresh: number };
-function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; sd: SdRow | null; onSd: () => void; onSdClose: () => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void; sd: SdRow | null; onSd: () => void; onSdClose: () => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -1058,8 +1138,52 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
     setAt({ head: logo.current!.getBoundingClientRect().top - 8, list: strip.current!.getBoundingClientRect().top - 8 });
     setOpen(true);
   };
-  const hide = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(false), 180); };
+  const hide = () => { clearTimeout(timer.current); if (!moving.current) timer.current = window.setTimeout(() => setOpen(false), 180); };
   useEffect(() => () => clearTimeout(timer.current), []);
+
+  // press a file and drag it up or down to reorder; it takes each slot it passes, live. A press that
+  // doesn't move 4px stays a click, and the click after a real drag is swallowed
+  const moving = useRef(false);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const reorder = (id: number) => (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('.doc-x, .files-x')) return;
+    const box = e.currentTarget.parentElement!, y0 = e.clientY;
+    const move = (m: PointerEvent) => {
+      if (!moving.current) {
+        if (Math.abs(m.clientY - y0) < 4) return;
+        moving.current = true;
+        setDragId(id);
+      }
+      m.preventDefault();
+      const rows = ([...box.children] as HTMLElement[]).filter((r) => r.dataset.id); // docs only: the SpeechDrop row stays last
+      const from = rows.findIndex((r) => r.dataset.id === String(id));
+      // the slot under the pointer: past a neighbour's middle, take its place
+      let to = from;
+      rows.forEach((r, i) => { const b = r.getBoundingClientRect(), mid = b.top + b.height / 2; if (i < from && m.clientY < mid) to = Math.min(to, i); if (i > from && m.clientY > mid) to = i; });
+      if (to !== from) props.onMove(id, to);
+    };
+    const up = () => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', up);
+      removeEventListener('blur', up);
+      if (!moving.current) return;
+      setDragId(null);
+      // the click that ends a drag isn't a switch; clear the flag after it would have fired
+      addEventListener('click', swallow, true);
+      setTimeout(() => {
+        removeEventListener('click', swallow, true);
+        moving.current = false;
+        // dropped outside both lists: the leave that would have shut the panel was skipped mid-drag
+        if (!strip.current?.matches(':hover') && !list.current?.parentElement?.matches(':hover')) hide();
+      }, 0);
+    };
+    const swallow = (c: MouseEvent) => { c.stopPropagation(); c.preventDefault(); };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
+    addEventListener('blur', up);
+  };
   // both lists scroll together, so each row stays level with its icon
   useLayoutEffect(() => { if (open && list.current && strip.current) list.current.scrollTop = strip.current.scrollTop; }, [open, props.docs.length]);
 
@@ -1107,7 +1231,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
       <div ref={strip} className="fs-docs" role="tablist" aria-label="Open documents" onPointerEnter={wide ? undefined : show} onPointerLeave={wide ? undefined : hide}
         onScroll={(e) => { if (list.current) list.current.scrollTop = e.currentTarget.scrollTop; }}>
         {props.docs.map((d) => (
-          <div key={d.id} className="doc-row" data-on={isOn(d) || undefined}>
+          <div key={d.id} className="doc-row" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} onPointerDown={reorder(d.id)}>
             <button className="fs-b doc-nm" role="tab" aria-selected={isOn(d)} aria-label={d.speech ? `${d.name} (speech doc)` : d.name} data-on={isOn(d) || undefined}
               onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
               <SvgIcon name="doc" />{wide && <span className="lbl">{tidy(d.name)}</span>}{d.dirty && <i className="dot" aria-label="unsaved" />}{d.speech && <i className="spk" aria-hidden="true">S</i>}
@@ -1132,7 +1256,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         <div ref={list} className="files-l" style={{ top: at.list }}
           onScroll={(e) => { if (strip.current) strip.current.scrollTop = e.currentTarget.scrollTop; }}>
           {props.docs.map((d) => (
-            <div key={d.id} className="files-r" data-on={isOn(d) || undefined}>
+            <div key={d.id} className="files-r" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} onPointerDown={reorder(d.id)}>
               <button tabIndex={-1} className="files-b" onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
                 <SvgIcon name="doc" /><span className="nm">{tidy(d.name)}</span>{d.speech && <i className="spk" aria-hidden="true">S</i>}{d.dirty && <i className="dot" />}
               </button>
