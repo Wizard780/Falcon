@@ -63,7 +63,7 @@ export function NewSpeech({ open, onMake, onClose }: { open: boolean; onMake: (s
       <div className="cf sa" role="dialog" aria-modal="true" aria-labelledby="ns-t">
         <h2 id="ns-t">New Speech Doc</h2>
         <input ref={inputRef} className="sa-name" aria-label="Speech name" placeholder="1NC, 2AC, 1AR…" spellCheck={false} maxLength={80} value={value}
-          onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onMake(value.trim()); } }} />
+          onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); onMake(value.trim()); } }} />
         <p className="ns-file">Saves as <b>{speechFileName(value)}.docx</b></p>
         <div className="cf-btns"><button onClick={onClose}>Cancel</button><button onClick={() => onMake(value.trim())}>Create</button></div>
       </div>

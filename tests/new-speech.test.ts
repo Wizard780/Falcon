@@ -62,3 +62,26 @@ describe('New speech doc key', () => {
     expect(document.querySelector('input[aria-label="Speech name"]')).not.toBeNull();
   });
 });
+
+describe('New speech doc dialog is modal', () => {
+  it('app shortcuts wait while it is up', async () => {
+    await freshStorage();
+    const app = await mountApp();
+    await app.type('words'); // not blank, so a new doc would get its own tab
+    await app.menu('newSpeech');
+    await app.press('n', { ctrlKey: true, keyCode: 78, code: 'KeyN' }); // Mod-N: no Untitled behind it
+    expect(app.tabs().length).toBe(1);
+    expect(document.querySelector('input[aria-label="Speech name"]')).not.toBeNull();
+  });
+
+  it('Esc over Home closes the dialog, not Home', async () => {
+    await freshStorage();
+    const app = await mountApp();
+    await app.press('t', { ctrlKey: true, keyCode: 84, code: 'KeyT' }); // Home
+    await app.click([...document.querySelectorAll('.hm-act')].find((b) => b.textContent?.includes('New speech doc')) ?? null);
+    expect(document.querySelector('input[aria-label="Speech name"]')).not.toBeNull();
+    await app.press('Escape');
+    expect(document.querySelector('input[aria-label="Speech name"]')).toBeNull();
+    expect(document.querySelector('.hm-act')).not.toBeNull();
+  });
+});

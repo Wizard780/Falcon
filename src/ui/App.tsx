@@ -72,7 +72,7 @@ const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could 
 /** A command's key as text, for messages: ⌘S. */
 const keyLabel = (id: string) => keyText(keyOf(id));
 /** The keys that swap the document out, which read mode and Settings hold back. */
-const SWAPS = ['home', 'new', 'open', 'close', 'nextDoc', 'prevDoc'];
+const SWAPS = ['home', 'new', 'newSpeech', 'open', 'close', 'nextDoc', 'prevDoc'];
 /** The commands the app runs itself (the editor's keymap runs the rest). */
 /** Does this keydown send to speech? A changed key matches the way Settings recorded it (Shift-` is ~), an AltGr-typed character counts,
  *  and ` still counts on layouts where it's a dead accent key (US International). */
@@ -468,7 +468,10 @@ export function App() {
   }, [addDoc, switchTo, flash]);
   const fileNew = useCallback(() => { track('doc_new'); addDoc(emptyDoc(), { name: 'Untitled' }); }, [addDoc]);
   /** New speech doc: a file that opens on a pocket with the speech's name, already marked as the speech doc. */
-  const fileNewSpeech = useCallback(() => setSpeechAsk(true), []);
+  const fileNewSpeech = useCallback(() => {
+    if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to make a new speech doc.'); return; }
+    setSpeechAsk(true);
+  }, [flash]);
   const closeNewSpeech = useCallback(() => setSpeechAsk(false), []);
   const makeSpeech = useCallback((speech: string) => {
     setSpeechAsk(false);
@@ -651,6 +654,8 @@ export function App() {
       if (askRef.current) { if (e.ctrlKey || e.metaKey) e.preventDefault(); return; }
       // Save As is up: its name field keeps text editing keys, nothing else
       if (saveAsRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
+      // so is New speech doc (its own Esc and Enter included)
+      if (speechAskRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // Send to speech (` unless changed in Settings), so the page can't type that key (AltGr layouts too: their character arrives with Ctrl+Alt held). Boxes with their own text field keep it.
       if (sendPressed(e) && !settingsRef.current && !e.isComposing && !homeRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
         e.preventDefault(); e.stopPropagation();
