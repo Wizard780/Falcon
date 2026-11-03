@@ -6,6 +6,7 @@ const path = require('node:path');
 const { createIndex } = require('./indexer.cjs');
 const { createCardIndex } = require('./cards.cjs');
 const updater = require('./updater.cjs');
+const speechdrop = require('./speechdrop.cjs');
 const telemetry = require('./telemetry.cjs');
 
 const DEV = process.env.FALCON_DEV === '1';
@@ -293,6 +294,91 @@ ipcMain.on('falcon:menu-keys', (_e, keys) => {
 });
 
 // anonymous feature counts (electron/telemetry.cjs); the page only sends them when Settings allows
+// SpeechDrop: the SpeechDrop tab's room, files and uploads (electron/speechdrop.cjs). The URLs can point
+// at a local stand-in for tests; downloads land in ~/Downloads/SpeechDrop/<room>/, as the plugin's did.
+const sd = speechdrop.createSpeechDrop({
+  base: process.env.FALCON_SD_BASE || undefined,
+  media: process.env.FALCON_SD_MEDIA || undefined,
+});
+const sdDownloads = () => process.env.FALCON_SD_DOWNLOADS || path.join(app.getPath('downloads'), 'SpeechDrop');
+let sdTarget = null; // the page the live list goes to
+const sdWatcher = speechdrop.createWatcher({
+  wsUrl: process.env.FALCON_SD_WS || undefined,
+  WebSocketImpl: process.env.FALCON_SD_WS === 'off' ? null : globalThis.WebSocket,
+  list: (room) => sd.list(room),
+  onFiles: (u) => { if (sdTarget && !sdTarget.isDestroyed()) sdTarget.send('falcon:sd-files', u); },
+});
+// files come from strangers: Falcon opens .docx itself, and hands only plain document types to their app
+const SD_OPENS = new Set(['.doc', '.odt', '.pages', '.pdf', '.txt', '.rtf']);
+const sdSafe = (f) => async (_e, ...a) => {
+  try { return { ok: true, value: await f(_e, ...a) }; } catch (err) { return { ok: false, error: String(err?.message || err) }; }
+};
+/** Download one file the room lists in that slot (never a name the page made up) into the room's folder. */
+async function sdFetch(room, index, name) {
+  const entry = (await sd.list(room)).find((f) => f.index === index && f.name === name);
+  if (!entry) throw new Error('gone');
+  const bytes = await sd.download({ room, index, name: entry.name });
+  return speechdrop.saveUnique(path.join(sdDownloads(), room), speechdrop.safeName(entry.name), bytes);
+}
+ipcMain.handle('falcon:sd-room', sdSafe((_e, room) => sd.room(String(room))));
+ipcMain.handle('falcon:sd-make', sdSafe((_e, name) => sd.make(String(name))));
+ipcMain.handle('falcon:sd-upload', sdSafe((_e, o) => {
+  if (!o || typeof o.name !== 'string' || !(o.data instanceof Uint8Array)) throw new Error('bad_request');
+  return sd.upload({ room: String(o.room), name: path.basename(o.name), bytes: Buffer.from(o.data) });
+}));
+ipcMain.handle('falcon:sd-delete', sdSafe((_e, room, index) => sd.remove(String(room), Number(index))));
+// Upload file…: the native picker, any type SpeechDrop takes; the page uploads what comes back one by one
+ipcMain.handle('falcon:sd-pick', sdSafe(async (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Upload to SpeechDrop', buttonLabel: 'Upload', properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Documents', extensions: Object.keys(speechdrop.MIME).map((x) => x.slice(1)) }],
+  });
+  if (r.canceled) return [];
+  return Promise.all(r.filePaths.map(async (p) => {
+    const s = await fs.stat(p);
+    return s.size > speechdrop.MAX_BYTES ? { name: path.basename(p), size: s.size } : { name: path.basename(p), size: s.size, data: new Uint8Array(await fs.readFile(p)) };
+  }));
+}));
+// Open: a .docx becomes a Falcon tab (a recent, so openPath may read it); other documents open in their app
+ipcMain.handle('falcon:sd-open', sdSafe(async (_e, room, index, name) => {
+  const p = await sdFetch(String(room), Number(index), String(name));
+  if (p.toLowerCase().endsWith('.docx')) { await rememberPath(p); return { path: p, docx: true }; }
+  if (SD_OPENS.has(path.extname(p).toLowerCase())) { const err = await shell.openPath(p); if (err) shell.showItemInFolder(p); }
+  else shell.showItemInFolder(p);
+  return { path: p, docx: false };
+}));
+ipcMain.handle('falcon:sd-download', sdSafe(async (_e, room, index, name) => {
+  const p = await sdFetch(String(room), Number(index), String(name));
+  shell.showItemInFolder(p);
+  return p;
+}));
+// Download all: every file, oldest first, in ~/Downloads/SpeechDrop/<room name>.zip, shown in Finder/Explorer.
+// Files the room lists but no longer serves are skipped and counted.
+ipcMain.handle('falcon:sd-archive', sdSafe(async (_e, room, title) => {
+  const files = (await sd.list(String(room))).reverse();
+  if (!files.length) throw new Error('empty');
+  await fs.mkdir(sdDownloads(), { recursive: true });
+  const out = await speechdrop.freeName(sdDownloads(), `${speechdrop.safeName(title || room)}.zip`);
+  const zip = await speechdrop.createZipWriter(out);
+  let skipped = 0;
+  try {
+    for (const f of files) {
+      let bytes;
+      try { bytes = await sd.download({ room: String(room), index: f.index, name: f.name }); } catch { skipped++; continue; }
+      await zip.add(speechdrop.safeName(f.name), bytes);
+    }
+    await zip.close();
+  } catch (err) { await zip.abort(); await fs.rm(out, { force: true }); throw err; }
+  shell.showItemInFolder(out);
+  return { path: out, count: files.length - skipped, skipped };
+}));
+ipcMain.on('falcon:sd-watch', (e, room, files) => {
+  sdTarget = e.sender;
+  try { sdWatcher.watch(typeof room === 'string' && room ? room : null, Array.isArray(files) ? files : null); } catch { sdWatcher.stop(); }
+});
+app.on('will-quit', () => sdWatcher.stop());
+
 ipcMain.on('falcon:track', (_e, event, props) => {
   if (telemetry.enabled({ dev: DEV, headless: HEADLESS })) telemetry.track(event, props);
 });
