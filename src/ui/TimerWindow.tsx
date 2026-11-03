@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { pick, reset, roundSpeeches, tick, toggle, freshClocks, type ClockId, type Clocks, type Speech } from './round-clock';
+import { pick, reset, roundSpeeches, tick, toggle, freshClocks, type ClockId, type Clocks, type RoundFormat, type Speech } from './round-clock';
 import css from './timer-window.css?inline';
 
 export const TIMER_WINDOW = 'falcon-timer'; // the window's name: electron/main.cjs lets only this one open
@@ -10,26 +10,30 @@ const W = 300, H = 312;
  * The round's clocks, counted against the wall clock: a hidden or busy page whose timers fire late
  * still takes off every second that passed. `done` hears which clock ran out.
  */
-export function useRoundClocks(speechMin: number, prepMin: number, done: (id: ClockId) => void) {
-  const speeches = useMemo(() => roundSpeeches(speechMin), [speechMin]);
+export function useRoundClocks(format: RoundFormat, speechMin: number, prepMin: number, done: (id: ClockId) => void) {
+  const speeches = useMemo(() => roundSpeeches(format, speechMin), [format, speechMin]);
   const prepSec = prepMin * 60;
-  const [c, setC] = useState<Clocks>(() => freshClocks(speeches, prepSec));
-  // the clocks as they are now, written before each render, so the ticker and the buttons never read an old copy
-  const cRef = useRef(c);
-  const set = (f: (c: Clocks) => Clocks) => { cRef.current = f(cRef.current); setC(cRef.current); };
-  // a new length from Settings moves the clocks still at the old full time; time already used stays used
+  // the clocks as they are now. The ticker and the buttons write here, then redraw, so none reads an old copy
+  const cRef = useRef<Clocks | null>(null);
+  cRef.current ??= freshClocks(speeches, prepSec);
+  const [, redraw] = useState(0);
+  const set = (f: (c: Clocks) => Clocks) => { cRef.current = f(cRef.current!); redraw((n) => n + 1); };
+  // a new length from Settings moves the clocks still at the old full time; time already used stays used.
+  // Done while drawing, so a shorter round's list is never read with the old round's speech number
   const was = useRef({ speeches, prepSec });
-  useEffect(() => {
-    const old = was.current;
+  if (was.current.speeches !== speeches || was.current.prepSec !== prepSec) {
+    const old = was.current, c = cRef.current;
     was.current = { speeches, prepSec };
-    if (old.speeches === speeches && old.prepSec === prepSec) return;
-    set((c) => ({
-      ...c,
-      speech: c.speech === old.speeches[c.idx].sec ? speeches[c.idx].sec : Math.min(c.speech, speeches[c.idx].sec),
-      our: c.our === old.prepSec ? prepSec : Math.min(c.our, prepSec),
-      their: c.their === old.prepSec ? prepSec : Math.min(c.their, prepSec),
-    }));
-  }, [speeches, prepSec]);
+    cRef.current = old.speeches.map((s) => s.name).join() !== speeches.map((s) => s.name).join()
+      ? freshClocks(speeches, prepSec) // another format is another round: start it fresh
+      : {
+        ...c,
+        speech: c.speech === old.speeches[c.idx].sec ? speeches[c.idx].sec : Math.min(c.speech, speeches[c.idx].sec),
+        our: c.our === old.prepSec ? prepSec : Math.min(c.our, prepSec),
+        their: c.their === old.prepSec ? prepSec : Math.min(c.their, prepSec),
+      };
+  }
+  const c = cRef.current;
   const doneRef = useRef(done);
   doneRef.current = done;
   useEffect(() => {
@@ -39,7 +43,7 @@ export function useRoundClocks(speechMin: number, prepMin: number, done: (id: Cl
       const n = Math.floor((Date.now() - last) / 1000);
       if (n < 1) return;
       last += n * 1000;
-      let next = cRef.current, ran: ClockId | null = null;
+      let next = cRef.current!, ran: ClockId | null = null;
       for (let i = 0; i < n && next.on && !ran; i++) ({ clocks: next, done: ran } = tick(next, speeches));
       set(() => next);
       if (ran) doneRef.current(ran);
@@ -145,7 +149,7 @@ export function TimerFace({ rc, low }: { rc: RoundClocks; low: number }) {
       <div className="tw-top">
         <div className="tw-pick">
           <button aria-label="Previous speech" disabled={c.idx === 0} onClick={() => rc.pick(c.idx - 1)}><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" /></svg></button>
-          <b aria-label="Speech">{s.name}</b>
+          <b aria-label="Speech" title={s.name}>{s.name}</b>
           <button aria-label="Next speech" disabled={c.idx === speeches.length - 1} onClick={() => rc.pick(c.idx + 1)}><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg></button>
         </div>
         <div className={`tw-big num ${lowOf('speech') ?? ''}`} data-on={c.on === 'speech' || undefined} role="timer" aria-label={`${s.name} time left`}>{clock(c.speech)}</div>

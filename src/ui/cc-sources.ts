@@ -54,6 +54,7 @@ export type Ctx = {
 
 /** The clocks live in the toolbar; the command center asks them through an event. */
 import { TIMER_EVENT, type TimerRequest } from './timer-event';
+import { FORMAT_NAME, FORMAT_PREP, type RoundFormat } from './round-clock';
 export { TIMER_EVENT, type TimerRequest };
 const timer = (r: TimerRequest) => dispatchEvent(new CustomEvent(TIMER_EVENT, { detail: r }));
 
@@ -245,6 +246,8 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: P.colorUndertag.key, label: 'Undertag color', page: 'formatting', hint: 'Pick it in Settings.', link: true, get: () => pref(P.colorUndertag), set: () => {} },
     tog(P.shadingDots, 'Dots on background color', 'formatting'),
     // Speech and timers
+    { id: P.round.key, label: 'Round', page: 'speech', hint: 'The speeches the timer window steps through.', options: (['policy', 'ld', 'pf'] as const).map((f) => [f, FORMAT_NAME[f]]),
+      get: () => pref(P.round), set: (v) => { const f = v as RoundFormat; setPref(P.round, f); setPref(P.prepMin, f === 'policy' && ctx.speechMin === 9 ? 10 : FORMAT_PREP[f]); } },
     { id: 'app.event', label: 'Event', page: 'speech', hint: 'High school: 8 minute speeches, 8 of prep. College: 9 and 10.', options: [['hs', 'High school'], ['college', 'College']],
       get: () => (ctx.speechMin === 8 && prep === 8 ? 'hs' : ctx.speechMin === 9 && prep === 10 ? 'college' : ''),
       set: (v) => { ctx.setSpeechMin(v === 'hs' ? 8 : 9); setPref(P.prepMin, v === 'hs' ? 8 : 10); } },

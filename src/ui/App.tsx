@@ -1509,7 +1509,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   // The prep button, when Settings shows it, is our prep: click to start or pause, right-click to reset
   const showPrep = pref(P.showPrep);
   const lowSec = pref(P.lowTime);
-  const rc = useRoundClocks(SPEECH_SECONDS / 60, pref(P.prepMin), (id) => {
+  const rc = useRoundClocks(pref(P.round), SPEECH_SECONDS / 60, pref(P.prepMin), (id) => {
     props.flash(id === 'speech' ? 'Time is up' : id === 'our' ? 'Prep is up' : 'Their prep is up');
     if (pref(P.beep)) beep();
   });

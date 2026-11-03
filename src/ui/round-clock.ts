@@ -1,5 +1,5 @@
 /**
- * The round's clocks: the speech clock, which steps through a policy round's speeches, and each side's prep.
+ * The round's clocks: the speech clock, which steps through the round's speeches (policy, LD or PF), and each side's prep.
  * One clock runs at a time, the way a round does: starting one pauses the others.
  */
 
@@ -7,11 +7,23 @@ export type Speech = { name: string; sec: number };
 export type ClockId = 'speech' | 'our' | 'their';
 export type Clocks = { idx: number; speech: number; our: number; their: number; on: ClockId | null };
 
-/** A policy round. Constructives run the speech length, rebuttals 3 minutes less (8 → 5, 9 → 6), cross-ex 3. */
-export function roundSpeeches(speechMin: number): Speech[] {
-  const c = speechMin * 60, r = (speechMin > 3 ? speechMin - 3 : speechMin) * 60, cx = 180;
-  return ([['1AC', c], ['CX', cx], ['1NC', c], ['CX', cx], ['2AC', c], ['CX', cx], ['2NC', c], ['CX', cx],
-    ['1NR', r], ['1AR', r], ['2NR', r], ['2AR', r]] as const).map(([name, sec]) => ({ name, sec }));
+export type RoundFormat = 'policy' | 'ld' | 'pf';
+/** Each format's prep per side, in minutes (NSDA's): what choosing the format sets Prep time to. */
+export const FORMAT_PREP: Record<RoundFormat, number> = { policy: 8, ld: 4, pf: 3 };
+export const FORMAT_NAME: Record<RoundFormat, string> = { policy: 'Policy', ld: 'LD', pf: 'PF' };
+
+/**
+ * A round's speeches. Policy follows the Speech length setting: constructives run it, rebuttals 3 minutes
+ * less (8 → 5, 9 → 6), cross-ex 3. LD and PF use NSDA's times.
+ */
+export function roundSpeeches(format: RoundFormat, speechMin: number): Speech[] {
+  const m = (name: string, min: number) => ({ name, sec: min * 60 });
+  if (format === 'ld') return [m('AC', 6), m('CX', 3), m('NC', 7), m('CX', 3), m('1AR', 4), m('NR', 6), m('2AR', 3)];
+  if (format === 'pf') return [m('1st Con', 4), m('2nd Con', 4), m('CF', 3), m('1st Reb', 4), m('2nd Reb', 4), m('CF', 3),
+    m('1st Sum', 3), m('2nd Sum', 3), m('GCF', 3), m('1st FF', 2), m('2nd FF', 2)];
+  const c = speechMin, r = speechMin > 3 ? speechMin - 3 : speechMin;
+  return [m('1AC', c), m('CX', 3), m('1NC', c), m('CX', 3), m('2AC', c), m('CX', 3), m('2NC', c), m('CX', 3),
+    m('1NR', r), m('1AR', r), m('2NR', r), m('2AR', r)];
 }
 
 export const freshClocks = (speeches: Speech[], prepSec: number): Clocks =>

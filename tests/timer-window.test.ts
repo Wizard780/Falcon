@@ -3,11 +3,16 @@ import { freshStorage, mountApp, unmountAll } from './app-harness';
 import { freshClocks, pick, reset, roundSpeeches, tick, toggle } from '../src/ui/round-clock';
 
 describe('round clocks', () => {
-  const sp = roundSpeeches(8);
+  const sp = roundSpeeches('policy', 8);
   it('lays out a policy round: constructives, cross-ex at 3, rebuttals 3 shorter', () => {
     expect(sp.map((s) => `${s.name} ${s.sec / 60}`).join(', '))
       .toBe('1AC 8, CX 3, 1NC 8, CX 3, 2AC 8, CX 3, 2NC 8, CX 3, 1NR 5, 1AR 5, 2NR 5, 2AR 5');
-    expect(roundSpeeches(9).at(-1)!.sec).toBe(360);
+    expect(roundSpeeches('policy', 9).at(-1)!.sec).toBe(360);
+  });
+  it('lays out LD and PF rounds at their usual times', () => {
+    const list = (f: 'ld' | 'pf') => roundSpeeches(f, 8).map((s) => `${s.name} ${s.sec / 60}`).join(', ');
+    expect(list('ld')).toBe('AC 6, CX 3, NC 7, CX 3, 1AR 4, NR 6, 2AR 3');
+    expect(list('pf')).toBe('1st Con 4, 2nd Con 4, CF 3, 1st Reb 4, 2nd Reb 4, CF 3, 1st Sum 3, 2nd Sum 3, GCF 3, 1st FF 2, 2nd FF 2');
   });
   it('runs one clock at a time', () => {
     let c = toggle(freshClocks(sp, 480), 'speech', sp, 480);
@@ -94,6 +99,26 @@ describe('timer window', () => {
     vi.spyOn(Date, 'now').mockImplementation(() => real() + (real() - from > 0 ? 5000 : 0)); // the page slept 5 s
     await app.act(() => {}, 400);
     expect(ours.textContent).toBe('Our prep7:55');
+  });
+
+  it('choosing PF in Settings starts a PF round with 3 minutes of prep a side', async () => {
+    const { w } = fakeOpen();
+    const app = await mountApp();
+    await app.act(() => app.el.querySelector('button.timer')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })));
+    const d = w.document;
+    await app.act(() => d.querySelector<HTMLButtonElement>('[aria-label="Next speech"]')!.click());
+    const { P, setPref } = await import('../src/editor/prefs');
+    await app.act(() => { setPref(P.round, 'pf'); setPref(P.prepMin, 3); });
+    expect(d.querySelector('.tw-pick b')!.textContent).toBe('1st Con');
+    expect(d.querySelector('[role=timer]')!.textContent).toBe('4:00');
+    expect([...d.querySelectorAll('.tw-p')].map((r) => r.textContent)).toEqual(['Our prep3:00', 'Their prep3:00']);
+    expect(app.el.querySelector('button.timer')!.textContent).toBe('4:00');
+    // from grand crossfire (PF's 9th speech) to LD, which has 7: a fresh LD round, no crash
+    for (let i = 0; i < 8; i++) await app.act(() => d.querySelector<HTMLButtonElement>('[aria-label="Next speech"]')!.click());
+    expect(d.querySelector('.tw-pick b')!.textContent).toBe('GCF');
+    await app.act(() => { setPref(P.round, 'ld'); setPref(P.prepMin, 4); });
+    expect(d.querySelector('.tw-pick b')!.textContent).toBe('AC');
+    expect(d.querySelector('[role=timer]')!.textContent).toBe('6:00');
   });
 
   it('a new prep length in Settings keeps the prep a side already used', async () => {

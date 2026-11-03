@@ -16,7 +16,7 @@ svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width:
 .tw-pick button { display: grid; place-items: center; width: 28px; height: 26px; border-radius: 6px; color: var(--u-tx2, #a1a1a6); }
 .tw-pick button:hover:not(:disabled) { color: var(--u-tx, #ededed); }
 .tw-pick button:disabled { opacity: .35; }
-.tw-pick b { min-width: 58px; height: 26px; display: grid; place-items: center; border-radius: 6px; background: var(--u-ctl-on, #3a3a3f);
+.tw-pick b { min-width: 58px; padding: 0 10px; white-space: nowrap; height: 26px; display: grid; place-items: center; border-radius: 6px; background: var(--u-ctl-on, #3a3a3f);
   box-shadow: var(--u-top, inset 0 1px 0 rgba(255, 255, 255, .08)); font: 600 13px/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
 .tw-big { font-size: 60px; font-weight: 500; margin: 14px 0 16px; line-height: 1; }
 .tw-big[data-on] { color: var(--ink-ui, #00e5ff); }
