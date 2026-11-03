@@ -14,6 +14,9 @@ export function setActiveColor(kind: 'highlight' | 'shading', color: string | nu
 
 export type IndexFolder = { path: string; count: number | null; missing: boolean };
 export type IndexedFile = { path: string; root: string; mtime: number };
+/** One card from Search cards: the file it's in and which tag or analytic it is there (0-based). */
+export type CardHit = { path: string; ordinal: number; file: string; tag: string; cite: string; headings: string[]; copies: number };
+export type CardIndexStatus = { files: number; cards: number; scanning: boolean; done: number; total: number };
 type FalconBridge = {
   readClipboardText?: () => Promise<string>;
   openFile?: () => Promise<{ name: string; path: string; data: Uint8Array } | null>;
@@ -26,6 +29,8 @@ type FalconBridge = {
   removeIndexFolder?: (path: string) => Promise<IndexFolder[]>;
   /** Every .docx in the allowed folders (openPath opens any of them). */
   indexedFiles?: () => Promise<IndexedFile[]>;
+  /** Search cards: the cards in those folders whose tag, cite, headings or file name hold every word. */
+  searchCards?: (query: string) => Promise<{ hits: CardHit[]; status: CardIndexStatus }>;
   /** Words added with right-click > Add to Dictionary, sorted. */
   dictionaryWords?: () => Promise<string[]>;
   /** Take a word back out of the dictionary. Returns the new list. */

@@ -4,6 +4,7 @@ const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createIndex } = require('./indexer.cjs');
+const { createCardIndex } = require('./cards.cjs');
 const updater = require('./updater.cjs');
 const telemetry = require('./telemetry.cjs');
 
@@ -158,6 +159,9 @@ if (primary) {
 // File search: the folders allowed in Settings (see indexer.cjs)
 let fileIndex = null;
 const index = () => (fileIndex ??= createIndex(path.join(app.getPath('userData'), 'index-folders.json')));
+// Search cards: the cards in those same folders (see cards.cjs)
+let cardIndex = null;
+const cards = () => (cardIndex ??= createCardIndex(path.join(app.getPath('userData'), 'card-index.json'), () => index().files()));
 
 let quitting = false; // the window is closing because the app is quitting (Cmd-Q), not just the window
 app.on('before-quit', () => { quitting = true; });
@@ -216,6 +220,7 @@ ipcMain.handle('falcon:dict-remove', async (e, w) => {
   return (await dictWords(e)).filter((x) => x !== w); // the list can lag the removal by a moment
 });
 ipcMain.handle('falcon:index-files', () => index().files());
+ipcMain.handle('falcon:card-search', (_e, q) => cards().search(typeof q === 'string' ? q.slice(0, 200) : '', 60));
 async function saveFile(e, opts) {
   if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
   // Save writes straight into the document's own file, wherever it lives, as long as it's still there.
@@ -296,6 +301,8 @@ if (primary) app.whenReady().then(() => {
   buildMenu();
   createWindow();
   updater.start();
+  // read changed files into the card index after launch settles, so Search cards is current when first opened
+  if (!HEADLESS) setTimeout(() => void cards().scan().catch(() => {}), 10000);
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
