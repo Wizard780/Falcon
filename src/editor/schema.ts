@@ -240,6 +240,18 @@ export const HIGHLIGHTS: Record<string, string> = {
   red: '#FF0000', darkBlue: '#000080', darkCyan: '#008080', darkGreen: '#008000', darkMagenta: '#800080',
   darkRed: '#800000', darkYellow: '#808000', darkGray: '#808080', lightGray: '#C0C0C0', black: '#000000',
 };
+/** What Settings and the toolbar call each highlight color. */
+export const HIGHLIGHT_NAMES: Record<string, string> = {
+  yellow: 'Yellow', green: 'Green', cyan: 'Cyan', magenta: 'Magenta', blue: 'Blue', red: 'Red', darkBlue: 'Dark blue',
+  darkCyan: 'Dark cyan', darkGreen: 'Dark green', darkMagenta: 'Dark magenta', darkRed: 'Dark red', darkYellow: 'Dark yellow',
+  darkGray: 'Dark gray', lightGray: 'Gray', black: 'Black',
+};
+/** The toolbar's background colors: [color, name]. */
+export const SHADES: [string, string][] = [
+  ['#D9D9D9', 'Light gray'], ['#BFBFBF', 'Gray'], ['#F2F2F2', 'Faint gray'], ['#FFF2CC', 'Light gold'], ['#FCE4D6', 'Light orange'],
+  ['#E2EFDA', 'Light green'], ['#DDEBF7', 'Light blue'], ['#EDE7F6', 'Light purple'], ['#FDE2E4', 'Light pink'], ['#C6E0B4', 'Green'],
+  ['#BDD7EE', 'Blue'], ['#F8CBAD', 'Orange'], ['#FFE699', 'Gold'], ['#A9D08E', 'Deep green'], ['#9BC2E6', 'Deep blue'],
+];
 export function highlightCss(name: string): string {
   return HIGHLIGHTS[name] ?? (color(name) || '#FFFF00');
 }

@@ -5,7 +5,7 @@ import { docToDocx } from '../src/docx/export';
 import { docxToDoc } from '../src/docx/import';
 import { commandOf, falconKeys as K } from '../src/editor/keymap';
 import { createView } from '../src/editor/editor';
-import { DOC_TOOLS, analyticsToTags, selectSimilar, standardize } from '../src/editor/doc-tools';
+import { DOC_TOOLS, analyticsToTags, docToolSettings, selectSimilar, standardize } from '../src/editor/doc-tools';
 import { fixFormattingGaps } from '../src/editor/doc-tools/gaps';
 import { findUrls, linkUrls, removeHyperlinks } from '../src/editor/doc-tools/links';
 import { MultiSelection } from '../src/editor/multi';
@@ -145,6 +145,17 @@ describe('Standardize', () => {
     expect(DOC_TOOLS[2].items[2].label).toBe('Standardize Highlighting (except Yellow)');
     localStorage.setItem('falcon.standardizeHighlightException', 'green');
     expect(DOC_TOOLS[2].items[2].label).toBe('Standardize Highlighting (except Green)');
+  });
+  it('every highlighter and background pen color can be the exception', async () => {
+    const { HIGHLIGHTS, SHADES } = await import('../src/editor/schema');
+    const spec = (k: string) => docToolSettings.find((x) => x.key === `falcon.${k}`)!;
+    const opts = (k: string) => { const s = spec(k); return s.kind === 'choice' ? s.options.map(([v]) => v) : []; };
+    expect(opts('standardizeHighlightException')).toEqual(Object.keys(HIGHLIGHTS));
+    expect(opts('standardizeShadingException')).toEqual(expect.arrayContaining(SHADES.map(([c]) => c)));
+    localStorage.setItem('falcon.standardizeHighlightException', 'darkBlue');
+    expect(DOC_TOOLS[2].items[2].label).toBe('Standardize Highlighting (except Dark blue)');
+    localStorage.setItem('falcon.standardizeShadingException', '#DDEBF7');
+    expect(DOC_TOOLS[2].items[3].label).toBe('Standardize Background Color (except Light blue)');
   });
   it('does the same for background color, comparing colors case-blind', () => {
     localStorage.setItem('falcon.autoBridge', 'off');

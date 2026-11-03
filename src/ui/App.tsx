@@ -11,7 +11,7 @@ import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedI
 import { activeColors, bridge, setActiveColor, type CardHit, type UpdateInfo } from '../editor/host';
 import { cardContent, findCard } from './card-search';
 import { ago, releaseNotes } from './update';
-import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
+import { HIGHLIGHTS, HIGHLIGHT_NAMES, SHADES, schema, type ParaStyle } from '../editor/schema';
 import { buildOutline, currentItem, readSeconds, readSplit, type OutlineItem, type ReadSplit } from '../editor/outline';
 import { toggleColorMark } from '../editor/commands';
 import { fontSizeOf, setFontSize } from '../editor/font-size';
@@ -1357,7 +1357,6 @@ function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onN
 type SelState = ReturnType<typeof selectionState>;
 type PopKind = 'highlight' | 'shading' | 'font' | 'size' | 'doc' | 'card';
 const SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48];
-const SHADES = ['#D9D9D9', '#BFBFBF', '#F2F2F2', '#FFF2CC', '#FCE4D6', '#E2EFDA', '#DDEBF7', '#EDE7F6', '#FDE2E4', '#C6E0B4', '#BDD7EE', '#F8CBAD', '#FFE699', '#A9D08E', '#9BC2E6'];
 
 function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; reading: boolean; onRead: () => void; onSend: () => void; speechSeconds: number }) {
   const { sel, run } = props;
@@ -1541,8 +1540,8 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
             : <>
               <button className="sw none" role="menuitem" aria-label={pop.kind === 'highlight' ? 'No highlight' : 'No background'} title={pop.kind === 'highlight' ? 'No highlight' : 'No background'}
                 aria-current={activeColors[pop.kind] === null || undefined} onMouseDown={(e) => { e.preventDefault(); props.onPick(pop.kind as 'highlight', null); setPop(null); }} />
-              {(pop.kind === 'highlight' ? Object.entries(HIGHLIGHTS) : SHADES.map((s) => [s, s])).map(([n, css]) => (
-                <button key={n} className="sw" role="menuitem" aria-label={n} title={n} aria-current={activeColors[pop.kind as 'highlight'] === n || undefined} style={{ background: css }}
+              {(pop.kind === 'highlight' ? Object.entries(HIGHLIGHTS).map(([n, css]) => [n, css, HIGHLIGHT_NAMES[n]]) : SHADES.map(([c, name]) => [c, c, name])).map(([n, css, name]) => (
+                <button key={n} className="sw" role="menuitem" aria-label={name} title={name} aria-current={activeColors[pop.kind as 'highlight'] === n || undefined} style={{ background: css }}
                   onMouseDown={(e) => { e.preventDefault(); props.onPick(pop.kind as 'highlight', n); setPop(null); }} />
               ))}
             </>}

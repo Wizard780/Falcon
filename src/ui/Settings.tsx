@@ -110,6 +110,12 @@ export function Settings(props: Props) {
       {opts.map(([n, on, pick]) => <button key={n} data-on={on || undefined} aria-pressed={on} onClick={pick}>{n}</button>)}
     </span>
   );
+  // a color choice: one dot per color, like the toolbar's pickers
+  const swatches = (label: string, opts: [string, string, boolean, () => void][]) => (
+    <span className="st-sws" role="radiogroup" aria-label={label}>
+      {opts.map(([n, css, on, pick]) => <button key={n} className="st-sw" role="radio" aria-checked={on} aria-label={n} title={n} style={{ background: css }} onClick={pick} />)}
+    </span>
+  );
   const select = (label: string, value: string | number, opts: [string | number, string][], set: (v: string) => void) => (
     <span className="st-sel">
       <select aria-label={label} value={value} onChange={(e) => set(e.target.value)}>
@@ -163,6 +169,7 @@ export function Settings(props: Props) {
     const v = readSetting(spec);
     return { label: spec.label, hint: spec.hint, control: spec.kind === 'toggle'
       ? toggle(spec.label, v as boolean, (on) => setSpec(spec, on))
+      : spec.colors ? swatches(spec.label, spec.options.map(([o, n]) => [n, spec.colors![o], v === o, () => setSpec(spec, o)]))
       : seg(spec.label, spec.options.map(([o, n]) => [n, v === o, () => setSpec(spec, o)])) };
   };
   const specSections = [...new Set(FEATURE_SETTINGS.map((x) => x.section))]

@@ -13,7 +13,7 @@ export type ToolSection = { title: string; items: ToolItem[] };
  */
 export type SettingSpec = { section: string; label: string; hint?: string; key: string } & (
   | { kind: 'toggle'; default: boolean }
-  | { kind: 'choice'; options: [value: string, label: string][]; default: string }
+  | { kind: 'choice'; options: [value: string, label: string][]; default: string; colors?: Record<string, string> } // colors: shown as swatches
 );
 export function readSetting(spec: SettingSpec): string | boolean {
   const v = localStorage.getItem(spec.key);

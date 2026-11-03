@@ -134,3 +134,9 @@
 .st-text:focus-visible { box-shadow: 0 0 0 2px #4b6bd6; }
 .st-text:disabled { opacity: .45; }
 .st-text.st-wide { width: 100%; font-family: var(--mono, ui-monospace, monospace); }
+/* color choices (the Standardize exceptions): a row of dots, wrapping when there's lots */
+.st-sws { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 290px; }
+.st-sw { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--u-tx) 14%, transparent); transition: transform 150ms cubic-bezier(.23, 1, .32, 1), box-shadow 120ms ease-out; }
+@media (hover: hover) { .st-sw:hover { transform: scale(1.12); } }
+.st-sw[aria-checked="true"] { box-shadow: 0 0 0 2px var(--u-panel), 0 0 0 4px var(--u-tx); }
+.st-sw:focus-visible { outline: 2px solid #4b6bd6; outline-offset: 3px; }
