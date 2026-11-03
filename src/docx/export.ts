@@ -1,7 +1,8 @@
 import { strToU8, zip, zipSync, type Zippable } from 'fflate';
 import type { Mark, Node as PMNode } from 'prosemirror-model';
 import { TableMap } from 'prosemirror-tables';
-import { colWidths, schema } from '../editor/schema';
+import { CARD_ID, colWidths, levelOf, schema } from '../editor/schema';
+import { BOOKMARK_PREFIX } from '../editor/card-ids';
 import { STYLES_XML } from './styles';
 
 /** Paragraph style → Word style id (Verbatim uses the built-in headings for Pocket/Hat/Block/Tag). */
@@ -63,6 +64,7 @@ class Package {
   files: Record<string, Uint8Array> = {};
   notes: string[] = []; // footnote XML; a note's id is its index + 1
   pics = 0; // drawing ids, unique across the file
+  marks = 0; // bookmark ids, unique across the file
   notesPart: Part | null = null;
 }
 
@@ -175,7 +177,10 @@ function runsXml(para: PMNode, part: Part): string {
 export function paragraphXml(para: PMNode, part: Part = newPart()): string {
   const ps = PSTYLE[para.attrs.style as string];
   const ppr = [ps ? `<w:pStyle w:val="${ps}"/>` : '', para.attrs.indent ? `<w:ind w:left="${para.attrs.indent * 720}"/>` : ''].join('');
-  return `<w:p>${ppr ? `<w:pPr>${ppr}</w:pPr>` : ''}${runsXml(para, part)}</w:p>`;
+  // a heading's card id rides in a hidden bookmark (Word keeps bookmarks whose names start with _)
+  const id = levelOf(para) && para.attrs.card && CARD_ID.test(para.attrs.card) ? part.pkg.marks++ : -1;
+  const mark = id >= 0 ? `<w:bookmarkStart w:id="${id}" w:name="${BOOKMARK_PREFIX}${para.attrs.card}"/><w:bookmarkEnd w:id="${id}"/>` : '';
+  return `<w:p>${ppr ? `<w:pPr>${ppr}</w:pPr>` : ''}${mark}${runsXml(para, part)}</w:p>`;
 }
 
 const PAGE_TWIPS = 9360; // 6.5in of text width at 1in margins; 15 twips per CSS pixel

@@ -17,26 +17,36 @@ export const LEVEL: Record<ParaStyle, number> = {
 /** A node's outline level: 0 for body paragraphs and for anything that isn't a paragraph (tables). */
 export const levelOf = (n: PMNode): number => (n.type.name === 'paragraph' ? LEVEL[n.attrs.style as ParaStyle] ?? 0 : 0);
 
+/** A card id: lowercase letters and digits, saved as the hidden Word bookmark `_fc_<id>` (Word's names cap at 40). */
+export const CARD_ID = /^[a-z0-9]{1,36}$/;
+
 const TAG_FOR: Record<ParaStyle, string> = {
   pocket: 'h1', hat: 'h2', block: 'h3', tag: 'h4', analytic: 'p', undertag: 'p', normal: 'p',
+};
+
+/** A copied heading's card id (copy and paste keep it; card-ids.ts gives a repeated one a new id). */
+const cardOf = (el: HTMLElement | string) => {
+  const id = typeof el === 'string' ? null : el.dataset.card;
+  return id && CARD_ID.test(id) ? id : null;
 };
 
 const paragraph: NodeSpec = {
   content: 'inline*',
   group: 'block',
-  attrs: { style: { default: 'normal' }, indent: { default: 0 } },
+  // card: the heading's stable id (card-ids.ts); null on body paragraphs
+  attrs: { style: { default: 'normal' }, indent: { default: 0 }, card: { default: null } },
   parseDOM: [
-    { tag: 'h1', attrs: { style: 'pocket' } },
-    { tag: 'h2', attrs: { style: 'hat' } },
-    { tag: 'h3', attrs: { style: 'block' } },
-    { tag: 'h4', attrs: { style: 'tag' } },
-    { tag: 'h5', attrs: { style: 'tag' } },
-    { tag: 'h6', attrs: { style: 'tag' } },
+    { tag: 'h1', getAttrs: (el) => ({ style: 'pocket', card: cardOf(el) }) },
+    { tag: 'h2', getAttrs: (el) => ({ style: 'hat', card: cardOf(el) }) },
+    { tag: 'h3', getAttrs: (el) => ({ style: 'block', card: cardOf(el) }) },
+    { tag: 'h4', getAttrs: (el) => ({ style: 'tag', card: cardOf(el) }) },
+    { tag: 'h5', getAttrs: (el) => ({ style: 'tag', card: cardOf(el) }) },
+    { tag: 'h6', getAttrs: (el) => ({ style: 'tag', card: cardOf(el) }) },
     {
       tag: 'p',
       getAttrs: (el) => {
         const s = (el as HTMLElement).dataset.style;
-        return { style: s && (PARA_STYLES as readonly string[]).includes(s) ? s : 'normal', indent: Number((el as HTMLElement).dataset.indent) || 0 };
+        return { style: s && (PARA_STYLES as readonly string[]).includes(s) ? s : 'normal', indent: Number((el as HTMLElement).dataset.indent) || 0, card: cardOf(el) };
       },
     },
   ],
@@ -47,6 +57,7 @@ const paragraph: NodeSpec = {
       attrs['data-indent'] = String(node.attrs.indent);
       attrs.style = `margin-left:${node.attrs.indent * 0.5}in`;
     }
+    if (node.attrs.card) attrs['data-card'] = node.attrs.card;
     return [TAG_FOR[style], attrs, 0];
   },
 };

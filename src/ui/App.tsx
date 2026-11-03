@@ -5,6 +5,7 @@ import { TextSelection, type EditorState } from 'prosemirror-state';
 import { Node as PMNode } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
+import { withCardIds } from '../editor/card-ids';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
 import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
@@ -164,10 +165,10 @@ function loadBackups(): Backup[] {
     if (v2) {
       const list = JSON.parse(v2) as { meta: DocMeta; doc: Json; active: boolean; dirty?: boolean; speech?: boolean; media?: string[] }[];
       const media = list[0]?.media;
-      return list.map(({ media: _m, ...b }) => ({ ...b, doc: PMNode.fromJSON(schema, unpackDoc(b.doc, media)) }));
+      return list.map(({ media: _m, ...b }) => ({ ...b, doc: withCardIds(PMNode.fromJSON(schema, unpackDoc(b.doc, media))) }));
     }
     const v1 = localStorage.getItem(OLD_AUTOSAVE_KEY);
-    if (v1) return [{ meta: readJson<DocMeta>('falcon.meta', { name: 'Untitled' }), doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
+    if (v1) return [{ meta: readJson<DocMeta>('falcon.meta', { name: 'Untitled' }), doc: withCardIds(PMNode.fromJSON(schema, JSON.parse(v1))), active: true }];
   } catch { /* corrupt autosave: start blank */ }
   return [];
 }

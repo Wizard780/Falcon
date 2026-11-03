@@ -208,3 +208,16 @@ User report: the six-dot card grip won't let you click the text next to it.
 - [x] the outline's resize edge sits inside the pane (6px) instead of 4px over the page
 - [x] checked at narrow and normal margins, 100% and 150% zoom: a click 2px into a tag puts the caret at its start, and the grip's center is still the grip
 - [x] follow-up report "the cursor won't let me select it": the left margin (where the grip lives) was a dead zone, so a click or drag starting beside a line did nothing. A press in the margin now goes to the line's near edge (Word and CardMirror put the caret at the line's start), and the grip itself tells a click (caret at its line's start), a sideways drag (selects from the line's start) and an up/down drag (moves the card) apart. Journey margin-click covers it at normal and narrow margins
+
+## Stage: stable card ids (2026-11-03, branch stable-card-ids)
+Groundwork for Claude and Aarav editing the same block file (open-doc status, his edits for Claude, pending cards). No UI.
+- [x] every top-level heading (pocket, hat, block, tag, analytic) has a `card` attr: 8 random lowercase letters/digits (`src/editor/card-ids.ts`)
+- [x] saved as a hidden Word bookmark at the start of the heading; read back on open (also a `_fc_` bookmark Word left between paragraphs). Word kept all ids through an edit and Save (checked by hand in Word 16 on a scratch file)
+- [x] a file with no ids gets them on open without showing unsaved; old autosaves get them on restore
+- [x] the plugin gives a new heading an id and a copied heading a fresh one; the original keeps its id (the copy the change came from is the one whose text start maps forward). Enter at the start of a tag leaves the id with the tag text. Cut and paste (a move) keeps it
+- [x] NATO AT Neg (copy): 783 headings, all unique, identical mark map and ids after save and reopen; python-docx reads the bookmarks; 0.2 ms per keystroke with the id check
+
+Contract for outside tools (Claude's python-docx scripts):
+- A heading's id is the name of a `w:bookmarkStart` inside its `w:p`, right after `w:pPr`: `<w:bookmarkStart w:id="N" w:name="_fc_<id>"/><w:bookmarkEnd w:id="N"/>`. `<id>` is 1 to 36 of `[a-z0-9]` (Falcon makes 8). `w:id` must be unique among the file's bookmarks.
+- To add a card with an id, write that bookmark into its tag paragraph. A heading with none gets a random id the next time Falcon opens the file.
+- When copying a paragraph's XML, drop its `_fc_` bookmark (or give a new id): on open, the second heading with an id already used gets a new one.

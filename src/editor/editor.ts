@@ -17,6 +17,7 @@ import { footnoteText, schema } from './schema';
 import { P, PREFS_META, onPrefs, pref } from './prefs';
 import { cleanPastedHTML } from './paste';
 import { clipboardSerializer } from './clipboard-styles';
+import { cardIdPlugin, withCardIds } from './card-ids';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
 import { isReading, readPlugin } from './read';
@@ -128,7 +129,7 @@ export function emptyDoc(): PMNode {
 
 export function createState(doc: PMNode = emptyDoc()) {
   const state = EditorState.create({
-    doc,
+    doc: withCardIds(doc),
     plugins: [
       readPlugin, // first, so its keyboard lock runs before the formatting keys
       multiSelectionPlugin,
@@ -150,6 +151,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       windowPlugin,
       findPlugin,
       prefsWatch,
+      cardIdPlugin,
     ],
   });
   // tables from other programs can have short rows or overlapping spans: square them up once, on open

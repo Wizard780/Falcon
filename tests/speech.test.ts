@@ -69,7 +69,7 @@ describe('what ~ sends', () => {
   it('keeps indent', () => {
     const doc = schema.node('doc', null, [schema.node('paragraph', { style: 'tag' }, [schema.text('Tag')]), schema.node('paragraph', { indent: 2 }, [schema.text('indented')])]);
     const s = createState(doc);
-    const out = send(s.apply(s.tr.setSelection(TextSelection.create(doc, 1))));
+    const out = send(s.apply(s.tr.setSelection(TextSelection.create(s.doc, 1))));
     expect(out.doc.child(1).attrs.indent).toBe(2);
   });
   it('sends nothing above the first heading, from an empty doc, or for blank text', () => {
