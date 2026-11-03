@@ -329,13 +329,15 @@ const sd = speechdrop.createSpeechDrop({
   media: process.env.FALCON_SD_MEDIA || undefined,
 });
 const sdDownloads = () => process.env.FALCON_SD_DOWNLOADS || path.join(app.getPath('downloads'), 'SpeechDrop');
-let sdTarget = null; // the page the live list goes to
-const sdWatcher = speechdrop.createWatcher({
+// one watcher per room joined (a tab each), each owned by the page that asked for it
+const sdWatches = new Map(); // room -> { w, wc }
+const sdWatcher = (room) => speechdrop.createWatcher({
   wsUrl: process.env.FALCON_SD_WS || undefined,
   WebSocketImpl: process.env.FALCON_SD_WS === 'off' ? null : globalThis.WebSocket,
-  list: (room) => sd.list(room),
-  onFiles: (u) => { if (sdTarget && !sdTarget.isDestroyed()) sdTarget.send('falcon:sd-files', u); },
+  list: (r) => sd.list(r),
+  onFiles: (u) => { const x = sdWatches.get(room); if (x && !x.wc.isDestroyed()) x.wc.send('falcon:sd-files', u); },
 });
+const sdStop = (room) => { const x = sdWatches.get(room); if (x) { sdWatches.delete(room); x.w.stop(); } };
 // files come from strangers: Falcon opens .docx itself, and hands only plain document types to their app
 // (.doc, .rtf and .docm can carry macros or embedded objects, and Falcon's downloads have no quarantine mark: those only show in the folder)
 const SD_OPENS = new Set(['.pdf', '.txt', '.odt', '.pages']);
@@ -402,21 +404,25 @@ ipcMain.handle('falcon:sd-archive', sdSafe(async (_e, room, title) => {
   shell.showItemInFolder(out);
   return { path: out, count: files.length - skipped, skipped };
 }));
-// the page watching the room owns it: a reload, crash or closed window stops it, and another page's stop doesn't
-const sdRelease = (wc) => () => { if (sdTarget === wc) { sdTarget = null; sdWatcher.stop(); } };
+// the page watching a room owns it: a reload, crash or closed window stops its rooms, and another page's stop doesn't
+const sdPages = new WeakSet();
+const sdRelease = (wc) => () => { for (const [room, x] of sdWatches) if (x.wc === wc) sdStop(room); };
 ipcMain.on('falcon:sd-watch', (e, room, files) => {
-  const on = typeof room === 'string' && room ? room : null;
-  if (!on) { sdRelease(e.sender)(); return; }
-  if (sdTarget !== e.sender) {
-    sdTarget = e.sender;
+  if (typeof room !== 'string' || !room) return;
+  if (!sdPages.has(e.sender)) {
+    sdPages.add(e.sender);
     const release = sdRelease(e.sender);
     e.sender.once('destroyed', release);
-    e.sender.once('did-start-loading', release);
-    e.sender.once('render-process-gone', release);
+    e.sender.on('did-start-loading', release);
+    e.sender.on('render-process-gone', release);
   }
-  try { sdWatcher.watch(on, Array.isArray(files) ? files : null); } catch { sdWatcher.stop(); }
+  let x = sdWatches.get(room);
+  if (!x) sdWatches.set(room, x = { w: sdWatcher(room), wc: e.sender });
+  x.wc = e.sender;
+  try { x.w.watch(room, Array.isArray(files) ? files : null); } catch { sdStop(room); }
 });
-app.on('will-quit', () => sdWatcher.stop());
+ipcMain.on('falcon:sd-unwatch', (e, room) => { if (sdWatches.get(room)?.wc === e.sender) sdStop(room); });
+app.on('will-quit', () => { for (const room of [...sdWatches.keys()]) sdStop(room); });
 
 // Nimbus and other debate apps send cards in over the same local bridge CardMirror has (see editor-bridge.cjs).
 // Each request goes to the page, which knows the open docs, and comes back with its answer.
