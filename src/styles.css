@@ -567,3 +567,5 @@ button.b:active { transform: scale(.97); }
 .sa-mode b { font-size: 13px; font-weight: 600; line-height: 18px; }
 .sa-mode span { font-size: 12px; line-height: 17px; color: var(--u-tx2); }
 .cf.sa .cf-btns { margin-top: 16px; }
+.ns-file { margin: 10px 2px 0; font-size: 12px; color: var(--u-tx2); overflow-wrap: anywhere; }
+.ns-file b { color: var(--u-tx); font-weight: 500; }

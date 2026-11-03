@@ -22,6 +22,7 @@ export const P = {
   recentCount: def('recentCount', 12),
   usageStats: def('usageStats', true), // anonymous feature counts to PostHog (src/ui/analytics.ts)
   newName: def<'untitled' | 'speech' | 'date'>('newName', 'untitled'),
+  speechName: def('speechName', 'Speech {speech} {date:M-D h-mmA}'), // New speech doc's file name (files.ts speechFileName)
   savePrefix: def('savePrefix', true), // Save As puts the prefixes below on Send, Read and Marked Doc names
   prefixSend: def('prefix.send', 'SEND_'),
   prefixRead: def('prefix.read', 'READ_'),

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { SaveMode } from '../editor/save-modes';
+import { speechFileName } from './files';
 
 const MODES: { mode: SaveMode; label: string; hint: string }[] = [
   { mode: 'asis', label: 'As-Is', hint: 'Everything in the document. The open file becomes this copy.' },
@@ -37,6 +38,34 @@ export function SaveAs({ name, onSave, onClose }: { name: string | null; onSave:
           ))}
         </div>
         <div className="cf-btns"><button onClick={onClose}>Cancel</button></div>
+      </div>
+    </div>
+  );
+}
+
+/** New speech doc: type the speech's name (1NC, 2AC…), and the file is named from Settings' template. Enter makes it; Esc cancels. */
+export function NewSpeech({ open, onMake, onClose }: { open: boolean; onMake: (speech: string) => void; onClose: () => void }) {
+  const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  // a layout effect: focus and Esc are live as soon as the dialog is in the page, so keys pressed
+  // straight after the shortcut aren't lost
+  useLayoutEffect(() => {
+    if (!open) return;
+    setValue('');
+    inputRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); } };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="cf-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="cf sa" role="dialog" aria-modal="true" aria-labelledby="ns-t">
+        <h2 id="ns-t">New Speech Doc</h2>
+        <input ref={inputRef} className="sa-name" aria-label="Speech name" placeholder="1NC, 2AC, 1AR…" spellCheck={false} maxLength={80} value={value}
+          onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onMake(value.trim()); } }} />
+        <p className="ns-file">Saves as <b>{speechFileName(value)}.docx</b></p>
+        <div className="cf-btns"><button onClick={onClose}>Cancel</button><button onClick={() => onMake(value.trim())}>Create</button></div>
       </div>
     </div>
   );

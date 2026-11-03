@@ -40,3 +40,10 @@ Preconditions:
 - The toast lasts about six seconds with an action. Click Undo inside that window.
 - The speech doc is dirty from its first send, so closing it asks first. Reloads keep it only through crash recovery, which writes about a second after the last change.
 - The send key is eaten by the page on purpose, so a literal `` ` `` can't be typed there while it's bound. A text box (find bar, Settings search) still takes it. Rebinding it (say to `~`) frees `` ` `` again.
+
+## New speech doc
+
+`journeys/new-speech.mjs`: Settings > General > Speech doc name (`falcon.speechName`, default
+`Speech {speech} {date:M-D h-mmA}`), then Mod-Shift-N, Shift-click on the tool row's +, or Home's
+New speech doc. The dialog takes the speech's name, the doc opens on a pocket with it, is marked as the
+speech doc, and Mod-S downloads it under the template's name.

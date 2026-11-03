@@ -18,7 +18,7 @@ import { TIMER_EVENT, type TimerRequest } from './timer-event';
 import { insertIntoSpeech, sendContent } from '../editor/speech';
 import { selectionState } from './selection-state';
 import { SvgIcon } from './icons';
-import { newFileName, openDocument, openPath, saveDocument, type DocMeta } from './files';
+import { newFileName, openDocument, speechFileName, openPath, saveDocument, type DocMeta } from './files';
 import type { Ctx } from './cc-sources';
 import type { FileHit } from './file-search';
 import { clearFind, findInfo, requestFind, setQuery as setFindQuery } from '../editor/find';
@@ -29,7 +29,7 @@ import { Home } from './Home';
 import './display'; // the display settings (fonts, sizes, root classes) apply at startup
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
 import { Confirm, nameList, type Ask } from './Confirm';
-import { SaveAs } from './SaveAs';
+import { NewSpeech, SaveAs } from './SaveAs';
 import { copyName, docForMode, type SaveMode } from '../editor/save-modes';
 import { Tips, parseTip } from './Tips';
 import { OutlinePane } from './Outline';
@@ -82,7 +82,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['search', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'close', 'nextDoc', 'prevDoc', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['search', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -234,6 +234,7 @@ export function App() {
   const [settingsQuery, setSettingsQuery] = useState<string | undefined>();
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
+  const [speechAsk, setSpeechAsk] = useState(false); // the New speech doc dialog is up
   const [saveAsName, setSaveAsName] = useState<string | null>(null); // the Save As dialog is up, offering this name
   const askRef = useRef(ask);
   askRef.current = ask;
@@ -466,6 +467,19 @@ export function App() {
     flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${keyLabel('save')}).`);
   }, [addDoc, switchTo, flash]);
   const fileNew = useCallback(() => { track('doc_new'); addDoc(emptyDoc(), { name: 'Untitled' }); }, [addDoc]);
+  /** New speech doc: a file that opens on a pocket with the speech's name, already marked as the speech doc. */
+  const fileNewSpeech = useCallback(() => setSpeechAsk(true), []);
+  const closeNewSpeech = useCallback(() => setSpeechAsk(false), []);
+  const makeSpeech = useCallback((speech: string) => {
+    setSpeechAsk(false);
+    track('doc_new', { speech: true });
+    const p = (style: string, text = '') => schema.node('paragraph', { style }, text ? schema.text(text) : undefined);
+    addDoc(schema.node('doc', null, speech ? [p('pocket', speech), p('normal')] : [p('normal')]), { name: speechFileName(speech) });
+    const v = viewRef.current!;
+    v.dispatch(v.state.tr.setSelection(TextSelection.atEnd(v.state.doc))); // typing starts under the pocket
+    speechRef.current = activeRef.current;
+    setSpeechId(activeRef.current);
+  }, [addDoc]);
   const fileOpen = useCallback(async () => {
     try {
       const r = await openDocument();
@@ -592,19 +606,19 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
-    if (askRef.current || saveAsRef.current) return; // a warning or Save As is up: it gets answered first
+    if (askRef.current || saveAsRef.current || speechAskRef.current) return; // a warning, Save As or New speech doc is up: it gets answered first
     if (paletteRef.current || ccRef.current) return; // file search or the command center is up: it gets closed first
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
-    if (c === 'new') fileNew(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
+    if (c === 'new') fileNew(); else if (c === 'newSpeech') fileNewSpeech(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
     else if (c === 'saveAs') void fileSave(true); else if (c === 'close') closeDoc(activeRef.current); else if (c === 'settings') setSettingsOpen(true);
   };
   useEffect(() => bridge.onMenu?.((c) => menuRef.current(c)), []);
   // the Mac menu shows the keys Settings > Keybindings has for its items
   useEffect(() => {
-    const send = () => bridge.setMenuKeys?.(Object.fromEntries(['settings', 'new', 'open', 'save', 'saveAs', 'close'].map((id) => [id, keyOf(id)])));
+    const send = () => bridge.setMenuKeys?.(Object.fromEntries(['settings', 'new', 'newSpeech', 'open', 'save', 'saveAs', 'close'].map((id) => [id, keyOf(id)])));
     send();
     return onPrefs(send);
   }, []);
@@ -616,6 +630,7 @@ export function App() {
     else if (id === 'find') openFind();
     else if (id === 'open') void fileOpen();
     else if (id === 'new') fileNew();
+    else if (id === 'newSpeech') fileNewSpeech();
     else if (id === 'close') closeDoc(activeRef.current);
     else if (id === 'home') setHomeOpen((h) => !h);
     else if (id === 'settings') setSettingsOpen((o) => !o);
@@ -625,7 +640,7 @@ export function App() {
     else if (id === 'zoomReset') setZoom(1);
     else if (id === 'commands') setCcOpen((o) => !o);
     else if (id === 'sendToSpeech') sendToSpeech();
-  }, [fileSave, fileOpen, fileNew, openFind, closeDoc, cycle, zoomBy, sendToSpeech]);
+  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, zoomBy, sendToSpeech]);
 
   // app-level shortcuts
   useEffect(() => {
@@ -676,12 +691,14 @@ export function App() {
   const settingsRef = useRef(settingsOpen);
   const saveAsRef = useRef(saveAsName);
   saveAsRef.current = saveAsName;
+  const speechAskRef = useRef(speechAsk);
+  speechAskRef.current = speechAsk;
   settingsRef.current = settingsOpen;
   const paletteRef = useRef(paletteOpen);
   paletteRef.current = paletteOpen;
   const ccRef = useRef(ccOpen);
   ccRef.current = ccOpen;
-  useLayoutEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, paletteOpen, ccOpen]);
+  useLayoutEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !speechAsk && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, speechAsk, paletteOpen, ccOpen]);
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -817,7 +834,7 @@ export function App() {
     return () => { stopScroll(); if (sc) sc.scrollTop = top; };
   }, []);
 
-  const modal = settingsOpen || paletteOpen || ccOpen || !!ask || saveAsName !== null;
+  const modal = settingsOpen || paletteOpen || ccOpen || !!ask || saveAsName !== null || speechAsk;
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
@@ -844,7 +861,7 @@ export function App() {
           drag area (which runs under these buttons) would swallow their clicks if they came first. */}
       <div className="covered" inert={modal}>
       <Tools outline={showOutline} reading={reading}
-        onNew={fileNew} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
+        onNew={(speech) => (speech ? fileNewSpeech() : fileNew())} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
         onFind={openFind} onOutline={() => { setHomeOpen(false); setShowOutline((s) => !s); }}
         onRead={() => { setHomeOpen(false); run(toggleRead); }}
         speech={speechId === activeId} onSpeech={toggleSpeech} />
@@ -876,7 +893,7 @@ export function App() {
 
       <div className="covered" inert={!!ask}>
       <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents.slice(0, pref(P.recentCount))}
-        onNew={fileNew} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)} onPeek={peekRecent}
+        onNew={fileNew} onNewSpeech={fileNewSpeech} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)} onPeek={peekRecent}
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
       <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
@@ -888,6 +905,7 @@ export function App() {
       </div>
       <Confirm ask={ask} />
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
+      <NewSpeech open={speechAsk} onMake={makeSpeech} onClose={closeNewSpeech} />
       <div className={`toast${toast ? ' show' : ''}${toast?.action ? ' has-action' : ''}`} role="status">
         {toast?.msg}
         {toast?.action && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const a = toast.action!; setToast(null); a.run(); }}>{toast.action.label}</button>}
@@ -1051,13 +1069,13 @@ function UpdateButton({ u, onInstall }: { u: UpdateInfo; onInstall: () => void }
 
 // ---------- the tools: file and view buttons in a row above the outline ----------
 
-function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onNew: () => void; onOpen: () => void; onSave: (as: boolean) => void; onFind: () => void; onOutline: () => void; onRead: () => void; onSpeech: () => void }) {
+function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onNew: (speech: boolean) => void; onOpen: () => void; onSave: (as: boolean) => void; onFind: () => void; onOutline: () => void; onRead: () => void; onSpeech: () => void }) {
   const b = (icon: string, title: string, onClick: (e: React.MouseEvent) => void, on = false) => (
     <button className="fs-b" title={title} aria-label={parseTip(title).label} data-on={on || undefined} aria-pressed={on || undefined} onClick={onClick}><SvgIcon name={icon} /></button>
   );
   return (
     <div className="tools" role="toolbar" aria-label="File and view">
-      {b('plus', titled('New document', 'new', 'start a blank file'), props.onNew)}
+      {b('plus', titled('New document', 'new', 'start a blank file. Shift-click for a speech doc'), (e) => props.onNew(e.shiftKey))}
       {b('open', titled('Open…', 'open', 'open a .docx file'), props.onOpen)}
       {b('save', titled('Save', 'save', 'save this file. Shift-click for Save As'), (e) => props.onSave(e.shiftKey))}
       {b('saveAs', titled('Save As…', 'saveAs', 'save a copy, as-is or as a send, read or marked doc'), () => props.onSave(true))}

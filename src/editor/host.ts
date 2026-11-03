@@ -30,7 +30,7 @@ type FalconBridge = {
   dictionaryWords?: () => Promise<string[]>;
   /** Take a word back out of the dictionary. Returns the new list. */
   removeDictionaryWord?: (word: string) => Promise<string[]>;
-  /** Mac File menu clicks ('new', 'open', 'save', 'saveAs', 'close', 'settings'). Returns an unsubscribe. */
+  /** Mac File menu clicks ('new', 'newSpeech', 'open', 'save', 'saveAs', 'close', 'settings'). Returns an unsubscribe. */
   onMenu?: (f: (cmd: string) => void) => () => void;
   /** Files the OS asked Falcon to open (double-click, Open With). Subscribing says the page is ready. Returns an unsubscribe. */
   onOpenPaths?: (f: (paths: string[]) => void) => () => void;
