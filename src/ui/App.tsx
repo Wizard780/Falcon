@@ -6,6 +6,7 @@ import { Node as PMNode } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
 import { withCardIds } from '../editor/card-ids';
+import { pendingSections } from '../editor/pending';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
 import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
@@ -870,6 +871,7 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const split = useMemo(() => (view ? readSplit(view.state.doc) : { cards: 0, tags: 0 }), [view, docVersion]);
   const words = split.cards + split.tags;
+  const pending = useMemo(() => (view ? pendingSections(view.state.doc).length : 0), [view, docVersion]);
   // each reader reads cards at one speed, and tags, analytics and cites at another (Settings, Speech and timers)
   const r1 = (r: ReadSplit) => clock(readSeconds(r, pref(P.wpm1), pref(P.wpm1Tags))), r2 = (r: ReadSplit) => clock(readSeconds(r, pref(P.wpm2), pref(P.wpm2Tags)));
   const brush = view ? brushKey.getState(view.state)?.kind ?? null : null;
@@ -1068,6 +1070,7 @@ export function App() {
         <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {r1(split)} · Reader 2: {r2(split)}</span>
         {/* only what's read aloud counts, the same rule as Doc: highlighted text, tags, analytics and cites */}
         {sel && sel.selRead > 0 && <span className="sel" title="Words you'd read aloud in the selection (highlighted text, tags, analytics and cites), and how long Reader 1 and Reader 2 take">Sel: {sel.selRead.toLocaleString('en-US')} {sel.selRead === 1 ? 'word' : 'words'} · {r1(sel.selSplit)} / {r2(sel.selSplit)}</span>}
+        {pending > 0 && <button className="lit pend" title={titled('Next pending card', 'nextPending', `${pending} orange ${pending === 1 ? 'card' : 'cards'} Claude added and you haven't approved`)} onClick={() => run(commandOf('nextPending'))}>{pending} pending</button>}
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />

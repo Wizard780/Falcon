@@ -5,6 +5,7 @@ import {
   backgroundToHighlight, condenseWithWarning, extractCard, extractUndertag, highlightToBackground, lockHighlighting, undertagQuotes,
 } from './card-tools/edit';
 import { createReference, refHeading, refHighlights, refShrink } from './card-tools/reference';
+import { approveAll, approveCard, nextPending, rejectCard } from './pending';
 
 /** The toolbar's Card menu: operations on the card at the cursor. */
 export const CARD_TOOLS: ToolSection[] = [
@@ -25,6 +26,13 @@ export const CARD_TOOLS: ToolSection[] = [
     { id: 'lockHighlighting', label: 'Lock Highlighting', run: lockHighlighting, hint: 'Turn highlights into a light gray background, in the selection or the whole card' },
     { id: 'highlightToBackground', label: 'Highlight to Background', run: highlightToBackground, hint: 'Turn the selection\'s highlights into a background of the same color' },
     { id: 'backgroundToHighlight', label: 'Background to Highlight', run: backgroundToHighlight, hint: 'Turn the selection\'s backgrounds into the nearest highlight color' },
+  ] },
+  // cards Claude added, shown in light orange until approved (pending.ts); outside one, each key goes to the next
+  { title: 'Review', items: [
+    { id: 'approveCard', label: 'Approve card', run: approveCard, key: 'Mod-Shift-Enter', hint: 'Keep the orange (pending) card at the cursor and go to the next one' },
+    { id: 'rejectCard', label: 'Reject card', run: rejectCard, key: 'Mod-Shift-Backspace', hint: 'Delete the orange (pending) card at the cursor and go to the next one' },
+    { id: 'nextPending', label: 'Next pending card', run: nextPending, hint: 'Go to the next orange card' },
+    { id: 'approveAll', label: 'Approve all pending cards', run: approveAll, hint: 'Keep every orange card in the document' },
   ] },
 ];
 /** This feature's rows in Settings > Editor. */

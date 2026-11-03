@@ -18,6 +18,7 @@ import { P, PREFS_META, onPrefs, pref } from './prefs';
 import { cleanPastedHTML } from './paste';
 import { clipboardSerializer } from './clipboard-styles';
 import { cardIdPlugin, withCardIds } from './card-ids';
+import { pendingPlugin } from './pending';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
 import { isReading, readPlugin } from './read';
@@ -152,6 +153,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       findPlugin,
       prefsWatch,
       cardIdPlugin,
+      pendingPlugin,
     ],
   });
   // tables from other programs can have short rows or overlapping spans: square them up once, on open

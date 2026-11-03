@@ -228,3 +228,16 @@ Contract for outside tools (Claude's python-docx scripts):
 - A heading's id is the name of a `w:bookmarkStart` inside its `w:p`, right after `w:pPr`: `<w:bookmarkStart w:id="N" w:name="_fc_<id>"/><w:bookmarkEnd w:id="N"/>`. `<id>` is 1 to 36 of `[a-z0-9]` (Falcon makes 8). `w:id` must be unique among the file's bookmarks.
 - To add a card with an id, write that bookmark into its tag paragraph. A heading with none gets a random id the next time Falcon opens the file.
 - When copying a paragraph's XML, drop its `_fc_` bookmark (or give a new id): on open, the second heading with an id already used gets a new one.
+
+## Stage: pending cards (2026-11-03, branch pending-cards, on stable-card-ids)
+Aarav: "as u scroll through the file there is a light orange background around cards u cut that were not improved." His interview answers: orange means not yet approved by him; approve and reject with buttons and keys.
+- [x] a heading's `pending` attr; its section (tag + body, or a block and every card under it) is drawn light orange (`src/editor/pending.ts`), with Approve / Reject on the heading
+- [x] Approve (button, Mod-Shift-Enter) clears it and goes to the next pending card; Reject (button, Mod-Shift-Backspace) deletes the section and goes on; Undo brings it back. Outside a pending card the keys only jump. Card menu > Review also has Next pending card and Approve all. `N pending` in the status bar jumps too
+- [x] saved as the id bookmark's name: `_fcp_<id>` while pending, `_fc_<id>` once approved. No shading or highlight is ever written, so Word and Verbatim show nothing
+- [x] a card sent to the speech doc is never pending there
+- [x] NATO AT Neg (copy) with two cards added by python-docx: both open orange, Approve and Reject work, the save has no `_fcp_` and no new shading, and the reopen has no orange
+
+Contract for Claude's python-docx scripts:
+- To add a card as pending, give its tag (or analytic, or block heading) paragraph a bookmark named `_fcp_<id>` right after `w:pPr`: `<w:bookmarkStart w:id="N" w:name="_fcp_<id>"/><w:bookmarkEnd w:id="N"/>`. `<id>` is 1-36 of `[a-z0-9]`; `N` unique among the file's bookmarks.
+- A pending block heading covers every card under it.
+- Approved means the same bookmark named `_fc_<id>`. A card he rejected is gone from the file.

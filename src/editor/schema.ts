@@ -24,29 +24,29 @@ const TAG_FOR: Record<ParaStyle, string> = {
   pocket: 'h1', hat: 'h2', block: 'h3', tag: 'h4', analytic: 'p', undertag: 'p', normal: 'p',
 };
 
-/** A copied heading's card id (copy and paste keep it; card-ids.ts gives a repeated one a new id). */
+/** A copied heading's card id and pending mark (copy and paste keep them; card-ids.ts gives a repeated id a new one). */
 const cardOf = (el: HTMLElement | string) => {
   const id = typeof el === 'string' ? null : el.dataset.card;
-  return id && CARD_ID.test(id) ? id : null;
+  return { card: id && CARD_ID.test(id) ? id : null, pending: typeof el !== 'string' && el.dataset.pending === '1' };
 };
 
 const paragraph: NodeSpec = {
   content: 'inline*',
   group: 'block',
-  // card: the heading's stable id (card-ids.ts); null on body paragraphs
-  attrs: { style: { default: 'normal' }, indent: { default: 0 }, card: { default: null } },
+  // card: the heading's stable id (card-ids.ts); null on body paragraphs. pending: not yet approved (pending.ts)
+  attrs: { style: { default: 'normal' }, indent: { default: 0 }, card: { default: null }, pending: { default: false } },
   parseDOM: [
-    { tag: 'h1', getAttrs: (el) => ({ style: 'pocket', card: cardOf(el) }) },
-    { tag: 'h2', getAttrs: (el) => ({ style: 'hat', card: cardOf(el) }) },
-    { tag: 'h3', getAttrs: (el) => ({ style: 'block', card: cardOf(el) }) },
-    { tag: 'h4', getAttrs: (el) => ({ style: 'tag', card: cardOf(el) }) },
-    { tag: 'h5', getAttrs: (el) => ({ style: 'tag', card: cardOf(el) }) },
-    { tag: 'h6', getAttrs: (el) => ({ style: 'tag', card: cardOf(el) }) },
+    { tag: 'h1', getAttrs: (el) => ({ style: 'pocket', ...cardOf(el) }) },
+    { tag: 'h2', getAttrs: (el) => ({ style: 'hat', ...cardOf(el) }) },
+    { tag: 'h3', getAttrs: (el) => ({ style: 'block', ...cardOf(el) }) },
+    { tag: 'h4', getAttrs: (el) => ({ style: 'tag', ...cardOf(el) }) },
+    { tag: 'h5', getAttrs: (el) => ({ style: 'tag', ...cardOf(el) }) },
+    { tag: 'h6', getAttrs: (el) => ({ style: 'tag', ...cardOf(el) }) },
     {
       tag: 'p',
       getAttrs: (el) => {
         const s = (el as HTMLElement).dataset.style;
-        return { style: s && (PARA_STYLES as readonly string[]).includes(s) ? s : 'normal', indent: Number((el as HTMLElement).dataset.indent) || 0, card: cardOf(el) };
+        return { style: s && (PARA_STYLES as readonly string[]).includes(s) ? s : 'normal', indent: Number((el as HTMLElement).dataset.indent) || 0, ...cardOf(el) };
       },
     },
   ],
@@ -58,6 +58,7 @@ const paragraph: NodeSpec = {
       attrs.style = `margin-left:${node.attrs.indent * 0.5}in`;
     }
     if (node.attrs.card) attrs['data-card'] = node.attrs.card;
+    if (node.attrs.pending) attrs['data-pending'] = '1';
     return [TAG_FOR[style], attrs, 0];
   },
 };

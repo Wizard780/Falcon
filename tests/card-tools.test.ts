@@ -46,7 +46,7 @@ beforeEach(() => localStorage.clear());
 
 describe('Card menu', () => {
   it('lists the CardMirror sections and keys', () => {
-    expect(CARD_TOOLS.map((s) => s.title)).toEqual(['Condense', 'Excerpt', 'Highlighting']);
+    expect(CARD_TOOLS.map((s) => s.title)).toEqual(['Condense', 'Excerpt', 'Highlighting', 'Review']);
     expect(CARD_TOOLS[0].items.map((i) => i.key)).toEqual(['F3', 'Alt-F3', 'Mod-Alt-F3', undefined, undefined, 'Mod-Alt-Shift-F3']);
     expect(K['Alt-Shift-F8']).toBe(extractCard);
   });

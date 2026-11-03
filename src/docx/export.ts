@@ -2,7 +2,7 @@ import { strToU8, zip, zipSync, type Zippable } from 'fflate';
 import type { Mark, Node as PMNode } from 'prosemirror-model';
 import { TableMap } from 'prosemirror-tables';
 import { CARD_ID, colWidths, levelOf, schema } from '../editor/schema';
-import { BOOKMARK_PREFIX } from '../editor/card-ids';
+import { BOOKMARK_PREFIX, PENDING_PREFIX } from '../editor/card-ids';
 import { STYLES_XML } from './styles';
 
 /** Paragraph style → Word style id (Verbatim uses the built-in headings for Pocket/Hat/Block/Tag). */
@@ -177,9 +177,10 @@ function runsXml(para: PMNode, part: Part): string {
 export function paragraphXml(para: PMNode, part: Part = newPart()): string {
   const ps = PSTYLE[para.attrs.style as string];
   const ppr = [ps ? `<w:pStyle w:val="${ps}"/>` : '', para.attrs.indent ? `<w:ind w:left="${para.attrs.indent * 720}"/>` : ''].join('');
-  // a heading's card id rides in a hidden bookmark (Word keeps bookmarks whose names start with _)
+  // a heading's card id rides in a hidden bookmark (Word keeps bookmarks whose names start with _);
+  // a pending card's is named _fcp_ instead of _fc_, and nothing else marks it
   const id = levelOf(para) && para.attrs.card && CARD_ID.test(para.attrs.card) ? part.pkg.marks++ : -1;
-  const mark = id >= 0 ? `<w:bookmarkStart w:id="${id}" w:name="${BOOKMARK_PREFIX}${para.attrs.card}"/><w:bookmarkEnd w:id="${id}"/>` : '';
+  const mark = id >= 0 ? `<w:bookmarkStart w:id="${id}" w:name="${para.attrs.pending ? PENDING_PREFIX : BOOKMARK_PREFIX}${para.attrs.card}"/><w:bookmarkEnd w:id="${id}"/>` : '';
   return `<w:p>${ppr ? `<w:pPr>${ppr}</w:pPr>` : ''}${mark}${runsXml(para, part)}</w:p>`;
 }
 

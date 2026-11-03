@@ -1,7 +1,7 @@
 import { strFromU8, unzipSync } from 'fflate';
 import type { Mark, Node as PMNode } from 'prosemirror-model';
 import { CARD_ID, HIGHLIGHTS, LEVEL, schema, type ParaStyle } from '../editor/schema';
-import { BOOKMARK_PREFIX, withCardIds } from '../editor/card-ids';
+import { BOOKMARK_PREFIX, PENDING_PREFIX, withCardIds } from '../editor/card-ids';
 import { parseXml, type XEl } from './xml';
 
 type Element = XEl;
@@ -21,15 +21,17 @@ const kid = (el: Element | null | undefined, name: string): Element | undefined 
 };
 const val = (el: Element | undefined) => el?.getAttributeNS(W, 'val') ?? el?.getAttribute('w:val') ?? null;
 const on = (el: Element | undefined) => !!el && !['0', 'false', 'off', 'none'].includes(val(el) ?? 'true');
-/** The card id in a `_fc_<id>` bookmark (card-ids.ts), or null. */
-const cardName = (el: Element): string | null => {
+type CardMark = { card: string; pending: boolean };
+/** The card id in a `_fc_<id>` bookmark (card-ids.ts), or a pending card's `_fcp_<id>` (pending.ts), or null. */
+const cardName = (el: Element): CardMark | null => {
   const name = (el.getAttributeNS(W, 'name') ?? el.getAttribute('w:name') ?? '').toLowerCase();
-  const id = name.startsWith(BOOKMARK_PREFIX) ? name.slice(BOOKMARK_PREFIX.length) : '';
-  return CARD_ID.test(id) ? id : null;
+  const pending = name.startsWith(PENDING_PREFIX);
+  const id = pending ? name.slice(PENDING_PREFIX.length) : name.startsWith(BOOKMARK_PREFIX) ? name.slice(BOOKMARK_PREFIX.length) : '';
+  return CARD_ID.test(id) ? { card: id, pending } : null;
 };
-/** A paragraph's card id: the first `_fc_` bookmark in it. */
-const cardMark = (p: Element): string | null => {
-  for (const b of Array.from(p.getElementsByTagNameNS(W, 'bookmarkStart'))) { const id = cardName(b); if (id) return id; }
+/** A paragraph's card id: the first `_fc_` or `_fcp_` bookmark in it. */
+const cardMark = (p: Element): CardMark | null => {
+  for (const b of Array.from(p.getElementsByTagNameNS(W, 'bookmarkStart'))) { const m = cardName(b); if (m) return m; }
   return null;
 };
 
@@ -361,17 +363,17 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
   };
 
   // a card id bookmark Word left between paragraphs belongs to the next one
-  let looseCard: string | null = null;
+  let looseCard: CardMark | null = null;
   const readPara = (p: Element, out: PMNode[]) => {
     const ppr = kid(p, 'pPr');
     const style = styleOf(ppr);
     const ind = kid(ppr, 'ind');
     const left = Number(ind?.getAttributeNS(W, 'left') ?? ind?.getAttributeNS(W, 'start') ?? ind?.getAttribute('w:left') ?? 0);
     const indent = left > 0 ? Math.min(8, Math.round(left / 720)) : 0;
-    const card = LEVEL[style] ? cardMark(p) ?? looseCard : null;
+    const mark = LEVEL[style] ? cardMark(p) ?? looseCard : null;
     looseCard = null;
     const boxes: PMNode[] = [];
-    out.push(schema.nodes.paragraph.create({ style, indent, card }, readInline(p, style, bodyRels, false, boxes)), ...boxes);
+    out.push(schema.nodes.paragraph.create({ style, indent, ...mark }, readInline(p, style, bodyRels, false, boxes)), ...boxes);
   };
 
   /** Block content: paragraphs, with content controls opened up and (inside a cell) nested tables flattened. */

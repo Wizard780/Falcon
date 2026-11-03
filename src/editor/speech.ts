@@ -33,6 +33,8 @@ export function sendContent(state: EditorState): { content: Fragment; label: str
   }
   const first = paras.find((p) => p.textContent.trim());
   if (!first) return null;
+  // a card sent to the speech doc is one you're reading: it isn't pending there
+  paras = paras.map((p) => (p.attrs.pending ? p.type.create({ ...p.attrs, pending: false }, p.content, p.marks) : p));
   const text = first.textContent.trim().replace(/\s+/g, ' ');
   return { content: Fragment.from(paras), label: text.length > LABEL_MAX ? `${text.slice(0, LABEL_MAX - 1).trimEnd()}…` : text };
 }

@@ -454,6 +454,13 @@ button.b:active { transform: scale(.97); }
 
 /* the card the cursor is in gets a thin bar on its left */
 .f-cur-card { position: relative; }
+/* pending cards (pending.ts): light orange until approved; never saved, so Word and Verbatim show nothing */
+.f-pending { background: color-mix(in srgb, #fb923c 16%, transparent); box-shadow: -10px 0 0 color-mix(in srgb, #fb923c 16%, transparent), 10px 0 0 color-mix(in srgb, #fb923c 16%, transparent); }
+.f-pending-head { border-top: 2px solid color-mix(in srgb, #fb923c 70%, transparent); }
+.f-pending-bar { float: right; display: inline-flex; gap: 4px; margin: 1px 0 0 12px; user-select: none; font: 600 11px/1 var(--mono, ui-monospace, monospace); }
+.f-pending-bar button { all: unset; cursor: pointer; padding: 4px 7px; border-radius: 4px; color: #9a3412; background: color-mix(in srgb, #fb923c 26%, var(--page, #fff)); }
+.f-pending-bar button:hover { background: color-mix(in srgb, #fb923c 45%, var(--page, #fff)); }
+.f-pending-bar .f-pending-reject { color: #7f1d1d; }
 .f-cur-card::before { content: ''; position: absolute; left: -14px; top: 0; bottom: 0; width: 1px; background: #c8c8cc; }
 
 /* the extra stretches of a Ctrl/Cmd-click multi-selection */
@@ -625,3 +632,4 @@ button.b:active { transform: scale(.97); }
 .cmp-pick button { height: 28px; padding: 0 12px; border-radius: 8px; background: var(--u-ctl2); color: var(--u-tx); font-size: 12px; box-shadow: var(--u-top); cursor: pointer; }
 .ns-file { margin: 10px 2px 0; font-size: 12px; color: var(--u-tx2); overflow-wrap: anywhere; }
 .ns-file b { color: var(--u-tx); font-weight: 500; }
+.status .pend { margin-left: 0; padding: 0 6px; color: #c2410c; }

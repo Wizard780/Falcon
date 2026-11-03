@@ -11,6 +11,8 @@ import { levelOf } from './schema';
  * key on it, and outside tools (Claude's python-docx scripts) address cards by it.
  */
 export const BOOKMARK_PREFIX = '_fc_';
+/** A pending card's bookmark (pending.ts): `_fcp_<id>` in place of `_fc_<id>`. */
+export const PENDING_PREFIX = '_fcp_';
 
 export function newCardId(): string {
   const b = new Uint32Array(2);
