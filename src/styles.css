@@ -582,6 +582,8 @@ button.b:active { transform: scale(.97); }
 :root[data-chrome="light"] .cf-btns .cf-ok { color: #c62828; }
 /* Save As: the name, then four kinds of copy in a two-by-two grid */
 .cf.sa { width: min(460px, calc(100vw - 48px)); }
+.cf.ch { width: min(460px, calc(100vw - 48px)); }
+.cf-list { margin: 10px 0 0; padding-left: 18px; max-height: 160px; overflow: auto; font-size: 13px; line-height: 19px; color: var(--u-tx); }
 .sa-name { display: block; width: 100%; box-sizing: border-box; height: 34px; margin: 6px 0 14px; padding: 0 12px; border: 0; border-radius: 8px;
   background: var(--u-ctl2); color: var(--u-tx); font: inherit; font-size: 13px; box-shadow: var(--u-top); outline: none; user-select: text; }
 .sa-name:focus-visible { outline: 2px solid var(--u-tx2); outline-offset: 2px; }

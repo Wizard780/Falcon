@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createIndex } = require('./indexer.cjs');
 const { createCardIndex } = require('./cards.cjs');
+const { createDocSync } = require('./docsync.cjs');
 const updater = require('./updater.cjs');
 const speechdrop = require('./speechdrop.cjs');
 const telemetry = require('./telemetry.cjs');
@@ -162,6 +163,14 @@ let fileIndex = null;
 const index = () => (fileIndex ??= createIndex(path.join(app.getPath('userData'), 'index-folders.json')));
 // Search cards: the cards in those same folders (see cards.cjs)
 let cardIndex = null;
+// open-docs.json and watching the open files (docsync.cjs)
+let sync = null;
+const docSync = () => (sync ??= createDocSync({
+  statusFile: path.join(app.getPath('userData'), 'open-docs.json'),
+  notify: (p) => { for (const w of BrowserWindow.getAllWindows()) w.webContents.send('falcon:doc-changed', p); },
+}));
+ipcMain.on('falcon:open-docs', (_e, list) => docSync().setDocs(list));
+app.on('will-quit', () => sync?.stop());
 const cards = () => (cardIndex ??= createCardIndex(path.join(app.getPath('userData'), 'card-index.json'), () => index().files()));
 
 let quitting = false; // the window is closing because the app is quitting (Cmd-Q), not just the window
@@ -189,14 +198,14 @@ ipcMain.handle('falcon:open-file', async (e) => {
   if (r.canceled || !r.filePaths[0]) return null;
   const p = path.resolve(r.filePaths[0]);
   await rememberPath(p);
-  return { name: path.basename(p), path: p, data: new Uint8Array(await fs.readFile(p)) };
+  return { name: path.basename(p), path: p, data: new Uint8Array(await docSync().read(p, () => fs.readFile(p))) };
 });
 ipcMain.handle('falcon:open-path', async (_e, p) => {
   if (typeof p !== 'string') throw new Error('bad open request');
   const abs = path.resolve(p);
   if (!abs.toLowerCase().endsWith('.docx')) throw new Error('Falcon only opens .docx files');
   if (!(await loadRecent()).includes(abs) && !(await index().allows(abs))) throw new Error('Open this file with Open first');
-  const data = new Uint8Array(await fs.readFile(abs));
+  const data = new Uint8Array(await docSync().read(abs, () => fs.readFile(abs)));
   await rememberPath(abs);
   return { name: path.basename(abs), path: abs, data };
 });
@@ -239,6 +248,8 @@ async function saveFile(e, opts) {
     await rememberPath(p);
   }
   if (!p.toLowerCase().endsWith('.docx')) throw new Error('Falcon only saves .docx files');
+  // another program wrote the file since Falcon read it: saving now would wipe that out, so the page merges first
+  if (await docSync().changed(p)) throw new Error('CHANGED_ON_DISK');
   // write to a temp file first so a crash mid-save never truncates the real file
   const tmp = `${p}.falcon-tmp`;
   try {
@@ -248,6 +259,7 @@ async function saveFile(e, opts) {
     await fs.rm(tmp, { force: true });
     throw err;
   }
+  await docSync().wrote(p);
   return { path: p, name: path.basename(p) };
 }
 // Saves run one at a time, in the order asked: a quick second save of a file can't mix its bytes into the first

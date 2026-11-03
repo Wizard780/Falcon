@@ -1,7 +1,7 @@
 import { strFromU8, unzipSync } from 'fflate';
 import type { Mark, Node as PMNode } from 'prosemirror-model';
 import { CARD_ID, HIGHLIGHTS, LEVEL, schema, type ParaStyle } from '../editor/schema';
-import { BOOKMARK_PREFIX, PENDING_PREFIX, withCardIds } from '../editor/card-ids';
+import { BOOKMARK_PREFIX, PENDING_PREFIX, idsInFile, withCardIds } from '../editor/card-ids';
 import { parseXml, type XEl } from './xml';
 
 type Element = XEl;
@@ -446,5 +446,9 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
   if (body) readBlocks(body, blocks, false);
   if (!blocks.length) blocks.push(schema.nodes.paragraph.create());
   // headings with no id (or a copied one) get one now, so the doc opens with every card addressable
-  return withCardIds(schema.node('doc', null, blocks));
+  const doc = withCardIds(schema.node('doc', null, blocks));
+  const inFile = new Set<string>();
+  for (const b of blocks) if (b.attrs.card) inFile.add(b.attrs.card);
+  idsInFile.set(doc, inFile);
+  return doc;
 }

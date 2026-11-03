@@ -14,15 +14,28 @@ export const BOOKMARK_PREFIX = '_fc_';
 /** A pending card's bookmark (pending.ts): `_fcp_<id>` in place of `_fc_<id>`. */
 export const PENDING_PREFIX = '_fcp_';
 
+/** For a doc read from a file: the ids that were in the file (bookmarks). The rest were made up on open and can
+ *  shift between reads, so a merge matches those cards by content instead (disk-merge.ts). No entry: every id is real. */
+export const idsInFile = new WeakMap<PMNode, Set<string>>();
+
 export function newCardId(): string {
   const b = new Uint32Array(2);
   crypto.getRandomValues(b);
   return (b[0].toString(36) + b[1].toString(36)).padStart(8, '0').slice(-8);
 }
 
+/** An id made from a heading's style, text and how many identical headings come before it: a file without ids
+ *  gets the same ones each time it's read, so a change made to it on disk can be matched card by card. */
+function stableId(n: PMNode, nth: number): string {
+  const s = `${n.attrs.style}\u0000${n.textContent}\u0000${nth}`;
+  const fnv = (seed: number) => { let h = seed; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; };
+  return (fnv(2166136261).toString(36) + fnv(84696351).toString(36)).padStart(8, '0').slice(-8);
+}
+
 /** The ids a doc's headings need: [index of the top-level node, new id] for each heading with none or with a repeated one.
- *  `keeper(id)` names the index of the copy that keeps a repeated id (default: the first). */
-export function missingIds(doc: PMNode, keeper?: (id: string) => number | null): [number, string][] {
+ *  `keeper(id)` names the index of the copy that keeps a repeated id (default: the first). `stable` makes the new ids
+ *  from the headings themselves (opening a file) instead of at random (editing). */
+export function missingIds(doc: PMNode, keeper?: (id: string) => number | null, stable = false): [number, string][] {
   const first = new Map<string, number>();
   const repeated: [number, string][] = [];
   const out: [number, string][] = [];
@@ -40,8 +53,11 @@ export function missingIds(doc: PMNode, keeper?: (id: string) => number | null):
     // the copy the change came from keeps the id; every other copy gets a new one
     if (keep != null && keep === i) { out.push([first.get(id)!, '']); first.set(id, i); } else out.push([i, '']);
   }
+  const seen = new Map<string, number>();
+  const nth = new Map<number, number>();
+  if (stable) doc.forEach((n, _p, i) => { if (levelOf(n)) { const k = `${n.attrs.style}\u0000${n.textContent}`; nth.set(i, seen.get(k) ?? 0); seen.set(k, (seen.get(k) ?? 0) + 1); } });
   for (const o of out) {
-    let id = newCardId();
+    let id = stable ? stableId(doc.child(o[0]), nth.get(o[0])!) : newCardId();
     while (used.has(id)) id = newCardId();
     used.add(id);
     o[1] = id;
@@ -51,7 +67,7 @@ export function missingIds(doc: PMNode, keeper?: (id: string) => number | null):
 
 /** `doc` with every heading given an id (the same doc when none was missing). For docs that come in whole: a file, a backup. */
 export function withCardIds(doc: PMNode): PMNode {
-  const fix = missingIds(doc);
+  const fix = missingIds(doc, undefined, true);
   if (!fix.length) return doc;
   const kids: PMNode[] = [];
   doc.forEach((n) => { kids.push(n); });

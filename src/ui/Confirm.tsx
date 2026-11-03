@@ -35,3 +35,29 @@ export function nameList(names: string[]) {
   const shown = names.length > 3 ? [...names.slice(0, 2), `${names.length - 2} more`] : names;
   return `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
 }
+
+/** A choice between several answers, each a button; `done` gets the picked value, or null for Esc. The first button has focus. */
+export type Choose<T extends string> = { title: string; body: string; items?: string[]; options: { label: string; value: T; hint?: string }[]; done: (v: T | null) => void };
+export function Chooser<T extends string>({ ask }: { ask: Choose<T> | null }) {
+  const firstRef = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    if (!ask) return;
+    firstRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ask.done(null); } };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [ask]);
+  if (!ask) return null;
+  return (
+    <div className="cf-back">
+      <div className="cf ch" role="alertdialog" aria-modal="true" aria-labelledby="ch-t" aria-describedby="ch-b">
+        <h2 id="ch-t">{ask.title}</h2>
+        <p id="ch-b">{ask.body}</p>
+        {ask.items && <ul className="cf-list">{ask.items.map((t, i) => <li key={i}>{t}</li>)}</ul>}
+        <div className="cf-btns">
+          {ask.options.map((o, i) => <button key={o.value} ref={i === 0 ? firstRef : undefined} title={o.hint} onClick={() => ask.done(o.value)}>{o.label}</button>)}
+        </div>
+      </div>
+    </div>
+  );
+}

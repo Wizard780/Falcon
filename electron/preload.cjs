@@ -62,4 +62,11 @@ contextBridge.exposeInMainWorld('falcon', {
     },
   },
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
+  // open docs for open-docs.json, and the files among them that changed on disk (docsync.cjs)
+  setOpenDocs: (docs) => ipcRenderer.send('falcon:open-docs', docs),
+  onDocChanged: (f) => {
+    const on = (_e, p) => { if (typeof p === 'string') f(p); };
+    ipcRenderer.on('falcon:doc-changed', on);
+    return () => ipcRenderer.removeListener('falcon:doc-changed', on);
+  },
 });

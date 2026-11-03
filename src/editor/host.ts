@@ -56,6 +56,10 @@ type FalconBridge = {
   checkUpdate?: () => Promise<'ready' | 'none' | 'failed'>;
   /** Anonymous usage count (electron/telemetry.cjs drops unknown events and any non-word value). */
   track?: (event: string, props?: Record<string, string | number | boolean>) => void;
+  /** The open docs, for open-docs.json in userData (electron/docsync.cjs); their files are watched while open. */
+  setOpenDocs?: (docs: { path?: string; name: string; unsaved: boolean; active: boolean }[]) => void;
+  /** An open doc's file changed on disk (another program wrote it). Returns an unsubscribe. */
+  onDocChanged?: (f: (path: string) => void) => () => void;
   /** SpeechDrop (electron/speechdrop.cjs): rooms, live file lists, uploads and downloads. */
   speechdrop?: SpeechDropBridge;
   platform?: string;

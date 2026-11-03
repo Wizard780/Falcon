@@ -33,7 +33,8 @@ import { Home } from './Home';
 import { SHOW_EVENT, SpeechDrop, type SdTab } from './SpeechDrop';
 import './display'; // the display settings (fonts, sizes, root classes) apply at startup
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
-import { Confirm, nameList, type Ask } from './Confirm';
+import { Chooser, Confirm, nameList, type Ask, type Choose } from './Confirm';
+import { applyMerge, mergeFromDisk, type Choice, type ConflictKind } from '../editor/disk-merge';
 import { ComparePanel } from './ComparePanel';
 import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
 import { NewSpeech, SaveAs } from './SaveAs';
@@ -670,7 +671,11 @@ export function App() {
       patch(id, { meta: m, dirty: !!now && isDirty(id, now) });
       setRecents((list) => noteRecent(list, saved, m));
       flash(`Saved ${m.name}`);
-    } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
+    } catch (e) {
+      // another program wrote the file since Falcon read it: bring that in first, then save (docsync.cjs refused)
+      if ((e as Error).message.includes('CHANGED_ON_DISK') && mode === 'asis' && !as && meta.path) { void syncRef.current(meta.path, true); return; }
+      flash(`Couldn't save: ${(e as Error).message}`);
+    }
   }, [patch, flash, dropDoc]);
   /** Save writes the open file; Save As opens the dialog, which calls `saveCopy`. */
   const fileSave = useCallback(async (as = false) => {
@@ -678,6 +683,58 @@ export function App() {
     if (as) { setSaveAsName(!d.meta.path && (d.meta.name || 'Untitled') === 'Untitled' ? newFileName() : d.meta.name); return; }
     await writeDoc(d.meta, 'asis', false);
   }, [writeDoc]);
+
+  /**
+   * An open doc's file changed on disk (another program, Claude's scripts): merge it in card by card
+   * (disk-merge.ts). Unsaved edits stay, new cards come in orange, and only a card changed on both sides
+   * asks. `resave`: a Save was refused because of the change, so save once it's in.
+   */
+  const [choose, setChoose] = useState<Choose<Choice> | null>(null);
+  const syncRef = useRef<(path: string, resave?: boolean) => Promise<void>>(async () => {});
+  syncRef.current = async (path, resave = false) => {
+    const id = docsRef.current.find((x) => x.meta.path === path)?.id;
+    if (id === undefined) return;
+    let disk: PMNode;
+    try { disk = (await openPath(path)).doc; } catch { return; } // gone or unreadable: the next Save says so
+    const live = () => (id === activeRef.current ? viewRef.current?.state : docsRef.current.find((x) => x.id === id)?.state) ?? null;
+    const base = savedDocs.current.get(id) ?? null;
+    const name = docsRef.current.find((x) => x.id === id)?.meta.name ?? 'The file';
+    const finish = (pick: Choice) => {
+      const st = live();
+      if (!st) return;
+      const r = mergeFromDisk(base, st.doc, disk, () => pick);
+      const tr = applyMerge(st, r.nodes);
+      savedDocs.current.set(id, r.base); // the file as it is now is what the doc is based on
+      if (id === activeRef.current) viewRef.current!.dispatch(tr);
+      else { const next = st.apply(tr); patch(id, { state: next, dirty: isDirty(id, next.doc) }); }
+      const parts = [r.added && `${r.added} new (orange)`, r.updated && `${r.updated} updated`, r.removed && `${r.removed} removed`].filter(Boolean);
+      flash(`${name} changed on disk${parts.length ? `: ${parts.join(', ')}` : ''}`);
+      if (resave && id === activeRef.current) void fileSave();
+    };
+    const st = live();
+    if (!st) return;
+    const { conflicts } = mergeFromDisk(base, st.doc, disk);
+    if (!conflicts.length) { finish('mine'); return; }
+    const how: Record<ConflictKind, string> = { 'both-changed': 'changed in both', 'both-added': 'added in both', 'mine-changed-disk-deleted': 'you edited it; the file deleted it', 'mine-deleted-disk-changed': 'you deleted it; the file changed it' };
+    setChoose({
+      title: `${name} changed on disk`,
+      body: `Another program changed ${conflicts.length === 1 ? 'a card' : `${conflicts.length} cards`} in the file that you've also changed here. Everything else from the file is merged in either way.`,
+      items: conflicts.map((c) => `${c.title} (${how[c.kind]})`),
+      options: [
+        { label: 'Keep both', value: 'both', hint: 'Keep your version and add the file\'s under it, in orange to approve or reject' },
+        { label: 'Keep mine', value: 'mine', hint: 'Keep your version of these cards' },
+        { label: 'Use the file\'s', value: 'disk', hint: 'Replace your version of these cards with the file\'s' },
+      ],
+      done: (v) => { setChoose(null); finish(v ?? 'mine'); },
+    });
+  };
+  useEffect(() => bridge.onDocChanged?.((p) => { void syncRef.current(p); }), []);
+  // open-docs.json: which files are open and unsaved, for outside tools (docsync.cjs)
+  const openKey = JSON.stringify(docs.map((d) => [d.meta.path ?? null, d.meta.name || 'Untitled', d.dirty, d.id === activeId]));
+  useEffect(() => {
+    const list = JSON.parse(openKey) as [string | null, string, boolean, boolean][];
+    bridge.setOpenDocs?.(list.map(([path, name, unsaved, active]) => ({ path: path ?? undefined, name, unsaved, active })));
+  }, [openKey]);
   const saveCopy = (mode: SaveMode, name: string) => {
     setSaveAsName(null);
     const prefix = mode !== 'asis' && pref(P.savePrefix) ? pref(MODE_PREFIX[mode]) : '';
@@ -1103,6 +1160,7 @@ export function App() {
         highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} />
       </div>
       <Confirm ask={ask} />
+      <Chooser ask={choose} />
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
       <ComparePanel open={compareWith} onClose={closeCompare} readSelection={readSelection} />
       <NewSpeech open={speechAsk} onMake={makeSpeech} onClose={closeNewSpeech} />

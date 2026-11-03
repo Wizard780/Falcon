@@ -241,3 +241,15 @@ Contract for Claude's python-docx scripts:
 - To add a card as pending, give its tag (or analytic, or block heading) paragraph a bookmark named `_fcp_<id>` right after `w:pPr`: `<w:bookmarkStart w:id="N" w:name="_fcp_<id>"/><w:bookmarkEnd w:id="N"/>`. `<id>` is 1-36 of `[a-z0-9]`; `N` unique among the file's bookmarks.
 - A pending block heading covers every card under it.
 - Approved means the same bookmark named `_fc_<id>`. A card he rejected is gone from the file.
+
+## Stage: open docs and changes on disk (2026-11-03, branch open-doc-sync, on pending-cards)
+The problem: Claude edits his block files with python-docx while they're open. CardMirror reloaded from disk and wiped his unsaved edits. Falcon never watched an open file, so his next save wiped out what Claude wrote. His interview answer: on a real conflict, ask in a popup.
+- [x] `electron/docsync.cjs`: `open-docs.json` in userData (open docs, unsaved, readAt, savedAt; emptied on quit), a once-a-second watch on each open file, and Save refuses (`CHANGED_ON_DISK`) when the file changed since Falcon last read or wrote it
+- [x] `src/editor/disk-merge.ts`: three-way merge per card (heading + body, keyed by card id) of the last-read file, the open doc and the file now. One-sided changes go through; new cards from disk come in pending; a card changed on both sides asks (Keep both / Keep mine / Use the file's). Card order follows whoever moved cards
+- [x] files with no `_fc_` bookmarks (everything CardMirror wrote) get ids from their headings on open, the same on every read; cards whose ids aren't in the file are matched by content and position, so an identical copy of a card in another block can't take an edited card's place
+- [x] Electron check on a copy of NATO---AT Neg (`scripts/disk-sync-check.mjs`, 15 checks): the status file, an outside card merged in with the unsaved edit kept, the conflict dialog and Keep both, Save right after an outside write keeps both sides, the status file emptied on quit
+
+Contract for outside tools:
+- Status file: `~/Library/Application Support/Falcon/open-docs.json` (Windows: `%APPDATA%\Falcon\open-docs.json`). Shape: `{ "version": 1, "pid": <Falcon's main process>, "updated": "<ISO>", "docs": [{ "path": "<abs path>" | null, "name": "<doc name>", "unsaved": <bool>, "active": <bool>, "readAt": "<ISO>" | null, "savedAt": "<ISO>" | null }] }`. `path` null is a never-saved doc. A crash leaves the last list: treat it as stale when `pid` isn't running.
+- Writing a file that's open in Falcon is safe: Falcon merges it in within about a second, keeps his unsaved edits, and shows new cards pending. Keep every `_fc_` bookmark on cards you don't replace; mark the cards you add `_fcp_<id>` (see pending cards).
+- Write the whole file in one go (python-docx `save`, or a temp file and rename). Falcon re-reads after each change it sees.
