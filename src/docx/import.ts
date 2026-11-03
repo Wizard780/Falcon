@@ -1,6 +1,9 @@
 import { strFromU8, unzipSync } from 'fflate';
 import type { Mark, Node as PMNode } from 'prosemirror-model';
 import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
+import { parseXml, type XEl } from './xml';
+
+type Element = XEl;
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -8,15 +11,15 @@ const M = schema.marks;
 
 type StyleInfo = { name: string; alias: string; basedOn?: string; type: string; outline?: number; rpr?: Element };
 
-const kids = (el: Element | null | undefined, name?: string) =>
-  el ? Array.from(el.children).filter((c) => !name || c.localName === name) : [];
-const kid = (el: Element | null | undefined, name: string) => kids(el, name)[0];
+const NONE: Element[] = [];
+const kids = (el: Element | null | undefined, name?: string): Element[] =>
+  !el ? NONE : !name ? el.children : el.children.filter((c) => c.localName === name);
+const kid = (el: Element | null | undefined, name: string): Element | undefined => {
+  if (el) for (const c of el.children) if (c.localName === name) return c;
+  return undefined;
+};
 const val = (el: Element | undefined) => el?.getAttributeNS(W, 'val') ?? el?.getAttribute('w:val') ?? null;
 const on = (el: Element | undefined) => !!el && !['0', 'false', 'off', 'none'].includes(val(el) ?? 'true');
-
-function parseXml(text: string): Document {
-  return new DOMParser().parseFromString(text, 'application/xml');
-}
 
 function readStyles(xml: string | undefined): Map<string, StyleInfo> {
   const map = new Map<string, StyleInfo>();
@@ -106,7 +109,7 @@ const HL_NAMES = new Set(Object.keys(HIGHLIGHTS));
 function readLinks(xml: string | undefined): Map<string, string> {
   const map = new Map<string, string>();
   if (!xml) return map;
-  for (const r of Array.from(parseXml(xml).documentElement.children)) {
+  for (const r of parseXml(xml).documentElement.children) {
     const id = r.getAttribute('Id'), target = r.getAttribute('Target');
     if (id && target && r.getAttribute('TargetMode') === 'External' && /\/hyperlink$/.test(r.getAttribute('Type') ?? '')) map.set(id, target);
   }
@@ -168,7 +171,7 @@ function dataUrl(bytes: Uint8Array, mime: string): string {
 function readImageRels(xml: string | undefined, files: Record<string, Uint8Array>): Map<string, string> {
   const map = new Map<string, string>();
   if (!xml) return map;
-  for (const r of Array.from(parseXml(xml).documentElement.children)) {
+  for (const r of parseXml(xml).documentElement.children) {
     const id = r.getAttribute('Id'), target = r.getAttribute('Target');
     if (!id || !target || !/\/image$/.test(r.getAttribute('Type') ?? '')) continue;
     if (r.getAttribute('TargetMode') === 'External') { if (/^https?:\/\//i.test(target)) map.set(id, target); continue; }
@@ -399,7 +402,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
     const tblPr = kid(tbl, 'tblPr'), lines = kid(tblPr, 'tblBorders');
     const drawn = (el: Element | undefined) => kids(el).some((b) => !['none', 'nil'].includes(val(b) ?? 'none'));
     // lines set on the cells themselves count too
-    const borders = (lines ? drawn(lines) : !!val(kid(tblPr, 'tblStyle'))) || Array.from(tbl.getElementsByTagNameNS(W, 'tcBorders')).some(drawn);
+    const borders = (lines ? drawn(lines) : !!val(kid(tblPr, 'tblStyle'))) || tbl.getElementsByTagNameNS(W, 'tcBorders').some(drawn);
     return T.table.create({ borders }, rows.map((r) => T.table_row.create(null, r.map((c) => (c.header ? T.table_header : T.table_cell).create(c.attrs, c.paras)))));
   };
 
