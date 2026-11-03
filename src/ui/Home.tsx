@@ -11,6 +11,7 @@ export function Home(props: {
   current: string;
   recents: Recent[];
   onNew: () => void;
+  onNewSpeech: () => void;
   onOpen: () => void;
   onRecent: (r: Recent) => void;
   onClear: (keep: Recent[] | null) => void;
@@ -87,6 +88,7 @@ export function Home(props: {
               <p className="hm-sub">{props.current ? `${props.current} is open. Esc goes back to it` : shown.length ? `${shown.length} recent ${shown.length === 1 ? 'file' : 'files'} · ${total.toLocaleString('en-US')} cards` : 'Open a file or start a new one'}</p>
               <div className="hm-acts">
                 <button className="hm-act" onClick={props.onNew}><SvgIcon name="plus" /><span>New document</span>{keyOf('new') && <kbd>{keyText(keyOf('new'))}</kbd>}</button>
+                <button className="hm-act" onClick={props.onNewSpeech}><SvgIcon name="mic" /><span>New speech doc</span>{keyOf('newSpeech') && <kbd>{keyText(keyOf('newSpeech'))}</kbd>}</button>
                 <button className="hm-act" onClick={props.onOpen}><SvgIcon name="open" /><span>Open…</span>{keyOf('open') && <kbd>{keyText(keyOf('open'))}</kbd>}</button>
               </div>
             </div>

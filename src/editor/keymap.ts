@@ -13,6 +13,7 @@ import { moveByHeading, moveByParagraph, moveContainer } from './motion';
 import { toggleMarker, toggleRead } from './read';
 import { DOC_TOOLS } from './doc-tools';
 import { CARD_TOOLS } from './card-tools';
+import { compareText } from './doc-tools/compare';
 import { navBinds, navFixed } from './nav-keys';
 import { BINDINGS, bind, bindingOf, isRecording, keyOf, reserve } from './keybinds';
 
@@ -159,6 +160,8 @@ bind('Moving around', [
   ...navBinds,
 ]);
 bind('Doc tools', DOC_TOOLS.flatMap((s) => s.items));
+// a command only (command center, or a key you give it): no menu, no dialog
+bind('Doc tools', [{ id: 'compareText', label: 'Compare Text', run: compareText }]);
 bind('Card tools', CARD_TOOLS.flatMap((s) => s.items));
 
 /** The command a binding runs (toolbar buttons run the same command their key does). */

@@ -78,10 +78,12 @@ const SYN: Record<string, string> = {
   regrow: 'unshrink grow undo shrink', read: 'reading present speech', marker: 'mark place stop', number: 'numbering count',
   sub: 'numbering letter', restart: 'numbering', replace: 'substitute', selectSection: 'card', copySection: 'card', deleteSection: 'card remove',
   cardUp: 'reorder', cardDown: 'reorder', sendToSpeech: 'speech doc copy tilde backtick',
+  compareText: 'diff difference check source match changes side by side',
 };
 const TOOL_HINTS = new Map([
   ...[...DOC_TOOLS, ...CARD_TOOLS].flatMap((s) => s.items.map((it) => [it.id, it.hint] as const)),
   ['sendToSpeech', 'Copy the selection, or the card or section at the caret, into the speech doc'],
+  ['compareText', 'Two texts side by side with the differences marked. The selection becomes Text 1'],
 ]);
 const keyWords = (k: string) => (k ? `${k} ${keyText(k)}` : '');
 type Extra = Omit<Entry, 'source'>;
@@ -180,6 +182,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.crashRecovery, 'Crash recovery', 'general', 'Keep a copy of open files, brought back if Falcon closes unexpectedly.'),
     pick(P.recentCount, 'Recent files', 'general', [[6, '6'], [12, '12'], [24, '24']], 'How many files Home lists.'),
     pick(P.newName, 'Name new files', 'general', (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), 'What an Untitled document is called when you first save it.'),
+    { id: P.speechName.key, label: 'Speech doc name', page: 'general', query: 'Speech doc name filename', hint: 'Type it in Settings.', link: true, get: () => pref(P.speechName), set: () => {} },
     tog(P.savePrefix, 'Prefix Save As copies', 'general', 'Send, Read and Marked Doc copies start with a prefix.'),
     { id: P.prefixSend.key, label: 'Send Doc filename prefix', page: 'general', query: 'Send Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixSend), set: () => {} },
     { id: P.prefixRead.key, label: 'Read Doc filename prefix', page: 'general', query: 'Read Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixRead), set: () => {} },

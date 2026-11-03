@@ -11,7 +11,7 @@ import { KeyField, type KeyNote } from './KeyField';
 import { safeSet } from './storage';
 import { readSetting, type SettingSpec } from '../editor/tools';
 import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
-import { newFileName } from './files';
+import { newFileName, speechFileName } from './files';
 import { bridge, setActiveColor, type IndexFolder } from '../editor/host';
 import { downloadSettings, importSettings } from './settings-file';
 import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
@@ -195,6 +195,10 @@ export function Settings(props: Props) {
         pickNum(P.recentCount, 'Recent files', 'How many files Home lists.', [[6, '6'], [12, '12'], [24, '24']]),
         { label: 'Name new files', hint: 'What an Untitled document is called when you first save it.', control:
           select('Name new files', pref(P.newName), (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), (h) => setPref(P.newName, h as 'untitled')) },
+        { label: 'Speech doc name', wide: true, search: 'speech filename template date',
+          hint: `What New speech doc names the file. {speech} is the name you type at the prompt. {date:…} is the date and time: YYYY YY, M MM MMM MMMM, D DD ddd dddd, h hh (12-hour), H HH (24-hour), m mm, s ss, and A or a for AM/PM. Anything else stays as typed; inside {date:…} put a word in [brackets]. Example: ${speechFileName('1NC')}.docx`,
+          control: <input className="st-text st-wide" aria-label="Speech doc name" spellCheck={false} maxLength={120} value={pref(P.speechName)}
+            onChange={(e) => setPref(P.speechName, e.target.value)} /> },
         tog(P.savePrefix, 'Prefix Save As copies', 'Send, Read and Marked Doc copies start with a prefix, so you can tell them apart from the file.'),
         prefixRow(P.prefixSend, 'Send Doc'), prefixRow(P.prefixRead, 'Read Doc'), prefixRow(P.prefixMarked, 'Marked Doc'),
       ]],

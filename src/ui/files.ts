@@ -29,6 +29,31 @@ export function newFileName(how = pref(P.newName), now = new Date()): string {
   return 'Untitled';
 }
 
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** `{date:…}` written out: YYYY YY, M MM MMM MMMM, D DD ddd dddd, h hh H HH, m mm, s ss, A a; `[text]` stays as typed. */
+export function formatDate(fmt: string, d = new Date()): string {
+  const h12 = d.getHours() % 12 || 12, pm = d.getHours() >= 12;
+  const t: Record<string, string> = {
+    YYYY: String(d.getFullYear()), YY: pad(d.getFullYear() % 100),
+    MMMM: MONTHS[d.getMonth()], MMM: MONTHS[d.getMonth()].slice(0, 3), MM: pad(d.getMonth() + 1), M: String(d.getMonth() + 1),
+    dddd: DAYS[d.getDay()], ddd: DAYS[d.getDay()].slice(0, 3), DD: pad(d.getDate()), D: String(d.getDate()),
+    HH: pad(d.getHours()), H: String(d.getHours()), hh: pad(h12), h: String(h12),
+    mm: pad(d.getMinutes()), m: String(d.getMinutes()), ss: pad(d.getSeconds()), s: String(d.getSeconds()),
+    A: pm ? 'PM' : 'AM', a: pm ? 'pm' : 'am',
+  };
+  return fmt.replace(/\[([^\]]*)\]|YYYY|YY|MMMM|MMM|MM|M|dddd|ddd|DD|D|HH|H|hh|h|mm|m|ss|s|A|a/g, (k, lit?: string) => lit ?? t[k]);
+}
+
+/** A new speech doc's file name, from Settings' template: `{speech}` is the name typed at the prompt. */
+export function speechFileName(speech: string, template = pref(P.speechName), now = new Date()): string {
+  const name = template.replace(/\{speech\}|\{date:([^}]*)\}/g, (_, f?: string) => (f === undefined ? speech.trim() : formatDate(f, now)))
+    .replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
+  return name || speech.trim() || 'Speech';
+}
+
 export async function saveDocument(doc: PMNode, meta: DocMeta, saveAs: boolean): Promise<DocMeta | null> {
   const data = await (await import('../docx/export')).docToDocx(doc);
   const untitled = !meta.path && (meta.name || 'Untitled') === 'Untitled';
