@@ -2,7 +2,7 @@
 .dot.new { background: var(--ink-ui) !important; }
 
 /* The SpeechDrop tab: covers the page like Home does, in Home's type and rows */
-.sd { position: absolute; top: 0; bottom: 0; left: var(--strip-w); right: 0; z-index: 255; overflow: auto; background: var(--u-deep); color: var(--u-tx); font: 14px/1.4 var(--ui-font);
+.sd { position: absolute; top: 0; bottom: 0; left: var(--strip-w); right: 0; z-index: 265; overflow: auto; background: var(--u-deep); color: var(--u-tx); font: 14px/1.4 var(--ui-font);
   opacity: 0; transform: translateY(8px); pointer-events: none; visibility: hidden; transition: opacity 200ms var(--u-ease), transform 300ms var(--u-ease), visibility 0s 300ms; }
 .sd.open { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition: opacity 200ms var(--u-ease), transform 300ms var(--u-ease), visibility 0s; }
 .sd svg { width: 16px; height: 16px; }

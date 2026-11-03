@@ -253,7 +253,8 @@ export function SpeechDrop(props: {
                       <span className="wh">{fresh.has(f.index) && <i className="sd-new" aria-label="new" />}{when(f.ctime)}</span>
                     </button>
                     <button className="sd-x" title={`Download ${f.name} to Downloads › SpeechDrop`} aria-label={`Download ${f.name}`} onClick={() => void download(f)}><SvgIcon name="download" /></button>
-                    {own && <button className="sd-x" title={`Delete ${f.name}: you uploaded it`} aria-label={`Delete ${f.name}`} onClick={() => void remove(f)}><SvgIcon name="trash" /></button>}
+                    {own ? <button className="sd-x" title={`Delete ${f.name}: you uploaded it`} aria-label={`Delete ${f.name}`} onClick={() => void remove(f)}><SvgIcon name="trash" /></button>
+                      : <span className="sd-x" aria-hidden="true" />/* the same slot, so every row's time lines up */}
                   </div>
                 );
               })}
