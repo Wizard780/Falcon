@@ -32,7 +32,7 @@ let page = await start();
 want(await flying(page), 'the falcon is in flight right after launch');
 const during = await layout(page);
 const t0 = Date.now();
-for (const t of [250, 600, 950, 1300, 1700, 2100, 2400, 2550, 2700, 3200]) {
+for (const t of [250, 600, 950, 1300, 1700, 1950, 2150, 2350, 2550, 2750, 2950, 3300]) {
   const w = t - (Date.now() - t0); if (w > 0) await page.waitForTimeout(w);
   await page.screenshot({ path: `${out}/flight-${String(t).padStart(4, '0')}.png` });
 }

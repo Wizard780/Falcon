@@ -74,10 +74,10 @@ export function falconSvg(): string {
 </defs>
 <g transform="translate(0 40)">
   <g data-wing="far"><g transform="scale(.9)">${wing(FAR)}</g></g>
-  ${tail}
+  <g data-torso>${tail}
   <path d="M160 114C178 96,236 84,282 88C304 90,318 102,318 116C316 130,298 142,266 144C226 146,190 136,160 122Z" fill="url(#fb-body)" stroke="#0f0f10" stroke-width=".8"/>
   ${bars}
-  <path d="M286 112c4 6 3 12 -2 17M296 108c5 7 4 14 -1 20" stroke="#a3a3a9" stroke-width="1.4" fill="none" stroke-linecap="round" opacity=".7"/>
+  <path d="M286 112c4 6 3 12 -2 17M296 108c5 7 4 14 -1 20" stroke="#a3a3a9" stroke-width="1.4" fill="none" stroke-linecap="round" opacity=".7"/></g>
   <g data-head>
     <path d="M284 98C288 80,304 70,320 70C334 70,344 78,347 88C353 90,358 95,359 101C353 102,349 106,346 110C340 117,330 120,318 120C304 120,290 112,284 102Z" fill="#f4f4f6" stroke="#0f0f10" stroke-width=".8"/>
     <path d="M284 98C288 80,304 70,320 70C331 70,340 75,344 82C336 80,328 80,322 82C311 86,299 93,292 105C289 103,286 101,284 98Z" fill="url(#fb-hood)"/>
@@ -153,6 +153,9 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, fly: boolean
   const logo = perch.firstElementChild as SVGSVGElement;
   if (!fly) return () => { logo.remove(); };
   logo.style.opacity = '0';
+  // the logo grows out of the bird's eye, which comes down right on the logo's eye
+  logo.style.transformOrigin = `${f1(((EYE.x - 10) / 48) * 100)}% ${f1(((EYE.y - 9) / 50) * 100)}%`;
+  const torso = svg.querySelector<SVGGElement>('[data-torso]')!, head = svg.querySelector<SVGGElement>('[data-head]')!;
 
   // in flight the bird rides an overlay over all of Home, so nothing under it moves
   const layer = document.createElement('div');
@@ -167,7 +170,8 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, fly: boolean
   const ink = getComputedStyle(home).getPropertyValue('--ink').trim() || '#00e5ff';
   svg.style.cssText = 'position:absolute;left:0;top:0;width:400px;height:220px;transform-origin:0 0;will-change:transform';
 
-  const DUR = 2500;
+  const DUR = 2500, END = 2950; // the flight, then the hand-off to the logo finishing after it
+  const smooth = (v: number) => { const c = Math.min(1, Math.max(0, v)); return c * c * (3 - 2 * c); };
   // it comes in to land with its eye on the logo's eye, its head the size of the logo's
   const end = () => {
     const h = home.getBoundingClientRect(), p = perch.getBoundingClientRect(), u = p.width / 48;
@@ -184,9 +188,9 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, fly: boolean
   const pts: { x: number; y: number; t: number }[] = [];
   const step = (now: number) => {
     if (!t0) t0 = last = now;
-    const t = skip ? DUR : Math.min(DUR, now - t0), dt = Math.min(50, now - last) / 1000;
+    const t = skip ? END : Math.min(END, now - t0), dt = Math.min(50, now - last) / 1000;
     last = now;
-    const k = t / DUR, e = travel(k), g = end();
+    const k = Math.min(1, t / DUR), e = travel(k), g = end();
     X[3] = g.x; Y[3] = g.y; S[3] = g.s; // the perch can move (a resize): keep aiming at it
     const x = cub(X, e), y = cub(Y, e), s = cub(S, e);
     const ahead = travel(Math.min(1, k + 0.02));
@@ -198,7 +202,18 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, fly: boolean
     const glide = Math.min(1, Math.max(0, (k - 0.45) / 0.4)), rate = 3.1 * (1 - glide);
     phase += 2 * Math.PI * rate * dt;
     const amp = 52 * (1 - glide) ** 1.5;
-    wings(-8 * (1 - glide) + amp * Math.sin(phase), -8 * (1 - glide) + amp * Math.sin(phase - 0.5));
+    // coming in to land it folds its wings back along its body
+    const fold = smooth((t - 1800) / 900);
+    wings((-8 * (1 - glide) + amp * Math.sin(phase)) * (1 - fold) - 52 * fold, (-8 * (1 - glide) + amp * Math.sin(phase - 0.5)) * (1 - fold) - 52 * fold);
+    // one continuous hand-off: wings and body dissolve, the head blends into the logo as it settles
+    const rest = String(1 - smooth((t - 2050) / 650));
+    near.style.opacity = far.style.opacity = torso.style.opacity = rest;
+    head.style.opacity = String(1 - smooth((t - 2350) / 600));
+    const show = smooth((t - 2150) / 800);
+    logo.style.opacity = String(show);
+    // the logo rides on the bird's eye until the bird is down, so the head turns into it with no second copy
+    const r = (bank * Math.PI) / 180, ex = x + (333 * Math.cos(r) - 128 * Math.sin(r)) * s, ey = y + (333 * Math.sin(r) + 128 * Math.cos(r)) * s;
+    logo.style.transform = `translate(${f1(ex - g.x - 333 * g.s)}px,${f1(ey - g.y - 128 * g.s)}px) rotate(${f1(bank)}deg) scale(${(1.06 - 0.06 * show).toFixed(4)})`;
     svg.style.transform = `translate(${f1(x)}px,${f1(y)}px) scale(${s.toFixed(4)}) rotate(${f1(bank)}deg)`;
     if (tc) {
       tc.clearRect(0, 0, W, H);
@@ -212,15 +227,10 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, fly: boolean
       }
       tc.globalAlpha = 1;
     }
-    if (t < DUR) { raf = requestAnimationFrame(step); return; }
+    if (t < END) { raf = requestAnimationFrame(step); return; }
     off();
-    // landed: the bird fades as the logo settles in where its head was
-    const ease = 'cubic-bezier(.16,1,.3,1)';
-    svg.animate([{ opacity: 1 }, { opacity: 0 }], { duration: skip ? 1 : 260, fill: 'forwards' }).finished.then(() => layer.remove(), () => layer.remove());
-    logo.style.opacity = '';
-    // it grows out of the bird's eye, which sits right on the logo's eye
-    logo.style.transformOrigin = `${f1(((EYE.x - 10) / 48) * 100)}% ${f1(((EYE.y - 9) / 50) * 100)}%`;
-    if (!skip) logo.animate([{ opacity: 0, transform: 'scale(1.14)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: ease });
+    layer.remove();
+    logo.style.opacity = logo.style.transform = '';
   };
   raf = requestAnimationFrame(step);
   const land = () => { skip = true; };
