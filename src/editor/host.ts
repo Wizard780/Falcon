@@ -16,6 +16,8 @@ export type IndexFolder = { path: string; count: number | null; missing: boolean
 export type IndexedFile = { path: string; root: string; mtime: number };
 /** One card from Search cards: the file it's in and which tag or analytic it is there (0-based). */
 export type CardHit = { path: string; ordinal: number; file: string; tag: string; cite: string; headings: string[]; copies: number };
+/** An app that asked to send cards in over the bridge. */
+export type LinkedApp = { id: string; name: string; allowed: boolean };
 export type CardIndexStatus = { files: number; cards: number; scanning: boolean; done: number; total: number };
 type FalconBridge = {
   readClipboardText?: () => Promise<string>;
@@ -58,6 +60,12 @@ type FalconBridge = {
   track?: (event: string, props?: Record<string, string | number | boolean>) => void;
   /** SpeechDrop (electron/speechdrop.cjs): rooms, live file lists, uploads and downloads. */
   speechdrop?: SpeechDropBridge;
+  /** Other debate apps (electron/editor-bridge.cjs): kind is ping, docs, insert, jump or consent. Returns an unsubscribe. */
+  onBridge?: (f: (kind: string, payload: Record<string, unknown>) => Promise<unknown>) => () => void;
+  /** The apps that asked to send cards in, and whether they're allowed. */
+  linkedApps?: () => Promise<LinkedApp[]>;
+  /** Allow or block an app (null forgets it, so it asks again). Returns the new list. */
+  allowLinkedApp?: (id: string, on: boolean | null) => Promise<LinkedApp[]>;
   platform?: string;
 };
 /** A SpeechDrop answer: the value, or SpeechDrop's error code ('no_room', 'too_large', 'unreachable'…). */

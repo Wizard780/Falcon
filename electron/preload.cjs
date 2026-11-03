@@ -27,6 +27,20 @@ contextBridge.exposeInMainWorld('falcon', {
     return () => ipcRenderer.removeListener('falcon:open-paths', on);
   },
   setMenuKeys: (keys) => ipcRenderer.send('falcon:menu-keys', keys),
+  // other debate apps (Nimbus...) asking for the open docs, inserting a card, jumping back, or asking to connect.
+  // f(kind, payload) answers with a promise; subscribing tells the main process the page can answer
+  onBridge: (f) => {
+    const on = async (_e, id, kind, payload) => {
+      let a;
+      try { a = await f(String(kind), payload ?? {}); } catch { a = { ok: false, error: 'internal' }; }
+      ipcRenderer.send('falcon:bridge-answer', id, a ?? null);
+    };
+    ipcRenderer.on('falcon:bridge', on);
+    ipcRenderer.send('falcon:bridge-ready');
+    return () => ipcRenderer.removeListener('falcon:bridge', on);
+  },
+  linkedApps: () => ipcRenderer.invoke('falcon:bridge-apps'),
+  allowLinkedApp: (id, on) => ipcRenderer.invoke('falcon:bridge-allow', id, on),
   onConfirmClose: (f) => {
     const on = (_e, quit) => f(quit === true);
     ipcRenderer.on('falcon:confirm-close', on);

@@ -18,6 +18,7 @@ import { fontSizeOf, setFontSize } from '../editor/font-size';
 import { FONT_COLORS } from './swatches';
 import { TIMER_EVENT, type TimerRequest } from './timer-event';
 import { insertIntoSpeech, sendContent } from '../editor/speech';
+import { insertContent, insertLabel } from '../editor/linked-insert';
 import { selectionState } from './selection-state';
 import { SvgIcon } from './icons';
 import { newFileName, openDocument, speechFileName, openPath, saveDocument, type DocMeta } from './files';
@@ -728,6 +729,48 @@ export function App() {
     };
     flash(`Sent “${sent.label}” to ${speechName}`, { label: 'Undo', run: takeBack });
   }, [flash, patch]);
+  // Nimbus and other debate apps send cards in over the bridge (electron/editor-bridge.cjs), the way they do
+  // into CardMirror: they list the open docs, then insert into one (usually the speech doc) without taking focus
+  useEffect(() => bridge.onBridge?.(async (kind, p) => {
+    const target = (d: OpenDoc) => `falcon-${d.id}`;
+    const name = typeof p.name === 'string' && p.name ? p.name[0].toUpperCase() + p.name.slice(1) : 'An app';
+    if (kind === 'ping') return { hasActiveDoc: !!viewRef.current };
+    if (kind === 'docs') return { docs: docsRef.current.map((d) => ({ target: target(d), title: d.meta.name || 'Untitled', focusedWindow: d.id === activeRef.current, isSpeech: d.id === speechRef.current })) };
+    if (kind === 'consent') {
+      if (askRef.current) return { answer: null }; // another question is up: it asks again next time
+      return new Promise((resolve) => setAsk({
+        title: `Let ${name} send cards to Falcon?`,
+        body: `${name} wants to put cards into your open docs, the way it does with CardMirror. You can change this in Settings > General > Linked apps.`,
+        ok: 'Allow', done: (yes) => { setAsk(null); resolve({ answer: yes ? 'allow' : null }); },
+      }));
+    }
+    if (kind === 'jump') return { ok: false, error: 'not-found' }; // nothing hands out source tokens yet
+    if (kind !== 'insert') return { ok: false, error: 'bad-request' };
+    const want = typeof p.target === 'string' ? p.target : null;
+    // no target: the speech doc, else the doc on screen (CardMirror's fallback is the focused doc)
+    const doc = want ? docsRef.current.find((d) => target(d) === want) : docsRef.current.find((d) => d.id === speechRef.current) ?? docsRef.current.find((d) => d.id === activeRef.current);
+    if (!doc) return { ok: false, error: 'target-not-found' };
+    const isView = doc.id === activeRef.current;
+    const base = isView ? viewRef.current?.state : doc.state;
+    if (!base) return { ok: false, error: 'no-target-doc' };
+    if (isReading(base)) return { ok: false, error: 'doc-readonly', docTitle: doc.meta.name };
+    const content = insertContent(p.html, p.text);
+    if (!content) return { ok: false, error: 'bad-request' };
+    const tr = insertIntoSpeech(base, content);
+    let next = base.apply(tr);
+    if (isView) { viewRef.current!.dispatch(tr); next = viewRef.current!.state; } else patch(doc.id, { state: next, dirty: true });
+    const docName = doc.meta.name || 'Untitled';
+    // same undo as Send to speech: only while the doc is still as the insert left it
+    const takeBack = () => {
+      const onView = doc.id === activeRef.current;
+      const now = onView ? viewRef.current?.state : docsRef.current.find((d) => d.id === doc.id)?.state;
+      if (!now) return;
+      if (now.doc !== next.doc) { flash(`${docName} has changed since. Undo it there with ${keyText('Mod-z')}.`); return; }
+      undo(now, (t) => { if (onView) viewRef.current!.dispatch(t); else patch(doc.id, { state: now.apply(t), dirty: true }); });
+    };
+    flash(`${name} sent “${insertLabel(content)}” to ${docName}`, { label: 'Undo', run: takeBack });
+    return { ok: true, docTitle: docName };
+  }), [flash, patch]);
   const toggleSpeech = useCallback(() => {
     const here = activeRef.current;
     speechRef.current = speechRef.current === here ? null : here;

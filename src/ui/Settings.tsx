@@ -12,7 +12,7 @@ import { safeSet } from './storage';
 import { readSetting, type SettingSpec } from '../editor/tools';
 import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
 import { newFileName, speechFileName } from './files';
-import { bridge, setActiveColor, type IndexFolder, type IndexedFile } from '../editor/host';
+import { bridge, setActiveColor, type IndexFolder, type IndexedFile, type LinkedApp } from '../editor/host';
 import { collectHits, rankHits, type FileHit } from './file-search';
 import { PinIcon, StarIcon, loadPinned, loadStarred, togglePinned, toggleStarred } from './starred';
 import { StarTree } from './StarTree';
@@ -80,6 +80,9 @@ export function Settings(props: Props) {
   const [words, setWords] = useState<string[]>([]);
   useEffect(() => { if (props.open && bridge.dictionaryWords) bridge.dictionaryWords().then(setWords, () => {}); }, [props.open]);
   useEffect(() => onPrefs(() => setSpecTick((t) => t + 1)), []);
+  // apps that asked to send cards in (Nimbus...), kept by the main process
+  const [linked, setLinked] = useState<LinkedApp[]>([]);
+  useEffect(() => { if (props.open && bridge.linkedApps) bridge.linkedApps().then(setLinked, () => {}); }, [props.open]);
   // starred and pinned files get picked here, from what the search folders hold
   const [starred, setStarred] = useState<string[]>(loadStarred);
   const [pinned, setPinned] = useState<string[]>(loadPinned);
@@ -261,6 +264,13 @@ export function Settings(props: Props) {
         { label: 'Import settings', hint: importNote?.text ?? 'Load a settings file from Falcon, or one exported from CardMirror.', bad: importNote?.bad, control: (
           <button className="st-btn" onClick={() => fileInput.current?.click()}>Import</button>) },
       ]],
+      ...(bridge.linkedApps ? [['Linked apps', linked.length
+        ? linked.map((a): Row => ({ label: a.name[0].toUpperCase() + a.name.slice(1), search: 'linked apps nimbus bridge cards send', hint: a.allowed ? 'Can send cards into your open docs.' : 'Blocked from sending cards in.', control: (
+          <span className="st-fold">
+            {toggle(`Let ${a.name} send cards`, a.allowed, (on) => void bridge.allowLinkedApp!(a.id, on).then(setLinked))}
+            <button className="sb-ico" aria-label={`Forget ${a.name}`} title="Forget it: it asks again next time" onClick={() => void bridge.allowLinkedApp!(a.id, null).then(setLinked)}><SvgIcon name="x" /></button>
+          </span>) }))
+        : [{ label: 'No linked apps yet', search: 'linked apps nimbus bridge cards send', hint: 'Debate apps like Nimbus can send cards into your open docs, the way they do with CardMirror. The first time one tries, Falcon asks you.', control: null }]] as [string, Row[]]] : []),
       ['Privacy', [
         tog(P.usageStats, 'Share usage statistics', 'Send anonymous counts of which features get used, like opening and saving files. Never file names or anything you type. Desktop app only.'),
       ]],
