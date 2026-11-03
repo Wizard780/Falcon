@@ -35,8 +35,9 @@ export function reserve(list: [key: string, label: string][]) {
   for (const [k, what] of list) RESERVED.set(norm(k), what);
 }
 reserve([
-  ['Mod-c', 'Copy'], ['Mod-x', 'Cut'], ['Mod-v', 'Paste'], ['Mod-q', 'Quit'], ['Escape', 'Close'],
-  ...(IS_MAC ? [['Mod-h', 'Hide Falcon'], ['Mod-Alt-h', 'Hide others'], ['Mod-m', 'Minimize']] as [string, string][] : []),
+  ['Mod-c', 'Copy'], ['Mod-x', 'Cut'], ['Mod-v', 'Paste'], ['Escape', 'Close'],
+  // Windows has no menu bar (electron/main.cjs), so nothing there quits on Ctrl+Q and it stays free to bind
+  ...(IS_MAC ? [['Mod-q', 'Quit'], ['Mod-h', 'Hide Falcon'], ['Mod-Alt-h', 'Hide others'], ['Mod-m', 'Minimize']] as [string, string][] : []),
 ]);
 
 export const keyOf = (id: string): string => { const b = byId.get(id); return b ? pref(b.pref) : ''; };
@@ -169,7 +170,9 @@ bind('App', [
 bind('Files', [
   { id: 'new', label: 'New document', key: 'Mod-n' }, { id: 'newSpeech', label: 'New speech doc', key: 'Mod-Shift-n' }, { id: 'open', label: 'Open', key: 'Mod-o' },
   { id: 'save', label: 'Save', key: 'Mod-s' }, { id: 'saveAs', label: 'Save As', key: 'Mod-Shift-s' }, { id: 'close', label: 'Close document', key: 'Mod-w' },
-  { id: 'nextDoc', label: 'Next open document', key: 'Ctrl-Tab' }, { id: 'prevDoc', label: 'Previous open document', key: 'Ctrl-Shift-Tab' },
+  // hold Ctrl and tap Tab to walk the switcher; let go to open the lit doc. A quick tap flips between the last two
+  { id: 'recentDoc', label: 'Switch to recent document', key: 'Ctrl-Tab' }, { id: 'recentDocBack', label: 'Switch to recent document, backward', key: 'Ctrl-Shift-Tab' },
+  { id: 'nextDoc', label: 'Next open document' }, { id: 'prevDoc', label: 'Previous open document' },
 ]);
 // a plain key on purpose: the page can't type it while it's bound (text boxes still can)
 bind('Speech', [{ id: 'sendToSpeech', label: 'Send to speech', key: '`' }]);

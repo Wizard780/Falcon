@@ -16,6 +16,7 @@ This directory is the maintained source for verifying Falcon's user-facing behav
 - Set selections with `f.select(text)`. A headless page has no OS focus, so Shift-Arrow and drag selection do nothing.
 - Read state with `f.markMap()` and `window.__falconView.state` for evidence only. Never dispatch an edit through them.
 - Prefer `aria-label`, `title^="Label (Key)"`, `role` and `placeholder` handles over CSS position.
+- Move the caret with clicks or `f.select`, not End/Home: in a headless page they also smooth-scroll the page to its end a moment later. `journeys/typing-new-paragraphs.mjs` checks that a split or joined paragraph stays drawn in a long file (the off-screen skip in `src/editor/window.ts`).
 - Run a journey with `$V run .claude/skills/verify-falcon/journeys/<feature>.mjs`. Exit 0 means every check was `ok`.
 
 ## Proof and skip reporting
@@ -36,6 +37,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 
 ## Features
 
+- [Recent documents (Ctrl-Tab)](./recent-docs.md) covers the MRU switcher: tap, hold with previews, walk, pick.
 - [Open and save .docx](./open-save-docx.md) covers Open…, editing, the unsaved dot, Mod-S, and a reopen round trip.
 - [Tables, pictures and footnotes](./tables-images-footnotes.md) covers opening and saving them, column and picture resizing, the table bar, cell keys, footnote editing and pasting tables and screenshots.
 - [Card formatting](./card-formatting.md) covers the F-key paragraph styles, cite, underline, emphasis, highlight and Clear, from keys and the format grid.
