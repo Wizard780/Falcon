@@ -106,7 +106,7 @@ await openCC();
 await typeIn('zoom in');
 await p.keyboard.press('Shift+Enter');
 await p.keyboard.press('Shift+Enter');
-await p.waitForTimeout(100);
+await p.waitForTimeout(300); // zoom glides now
 f.want(await p.$eval('.status .zoom', (x) => x.textContent) === '170%' && await open(), 'Shift-Enter twice zooms twice and stays open');
 await p.keyboard.press('Escape');
 

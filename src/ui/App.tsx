@@ -6,6 +6,7 @@ import { Node as PMNode } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
 import { commandOf } from '../editor/keymap';
+import { useSmoothZoom } from './smooth-zoom';
 import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
 import { activeColors, bridge, setActiveColor, type CardHit, type UpdateInfo } from '../editor/host';
 import { cardContent, findCard } from './card-search';
@@ -613,7 +614,8 @@ export function App() {
     return () => removeEventListener(COMPARE_EVENT, on);
   }, []);
   const openFind = useCallback(() => { setHomeOpen(false); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
-  const zoomBy = useCallback((d: number) => setZoom((z) => Math.max(0.5, Math.min(3, +(z + d).toFixed(2)))), []);
+  const getScroller = useCallback(() => scrollRef.current, []);
+  const { zoomTo, zoomBy, zoomWheel } = useSmoothZoom(zoom, setZoom, getScroller);
 
   /** Send to speech: copy the selection (or the card or section at the caret) into the speech doc without leaving this file. */
   const sendToSpeech = useCallback(() => {
@@ -689,11 +691,11 @@ export function App() {
     else if (id === 'outline') setShowOutline((o) => !o);
     else if (id === 'zoomIn') zoomBy(0.1);
     else if (id === 'zoomOut') zoomBy(-0.1);
-    else if (id === 'zoomReset') setZoom(1);
+    else if (id === 'zoomReset') zoomTo(1);
     else if (id === 'commands') setCcOpen((o) => !o);
     else if (id === 'searchCards') setPaletteOpen('cards');
     else if (id === 'sendToSpeech') sendToSpeech();
-  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, zoomBy, sendToSpeech]);
+  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, zoomBy, zoomTo, sendToSpeech]);
 
   // app-level shortcuts
   useEffect(() => {
@@ -720,7 +722,9 @@ export function App() {
       const mod = IS_MAC ? e.metaKey : e.ctrlKey;
       // Mod-Shift-] and [ also switch documents
       const bracket = mod && e.shiftKey && !e.altKey && (e.code === 'BracketRight' || e.code === 'BracketLeft');
-      const id = bracket ? (e.code === 'BracketRight' ? 'nextDoc' : 'prevDoc') : pressedId(e, APP_IDS);
+      // Mod-+ (Shift-=) zooms in too, the way every other app does it
+      const plus = mod && e.key === '+' && !e.altKey && keyOf('zoomIn') === 'Mod-=';
+      const id = bracket ? (e.code === 'BracketRight' ? 'nextDoc' : 'prevDoc') : plus ? 'zoomIn' : pressedId(e, APP_IDS);
       const v = viewRef.current;
       // read mode locks the keyboard: nothing that swaps the document out
       if (id && SWAPS.includes(id) && v && isReading(v.state)) return;
@@ -860,20 +864,27 @@ export function App() {
   // files double-clicked in Finder/Explorer (or Open With): open each, or switch to it if it's already open
   useEffect(() => (hasView ? bridge.onOpenPaths?.((ps) => queueRef.current(ps, false)) : undefined), [hasView]);
   useEffect(() => { safeSet('falcon.session', JSON.stringify(docs.flatMap((d) => (d.meta.path ? [d.meta.path] : [])))); }, [docs]);
-  // Ctrl/Cmd + scroll wheel or trackpad pinch zooms, in the same 10% steps
+  // a trackpad pinch zooms smoothly, always. it shows up as a wheel event with ctrlKey set while Ctrl isn't
+  // actually down, so a held Ctrl (or Cmd) plus a real wheel only zooms with the setting on
   useEffect(() => {
-    let acc = 0;
+    let ctrlDown = false;
+    const onKey = (e: KeyboardEvent) => { ctrlDown = e.ctrlKey; };
+    const onBlur = () => { ctrlDown = false; };
     const onWheel = (e: WheelEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || !pref(P.wheelZoom) || settingsRef.current) return;
+      const pinch = e.ctrlKey && !ctrlDown && !e.metaKey;
+      if (!pinch && !((e.ctrlKey || e.metaKey) && pref(P.wheelZoom))) return;
       e.preventDefault();
-      acc += e.deltaY;
-      if (Math.abs(acc) < 40) return;
-      zoomBy(acc < 0 ? 0.1 : -0.1);
-      acc = 0;
+      if (settingsRef.current || !scrollRef.current?.contains(e.target as Node)) return;
+      // a mouse wheel notch is ~100, way more than a pinch frame
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      zoomWheel(pinch ? dy : Math.max(-12, Math.min(12, dy)), e.clientX, e.clientY);
     };
+    addEventListener('keydown', onKey, true);
+    addEventListener('keyup', onKey, true);
+    addEventListener('blur', onBlur);
     addEventListener('wheel', onWheel, { passive: false });
-    return () => removeEventListener('wheel', onWheel);
-  }, [zoomBy]);
+    return () => { removeEventListener('keydown', onKey, true); removeEventListener('keyup', onKey, true); removeEventListener('blur', onBlur); removeEventListener('wheel', onWheel); };
+  }, [zoomWheel]);
 
   // what the command center can reach: every app action, the editor, and the state Settings shows
   const openSettingsAt = useCallback((page: string, query?: string) => { setSettingsPage(page); setSettingsQuery(query); setSettingsOpen(true); }, []);
@@ -956,7 +967,7 @@ export function App() {
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
         <button title={titled('Zoom out', 'zoomOut', 'make the page smaller')} onClick={() => zoomBy(-0.1)}>−</button>
-        <button className="zoom" title={titled('Actual size', 'zoomReset', 'back to 100%')} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+        <button className="zoom" title={titled('Actual size', 'zoomReset', 'back to 100%')} onClick={() => zoomTo(1)}>{Math.round(zoom * 100)}%</button>
         <button title={titled('Zoom in', 'zoomIn', 'make the page bigger')} onClick={() => zoomBy(0.1)}>+</button>
       </footer>
       </div>
