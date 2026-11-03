@@ -351,6 +351,9 @@ button.b:active { transform: scale(.97); }
 .hm-page .sh-hat { margin: 16px 0 10px; font-size: 16px; font-weight: 700; text-decoration: underline double; text-underline-offset: 3px; }
 .hm-page .sh-block { margin: 16px 0 10px; font-size: 13.5px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .hm-page[data-blank] > *:not(.sh-pocket) { opacity: .45; }
+/* a real first page: the editor's own styles at the scale that fits a Word page's 6.5in (624px) of text in the sheet's 404px */
+.hm-page .hm-doc { zoom: .65; width: 624px; min-height: 0; white-space: pre-wrap; pointer-events: none; user-select: none; }
+.hm-page .hm-doc p { white-space: inherit; overflow: visible; }
 /* stand-in cards: a tag, a cite, then body text with the read parts underlined and highlighted in the pen */
 .sh-card { margin-bottom: 14px; }
 .sh-card i { display: block; border-radius: 1px; background: var(--doc-ink); }

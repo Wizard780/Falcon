@@ -38,7 +38,7 @@ import { outlineNumbers } from '../editor/nav/numbering';
 import { DOC_TOOLS } from '../editor/doc-tools';
 import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
-import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
+import { loadRecents, noteRecent, peekHtml, saveRecents, tidy, type Recent } from './recents';
 import { P, onPrefs, pref } from '../editor/prefs';
 import { track, type DocSource } from './analytics';
 import { readJson, safeSet } from './storage';
@@ -477,6 +477,16 @@ export function App() {
     setRecents((list) => list.filter((r) => r.path !== path));
     flash(`Couldn't open ${name}: ${(e as Error).message}`);
   }, [flash]);
+  // recents saved before they kept a preview: read each once, the first time Home shows it
+  const peeked = useRef(new Set<string>());
+  const peekRecent = useCallback(async (r: Recent) => {
+    if (!r.path || !bridge.openPath || peeked.current.has(r.path)) return;
+    peeked.current.add(r.path);
+    try {
+      const preview = peekHtml((await openPath(r.path)).doc);
+      setRecents((list) => list.map((x) => (x.path === r.path ? { ...x, preview } : x)));
+    } catch { /* moved or deleted: the page shows its name, and opening it says why */ }
+  }, []);
   const openRecent = useCallback(async (r: Recent) => {
     const already = openedPath(r.path) ?? (!r.path ? docsRef.current.find((d) => !d.meta.path && d.meta.name === r.name) : undefined);
     if (already) { switchTo(already.id); return; }
@@ -866,7 +876,7 @@ export function App() {
 
       <div className="covered" inert={!!ask}>
       <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents.slice(0, pref(P.recentCount))}
-        onNew={fileNew} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)}
+        onNew={fileNew} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)} onPeek={peekRecent}
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
       <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
