@@ -15,6 +15,7 @@ import { newFileName, speechFileName } from './files';
 import { bridge, setActiveColor, type IndexFolder, type IndexedFile } from '../editor/host';
 import { collectHits, rankHits, type FileHit } from './file-search';
 import { StarIcon, loadStarred, toggleStarred } from './starred';
+import { StarTree } from './StarTree';
 import { downloadSettings, importSettings } from './settings-file';
 import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
 
@@ -43,7 +44,7 @@ type Props = {
   depth: number; onDepth: (d: number) => void;
   highlight: string | null; onHighlight: (c: string) => void;
 };
-type Row = { label: string; hint?: string; bad?: boolean; search?: string; preview?: ReactNode; control: ReactNode; path?: boolean; wide?: boolean };
+type Row = { id?: string; lead?: ReactNode; label: string; hint?: string; bad?: boolean; search?: string; preview?: ReactNode; control: ReactNode; path?: boolean; wide?: boolean };
 type Page = { id: string; title: string; icon: string; group?: string; sections: [string, Row[]][] };
 
 /** A theme in miniature: its chrome around a strip of its paper, with a few lines of each one's text. */
@@ -83,6 +84,7 @@ export function Settings(props: Props) {
   const [starred, setStarred] = useState<string[]>(loadStarred);
   const [files, setFiles] = useState<IndexedFile[]>([]);
   const [starQuery, setStarQuery] = useState('');
+  const [openFolders, setOpenFolders] = useState<string[]>([]); // search folders opened to star inside them
   useEffect(() => {
     if (!props.open) return;
     setStarred(loadStarred());
@@ -257,12 +259,21 @@ export function Settings(props: Props) {
       ['Folders', !bridge.indexFolders
         ? [{ label: 'Search folders', hint: `File search reaches into your folders in the desktop app. Here, ${keyLabel('search')} searches open and recent files.`, control: null }]
         : [
-          ...(folders ?? []).map((f): Row => ({ label: f.path.split(/[\\/]/).filter(Boolean).pop() ?? f.path, hint: f.path, path: true, control: (
-            <span className="st-fold">
-              <output>{f.missing ? 'Not found' : f.count === null ? 'Indexing…' : `${f.count.toLocaleString('en-US')} ${f.count === 1 ? 'file' : 'files'}`}</output>
-              <button className="sb-ico" aria-label={`Remove ${f.path}`} title="Remove from file search"
-                onClick={() => void bridge.removeIndexFolder!(f.path).then(setFolders)}><SvgIcon name="x" /></button>
-            </span>) })),
+          ...(folders ?? []).flatMap((f): Row[] => {
+            const name = f.path.split(/[\\/]/).filter(Boolean).pop() ?? f.path;
+            const isOpen = openFolders.includes(f.path);
+            const canOpen = !!bridge.indexedFiles && !f.missing && !!f.count;
+            return [{ label: name, hint: f.path, path: true, lead: canOpen && (
+              <button className="sb-ico st-chev" aria-expanded={isOpen} aria-label={`${isOpen ? 'Close' : 'Open'} ${name}`} title={isOpen ? 'Close' : 'Show its files, to star them'}
+                onClick={() => setOpenFolders((o) => (isOpen ? o.filter((x) => x !== f.path) : [...o, f.path]))}><SvgIcon name="chev" /></button>), control: (
+              <span className="st-fold">
+                <output>{f.missing ? 'Not found' : f.count === null ? 'Indexing…' : `${f.count.toLocaleString('en-US')} ${f.count === 1 ? 'file' : 'files'}`}</output>
+                <button className="sb-ico" aria-label={`Remove ${f.path}`} title="Remove from file search"
+                  onClick={() => void bridge.removeIndexFolder!(f.path).then(setFolders)}><SvgIcon name="x" /></button>
+              </span>) },
+            ...(canOpen && isOpen ? [{ id: `tree:${f.path}`, label: '', wide: true, control: (
+              <StarTree root={f.path} files={files} starred={starred} star={starBtn} />) }] : [])];
+          }),
           { label: folders?.length ? 'Add another folder' : 'No folders yet', hint: `Files in these folders, and the folders inside them, show up in ${keyLabel('search')}, and their cards in Search cards (${keyLabel('searchCards')}). Only .docx files are listed.`, control: (
             <button className="st-btn" onClick={() => void bridge.addIndexFolder!().then(setFolders)}><SvgIcon name="plus" />Add folder…</button>) },
         ]],
@@ -484,8 +495,9 @@ export function Settings(props: Props) {
                 <h3>{title}</h3>
                 <div className="st-card">
                   {rows.map((r) => (
-                    <div key={r.path ? r.hint : r.label} className={`st-row${r.wide ? ' wide' : ''}`}>
-                      <div className="st-txt"><span>{r.label}</span>{r.hint && (r.path ? <small className="path"><span dir="ltr">{r.hint}</span></small> : <small data-bad={r.bad || undefined}>{r.hint}</small>)}</div>
+                    <div key={r.id ?? (r.path ? r.hint : r.label)} className={`st-row${r.wide ? ' wide' : ''}${r.id ? ' st-tree' : ''}`}>
+                      {r.lead}
+                      {r.label && <div className="st-txt"><span>{r.label}</span>{r.hint && (r.path ? <small className="path"><span dir="ltr">{r.hint}</span></small> : <small data-bad={r.bad || undefined}>{r.hint}</small>)}</div>}
                       {r.preview}
                       {r.control}
                     </div>

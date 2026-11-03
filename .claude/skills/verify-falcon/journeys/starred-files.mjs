@@ -23,7 +23,7 @@ const openStars = async () => {
   await p.click('.fstrip [aria-label="Settings"]');
   await p.click('[aria-label="Settings sections"] button:has-text("File search")'); await p.waitForTimeout(200);
 };
-const starRows = () => p.$$eval('.st-row', (rs) => rs.filter((r) => r.querySelector('.st-star')).map((r) => `${r.querySelector('.st-txt span').textContent} | ${r.querySelector('output').textContent}${r.querySelector('.st-star[aria-pressed=true]') ? ' | ★' : ''}`));
+const starRows = () => p.$$eval('.st-row:not(.st-tree)', (rs) => rs.filter((r) => r.querySelector('.st-star')).map((r) => `${r.querySelector('.st-txt span').textContent} | ${r.querySelector('output').textContent}${r.querySelector('.st-star[aria-pressed=true]') ? ' | ★' : ''}`));
 
 await openK();
 await p.fill('.pk input', 'impact'); await p.waitForTimeout(100);
@@ -46,6 +46,21 @@ await p.keyboard.press('Escape'); await p.waitForTimeout(100);
 const s1 = await starRows();
 f.want(s1.join(' / ') === 'Impact Defense | Dropbox › DA · hides 1 copy | ★ / Impact Turns | Team Dropbox › DA | ★', `Enter stars the top match, Esc clears the box, and the list is sorted by Dropbox: ${s1.join(' / ')}`);
 await f.shot('settings-starred');
+
+// a search folder opens into its folders and files, to star from there
+const tree = () => p.$$eval('.stt-row', (rs) => rs.map((r) => r.textContent.trim()));
+f.want(!(await p.$('.stt')), 'folders start closed');
+await p.click('[aria-label="Open Dropbox"]'); await p.waitForTimeout(100);
+const t0 = await tree();
+f.want(t0.join(' / ') === 'Aff1 / DA★ 11 / Old Topic1', `opening Dropbox shows its folders, with stars inside counted: ${t0.join(' / ')}`);
+await p.click('.stt-dir:has-text("Aff")'); await p.waitForTimeout(100);
+await p.click('.stt-file:has-text("Aff---1AC") .st-star'); await p.waitForTimeout(100);
+f.want((await tree())[0] === 'Aff★ 11' && (await starRows()).some((r) => r.startsWith('Aff---1AC | Dropbox › Aff | ★')), `starring a file in the tree adds it to Starred files: ${(await starRows()).join(' / ')}`);
+await f.shot('settings-tree');
+await p.click('.stt-file:has-text("Aff---1AC") .st-star'); await p.waitForTimeout(100);
+f.want((await starRows()).join(' / ') === s1.join(' / '), 'and its star in the tree unstars it');
+await p.click('[aria-label="Close Dropbox"]'); await p.waitForTimeout(100);
+f.want(!(await p.$('.stt')), 'the chevron closes it again');
 await p.click('[aria-label="Close settings"]'); await p.waitForTimeout(200);
 
 await openK();

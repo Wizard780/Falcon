@@ -81,6 +81,26 @@
 .st-star:hover { background: var(--u-hover); color: var(--u-tx); }
 .st-star[aria-pressed="true"] { color: #e2b33c; }
 .st-star[aria-pressed="true"] svg { fill: currentColor; }
+/* a search folder opens in place to star files inside it */
+.st-row:has(> .st-chev) { gap: 10px; }
+.st-row > .st-chev + .st-txt { flex: 1; }
+.st-row > .st-chev ~ .st-fold { margin-left: 14px; }
+.st-chev { flex: none; margin-left: -8px; }
+.st-chev svg, .stt-chev svg { transform: rotate(-90deg); transition: transform 150ms ease-out; }
+.st-chev[aria-expanded="true"] svg, .stt-dir[aria-expanded="true"] .stt-chev svg { transform: none; }
+.st .st-row.st-tree { min-height: 0; padding: 0 0 12px; }
+.stt { flex: 1; max-height: 360px; overflow: auto; overscroll-behavior: contain; margin: 0 -8px; }
+.stt-row { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding-right: 4px; border-radius: 7px; color: var(--u-tx); font-size: 13.5px; text-align: left; }
+.stt-row:hover { background: var(--u-hover); }
+.stt-row > svg { flex: none; color: var(--u-mut); }
+.stt-dir { cursor: pointer; }
+.stt-chev { flex: none; width: 14px; display: grid; place-items: center; color: var(--u-mut); }
+.stt-chev svg { width: 14px; height: 14px; }
+.stt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stt-stars { flex: none; color: #e2b33c; font-size: 12px; white-space: nowrap; }
+.stt-row output { flex: none; min-width: 40px; padding-right: 8px; text-align: right; font: 12px var(--mono); font-variant-numeric: tabular-nums; color: var(--u-mut); }
+.stt-file .st-star { width: 26px; height: 26px; }
+.stt-empty { margin: 0; padding: 6px 0; color: var(--u-mut); font-size: 13px; }
 .st-txt small.path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 /* themes: a tile per theme, each a small picture of its chrome around a strip of its paper */
 .st .st-row.wide { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px 0 16px; }
