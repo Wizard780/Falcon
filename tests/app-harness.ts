@@ -45,14 +45,16 @@ export async function mountApp(bridge: Bridge = {}) {
   for (const k of Object.keys(fake)) delete fake[k];
   let onMenu: (c: string) => void = () => {};
   Object.assign(fake, { platform: 'darwin', onMenu: (f: (c: string) => void) => { onMenu = f; return () => {}; } }, bridge);
-  const { act, createElement } = await import('react');
+  const { createElement } = await import('react');
+  const { act } = await import('preact/test-utils');
   const { createRoot } = await import('react-dom/client');
-  const { App } = await import('../src/ui/App');
+  const { App, prefetch } = await import('../src/ui/App');
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
-  await act(async () => { root.render(createElement(App)); await tick(); });
+  // a test starts from a page that has also loaded what the app fetches once it's up (Settings, Cmd-K, the .docx code)
+  await act(async () => { root.render(createElement(App)); await prefetch(); await tick(); });
 
   const view = () => (window as unknown as { __falconView: EditorView }).__falconView;
   const unmount = async () => {

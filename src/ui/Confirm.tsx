@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 /** A question for the user. `done` gets true for the `ok` button, false for Cancel, Esc or a backdrop click. */
 export type Ask = { title: string; body: string; ok: string; done: (yes: boolean) => void };
@@ -6,7 +6,7 @@ export type Ask = { title: string; body: string; ok: string; done: (yes: boolean
 /** Falcon's own warning dialog, in place of the OS alert. Cancel has focus, so Enter never loses work. */
 export function Confirm({ ask }: { ask: Ask | null }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!ask) return;
     cancelRef.current?.focus();
     // Esc cancels wherever focus is, even after a click on the dialog's text

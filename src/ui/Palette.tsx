@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { bridge, type IndexedFile } from '../editor/host';
 import { collectHits, rankHits, type FileHit } from './file-search';
 import type { Recent } from './recents';
@@ -22,7 +22,7 @@ export function Palette(props: {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     setQuery('');
     setAt(0);

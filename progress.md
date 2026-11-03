@@ -142,6 +142,30 @@ Decisions:
 - Settings rows read and write the same prefs as Settings; labels match Settings rows so Tab lands on them.
 - Not driven in Electron: the palette itself (the smoke test only proves the desktop app still launches and renders).
 
+## Stage: performance (2026-11-02, branch perf)
+User ask: app is bloated, slow and CPU-heavy; at least 50% faster, optimise React, drop bloat dependencies, shrink the bundle, OK on weak internet, better with large files. Show a chart per goal.
+Done means: each goal measured before (origin/main build) and after with `scripts/perf.mjs` (headless Chromium, median of 5, 5 real files up to 30 MB of document.xml), output unchanged (import: old vs new toJSON on 655 real files; save: every saved part byte-identical on 3 files), npm test, tsc, build, Electron smoke and a real Electron open/save/reopen of the 30 MB file pass.
+Results (30 MB Nordics file unless noted; perf-results/before.json, after.json, report.html):
+- [x] open 5.23 s -> 0.98 s (-81%); 20 MB 3.46 -> 0.74 s (-79%)
+- [x] CPU per keystroke 73 -> 23 ms (-68%); per scroll frame 54 -> 23 ms (-57%); key to screen 67 -> 28 ms
+- [x] save freeze 602 -> 232 ms (-61%), same bytes
+- [~] first-screen JS+CSS 250 -> 162 KB gzipped (-35%); all JS 741 -> 553 KB (-25%); ready to type on slow 3G 5.95 -> 4.21 s (-29%). Below 50%: what's left on the first screen is the editor engine (ProseMirror ~216 KB, Preact, the editor)
+- [x] idle CPU already ~0 before and after (the 36 ms/s seen at first was Home's one-time title sweep); JS heap after GC unchanged
+What did it:
+- DOMParser (3.1 s of a 4.9 s open) replaced by src/docx/xml.ts, a small reader with the DOM calls the importer uses
+- react-dom -> preact/compat: react-dom saved the selection before every render by walking every text node of the focused editor (~30 ms/render on big files)
+- content-visibility: auto -> hidden unless src/editor/window.ts marks a paragraph near the screen; the browser's per-paragraph intersection observers cost ~18 ms per key and scroll frame
+- big saves zip in fflate's workers; clean text skips escaping
+- Settings, command center, Cmd-K and the .docx code load on first use and at idle
+Decisions:
+- Far off-screen paragraphs are content-visibility: hidden, so screen readers don't see them (auto kept them readable).
+- Preact 10.29.8, not the new 11.x major. React's API stays the source of truth (@types/react, aliases in vite.config.ts).
+Failed attempts:
+- No content-visibility at all: 97 ms per key and 3.2 s open. The skipping is needed; only who decides changed.
+- React.lazy + Suspense for the modals: the re-render lands outside Preact's act in tests; replaced by a small `later()` loader.
+Open:
+- Find selects a match but doesn't scroll to it (main does the same; not from this work).
+
 ## Stage: resizable rail (2026-11-02, branch rail-resize)
 User ask: drag the left rail wider so the open files' names show.
 - [x] a handle on the rail's right edge (`.rail-grip`, a separator: drag, arrow keys, Home/End); double-click resets to icons only

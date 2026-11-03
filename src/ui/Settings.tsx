@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
 import { HIGHLIGHTS } from '../editor/schema';
 import { SvgIcon } from './icons';
@@ -12,9 +12,9 @@ import { safeSet } from './storage';
 import { readSetting, type SettingSpec } from '../editor/tools';
 import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
 import { newFileName } from './files';
-import { bridge, type IndexFolder } from '../editor/host';
+import { bridge, setActiveColor, type IndexFolder } from '../editor/host';
+import { downloadSettings, importSettings } from './settings-file';
 import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
-import './settings.css';
 
 const PENS = ['yellow', 'green', 'cyan', 'magenta', 'lightGray'];
 const PEN_NAMES: Record<string, string> = { yellow: 'Yellow', green: 'Green', cyan: 'Cyan', magenta: 'Magenta', lightGray: 'Gray' };
@@ -22,44 +22,7 @@ const PEN_NAMES: Record<string, string> = { yellow: 'Yellow', green: 'Green', cy
 const FEATURE_SETTINGS: SettingSpec[] = [...navSettings, ...docToolSettings, ...cardToolSettings];
 export const DEFAULTS = { zoom: 1, speechMin: 8, showOutline: true, depth: 3, highlight: 'yellow' };
 
-// ---------- display settings: CSS variables and root classes (settings.css); none of them change the file ----------
-
-const FONTS: [string, string, string][] = [
-  ['calibri', 'Calibri', ''], ['arial', 'Arial', 'Arial, Helvetica, sans-serif'], ['verdana', 'Verdana', 'Verdana, Geneva, sans-serif'],
-  ['georgia', 'Georgia', 'Georgia, serif'], ['times', 'Times', "'Times New Roman', Times, serif"],
-  ['comic', 'Comic Sans', "'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', sans-serif"],
-];
-/** Interface fonts: the chrome only (menus, tooltips, Settings, the bar). '' keeps the system font from styles.css. */
-const UI_FONTS: [string, string, string][] = [
-  ['system', 'System', ''], ['geist', 'Geist', "'Geist Variable'"], ['inter', 'Inter', "'Inter Variable'"],
-  ['switzer', 'Switzer', "'Switzer'"], ['figtree', 'Figtree', "'Figtree Variable'"], ['halden', 'Halden', "'Halden'"],
-];
-const SIZE_PREFS: [string, string, Pref<number>][] = [
-  ['normal', 'Body text', P.szNormal], ['pocket', 'Pocket', P.szPocket], ['hat', 'Hat', P.szHat], ['block', 'Block', P.szBlock],
-  ['tag', 'Tag', P.szTag], ['cite', 'Cite', P.szCite], ['analytic', 'Analytic', P.szAnalytic], ['undertag', 'Undertag', P.szUndertag],
-];
-function applyDisplay() {
-  const root = document.documentElement;
-  const v = (k: string, val: string) => (val ? root.style.setProperty(k, val) : root.style.removeProperty(k));
-  v('--doc-font', FONTS.find(([id]) => id === pref(P.font))?.[2] ?? '');
-  const ui = UI_FONTS.find(([id]) => id === pref(P.uiFont))?.[2];
-  v('--ui-font', ui ? `${ui}, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif` : '');
-  v('--doc-lh', pref(P.lineHeight));
-  for (const [id, , p] of SIZE_PREFS) v(`--sz-${id}`, `${pref(p)}pt`);
-  v('--c-analytic', pref(P.colorAnalytic));
-  v('--c-undertag', pref(P.colorUndertag));
-  v('--text-w', { full: '', wide: '900px', narrow: '680px' }[pref(P.textWidth)]);
-  v('--margin-x', { narrow: '12px', normal: '', wide: '72px' }[pref(P.margins)]);
-  root.dataset.caret = pref(P.caret);
-  root.dataset.sel = pref(P.selection);
-  const cls: [string, boolean][] = [
-    ['cite-plain', !pref(P.citeBold)], ['emph-nobox', !pref(P.emphasisBox)], ['pocket-nobox', !pref(P.pocketBox)],
-    ['hat-single', pref(P.hatLine) === 'single'], ['shade-dots', pref(P.shadingDots)], ['no-card-bar', !pref(P.cardBar)], ['reduce-motion', pref(P.reduceMotion)],
-  ];
-  for (const [c, on] of cls) root.classList.toggle(c, on);
-}
-applyDisplay();
-onPrefs(applyDisplay);
+import { FONTS, SIZE_PREFS, UI_FONTS } from './display';
 
 const STYLE_OPTS: [string, string][] = [['normal', 'Normal text'], ['pocket', 'Pocket'], ['hat', 'Hat'], ['block', 'Block'], ['tag', 'Tag'], ['analytic', 'Analytic'], ['undertag', 'Undertag']];
 const WPM: [number, string][] = Array.from({ length: 12 }, (_, i) => [150 + i * 25, `${150 + i * 25} wpm`]);
@@ -97,7 +60,9 @@ export function Settings(props: Props) {
   const [query, setQuery] = useState('');
   const [, setSpecTick] = useState(0); // a feature setting changed: redraw its row
   const [keyNote, setKeyNote] = useState<KeyNote>(null); // the recorder's note under a shortcut's label
-  useEffect(() => { if (props.open) { setQuery(props.startQuery ?? ''); if (props.startPage) setPageId(props.startPage); ref.current?.focus({ preventScroll: true }); } }, [props.open, props.startPage, props.startQuery]);
+  const [importNote, setImportNote] = useState<{ text: string; bad?: boolean } | null>(null); // how the last Import went
+  const fileInput = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => { if (props.open) { setQuery(props.startQuery ?? ''); if (props.startPage) setPageId(props.startPage); ref.current?.focus({ preventScroll: true }); } }, [props.open, props.startPage, props.startQuery]);
   // File search folders live in the desktop app's main process, not in prefs
   const [folders, setFolders] = useState<IndexFolder[] | null>(null);
   useEffect(() => {
@@ -231,6 +196,12 @@ export function Settings(props: Props) {
           select('Name new files', pref(P.newName), (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), (h) => setPref(P.newName, h as 'untitled')) },
         tog(P.savePrefix, 'Prefix Save As copies', 'Send, Read and Marked Doc copies start with a prefix, so you can tell them apart from the file.'),
         prefixRow(P.prefixSend, 'Send Doc'), prefixRow(P.prefixRead, 'Read Doc'), prefixRow(P.prefixMarked, 'Marked Doc'),
+      ]],
+      ['Transfer', [
+        { label: 'Export settings', hint: 'Save every setting to a .json file, to move them to another computer or keep a copy.', control:
+          <button className="st-btn" onClick={downloadSettings}>Export</button> },
+        { label: 'Import settings', hint: importNote?.text ?? 'Load a settings file from Falcon, or one exported from CardMirror.', bad: importNote?.bad, control: (
+          <button className="st-btn" onClick={() => fileInput.current?.click()}>Import</button>) },
       ]],
       ['Privacy', [
         tog(P.usageStats, 'Share usage statistics', 'Send anonymous counts of which features get used, like opening and saving files. Never file names or anything you type. Desktop app only.'),
@@ -397,6 +368,24 @@ export function Settings(props: Props) {
     setKeyNote(null);
   };
 
+  /** Apply a picked settings file. Zoom, speech length, outline, depth and the pens live in App's state, so they're handed over too. */
+  const importFile = async (f: File) => {
+    const r = importSettings(await f.text());
+    if (!r.ok) { setImportNote({ text: r.error, bad: true }); return; }
+    const get = (k: string) => localStorage.getItem(`falcon.${k}`);
+    props.onZoom(Number(get('zoom')) || DEFAULTS.zoom);
+    props.onSpeechMin(Number(get('speech')) || DEFAULTS.speechMin);
+    props.onShowOutline(get('outline') !== 'off');
+    props.onDepth(Number(get('depth')) || DEFAULTS.depth);
+    props.onHighlight(get('highlight') ?? DEFAULTS.highlight);
+    setActiveColor('shading', get('shading') ?? '#D9D9D9');
+    setSpecTick((t) => t + 1);
+    const n = (x: number) => `${x} setting${x === 1 ? '' : 's'}`;
+    setImportNote({ text: r.from === 'CardMirror'
+      ? `Brought over ${n(r.applied)} from CardMirror. ${r.skipped ? `${n(r.skipped)} ${r.skipped === 1 ? "has" : "have"} no Falcon match yet.` : ''}`.trim()
+      : `Loaded ${n(r.applied)}.` });
+  };
+
   let lastGroup: string | undefined;
   return (
     <div className="st-back" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
@@ -428,6 +417,8 @@ export function Settings(props: Props) {
           })}
           <div className="grow" />
           <div className="st-ver">Falcon {version}</div>
+          <input ref={fileInput} type="file" accept=".json,application/json" hidden aria-label="Settings file"
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importFile(f); }} />
         </nav>
         <div className="st-main">
           <div className="st-head">

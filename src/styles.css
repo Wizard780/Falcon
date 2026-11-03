@@ -381,8 +381,9 @@ button.b:active { transform: scale(.97); }
 /* big files: the browser skips layout and paint for paragraphs that are off screen. That brings paint
    containment, which would clip underlines drawn below a short line box (a hat's double underline), so
    paint may spill a little past the box, the same as when the caret's paragraph turns it off. */
-.ProseMirror > * { content-visibility: auto; contain-intrinsic-size: auto 1.3em; overflow-clip-margin: 0.5em; }
-.ProseMirror > .f-live { content-visibility: visible; }
+/* only paragraphs near the screen are drawn (src/editor/window.ts picks them); the rest keep their last height */
+.ProseMirror > * { content-visibility: hidden; contain-intrinsic-size: auto 1.3em; overflow-clip-margin: 0.5em; }
+.ProseMirror > .f-near, .ProseMirror > .f-live, .ProseMirror > .ProseMirror-widget { content-visibility: visible; }
 
 /* the card the cursor is in gets a thin bar on its left */
 .f-cur-card { position: relative; }

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, createElement } from 'react';
+import { createElement } from 'react';
+import { act } from 'preact/test-utils';
 import { createRoot } from 'react-dom/client';
 import { ErrorBoundary } from '../src/ui/ErrorBoundary';
 
