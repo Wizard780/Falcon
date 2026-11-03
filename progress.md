@@ -216,3 +216,11 @@ Bug hunt (Aarav asked for "bugs and everything"): opened 500 of his .docx files 
 - [x] his own NATO block files open and save exactly as before (effective formatting diffed run by run)
 - [x] vitest tests/import-overrides.test.ts (fails on main), journey backfile-overrides; before/after screenshot of a real Impact Defense card
 
+## Fix: crash recovery for block files (2026-11-03, branch big-file-recovery)
+Bug hunt: opening either NATO block file said "too big for crash recovery, so save often". Crash recovery lived in localStorage (about 5M characters), so any doc over 400k (every block file and most backfiles) had none.
+- [x] the desktop app keeps the docs localStorage can't hold in `userData/recovery.json` (written through a temp file, only the newest copy queued), up to 10M of content; small docs stay in localStorage as before, and the rail comes back in its order across the two
+- [x] cost measured on real files: a block file's copy takes ~7 ms, a 30 MB backfile with pictures ~60 ms, once per pause in typing (800 ms debounce, at idle)
+- [x] the web build has no file, so it keeps the 400k limit and the warning
+- [x] vitest tests/big-recovery.test.ts (3 of 4 fail on main); scripts/electron-recovery.mjs kills the real app mid-edit and relaunches: the edit is back, unsaved, on a generated file and on a copy of NATO AT Neg; electron-smoke passes with `recovery` added to the bridge
+- Note: in the app tests, a backup taken inside the same `act` as the typing records the doc as saved, because the render that marks it unsaved waits for the act to end. Not an app bug; wait in a second act (`typeAndBackUp`)
+

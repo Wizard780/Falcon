@@ -97,7 +97,11 @@ const AUTOSAVE_MAX = 400_000;
 // Pictures (data URLs) are counted in characters; browser storage holds about 5M of them in all.
 const AUTOSAVE_MEDIA_MAX = 3_000_000;
 
-type Backup = { meta: DocMeta; doc: PMNode; active: boolean; dirty?: boolean; speech?: boolean };
+// The desktop app keeps the docs browser storage can't hold in a file instead (bridge.recovery), up to this
+// size: a 30 MB backfile with pictures is about 6.5M and takes ~60 ms to copy; a block file is under 1M (~7 ms).
+const DISK_MAX = 10_000_000;
+
+type Backup = { meta: DocMeta; doc: PMNode; active: boolean; dirty?: boolean; speech?: boolean; at?: number };
 type Json = { type?: string; attrs?: Record<string, unknown>; content?: Json[] };
 const MEDIA_REF = 'falcon-media:';
 /** A doc's JSON with each picture's data kept once in `media` (a file can use one logo hundreds of times). */
@@ -134,42 +138,58 @@ function mediaSize(doc: PMNode): number {
   });
   return n;
 }
-/** Crash-recovery copy of the open doc and every unsaved one. Docs too big to keep are left out;
- *  returns false when the active doc was one of them. */
+/** Backups as JSON, each picture's data kept once (on the first entry), each with its place in the rail. */
+function packList(list: Backup[], all: Backup[]): string {
+  const media: string[] = [], index = new Map<string, number>();
+  const docs = list.map((b) => ({ meta: b.meta, active: b.active, dirty: b.dirty, speech: b.speech, at: all.indexOf(b), doc: packDoc(b.doc, media, index) }));
+  return JSON.stringify(media.length ? docs.map((d, i) => (i === 0 ? { ...d, media } : d)) : docs);
+}
+function unpackList(text: string): Backup[] {
+  const list = JSON.parse(text) as { meta: DocMeta; doc: Json; active: boolean; dirty?: boolean; speech?: boolean; at?: number; media?: string[] }[];
+  const media = list[0]?.media;
+  return list.map(({ media: _m, ...b }) => ({ ...b, doc: PMNode.fromJSON(schema, unpackDoc(b.doc, media)) }));
+}
+let diskHeld = true; // the desktop recovery file may hold docs (from the last run, until the first backup)
+/** Crash-recovery copy of the open doc and every unsaved one. Docs too big for browser storage go to the
+ *  desktop app's recovery file, or are left out on the web; returns false when the active doc was left out. */
 function autosave(list: Backup[]): boolean {
-  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return true; } // turned off in Settings
+  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); clearDisk(); return true; } // turned off in Settings
   // a doc whose pictures don't fit is left out whole: a copy without its pictures, saved, would lose them
   const keep = list.filter((b) => b.doc.content.size <= AUTOSAVE_MAX && mediaSize(b.doc) <= AUTOSAVE_MEDIA_MAX);
-  const write = (l: Backup[]) => {
-    const media: string[] = [], index = new Map<string, number>();
-    const docs = l.map((b) => ({ meta: b.meta, active: b.active, dirty: b.dirty, speech: b.speech, doc: packDoc(b.doc, media, index) }));
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(media.length ? docs.map((d, i) => (i === 0 ? { ...d, media } : d)) : docs));
-  };
   const kept = [...keep];
   for (;;) {
-    try { write(kept); break; }
+    try { localStorage.setItem(AUTOSAVE_KEY, packList(kept, list)); break; }
     catch { // storage full: let go of the biggest copy that isn't the open doc, the open doc last
-      if (!kept.length) { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+      if (!kept.length) { localStorage.removeItem(AUTOSAVE_KEY); break; }
       const drop = kept.filter((b) => !b.active).sort((a, b) => b.doc.content.size - a.doc.content.size)[0] ?? kept[0];
       kept.splice(kept.indexOf(drop), 1);
     }
   }
   localStorage.removeItem(OLD_AUTOSAVE_KEY);
-  return kept.some((b) => b.active);
+  const disk = bridge.recovery ? list.filter((b) => !kept.includes(b) && b.doc.content.size <= DISK_MAX) : [];
+  if (disk.length) { bridge.recovery!.write(packList(disk, list)); diskHeld = true; } else clearDisk();
+  return kept.some((b) => b.active) || disk.some((b) => b.active);
+}
+function clearDisk() {
+  if (diskHeld && bridge.recovery) bridge.recovery.write('');
+  diskHeld = false;
 }
 function loadBackups(): Backup[] {
-  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return []; } // turned off in Settings
+  diskHeld = true; // a new page: the file may hold the last run's docs
+  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); clearDisk(); return []; } // turned off in Settings
+  const out: Backup[] = [];
   try {
     const v2 = localStorage.getItem(AUTOSAVE_KEY);
-    if (v2) {
-      const list = JSON.parse(v2) as { meta: DocMeta; doc: Json; active: boolean; dirty?: boolean; speech?: boolean; media?: string[] }[];
-      const media = list[0]?.media;
-      return list.map(({ media: _m, ...b }) => ({ ...b, doc: PMNode.fromJSON(schema, unpackDoc(b.doc, media)) }));
-    }
-    const v1 = localStorage.getItem(OLD_AUTOSAVE_KEY);
-    if (v1) return [{ meta: readJson<DocMeta>('falcon.meta', { name: 'Untitled' }), doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
+    const v1 = v2 ? null : localStorage.getItem(OLD_AUTOSAVE_KEY);
+    if (v2) out.push(...unpackList(v2));
+    else if (v1) out.push({ meta: readJson<DocMeta>('falcon.meta', { name: 'Untitled' }), doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true });
   } catch { /* corrupt autosave: start blank */ }
-  return [];
+  try {
+    const disk = bridge.recovery?.read();
+    if (disk) out.push(...unpackList(disk));
+  } catch { /* corrupt recovery file: skip it */ }
+  // the two stores split one rail: put it back in order
+  return out.some((b) => b.at != null) ? out.sort((a, b) => (a.at ?? 0) - (b.at ?? 0)) : out;
 }
 const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 0));
 
@@ -420,7 +440,7 @@ export function App() {
     setDocVersion((n) => n + 1);
     if (scrollRef.current) scrollRef.current.scrollTop = scroll;
     setFindOpen(false); // find state belongs to the outgoing doc
-    const backedUp = v.state.doc.content.size <= AUTOSAVE_MAX;
+    const backedUp = v.state.doc.content.size <= (bridge.recovery ? DISK_MAX : AUTOSAVE_MAX);
     warnedBig.current = !backedUp; // the open message carries the warning
     setHomeOpen(false);
     setSdOn(false);

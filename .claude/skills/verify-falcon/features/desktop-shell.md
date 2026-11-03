@@ -10,6 +10,7 @@ Falcon ships as an Electron app for Mac and Windows. The shell adds what the web
 - `path-guard` `openPath` refuses any path that was not picked in a dialog before.
 - `save-in-place` Save writes an already-open file without a dialog.
 - `close-guard` closing with unsaved work asks first.
+- `crash-recovery` a file too big for the page's localStorage (any block file, over ~400k characters) is backed up to `userData/recovery.json` and comes back, unsaved, after a crash.
 - `menu` the app menu has File, Edit and Window on a Mac. The smoke prints it but asserts only that Windows and Linux have none (`electron/main.cjs`). Read the printed `menu:` line yourself.
 - `spelling` the page is spellchecked by Chromium's own checker (the Mac's system dictionary, Hunspell on Windows). Right-clicking a misspelled word shows up to five guesses, Add to Dictionary, then Cut, Copy and Paste (`contextMenu` in `electron/main.cjs`). Added words list under Settings > Editor > Spelling with a remove button, and Check spelling turns it off. A hidden window never runs the checker, so the smoke builds the menu from the params a misspelled word sends, then checks the real add, list and remove.
 - `plain-paste` F2 pastes the clipboard as plain text through `readClipboardText`. The smoke does not drive it. `scripts/paste-word.mjs` covers Word HTML paste on the web build only.
@@ -29,6 +30,7 @@ Preconditions:
 
 - **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/desktop-shell.mjs`. It exits 0 and prints `ok   electron smoke exit 0, window never shown: true`.
 - **What it drives.** It wraps `scripts/electron-smoke.mjs`, which launches Electron with a throwaway `FALCON_USER_DATA` profile and checks Home at launch, Escape, typing a tag and body with F7, F9, F10 and F11, a stray `openPath` being refused, the drag regions, save in place, the bridge, spelling and the close guard. The Mac menu and F2 are printed or untested. See Sub-features.
+- **Crash recovery.** `node scripts/electron-recovery.mjs` (after `npm run build`) opens a ~900k-character file, types, kills the app with SIGKILL, relaunches on the same profile and checks the edit is back and unsaved: four `ok` lines. `FALCON_BIG=<copy of a real block file>` uses that file instead; `FALCON_SHOTS=<dir>` keeps screenshots.
 - **Packaged app.** `FALCON_EXE=/path/to/Falcon.app/Contents/MacOS/Falcon $V run .claude/skills/verify-falcon/journeys/desktop-shell.mjs` drives an installed build instead of the dev tree.
 - **Proof.** `evidence/desktop-shell/` holds `transcript.txt` (command, exit code, stdout, stderr), `electron-<platform>.png`, `electron-confirm-<platform>.png` and `results.txt`.
 
