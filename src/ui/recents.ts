@@ -71,5 +71,7 @@ export function whenLabel(t: number, now = new Date()): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-/** Display form of a Verbatim name: "---" reads as " · ", and a trailing speech name is dropped. */
-export const tidy = (s: string) => s.trim().replace(/---/g, ' · ').replace(/ · (1AC|1NC|2AC|2NC|1NR|1AR|2NR|2AR)$/, '');
+/** Display form of a Verbatim heading: "---" reads as " · ". */
+export const tidyHeading = (s: string) => s.trim().replace(/---/g, ' · ');
+/** Display form of a Verbatim file name: as a heading, and a trailing speech name is dropped. */
+export const tidy = (s: string) => tidyHeading(s).replace(/ · (1AC|1NC|2AC|2NC|1NR|1AR|2NR|2AR)$/, '');
