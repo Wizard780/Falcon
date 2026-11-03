@@ -63,7 +63,8 @@ export function ComparePanel({ open, onClose, readSelection }: { open: string | 
     setRes(r);
     setNote(summary(t[0], t[1], r, o));
     setCur(r.diffs ? (keep ? Math.min(Math.max(cur, 0), r.diffs - 1) : 0) : -1);
-    requestAnimationFrame(() => outs.current?.querySelectorAll<HTMLElement>('.cmp-out')[1]?.focus());
+    // a fresh compare puts you in Text 2's result; Swap and the options leave focus where it is
+    if (!keep) requestAnimationFrame(() => outs.current?.querySelectorAll<HTMLElement>('.cmp-out')[1]?.focus());
   };
   const go = (i: number) => { if (res?.diffs) setCur(Math.max(0, Math.min(i, res.diffs - 1))); };
 

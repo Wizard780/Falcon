@@ -28,6 +28,12 @@ const focused = await p.waitForFunction(() => document.activeElement?.getAttribu
 f.want(focused, `focus waits in Text 2 (it's on ${await p.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.className)})`);
 await f.shot('opened');
 
+// text boxes keep their editing keys (word jumps, select to line start) while the panel blocks app shortcuts
+await p.fill('textarea[aria-label="Text 2"]', 'alpha beta gamma');
+await p.keyboard.press(`${MOD}+ArrowLeft`); // Mac: to the line's start; elsewhere: back a word
+const caret = await p.$eval('textarea[aria-label="Text 2"]', (t) => t.selectionStart);
+f.want(caret === (MOD === 'Meta' ? 0 : 11), `${MOD}+Left moves the caret in Text 2 (at ${caret})`);
+
 // 2. paste Text 2, Mod-Enter compares
 await p.fill('textarea[aria-label="Text 2"]', 'Global growth will drop to two percent next  year.');
 await p.keyboard.press(`${MOD}+Enter`);
@@ -44,11 +50,14 @@ await p.waitForTimeout(80);
 f.want(await p.$eval('.cmp-nav', (x) => x.textContent.includes('2 of 2')), '↓ moves to 2 of 2');
 f.want(await p.$$eval('.cmp-out .cmp-cur', (r) => r.map((x) => x.textContent).join('|')) === ' |  ', 'the current difference is underlined on both sides');
 
-// 4. Ignore spacing re-runs in place
-await p.click('button:has-text("Ignore spacing")');
+// 4. Ignore spacing re-runs in place, and focus stays on the button
+await p.focus('button:has-text("Ignore spacing")');
+await p.keyboard.press('Space');
 await p.waitForTimeout(80);
 f.want((await note()) === '1 difference · 1 word only in Text 1 · 1 word only in Text 2', `Ignore spacing leaves one difference: ${await note()}`);
 f.want(JSON.parse(await p.evaluate(() => localStorage.getItem('falcon.compareOpts'))).ignoreSpace === true, 'the option is kept');
+await p.waitForTimeout(60);
+f.want(await p.evaluate(() => document.activeElement?.textContent) === 'Ignore spacing', 'focus stays on the option you toggled');
 
 // 5. Characters mode marks just the letters that differ
 await p.click('button:has-text("Characters")');
