@@ -179,6 +179,15 @@ function reveal(view: EditorView) {
   const m = current(findKey.getState(view.state));
   if (!m) return;
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, m.from, m.to)).scrollIntoView());
+  // ProseMirror skips scrollIntoView while the DOM selection is outside the editor (the caret in the find box)
+  const sc = view.dom.closest('.f-scroll') as HTMLElement | null;
+  if (!sc || view.hasFocus()) return;
+  // off-screen paragraphs have estimated heights: re-aim until the match holds still
+  for (let i = 0; i < 4; i++) {
+    const r = view.coordsAtPos(m.from), box = sc.getBoundingClientRect();
+    if (r.top >= box.top && r.bottom <= box.bottom) return;
+    sc.scrollTop += r.top - (box.top + box.height / 3);
+  }
 }
 
 /** Replace the current match and go on to the next one. */
