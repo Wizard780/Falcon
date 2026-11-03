@@ -124,35 +124,65 @@ function parseDocx(buf) {
 // ---------- ranking ----------
 
 const words = (q) => String(q ?? '').toLowerCase().split(/\s+/).filter(Boolean);
-const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const WORD = /[\p{L}\p{N}]/u;
+/** True when `w` shows up in `text` at the start of a word. Same as a regex with \p{L}, just much faster on ascii. */
+function atStart(text, w) {
+  for (let i = text.indexOf(w); i >= 0; i = text.indexOf(w, i + 1)) {
+    if (i === 0) return true;
+    let c = text.charCodeAt(i - 1);
+    if (c < 128) { if (!((c >= 48 && c <= 57) || (c >= 97 && c <= 122) || (c >= 65 && c <= 90))) return true; continue; }
+    if (c >= 0xdc00 && c <= 0xdfff && i >= 2) c = text.codePointAt(i - 2); // the back half of an emoji or the like
+    if (!WORD.test(String.fromCodePoint(c))) return true;
+  }
+  return false;
+}
 
 /** Every query word has to be in the tag, cite, headings or file name. A word at the start of a word ("chen" in
  *  "Chen 25") beats one inside a word ("kitchen"), tag and cite beat headings and file name, the cite's author beats
  *  a name further into it, cards with a cite
- *  beat analytics, and the same card saved in several files shows once (the newest copy). */
-function rank(hay, query, limit = 60) {
+ *  beat analytics, and the same card saved in several files shows once (the newest copy).
+ *  `memo` keeps the last query's matches, so typing more letters only looks through those. */
+function rank(hay, query, limit = 60, memo) {
   const ws = words(query);
   // one letter matches nearly every card: wait for a second
   if (ws.join('').length < 2) return [];
-  const starts = ws.map((w) => new RegExp(`(?:^|[^\\p{L}\\p{N}])${esc(w)}`, 'u'));
+  // a longer query only matches cards the shorter one did
+  const narrower = memo && memo.hay === hay && ws.length >= memo.ws.length && memo.ws.every((w, k) => ws[k].includes(w));
+  const pool = narrower ? memo.hits : hay;
+  const hits = [];
   const groups = new Map();
-  for (const h of hay) {
+  for (const h of pool) {
+    let k = 0;
+    while (k < ws.length && (h.tag.includes(ws[k]) || h.cite.includes(ws[k]) || h.heads.includes(ws[k]) || h.name.includes(ws[k]))) k++;
+    if (k < ws.length) continue; // cheap check first, most cards miss a word
+    hits.push(h);
     let score = 0;
-    for (let k = 0; k < ws.length; k++) {
+    for (k = 0; k < ws.length; k++) {
+      const w = ws[k];
+      // tag and cite weigh 3, headings and file name 1, doubled at the start of a word
       let best = 0;
-      for (const [text, weight] of [[h.tag, 3], [h.cite, 3], [h.heads, 1], [h.name, 1]]) {
-        if (weight * 2 > best && text.includes(ws[k])) best = Math.max(best, weight * (starts[k].test(text) ? 2 : 1));
-      }
-      if (!best) { score = 0; break; }
-      score += best + (h.cite.startsWith(ws[k]) ? 1 : 0); // the cite's author
+      if (h.tag.includes(w)) best = atStart(h.tag, w) ? 6 : 3;
+      if (best < 6 && h.cite.includes(w)) best = Math.max(best, atStart(h.cite, w) ? 6 : 3);
+      if (best < 2 && h.heads.includes(w)) best = Math.max(best, atStart(h.heads, w) ? 2 : 1);
+      if (best < 2 && h.name.includes(w)) best = Math.max(best, atStart(h.name, w) ? 2 : 1);
+      score += best + (h.cite.startsWith(w) ? 1 : 0); // the cite's author
     }
-    if (!score) continue;
     const key = `${h.tag}\n${h.cite}`;
     const g = groups.get(key);
     if (!g) groups.set(key, { h, score, copies: 1 });
     else { g.copies++; if (h.mtime > g.h.mtime) { g.h = h; g.score = Math.max(score, g.score); } }
   }
-  return [...groups.values()]
+  if (memo) { memo.hay = hay; memo.ws = ws; memo.hits = hits; }
+  // scores are small whole numbers: only sort the groups that can make the top `limit`
+  let top = [...groups.values()];
+  if (top.length > limit) {
+    const count = [];
+    for (const g of top) count[g.score] = (count[g.score] ?? 0) + 1;
+    let cut = count.length - 1;
+    for (let n = 0; cut > 0; cut--) { n += count[cut] ?? 0; if (n >= limit) break; }
+    top = top.filter((g) => g.score >= cut);
+  }
+  return top
     .sort((a, b) => b.score - a.score || !!b.h.cite - !!a.h.cite || b.copies - a.copies || b.h.mtime - a.h.mtime || a.h.tag.localeCompare(b.h.tag))
     .slice(0, limit);
 }
@@ -163,6 +193,7 @@ function rank(hay, query, limit = 60) {
 function createCardIndex(storeFile, listFiles) {
   let files = new Map(); // path -> { mtime, size, bad, cards }
   let hay = null; // lowercase copies for searching, built on the first search after a change
+  const memo = { hay: null, ws: [], hits: [] }; // the last search's matches, for narrowing while typing
   let loaded = null, scanning = null, scannedAt = 0;
   let progress = { done: 0, total: 0 };
 
@@ -209,6 +240,7 @@ function createCardIndex(storeFile, listFiles) {
     if (changed || first) { files = next; hay = null; } // unchanged: keep the search copies already built
     scannedAt = Date.now();
     if (changed) await save().catch(() => {});
+    setImmediate(haystack); // build the search copies now, not when Search cards first opens
   }
 
   function scan() {
@@ -241,7 +273,7 @@ function createCardIndex(storeFile, listFiles) {
     async search(query, limit) {
       await load();
       if (!scanning && Date.now() - scannedAt > STALE_MS) void scan();
-      const hits = rank(haystack(), query, limit).map(({ h, copies }) => {
+      const hits = rank(haystack(), query, limit, memo).map(({ h, copies }) => {
         const [tag, cite, heads] = files.get(h.path).cards[h.i];
         return { path: h.path, ordinal: h.i, file: path.basename(h.path).replace(/\.docx$/i, ''), tag, cite, headings: heads ? heads.split(SEP) : [], copies };
       });
