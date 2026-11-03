@@ -141,3 +141,12 @@ Decisions:
 - Sources live in `src/ui/cc-sources.ts`; a files/library source can be added beside them without touching the UI.
 - Settings rows read and write the same prefs as Settings; labels match Settings rows so Tab lands on them.
 - Not driven in Electron: the palette itself (the smoke test only proves the desktop app still launches and renders).
+
+## Stage: home redesign (2026-11-02, branch home-redesign)
+User: the home screen was "very ugly". Picked: recent files first, quiet like the editor, cut the animated title; then a list with a preview, more background, the app's own fonts, square buttons.
+- [x] header: date, a greeting by time of day, file and card counts, New / Open, the dot clock (kept)
+- [x] recent files as a list (tile, name over folder and cards, when); ↑↓ or hover picks one, click or Enter opens it
+- [x] beside it the picked file drawn as a page in Verbatim's styles (pocket, hats, blocks, stand-in cards highlighted in the pen color), a second sheet under it, a glass caption with Open
+- [x] background: the dot field, a light from the top left, a glow in the pen color behind the page; no title beam (removed from home-fx.ts)
+- [x] empty state: a blank Untitled page with New document; under ~960px of room the page hides and the list fills the width
+- [x] vitest 307 pass, tsc clean; journeys settings, themes, open-save-docx, desktop-shell pass; driven in the web build (keys, hover, 1440/1100/860 widths, empty)

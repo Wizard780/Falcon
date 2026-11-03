@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { beam, clock, dots } from './home-fx';
-import { whenLabel, type Recent } from './recents';
+import { clock, dots } from './home-fx';
+import { tidy, whenLabel, type Recent } from './recents';
 import { keyOf, keyText } from '../editor/keybinds';
 import { SvgIcon } from './icons';
 
 
-/** The start screen (and ⌘T): New, Open and the files you opened recently. */
+/** The start screen (and ⌘T): the files you opened recently, the one you point at drawn as a page beside them. */
 export function Home(props: {
   open: boolean;
   current: string;
@@ -17,25 +17,21 @@ export function Home(props: {
 }) {
   const { open, recents } = props;
   const homeRef = useRef<HTMLElement>(null);
-  const headRef = useRef<HTMLDivElement>(null);
-  const titleRef = useRef<HTMLSpanElement>(null);
   const bgRef = useRef<HTMLDivElement>(null);
   const clockRef = useRef<HTMLDivElement>(null);
   const scRef = useRef<HTMLDivElement>(null);
-  const [peek, setPeek] = useState<{ r: Recent; left: number; top: number; from: 'top' | 'bottom' } | null>(null);
-  const peekTimer = useRef(0);
+  const rows = useRef<(HTMLButtonElement | null)[]>([]);
+  const [sel, setSel] = useState(0);
   const [undo, setUndo] = useState<Recent[] | null>(null);
 
   // the effects run only while home is showing
   useEffect(() => {
     if (!open) return;
+    setSel(0);
     scRef.current!.scrollTop = 0;
     homeRef.current!.focus({ preventScroll: true }); // Tab starts inside Home, not in the covered editor
     const stops = [dots(bgRef.current!), clock(clockRef.current!)];
-    let stopBeam = () => {};
-    // wait a frame so the title has its final size before the beam measures it
-    const raf = requestAnimationFrame(() => { stopBeam = beam(homeRef.current!, headRef.current!, titleRef.current!); });
-    return () => { cancelAnimationFrame(raf); stopBeam(); stops.forEach((s) => s()); };
+    return () => stops.forEach((s) => s());
   }, [open]);
 
   // Clear hides the list for five seconds before it counts; hovering the toast pauses the clock
@@ -56,55 +52,75 @@ export function Home(props: {
     return () => cancelAnimationFrame(s.raf);
   }, [undo]);
 
-  // peek: hovering a file shows its blocks, so you can tell two files apart before opening one
-  const showPeek = (row: HTMLElement, r: Recent) => {
-    if (!r.blocks.length) return setPeek(null);
-    const home = homeRef.current!.getBoundingClientRect(), rr = row.getBoundingClientRect(), nm = row.querySelector('.nm')!.getBoundingClientRect();
-    const h = 40 + Math.min(r.blocks.length, 6) * 28 + 16;
-    const below = rr.bottom + 8 + h < home.bottom - 16;
-    setPeek({ r, left: nm.left - home.left - 12, top: below ? rr.bottom - home.top + 4 : rr.top - home.top - h - 4, from: below ? 'top' : 'bottom' });
-  };
-  const hidePeek = () => { clearTimeout(peekTimer.current); setPeek(null); };
-  useEffect(() => { if (!open) hidePeek(); }, [open]);
-
-  const day = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const shown = undo ? [] : recents;
+  const at = Math.min(sel, Math.max(0, shown.length - 1));
+  const pick = shown[at];
+  // the arrow keys walk the list (focus follows, so Enter opens the row); the page beside it follows
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && e.target === homeRef.current && pick) { e.preventDefault(); props.onRecent(pick); return; }
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (!step || !shown.length) return;
+    e.preventDefault();
+    const i = Math.min(shown.length - 1, Math.max(0, at + step));
+    setSel(i);
+    rows.current[i]?.focus();
+  };
+
+  const now = new Date();
+  const day = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const h = now.getHours(), greeting = h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  const total = shown.reduce((s, r) => s + r.cards, 0);
   return (
-    <section ref={homeRef} tabIndex={-1} className={`home${open ? ' open' : ''}`} aria-label="Home" aria-hidden={!open} onPointerLeave={hidePeek}>
+    <section ref={homeRef} tabIndex={-1} className={`home${open ? ' open' : ''}`} aria-label="Home" aria-hidden={!open} onKeyDown={onKey}>
       <div ref={bgRef} className="hm-bg" aria-hidden="true" />
-      <div ref={scRef} className="hm-sc" onScroll={hidePeek}>
+      <div className="hm-glow" aria-hidden="true" />
+      <div ref={scRef} className="hm-sc">
         <div className="hm-in">
-          <div ref={headRef} className="hm-head">
+          <header className="hm-head">
             <div className="hm-text">
               <p className="hm-date">{day}</p>
-              <h1 className="hm-title"><span ref={titleRef} className="ft">Falcon</span></h1>
-              <p className="hm-sub">{props.current ? `${props.current} is open. Press Esc to go back to it` : 'Open a file or start a new one'}</p>
+              <h1 className="hm-hi">{greeting}</h1>
+              <p className="hm-sub">{props.current ? `${props.current} is open. Esc goes back to it` : shown.length ? `${shown.length} recent ${shown.length === 1 ? 'file' : 'files'} · ${total.toLocaleString('en-US')} cards` : 'Open a file or start a new one'}</p>
+              <div className="hm-acts">
+                <button className="hm-act" onClick={props.onNew}><SvgIcon name="plus" /><span>New document</span>{keyOf('new') && <kbd>{keyText(keyOf('new'))}</kbd>}</button>
+                <button className="hm-act" onClick={props.onOpen}><SvgIcon name="open" /><span>Open…</span>{keyOf('open') && <kbd>{keyText(keyOf('open'))}</kbd>}</button>
+              </div>
             </div>
             <div ref={clockRef} className="hm-clock" aria-live="off" />
-          </div>
-          <div className="hm-acts">
-            <button className="hm-act" onClick={props.onNew}><span className="ic"><SvgIcon name="plus" /></span><span className="t">New document</span>{keyOf('new') && <kbd>{keyText(keyOf('new'))}</kbd>}<span className="d">A blank file</span></button>
-            <button className="hm-act" onClick={props.onOpen}><span className="ic"><SvgIcon name="open" /></span><span className="t">Open</span>{keyOf('open') && <kbd>{keyText(keyOf('open'))}</kbd>}<span className="d">A .docx file</span></button>
-          </div>
-          <div className="hm-lab"><span>Recent</span>{shown.length > 0 && <button className="hm-clear" onClick={() => { hidePeek(); setUndo(recents); props.onClear(null); }}>Clear</button>}</div>
-          <div className="hm-list">
-            {shown.length ? shown.map((r) => (
-              <button key={(r.path ?? '') + r.name} className="hm-row" onClick={() => { hidePeek(); props.onRecent(r); }}
-                onPointerEnter={(e) => { const row = e.currentTarget; clearTimeout(peekTimer.current); peekTimer.current = window.setTimeout(() => showPeek(row, r), peek ? 0 : 200); }}
-                onPointerLeave={() => { clearTimeout(peekTimer.current); peekTimer.current = window.setTimeout(() => setPeek(null), 80); }}>
-                <span className="ic"><SvgIcon name="doc" /></span><span className="nm">{r.name}</span><span className="fd">{r.folder}</span>
-                <span className="ct">{r.cards ? `${r.cards} cards` : ''}</span><span className="wh">{whenLabel(r.when)}</span>
-              </button>
-            )) : <p className="hm-none">Files you open show up here</p>}
+          </header>
+
+          <div className="hm-main">
+            <div className="hm-col">
+              <div className="hm-lab"><span>Recent</span>{shown.length > 0 && <button className="hm-clear" onClick={() => { setUndo(recents); props.onClear(null); }}>Clear</button>}</div>
+              <div className="hm-list">
+                {shown.length ? shown.map((r, i) => (
+                  <button key={(r.path ?? '') + r.name} ref={(el) => { rows.current[i] = el; }} className="hm-row" data-on={i === at || undefined}
+                    onPointerEnter={(e) => { setSel(i); if (document.activeElement?.classList.contains('hm-row')) e.currentTarget.focus({ preventScroll: true }); }} onFocus={() => setSel(i)} onClick={() => props.onRecent(r)}>
+                    <span className="ic"><SvgIcon name="doc" /></span>
+                    <span className="nm">{r.name}</span>
+                    <span className="fd">{[r.folder, r.cards ? `${r.cards} cards` : ''].filter(Boolean).join(' · ')}</span>
+                    <span className="wh">{whenLabel(r.when)}</span>
+                  </button>
+                )) : <p className="hm-none"><b>No recent files yet</b>Files you open show up here</p>}
+              </div>
+              {shown.length > 1 && <p className="hm-keys"><kbd>↑</kbd><kbd>↓</kbd> choose <kbd>↵</kbd> open <kbd>esc</kbd> back</p>}
+            </div>
+
+            <div className="hm-desk" aria-hidden="true">
+              <div className="hm-sheet hm-under" />
+              <Sheet key={pick ? (pick.path ?? '') + pick.name : ''} r={pick} />
+              <div className="hm-cap">
+                {pick ? <>
+                  <div className="cap-t"><b>{pick.name}</b><span>{[pick.folder, `${pick.cards} cards`, whenLabel(pick.when)].filter(Boolean).join(' · ')}</span></div>
+                  <button tabIndex={-1} className="cap-go" onClick={() => props.onRecent(pick)}>Open <kbd>↵</kbd></button>
+                </> : <>
+                  <div className="cap-t"><b>A blank page</b><span>Pockets, hats, blocks and tags</span></div>
+                  <button tabIndex={-1} className="cap-go" onClick={props.onNew}>New document</button>
+                </>}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-      <div className={`hm-peek${peek ? ' open' : ''}`} role="tooltip" data-from={peek?.from ?? 'top'} style={peek ? { left: peek.left, top: peek.top } : undefined}>
-        {peek && <>
-          <p className="pk-h"><span>{peek.r.name}</span><span className="pk-c">{peek.r.cards} cards</span></p>
-          {peek.r.blocks.slice(0, 6).map((b, i) => <p key={i} className={`pk-r l${b.level}`}><span>{b.label}</span><span className="pk-c">{b.cards}</span></p>)}
-          {peek.r.blocks.length > 6 && <p className="pk-more">More blocks inside</p>}
-        </>}
       </div>
       <div className={`hm-undo${undo ? ' open' : ''}`} role="status"
         onPointerEnter={() => (undoState.current.paused = true)} onPointerLeave={() => (undoState.current.paused = false)}>
@@ -113,5 +129,35 @@ export function Home(props: {
         <i ref={undoBar} />
       </div>
     </section>
+  );
+}
+
+// a small seeded random, so a file's page looks the same every time it's drawn
+const rnd = (s: string) => { let x = [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 2147483647, 7) || 7; return () => (x = (x * 16807) % 2147483647) / 2147483647; };
+
+/** A file as a page: its name as the pocket, its hats and blocks as headings, and stand-in cards under each, cut and highlighted. */
+function Sheet({ r }: { r?: Recent }) {
+  const rand = rnd(r?.name ?? 'blank');
+  const card = (k: number) => (
+    <div key={k} className="sh-card">
+      <i className="sh-tag" style={{ width: `${55 + rand() * 40}%` }} />
+      <i className="sh-cite" style={{ width: `${30 + rand() * 25}%` }} />
+      <p className="sh-body">{Array.from({ length: 9 + Math.floor(rand() * 6) }, (_, j) => {
+        const v = rand();
+        return <i key={j} className={v < 0.3 ? 'hl' : v < 0.55 ? 'ul' : ''} style={{ width: `${18 + rand() * 46}%` }} />;
+      })}</p>
+    </div>
+  );
+  const blocks = r?.blocks.length ? r.blocks.slice(0, 4) : null;
+  return (
+    <article className="hm-sheet hm-page" data-blank={!r || undefined}>
+      <p className="sh-pocket">{r ? tidy(r.name) : 'Untitled'}</p>
+      {blocks ? blocks.map((b, i) => (
+        <div key={i}>
+          <p className={b.level === 2 ? 'sh-hat' : 'sh-block'}>{b.label}</p>
+          {Array.from({ length: Math.max(1, Math.min(b.cards, 2)) }, (_, k) => card(k))}
+        </div>
+      )) : [0, 1, 2].map(card)}
+    </article>
   );
 }
