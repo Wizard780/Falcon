@@ -9,6 +9,7 @@ A user opens a Verbatim `.docx` from the tool row, sees every heading, cite, und
 - `dirty-dot` marks an edited file unsaved in the rail.
 - `save-download` saves with Mod-S (web build: a download named after the doc) and clears the dot.
 - `round-trip` reopens the saved file with the same mark map.
+- `backfile-overrides` shows what Word shows when a run switches its style's underline or box off (`<w:u w:val="none"/>`, `<w:bdr w:val="none"/>`), and keeps the bold, size, italic and color of character styles Falcon has no name for ("Heading 4 Char" cites, "Strong", "8-point small").
 
 ## How to get to it (user POV)
 
@@ -28,6 +29,7 @@ Preconditions:
 - **Edit.** `f.select('needle')`, then type `thread`. `.doc-row i[aria-label="unsaved"]` appears, and the mark map changes only `needle` to `thread`.
 - **Save.** Press `Mod-S` and catch the download. Its suggested name is `seed.docx`. Keep it as `seed-saved.docx`. The unsaved dot is gone, and the file's `word/document.xml` contains `thread finds this line`.
 - **Reopen.** A second `openFalcon('open-save-docx/reopen')` opens the saved file. Its mark map equals the edited one.
+- **Backfile overrides.** Run `$V run .claude/skills/verify-falcon/journeys/backfile-overrides.mjs`. It writes a small backfile into its evidence folder, opens it through Open…, checks the spans the page draws (no underline on `since 1975`, a box on `global decline`, bold 13pt `Kenny`), saves, and reopens the download with the same mark map. Seven `ok` lines.
 - **Proof.** `evidence/open-save-docx/` holds `01-empty.png` through `04-saved.png`, `opened.markmap.txt`, `seed-saved.docx` and `results.txt`. `reopen/` holds `reopened.markmap.txt` and its screenshot.
 
 ## Gotchas
