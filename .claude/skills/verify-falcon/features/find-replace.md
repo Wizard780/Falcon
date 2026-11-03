@@ -22,7 +22,7 @@ Preconditions:
 
 - `falcon-verify doctor` is all `ok`, and the seed is open.
 
-- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/find-replace.mjs`. It exits 0 with thirteen `ok` lines.
+- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/find-replace.mjs`. It exits 0 with fourteen `ok` lines.
 - **Find one.** Click `.tools [aria-label="Find"]` and fill `.findbar input[placeholder="Find"]` with `needle`. The count reads `1/1`, and the selection's text is `needle`.
 - **Find two.** Fill `Block`. The count ends `/2`.
 - **Replace all.** Click `.findbar button[title^="Replace (⌘⇧H)"]` (Windows: `Replace (Ctrl+H)`), fill `.findbar .fb-with` with `Section`, then click `button[title^="Replace all"]`. The mark map has `block: Economy Section` and `block: Warming Section`, and no `Block`.

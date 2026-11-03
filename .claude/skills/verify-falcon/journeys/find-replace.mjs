@@ -59,5 +59,10 @@ for (const [key, k] of [['Enter', 'middle'], ['Enter', 'bottom'], ['Enter', 'top
   w = await where();
   want(w.seen && w.text === `quokka ${k}`, `${key} scrolls to the ${k} match${cold ? ' (was undrawn)' : ''} (scrollTop ${w.top})`);
 }
+// typing a query whose first match is far off screen scrolls there too
+await page.fill('.findbar input[placeholder="Find"]', 'quokka bottom');
+await page.waitForTimeout(300);
+w = await where();
+want(w.seen && w.text === 'quokka bottom', `typing a far match scrolls to it (scrollTop ${w.top})`);
 await f.shot('scrolled-to-match');
 await f.done();
