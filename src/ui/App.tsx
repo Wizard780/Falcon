@@ -27,6 +27,7 @@ import { readSetting } from '../editor/tools';
 import { findOrderSetting } from '../editor/nav-keys';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
+import { SHOW_EVENT, SpeechDrop, type SdTab } from './SpeechDrop';
 import './display'; // the display settings (fonts, sizes, root classes) apply at startup
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
 import { Confirm, nameList, type Ask } from './Confirm';
@@ -77,7 +78,7 @@ const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could 
 /** A command's key as text, for messages: ⌘S. */
 const keyLabel = (id: string) => keyText(keyOf(id));
 /** The keys that swap the document out, which read mode and Settings hold back. */
-const SWAPS = ['home', 'new', 'newSpeech', 'open', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack'];
+const SWAPS = ['home', 'new', 'newSpeech', 'open', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop'];
 /** The commands the app runs itself (the editor's keymap runs the rest). */
 /** Does this keydown send to speech? A changed key matches the way Settings recorded it (Shift-` is ~), an AltGr-typed character counts,
  *  and ` still counts on layouts where it's a dead accent key (US International). */
@@ -87,7 +88,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -232,6 +233,18 @@ export function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [homeOpen, setHomeOpen] = useState(() => pref(P.openHome));
+  // the SpeechDrop tab: open (a row in the rail) and lit (covering the page, as Home does). Home and it never both show.
+  const [sdTab, setSdTab] = useState(false);
+  const [sdOn, setSdOn] = useState(false);
+  const [sdInfo, setSdInfo] = useState<SdTab>({ room: null, fresh: 0 });
+  const sdTabRef = useRef(sdTab), sdOnRef = useRef(sdOn);
+  sdTabRef.current = sdTab;
+  sdOnRef.current = sdOn;
+  useEffect(() => { if (homeOpen) setSdOn(false); }, [homeOpen]);
+  const openSd = useCallback(() => { setSdTab(true); setSdOn(true); setHomeOpen(false); }, []);
+  /** Before acting on the open doc: take Home or SpeechDrop off it, so the change is seen. */
+  const showEditor = () => { setHomeOpen(false); setSdOn(false); };
+  const closeSd = useCallback(() => { setSdOn(false); setSdTab(false); setSdInfo({ room: null, fresh: 0 }); viewRef.current?.focus(); }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<string | undefined>();
   // Search files (Cmd-K) or Search cards: one box at a time
@@ -377,8 +390,8 @@ export function App() {
   useLayoutEffect(() => {
     const v = viewRef.current;
     if (!v) return;
-    if (homeOpen) (v.dom as HTMLElement).blur(); else v.focus();
-  }, [homeOpen, hasView]);
+    if (homeOpen || sdOn) (v.dom as HTMLElement).blur(); else v.focus();
+  }, [homeOpen, sdOn, hasView]);
 
   const run = useCallback((cmd: Command) => {
     const v = viewRef.current;
@@ -409,6 +422,7 @@ export function App() {
     const backedUp = v.state.doc.content.size <= AUTOSAVE_MAX;
     warnedBig.current = !backedUp; // the open message carries the warning
     setHomeOpen(false);
+    setSdOn(false);
     v.focus();
     setTick((t) => t + 1);
     return backedUp;
@@ -423,7 +437,7 @@ export function App() {
   };
 
   const switchTo = useCallback((id: number) => {
-    if (id === activeRef.current) { setHomeOpen(false); viewRef.current?.focus(); return; }
+    if (id === activeRef.current) { setHomeOpen(false); setSdOn(false); viewRef.current?.focus(); return; }
     const target = docsRef.current.find((d) => d.id === id);
     if (!target?.state) return;
     const out = stash(), cur = activeRef.current;
@@ -497,6 +511,7 @@ export function App() {
   const setSw = (s: Sw | null) => { swRef.current = s; setSwState(s); };
   /** Recent docs, one step `dir` from this one; with `mods` held, the switcher stays up until they're let go. */
   const recent = useCallback((dir: 1 | -1, mods: Mod[] = []) => {
+    if (sdOnRef.current) { switchTo(activeRef.current); return; } // from the SpeechDrop tab: back to the doc you were in
     const ids = recentOrder(docsRef.current.map((d) => d.id), mru.current, activeRef.current);
     if (ids.length < 2) return;
     const sel = dir > 0 ? 1 : ids.length - 1;
@@ -525,12 +540,14 @@ export function App() {
     return () => { removeEventListener('keyup', up, true); removeEventListener('blur', blur); };
   }, [endSw]);
 
+  // the SpeechDrop tab (-1) comes after the docs, as its row does in the rail
   const cycle = useCallback((dir: 1 | -1) => {
-    const list = docsRef.current;
-    if (list.length < 2) return;
-    const i = list.findIndex((d) => d.id === activeRef.current);
-    switchTo(list[(i + dir + list.length) % list.length].id);
-  }, [switchTo]);
+    const ring = [...docsRef.current.map((d) => d.id), ...(sdTabRef.current ? [-1] : [])];
+    if (ring.length < 2) return;
+    const i = ring.indexOf(sdOnRef.current ? -1 : activeRef.current);
+    const next = ring[(i + dir + ring.length) % ring.length];
+    if (next === -1) openSd(); else switchTo(next);
+  }, [switchTo, openSd]);
 
   const openedPath = (p?: string) => (p ? docsRef.current.find((d) => d.meta.path === p) : undefined);
   const opened = useCallback((r: { doc: PMNode; meta: DocMeta }, source: DocSource) => {
@@ -588,7 +605,7 @@ export function App() {
   }, [opened, fileOpen, switchTo, openFailed]);
   // Cmd-K: an open doc switches to it; anything else opens by path (indexed folders and recents are allowed)
   const openHit = useCallback(async (h: FileHit): Promise<boolean> => {
-    setHomeOpen(false);
+    showEditor();
     if (h.docId !== undefined && docsRef.current.some((d) => d.id === h.docId)) { switchTo(h.docId); return true; }
     const already = openedPath(h.path);
     if (already) { switchTo(already.id); return true; }
@@ -601,7 +618,7 @@ export function App() {
     const open = openedPath(h.path);
     if (insert) {
       if (viewRef.current && isReading(viewRef.current.state)) return;
-      setHomeOpen(false);
+      showEditor();
       const into = activeRef.current;
       let doc: PMNode | undefined;
       try { doc = open ? (open.id === activeRef.current ? viewRef.current!.state.doc : open.state?.doc) ?? undefined : (await openPath(h.path)).doc; }
@@ -672,7 +689,7 @@ export function App() {
     addEventListener(COMPARE_EVENT, on);
     return () => removeEventListener(COMPARE_EVENT, on);
   }, []);
-  const openFind = useCallback(() => { setHomeOpen(false); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
+  const openFind = useCallback(() => { showEditor(); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
   const zoomBy = useCallback((d: number) => setZoom((z) => Math.max(0.5, Math.min(3, +(z + d).toFixed(2)))), []);
 
   /** Send to speech: copy the selection (or the card or section at the caret) into the speech doc without leaving this file. */
@@ -726,7 +743,7 @@ export function App() {
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
     if (c === 'new') fileNew(); else if (c === 'newSpeech') fileNewSpeech(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
-    else if (c === 'saveAs') void fileSave(true); else if (c === 'close') closeDoc(activeRef.current); else if (c === 'settings') setSettingsOpen(true);
+    else if (c === 'saveAs') void fileSave(true); else if (c === 'close') { if (sdOnRef.current) closeSd(); else closeDoc(activeRef.current); } else if (c === 'settings') setSettingsOpen(true);
   };
   useEffect(() => bridge.onMenu?.((c) => menuRef.current(c)), []);
   // the Mac menu shows the keys Settings > Keybindings has for its items
@@ -745,7 +762,8 @@ export function App() {
     else if (id === 'open') void fileOpen();
     else if (id === 'new') fileNew();
     else if (id === 'newSpeech') fileNewSpeech();
-    else if (id === 'close') closeDoc(activeRef.current);
+    else if (id === 'close') { if (sdOnRef.current) closeSd(); else closeDoc(activeRef.current); }
+    else if (id === 'speechdrop') openSd();
     else if (id === 'home') setHomeOpen((h) => !h);
     else if (id === 'settings') setSettingsOpen((o) => !o);
     else if (id === 'outline') setShowOutline((o) => !o);
@@ -755,7 +773,7 @@ export function App() {
     else if (id === 'commands') setCcOpen((o) => !o);
     else if (id === 'searchCards') setPaletteOpen('cards');
     else if (id === 'sendToSpeech') sendToSpeech();
-  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, sendToSpeech]);
+  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, sendToSpeech, openSd, closeSd]);
 
   // app-level shortcuts
   useEffect(() => {
@@ -783,7 +801,7 @@ export function App() {
       // so is New speech doc (its own Esc and Enter included)
       if (speechAskRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // Send to speech (` unless changed in Settings), so the page can't type that key (AltGr layouts too: their character arrives with Ctrl+Alt held). Boxes with their own text field keep it.
-      if (sendPressed(e) && !settingsRef.current && !e.isComposing && !homeRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
+      if (sendPressed(e) && !settingsRef.current && !e.isComposing && !homeRef.current && !sdOnRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
         e.preventDefault(); e.stopPropagation();
         if (!e.repeat) sendToSpeech();
         return;
@@ -953,12 +971,12 @@ export function App() {
   const openSettingsAt = useCallback((page: string, query?: string) => { setSettingsPage(page); setSettingsQuery(query); setSettingsOpen(true); }, []);
   const ccCtx: Ctx = {
     view, zoom, setZoom, depth, setDepth, showOutline, setShowOutline, speechMin, setSpeechMin,
-    run: (cmd) => { const v = viewRef.current; if (!v) return false; setHomeOpen(false); return cmd(v.state, v.dispatch, v); },
+    run: (cmd) => { const v = viewRef.current; if (!v) return false; showEditor(); return cmd(v.state, v.dispatch, v); },
     app: appCommand,
     blocked: (id) => (SWAPS.includes(id) || id === 'sendToSpeech' || id === 'searchCards') && reading,
     highlight: activeColors.highlight, setHighlight: (c) => { setActiveColor('highlight', c); setTick((t) => t + 1); },
     isSpeech: speechId === activeId, toggleSpeech,
-    jump: (i) => { const v = viewRef.current; const it = v && buildOutline(v.state.doc)[i]; if (it) { setHomeOpen(false); jump(it, i); } },
+    jump: (i) => { const v = viewRef.current; const it = v && buildOutline(v.state.doc)[i]; if (it) { showEditor(); jump(it, i); } },
     peek: (i) => { const v = viewRef.current, it = outlineRef.current[i]; if (v && it && it.pos < v.state.doc.content.size) scrollToPos(v, it.pos); },
     find: (text, replace) => {
       const v = viewRef.current;
@@ -976,15 +994,27 @@ export function App() {
     return () => { stopScroll(); if (sc) sc.scrollTop = top; };
   }, []);
 
+  // SpeechDrop's Upload sends the doc you came from, as it is now; a .docx from the room opens as a tab
+  const exportActive = useCallback(async () => (await import('../docx/export')).docToDocx(viewRef.current!.state.doc), []);
+  const openFromSd = useCallback(async (p: string) => {
+    try { opened(await openPath(p), 'speechdrop'); }
+    catch (e) { flash(`Couldn't open it: ${(e as Error).message}`); }
+  }, [opened, flash]);
+  useEffect(() => {
+    addEventListener(SHOW_EVENT, openSd);
+    return () => removeEventListener(SHOW_EVENT, openSd);
+  }, [openSd]);
+
   const modal = settingsOpen || !!paletteOpen || ccOpen || !!ask || saveAsName !== null || speechAsk;
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc} onMove={moveDoc}
+        sd={sdTab ? { on: sdOn, name: sdInfo.room?.name ?? 'SpeechDrop', fresh: sdInfo.fresh } : null} onSd={openSd} onSdClose={closeSd}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
 
-      <div className="covered" inert={homeOpen || modal}>
+      <div className="covered" inert={homeOpen || sdOn || modal}>
       <Toolbar
         sel={sel}
         run={run}
@@ -1001,15 +1031,15 @@ export function App() {
 
       {/* After the toolbar on purpose: Electron applies drag regions in document order, so the toolbar's
           drag area (which runs under these buttons) would swallow their clicks if they came first. */}
-      <div className="covered" inert={modal}>
+      <div className="covered" inert={sdOn || modal}>
       <Tools outline={showOutline} reading={reading}
         onNew={(speech) => (speech ? fileNewSpeech() : fileNew())} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
-        onFind={openFind} onOutline={() => { setHomeOpen(false); setShowOutline((s) => !s); }}
-        onRead={() => { setHomeOpen(false); run(toggleRead); }}
+        onFind={openFind} onOutline={() => { showEditor(); setShowOutline((s) => !s); }}
+        onRead={() => { showEditor(); run(toggleRead); }}
         speech={speechId === activeId} onSpeech={toggleSpeech} />
       </div>
 
-      <div className="covered" inert={homeOpen || modal}>
+      <div className="covered" inert={homeOpen || sdOn || modal}>
 
       <OutlinePane active={activeId}
         shown={showOutline} items={outline} depth={depth} cur={cur}
@@ -1035,9 +1065,12 @@ export function App() {
       </footer>
       </div>
 
+      <div className="covered" inert={modal}>
+      {sdTab && <SpeechDrop open={sdOn} docName={name} exportDoc={exportActive} onOpenDocx={openFromSd} onTab={setSdInfo} flash={flash} confirm={confirmAsk} />}
+      </div>
       <div className="covered" inert={!!ask}>
       <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents.slice(0, pref(P.recentCount))}
-        onNew={fileNew} onNewSpeech={fileNewSpeech} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)} onPeek={peekRecent}
+        onNew={fileNew} onNewSpeech={fileNewSpeech} onOpen={() => void fileOpen()} onSpeechDrop={openSd} onRecent={(r) => void openRecent(r)} onPeek={peekRecent}
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
       <Palette open={paletteOpen === 'files'} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
@@ -1089,7 +1122,9 @@ const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor
 // ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
 type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech: boolean };
-function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
+/** The SpeechDrop tab's row: lit or not, the room's name, and how many files came that you haven't seen. */
+type SdRow = { on: boolean; name: string; fresh: number };
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void; sd: SdRow | null; onSd: () => void; onSdClose: () => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -1120,7 +1155,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         setDragId(id);
       }
       m.preventDefault();
-      const rows = [...box.children] as HTMLElement[];
+      const rows = ([...box.children] as HTMLElement[]).filter((r) => r.dataset.id); // docs only: the SpeechDrop row stays last
       const from = rows.findIndex((r) => r.dataset.id === String(id));
       // the slot under the pointer: past a neighbour's middle, take its place
       let to = from;
@@ -1187,7 +1222,9 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
     resize(railWidth(to, railMax()));
   };
 
-  const isOn = (d: DocRow) => d.id === props.active && !props.home;
+  const isOn = (d: DocRow) => d.id === props.active && !props.home && !props.sd?.on;
+  const sd = props.sd, sdLabel = sd ? `SpeechDrop${sd.name !== 'SpeechDrop' ? `: ${sd.name}` : ''}${sd.fresh ? ` (${sd.fresh} new)` : ''}` : '';
+  const sdTip = titled('SpeechDrop', 'speechdrop', 'the room\'s files, live. Middle-click to close');
   return (
     <nav className="fstrip" aria-label="Open documents" data-wide={wide || undefined}>
       <button ref={logo} className="sb-logo" title={titled('Home', 'home', 'recent files and new documents')} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /><span className="lbl">Falcon</span></button>
@@ -1202,6 +1239,15 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
             {wide && <button tabIndex={-1} className="doc-x" title={titled('Close', 'close', 'close this file')} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>}
           </div>
         ))}
+        {sd && (
+          <div className="doc-row sd-tab" data-on={sd.on || undefined}>
+            <button className="fs-b doc-nm" role="tab" aria-selected={sd.on} aria-label={sdLabel} title={sdTip} data-on={sd.on || undefined}
+              onClick={props.onSd} onAuxClick={(e) => { if (e.button === 1) props.onSdClose(); }}>
+              <SvgIcon name="inbox" />{wide && <span className="lbl">{sd.name}</span>}{sd.fresh > 0 && <i className="dot new" aria-hidden="true" />}
+            </button>
+            {wide && <button tabIndex={-1} className="doc-x" title="Close SpeechDrop" onClick={props.onSdClose}><SvgIcon name="x" /></button>}
+          </div>
+        )}
       </div>
       {/* mouse-only: the tabs in the rail are what the keyboard and screen readers use; inert while
           closed so its rows can't take clicks */}
@@ -1217,6 +1263,14 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
               <button tabIndex={-1} className="files-x" title={titled('Close', 'close', 'close this file')} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
             </div>
           ))}
+          {sd && (
+            <div className="files-r" data-on={sd.on || undefined}>
+              <button tabIndex={-1} className="files-b" onClick={props.onSd} onAuxClick={(e) => { if (e.button === 1) props.onSdClose(); }}>
+                <SvgIcon name="inbox" /><span className="nm">{sd.name}</span>{sd.fresh > 0 && <i className="dot new" />}
+              </button>
+              <button tabIndex={-1} className="files-x" title="Close SpeechDrop" onClick={props.onSdClose}><SvgIcon name="x" /></button>
+            </div>
+          )}
         </div>
       </aside>
       <div className="grow" />

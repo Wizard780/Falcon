@@ -56,7 +56,27 @@ type FalconBridge = {
   checkUpdate?: () => Promise<'ready' | 'none' | 'failed'>;
   /** Anonymous usage count (electron/telemetry.cjs drops unknown events and any non-word value). */
   track?: (event: string, props?: Record<string, string | number | boolean>) => void;
+  /** SpeechDrop (electron/speechdrop.cjs): rooms, live file lists, uploads and downloads. */
+  speechdrop?: SpeechDropBridge;
   platform?: string;
+};
+/** A SpeechDrop answer: the value, or SpeechDrop's error code ('no_room', 'too_large', 'unreachable'…). */
+export type SdResult<T> = { ok: true; value: T } | { ok: false; error: string };
+/** One file in a room. `index` is SpeechDrop's slot for it (part of its URL); `ctime` is when it came, in ms. */
+export type SdFile = { index: number; name: string; ctime: number };
+export type SpeechDropBridge = {
+  room: (room: string) => Promise<SdResult<{ room: string; name: string; files: SdFile[] }>>;
+  make: (name: string) => Promise<SdResult<string>>;
+  upload: (room: string, name: string, data: Uint8Array) => Promise<SdResult<{ files: SdFile[]; index: number | null }>>;
+  remove: (room: string, index: number) => Promise<SdResult<SdFile[]>>;
+  /** The native picker: each picked file's bytes (none for one over SpeechDrop's 10 MB). */
+  pick: () => Promise<SdResult<{ name: string; size: number; data?: Uint8Array }[]>>;
+  /** Download to ~/Downloads/SpeechDrop/<room>; a .docx comes back for Falcon to open, anything else opens in its app. */
+  open: (room: string, index: number, name: string) => Promise<SdResult<{ path: string; docx: boolean }>>;
+  download: (room: string, index: number, name: string) => Promise<SdResult<string>>;
+  archive: (room: string, title: string) => Promise<SdResult<{ path: string; count: number; skipped: number }>>;
+  /** The room's list, pushed on every change. Returns an unsubscribe (which stops watching). */
+  watch: (room: string, files: SdFile[] | null, f: (u: { room: string; files: SdFile[]; live: boolean }) => void) => () => void;
 };
 export type UpdateInfo = { version: string; date: string; notes: string; url: string; state: 'ready' | 'installing' | 'error'; manual: boolean; error?: string };
 export const bridge: FalconBridge = (globalThis as unknown as { falcon?: FalconBridge }).falcon ?? {};
