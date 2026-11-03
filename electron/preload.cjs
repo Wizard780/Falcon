@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('falcon', {
   indexFolders: () => ipcRenderer.invoke('falcon:index-folders'),
   addIndexFolder: () => ipcRenderer.invoke('falcon:index-add'),
   removeIndexFolder: (p) => ipcRenderer.invoke('falcon:index-remove', p),
+  importIndexFolders: (paths) => ipcRenderer.invoke('falcon:index-import', paths),
   indexedFiles: () => ipcRenderer.invoke('falcon:index-files'),
   searchCards: (q) => ipcRenderer.invoke('falcon:card-search', q),
   dictionaryWords: () => ipcRenderer.invoke('falcon:dict-words'),

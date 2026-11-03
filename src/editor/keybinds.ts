@@ -40,6 +40,8 @@ reserve([
   ...(IS_MAC ? [['Mod-q', 'Quit'], ['Mod-h', 'Hide Falcon'], ['Mod-Alt-h', 'Hide others'], ['Mod-m', 'Minimize']] as [string, string][] : []),
 ]);
 
+/** What keeps `key` for itself (Copy, Hide Falcon...), if anything. */
+export const reservedFor = (key: string) => RESERVED.get(norm(key));
 export const keyOf = (id: string): string => { const b = byId.get(id); return b ? pref(b.pref) : ''; };
 export const bindingOf = (id: string) => byId.get(id);
 export const setKey = (id: string, key: string) => { const b = byId.get(id); if (b) setPref(b.pref, key); };

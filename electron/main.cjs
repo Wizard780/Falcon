@@ -209,6 +209,17 @@ ipcMain.handle('falcon:index-add', async (e) => {
   if (!r.canceled && r.filePaths.length) await index().add(r.filePaths);
   return index().folders();
 });
+// a settings import naming search folders: only real folders on this computer get added
+ipcMain.handle('falcon:index-import', async (_e, paths) => {
+  if (!Array.isArray(paths)) throw new Error('bad import request');
+  const real = [];
+  for (const p of paths.slice(0, 50)) {
+    if (typeof p !== 'string' || !path.isAbsolute(p)) continue;
+    if (await fs.stat(p).then((s) => s.isDirectory(), () => false)) real.push(p);
+  }
+  if (real.length) await index().add(real);
+  return index().folders();
+});
 ipcMain.handle('falcon:index-remove', async (_e, p) => {
   if (typeof p !== 'string') throw new Error('bad remove request');
   await index().remove(p);
