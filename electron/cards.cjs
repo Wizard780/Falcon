@@ -152,9 +152,8 @@ function rank(hay, query, limit = 60, memo) {
   const hits = [];
   const groups = new Map();
   for (const h of pool) {
-    const all = h.all ?? `${h.tag}\n${h.cite}\n${h.heads}\n${h.name}`;
     let k = 0;
-    while (k < ws.length && all.includes(ws[k])) k++;
+    while (k < ws.length && (h.tag.includes(ws[k]) || h.cite.includes(ws[k]) || h.heads.includes(ws[k]) || h.name.includes(ws[k]))) k++;
     if (k < ws.length) continue; // cheap check first, most cards miss a word
     hits.push(h);
     let score = 0;
@@ -168,7 +167,7 @@ function rank(hay, query, limit = 60, memo) {
       if (best < 2 && h.name.includes(w)) best = Math.max(best, atStart(h.name, w) ? 2 : 1);
       score += best + (h.cite.startsWith(w) ? 1 : 0); // the cite's author
     }
-    const key = h.key ?? `${h.tag}\n${h.cite}`;
+    const key = `${h.tag}\n${h.cite}`;
     const g = groups.get(key);
     if (!g) groups.set(key, { h, score, copies: 1 });
     else { g.copies++; if (h.mtime > g.h.mtime) { g.h = h; g.score = Math.max(score, g.score); } }
@@ -256,8 +255,7 @@ function createCardIndex(storeFile, listFiles) {
       let last = null, lower = '';
       f.cards.forEach(([tag, cite, heads], i) => {
         if (heads !== last) { last = heads; lower = heads.toLowerCase(); }
-        const t = tag.toLowerCase(), c = cite.toLowerCase();
-        hay.push({ path: p, i, mtime: f.mtime, tag: t, cite: c, heads: lower, name, all: `${t}\n${c}\n${lower}\n${name}`, key: `${t}\n${c}` });
+        hay.push({ path: p, i, mtime: f.mtime, tag: tag.toLowerCase(), cite: cite.toLowerCase(), heads: lower, name });
       });
     }
     return hay;
