@@ -439,6 +439,10 @@ button.b:active { transform: scale(.97); }
 /* the extra stretches of a Ctrl/Cmd-click multi-selection */
 .f-multisel { background: rgba(80, 140, 255, 0.35); }
 
+/* Compare Text: red only in the selection, green only on the clipboard */
+.f-cmp-del { color: #c4262e; text-decoration: line-through 2px #c4262e; }
+.f-cmp-ins { display: inline-block; text-decoration: none; color: #137a35; background: rgba(40, 170, 80, 0.16); border-radius: 2px; padding: 0 1px; }
+
 /* read mode: only what gets read aloud */
 .f-read .f-read-hidden { display: none; }
 .f-read .f-read-gap { display: inline; font-size: 0; }

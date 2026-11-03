@@ -36,6 +36,7 @@ import { OutlinePane } from './Outline';
 import { FindBar } from './FindBar';
 import { outlineNumbers } from '../editor/nav/numbering';
 import { DOC_TOOLS } from '../editor/doc-tools';
+import { TOAST_EVENT } from '../editor/doc-tools/compare';
 import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, peekHtml, saveRecents, tidy, type Recent } from './recents';
@@ -264,7 +265,7 @@ export function App() {
   const flash = useCallback((msg: string, action?: Toast['action']) => {
     const t: Toast = { msg, action };
     setToast(t);
-    window.setTimeout(() => setToast((cur) => (cur === t ? null : cur)), action || msg.includes('crash recovery') ? 6000 : 2200);
+    window.setTimeout(() => setToast((cur) => (cur === t ? null : cur)), action || msg.includes('crash recovery') ? 6000 : msg.length > 60 ? 4500 : 2200);
   }, []);
   flashRef.current = flash;
 
@@ -730,6 +731,12 @@ export function App() {
   const peek = useCallback((item: OutlineItem) => { const v = viewRef.current; if (v) scrollToPos(v, item.pos); }, []);
   // Find and Replace and find-by-position keys live in the editor keymap and ask for the bar here
   useEffect(() => { addEventListener('falcon-find', openFind); return () => removeEventListener('falcon-find', openFind); }, [openFind]);
+  // editor commands that report back (Compare Text)
+  useEffect(() => {
+    const on = (e: Event) => flash((e as CustomEvent<string>).detail);
+    addEventListener(TOAST_EVENT, on);
+    return () => removeEventListener(TOAST_EVENT, on);
+  }, [flash]);
 
   const colorButton = (kind: 'highlight' | 'shading') => {
     const v = viewRef.current;

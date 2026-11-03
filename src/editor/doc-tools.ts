@@ -11,6 +11,7 @@ import { linkClickPlugin, linkUrls, removeHyperlinks } from './doc-tools/links';
 import { insertTable } from './tables';
 import { insertPicture } from './images';
 import { insertFootnote } from './footnotes';
+import { comparePlugin, compareSettings } from './doc-tools/compare';
 
 const M = schema.marks;
 
@@ -142,6 +143,6 @@ export const DOC_TOOLS: ToolSection[] = [
   ] },
 ];
 /** This feature's rows in Settings > Editor. */
-export const docToolSettings: SettingSpec[] = [autoBridgeSetting, gapClassSetting, highlightException, shadingException];
-/** Editor plugins: Cmd/Ctrl-click on links (ahead of mouse selection) and automatic gap bridging. */
-export const docToolPlugins: Plugin[] = [linkClickPlugin, autoBridgePlugin];
+export const docToolSettings: SettingSpec[] = [autoBridgeSetting, gapClassSetting, highlightException, shadingException, ...compareSettings];
+/** Editor plugins: Cmd/Ctrl-click on links (ahead of mouse selection), automatic gap bridging, Compare Text's marks. */
+export const docToolPlugins: Plugin[] = [linkClickPlugin, autoBridgePlugin, comparePlugin];
