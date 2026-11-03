@@ -63,6 +63,7 @@ export const P = {
   pasteCondense: def('pasteCondense', false),
   shrinkMin: def('shrinkMin', 4),
   shrinkProtect: def('shrinkProtect', true),
+  smartShrink: def('smartShrink', false),
   smartPaste: def('smartPaste', true),
   citeNearest: def('citeNearest', true),
   hlUnderlined: def('hlUnderlined', false),

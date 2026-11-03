@@ -218,6 +218,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.smallPilcrows, 'Small ¶ marks', 'editor'),
     tog(P.pasteCondense, 'Condense after Paste Text', 'editor'),
     tog(P.shrinkProtect, 'Keep omission notes full size', 'editor'),
+    tog(P.smartShrink, 'Smart Shrink', 'editor', 'Mod-8 shrinks in one pass instead of cycling sizes.'),
     tog(P.smartPaste, 'Smart paste', 'editor', 'Word and Verbatim formatting pastes as cites, underlining and highlights.'),
     tog(P.citeNearest, 'Copy previous cite: first line only', 'editor'),
     tog(P.hlUnderlined, 'Highlight underlined text only', 'editor'),

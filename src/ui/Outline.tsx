@@ -12,7 +12,7 @@ import { onPrefs } from '../editor/prefs';
 
 import { outlineContentSetting, outlineHideSetting, outlineLevelSetting } from '../editor/nav-keys';
 import { SvgIcon } from './icons';
-import { tidy } from './recents';
+import { tidyHeading } from './recents';
 import { safeSet } from './storage';
 import { reducedMotion } from './motion';
 import { IS_MAC } from '../editor/keybinds';
@@ -432,7 +432,7 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
           onDoubleClick={() => item.hasKids && !(keep && hide) && toggle(item, open)}>
           {item.hasKids ? <span className="ic tw" data-tw><SvgIcon name="chev" /></span> : <span className="ic sp" />}
           {numbers[i] && <span className="num">{numbers[i]}</span>}
-          <span className={`nm${item.text ? '' : ' empty'}`}>{tidy(item.text) || 'Untitled'}</span>
+          <span className={`nm${item.text ? '' : ' empty'}`}>{tidyHeading(item.text) || 'Untitled'}</span>
           {item.level < 4 && item.cards > 0 && <span className="ct">{item.cards}</span>}
         </button>
       ))}

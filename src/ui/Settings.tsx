@@ -294,6 +294,7 @@ export function Settings(props: Props) {
         tog(P.smallPilcrows, 'Small ¶ marks', 'Set the ¶ marks at 6 pt so they take less room.'),
         tog(P.pasteCondense, 'Condense after Paste Text', 'F2 condenses what it pastes, the way F3 does.'),
         tog(P.shrinkProtect, 'Keep omission notes full size', 'Shrink leaves notes like [Table Omitted] alone.'),
+        tog(P.smartShrink, 'Smart Shrink', 'Mod-8 shrinks in one pass: paragraphs you don\'t read drop to 5 pt, the words between read ones to 8 pt.'),
       ]],
       ['Pasting', [
         tog(P.smartPaste, 'Smart paste', 'Word and Verbatim formatting pastes as cites, underlining and highlights. F2 always pastes plain.'),
