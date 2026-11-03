@@ -93,6 +93,25 @@ describe('find', () => {
     expect(replaceAll(v, 'atomic')).toBe(0);
     expect(v.state.doc.textContent).toBe(PARAS.map((p) => p[1]).join(''));
   });
+
+  it('scrolls the page to a far match while the caret stays in the find box', () => {
+    // jsdom has no layout: each paragraph is 20px tall, the page shows 800px
+    const sc = document.body.appendChild(document.createElement('div'));
+    sc.className = 'f-scroll';
+    let top = 0;
+    Object.defineProperty(sc, 'scrollTop', { get: () => top, set: (y: number) => { top = Math.max(0, y); } });
+    sc.getBoundingClientRect = () => ({ top: 0, bottom: 800, height: 800 }) as DOMRect;
+    const doc = schema.node('doc', null, Array.from({ length: 2000 }, (_, i) => schema.node('paragraph', null, [schema.text(i === 1500 ? 'needle' : `para ${i}`)])));
+    const v = new EditorView(sc, { state: createState(doc) });
+    v.coordsAtPos = (pos) => { const y = v.state.doc.resolve(pos).index(0) * 20 - top; return { top: y, bottom: y + 20, left: 0, right: 0 }; };
+    const input = document.body.appendChild(document.createElement('input'));
+    input.focus();
+    setQuery(v, 'needle');
+    const r = v.coordsAtPos(v.state.selection.from);
+    expect(r.top).toBeGreaterThanOrEqual(0);
+    expect(r.bottom).toBeLessThanOrEqual(800);
+    v.destroy(); sc.remove(); input.remove();
+  });
 });
 
 describe('find while editing', () => {
