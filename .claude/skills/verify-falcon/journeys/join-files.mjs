@@ -56,6 +56,23 @@ want(ps[1].text.length > before.length && ps[1].text.includes('Warming Block'), 
 want((await page.locator('.fs-docs .doc-row').count()) === 3, 'no second speech doc');
 await f.shot('sent-into-pane');
 
+// the outline shows the focused file's headings, and its clicks jump in that pane
+const outline = () => page.$$eval('.sb-row.ol', (rs) => rs.map((r) => r.textContent.replace(/\d+$/, '').trim()));
+const seedOutline = await outline();
+want(seedOutline.includes('Seed Pocket') && seedOutline.includes('Economy Block'), `seed focused: the outline lists seed's headings: ${JSON.stringify(seedOutline)}`);
+await page.locator('.split .pane').nth(1).locator('.ProseMirror :text("Warming Block")').click();
+await page.waitForTimeout(400);
+const speechOutline = await outline();
+want(!speechOutline.includes('Seed Pocket') && speechOutline.includes('Warming Block'), `Speech focused: the outline switches to Speech's headings: ${JSON.stringify(speechOutline)}`);
+await f.shot('outline-follows-speech');
+await page.locator('.split .pane').nth(0).locator('.ProseMirror :text("Seed Hat")').click();
+await page.waitForTimeout(400);
+want(JSON.stringify(await outline()) === JSON.stringify(seedOutline), 'back in seed: its outline comes back');
+await page.click('.sb-row.ol:has-text("Warming Block")');
+await page.waitForTimeout(500);
+ps = await panes();
+want(ps[0].on && (await page.evaluate(() => window.__falconView.state.selection.$head.parent.textContent)) === 'Warming Block', 'an outline click jumps in the focused pane (seed), not the other one');
+
 // type in the right pane
 await page.locator('.split .pane').nth(1).locator('.ProseMirror').click();
 await page.keyboard.press('End');
