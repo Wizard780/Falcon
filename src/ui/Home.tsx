@@ -3,9 +3,14 @@ import { clock, dots } from './home-fx';
 import { tidy, whenLabel, type Recent } from './recents';
 import { keyOf, keyText } from '../editor/keybinds';
 import { SvgIcon } from './icons';
+import { launchFalcon } from './falcon';
+import { reducedMotion } from './motion';
+import { P, pref } from '../editor/prefs';
 
 
 /** The start screen (and ⌘T): the files you opened recently, the first page of the one you point at beside them. */
+let launched = false; // the falcon's flight plays once per page load, not on every Home
+
 export function Home(props: {
   open: boolean;
   current: string;
@@ -27,6 +32,14 @@ export function Home(props: {
   const rows = useRef<(HTMLButtonElement | null)[]>([]);
   const [sel, setSel] = useState(0);
   const [undo, setUndo] = useState<Recent[] | null>(null);
+
+  // the falcon flies in once per launch, when Falcon starts on Home; after that it just sits on its perch
+  const perchRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const fly = open && !launched && pref(P.launchFalcon) && !reducedMotion();
+    launched = true;
+    return launchFalcon(homeRef.current!, perchRef.current!, fly);
+  }, []);
 
   // the effects run only while home is showing; focus in a layout effect, so keys pressed right after it opens land here
   useLayoutEffect(() => {
@@ -74,7 +87,6 @@ export function Home(props: {
 
   const now = new Date();
   const day = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  const h = now.getHours(), greeting = h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   const total = shown.reduce((s, r) => s + r.cards, 0);
   return (
     <section ref={homeRef} tabIndex={-1} className={`home${open ? ' open' : ''}`} aria-label="Home" aria-hidden={!open} onKeyDown={onKey}>
@@ -84,9 +96,13 @@ export function Home(props: {
         <div className="hm-in">
           <header className="hm-head">
             <div className="hm-text">
-              <p className="hm-date">{day}</p>
-              <h1 className="hm-hi">{greeting}</h1>
-              <p className="hm-sub">{props.current ? `${props.current} is open. Esc goes back to it` : shown.length ? `${shown.length} recent ${shown.length === 1 ? 'file' : 'files'} · ${total.toLocaleString('en-US')} cards` : 'Open a file or start a new one'}</p>
+              <div className="hm-brand">
+                <div ref={perchRef} className="hm-perch" aria-hidden="true" />
+                <div className="hm-words">
+                  <p className="hm-date">{day}</p>
+                  <p className="hm-sub">{props.current ? `${props.current} is open. Esc goes back to it` : shown.length ? `${shown.length} recent ${shown.length === 1 ? 'file' : 'files'} · ${total.toLocaleString('en-US')} cards` : 'Open a file or start a new one'}</p>
+                </div>
+              </div>
               <div className="hm-acts">
                 <button className="hm-act" onClick={props.onNew}><SvgIcon name="plus" /><span>New document</span>{keyOf('new') && <kbd>{keyText(keyOf('new'))}</kbd>}</button>
                 <button className="hm-act" onClick={props.onNewSpeech}><SvgIcon name="mic" /><span>New speech doc</span>{keyOf('newSpeech') && <kbd>{keyText(keyOf('newSpeech'))}</kbd>}</button>

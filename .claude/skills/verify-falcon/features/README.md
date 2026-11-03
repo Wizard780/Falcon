@@ -39,6 +39,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 ## Features
 
 - [Recent documents (Ctrl-Tab)](./recent-docs.md) covers the MRU switcher: tap, hold with previews, walk, pick.
+- [Falcon on launch](./launch-falcon.md) covers the falcon's flight over Home at startup, its perch, skipping, the setting and Reduce motion.
 - [Open and save .docx](./open-save-docx.md) covers Open…, editing, the unsaved dot, Mod-S, and a reopen round trip.
 - [Tables, pictures and footnotes](./tables-images-footnotes.md) covers opening and saving them, column and picture resizing, the table bar, cell keys, footnote editing and pasting tables and screenshots.
 - [Card formatting](./card-formatting.md) covers the F-key paragraph styles, cite, underline, emphasis, highlight and Clear, from keys and the format grid.

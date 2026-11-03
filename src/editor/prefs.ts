@@ -57,6 +57,7 @@ export const P = {
   selection: def<'blue' | 'gray' | 'ink'>('selection', 'blue'),
   cardBar: def('cardBar', true),
   reduceMotion: def('reduceMotion', false),
+  launchFalcon: def('launchFalcon', true), // the falcon sweeps in over Home when Falcon starts
   // Editor
   spellcheck: def('spellcheck', true),
   condense: def<CondenseMode>('condense', 'integrity'),

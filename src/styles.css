@@ -308,9 +308,14 @@ button.b:active { transform: scale(.97); }
     linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, calc(.3 * var(--u-sh)))); }
 .hm-sc { position: absolute; inset: 0; overflow: auto; z-index: 1; container-type: inline-size; }
 .hm-in { position: relative; max-width: 1160px; margin: 0 auto; padding: 72px 48px 56px; }
+.hm-brand { display: flex; align-items: center; gap: 18px; }
+.hm-perch { flex: none; width: 62px; height: 65px; pointer-events: none; } /* the falcon logo, left of the date */
+.hm-perch svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.falcon-flight { position: absolute; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; }
+.falcon-flight canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.falcon-flight svg { overflow: visible; }
 .hm-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: 32px; padding-bottom: 36px; }
 .hm-date { margin: 0 0 10px; font-size: 13px; color: var(--u-mut); }
-.hm-hi { margin: 0; font-size: 32px; line-height: 1.15; font-weight: 500; letter-spacing: -.01em; color: var(--u-tx); }
 .hm-sub { margin: 8px 0 0; font-size: 14px; color: var(--u-tx2); }
 .hm-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
 .hm-act { display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px 0 12px; border-radius: 8px; background: color-mix(in srgb, var(--u-card) 75%, transparent);
@@ -403,7 +408,7 @@ button.b:active { transform: scale(.97); }
 .hm-undo button:hover { background: var(--u-hover); }
 .hm-undo i { position: absolute; left: 0; bottom: 0; height: 100%; width: 100%; background: color-mix(in srgb, var(--u-tx) 4%, transparent); transform-origin: 0 50%; pointer-events: none; }
 @container (max-width: 960px) { .hm-main { grid-template-columns: minmax(0, 1fr); } .hm-desk { display: none; } }
-@container (max-width: 640px) { .hm-head { grid-template-columns: 1fr; } .hm-clock { display: none; } .hm-hi { font-size: 34px; } .hm-in { padding: 48px 24px; } }
+@container (max-width: 640px) { .hm-perch { width: 50px; height: 52px; } .hm-head { grid-template-columns: 1fr; } .hm-clock { display: none; } .hm-in { padding: 48px 24px; } }
 
 @media (prefers-reduced-motion: reduce) {
   .olp, .lv-hl, .sb-list[data-ready] .sb-act, .sb-row.ol .tw svg, .b, .b::before, .b::after, .pop, .pop *, .toast, .home, .home.open, .hm-act, .hm-row, .hm-row .ic, .cap-go, .hm-undo { transition: none !important; }

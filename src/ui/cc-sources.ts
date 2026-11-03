@@ -204,6 +204,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     pick(P.selection, 'Selection color', 'appearance', [['blue', 'Blue'], ['gray', 'Gray'], ['ink', 'Highlighter']]),
     tog(P.cardBar, 'Mark the current card', 'appearance', 'A thin line beside the card the cursor is in.'),
     tog(P.reduceMotion, 'Reduce motion', 'appearance', 'Turn off animations.'),
+    tog(P.launchFalcon, 'Falcon on launch', 'appearance', 'The falcon sweeps in over Home when Falcon starts.'),
     // Editor
     tog(P.spellcheck, 'Check spelling', 'editor', 'Misspelled words get a red underline.'),
     { id: 'app.outline', label: 'Show outline pane', page: 'editor', get: () => ctx.showOutline, set: (v) => ctx.setShowOutline(v as boolean) },

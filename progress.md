@@ -216,6 +216,16 @@ Bug hunt (Aarav asked for "bugs and everything"): opened 500 of his .docx files 
 - [x] his own NATO block files open and save exactly as before (effective formatting diffed run by run)
 - [x] vitest tests/import-overrides.test.ts (fails on main), journey backfile-overrides; before/after screenshot of a real Impact Defense card
 
+## Stage: falcon on launch (2026-11-03, branch launch-falcon)
+User ask: an animated falcon that sweeps in whenever the app opens and settles at the top, with Home itself exactly the same; smooth animation, a more complex falcon.
+- [x] src/ui/falcon.ts draws a peregrine in SVG: layered coverts, secondaries and primaries built feather by feather, a far wing behind, barred chest, fanned tail, dark crown and mustache, hooked beak; eye ring and cere in the pen color (--ink)
+- [x] on a page load that starts on Home it flies over Home on an overlay (in low from the left, past close, banking up and round), wingbeats integrated by phase so the rate can slow into a glide without a jump, banking through a low-pass, an ease-out all the way to a soft landing; 2.5 s
+- [x] lands in .hm-perch, the empty strip above the date, and holds still (no loop, so Home stays at ~0 idle CPU); Home's layout is identical during, after, and with the flight off
+- [x] follow-up ("falcon too close to top"; "falcon on the left to the words, get rid of the good morning, look like our logo but masculine and detailed"): the greeting is gone; the date and the line under it sit right of the logo; what lands is the logo, the app icon's head drawn in detail (hood, mustache, heavy brow over a pen-colored eye ring, notched beak, hackles, chevron feathers), growing out of the bird's eye as the bird fades
+- [x] follow-up ("the transition from falcon to the logo is messy, it should be smoother"): one continuous hand-off, 1.8 to 2.95 s: the wings fold back along the body as it comes in, wings and body dissolve, and the head blends into the logo, which rides on the bird's eye (same place, bank and scale) until the bird is down, so there is never a second head; smoothstep eases throughout
+- [x] any key or click lands it; Settings > Appearance > Falcon on launch (falcon.launchFalcon, on) and Reduce motion skip the flight
+- [x] vitest 416 pass, tsc clean; journey launch-falcon (10 ok) films the flight and the landing in the web build
+
 ## Fix: crash recovery for block files (2026-11-03, branch big-file-recovery)
 Bug hunt: opening either NATO block file said "too big for crash recovery, so save often". Crash recovery lived in localStorage (about 5M characters), so any doc over 400k (every block file and most backfiles) had none.
 - [x] the desktop app keeps the docs localStorage can't hold in `userData/recovery.json` (written through a temp file, only the newest copy queued), up to 10M of content; small docs stay in localStorage as before, and the rail comes back in its order across the two
