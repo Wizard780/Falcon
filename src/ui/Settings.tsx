@@ -17,6 +17,7 @@ import { collectHits, rankHits, type FileHit } from './file-search';
 import { PinIcon, StarIcon, loadPinned, loadStarred, togglePinned, toggleStarred } from './starred';
 import { StarTree } from './StarTree';
 import { downloadSettings, importSettings } from './settings-file';
+import { FORMAT_NAME, FORMAT_PREP } from './round-clock';
 import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
 
 /** Settings the features declare in their own files (see SettingSpec), shown on the Editor page. */
@@ -239,6 +240,7 @@ export function Settings(props: Props) {
       }} />) };
   const starNone: Row = { label: sq ? `No files match “${sq}”` : 'No starred or pinned files yet', hint: sq ? 'Only .docx files in your search folders can be starred or pinned.' : 'Find a file above and click its star or pin.', control: null };
   const prep = pref(P.prepMin);
+  const round = pref(P.round);
 
   // themes: a tile per theme, each a small picture of it; a custom theme's colors and name edit in place
   const themeId = pref(P.theme);
@@ -367,6 +369,7 @@ export function Settings(props: Props) {
         pick(P.textWidth, 'Text width', 'Narrower lines are easier to follow.', [['full', 'Full'], ['wide', 'Wide'], ['narrow', 'Narrow']]),
         pick(P.margins, 'Margins', 'Space at the left and right of the text.', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']]),
         tog(P.railResize, 'Resizable rail', 'Drag the rail\'s right edge to show the names of open files. Double-click the edge to go back to icons.'),
+        pickNum(P.joinMax, 'Files side by side', 'The most files Join shows at once. Shift-click files in the rail, then right-click and pick Join.', [[2, '2'], [3, '3'], [4, '4'], [5, '5']]),
       ]],
       ['Cursor and motion', [
         pick(P.caret, 'Cursor color', 'Highlighter matches your highlight color.', [['auto', 'Text'], ['blue', 'Blue'], ['red', 'Red'], ['ink', 'Highlighter']]),
@@ -449,13 +452,15 @@ export function Settings(props: Props) {
     { id: 'keys', title: 'Keybindings', icon: 'keyboard', sections: [...new Set(BINDINGS.map((b) => b.group))].map((g) => [g, keyRows(g)]) },
     { id: 'speech', title: 'Speech and timers', icon: 'timer', group: 'Debate', sections: [
       ['Format', [
-        { label: 'Event', hint: 'High school: 8 minute speeches, 8 of prep. College: 9 and 10.', control:
+        { label: 'Round', hint: 'The speeches the timer window steps through. Choosing one sets Prep time to its usual length: Policy 8, LD 4, PF 3.', control:
+          seg('Round', (['policy', 'ld', 'pf'] as const).map((f) => [FORMAT_NAME[f], round === f, () => { setPref(P.round, f); setPref(P.prepMin, f === 'policy' && props.speechMin === 9 ? 10 : FORMAT_PREP[f]); }])) },
+        { label: 'Event', hint: 'Policy. High school: 8 minute speeches, 8 of prep. College: 9 and 10.', control:
           seg('Event', [['High school', props.speechMin === 8 && prep === 8, profile(8, 8)], ['College', props.speechMin === 9 && prep === 10, profile(9, 10)]]) },
-        { label: 'Speech length', hint: 'Where the speech timer in the top bar starts.', control:
+        { label: 'Speech length', hint: 'Policy: how long constructives run. Rebuttals are 3 minutes shorter, and cross-ex is 3 minutes. LD and PF use their usual times.', control:
           select('Speech length', props.speechMin, Array.from({ length: 30 }, (_, i) => [i + 1, `${i + 1}:00`]), (m) => props.onSpeechMin(Number(m))) },
         tog(P.showSend, 'Send button', `A Send button beside Read in the top bar. ${keyLabel('sendToSpeech')} sends either way.`),
-        tog(P.showPrep, 'Prep timer', 'A prep clock beside the speech timer. Click to start or pause, right-click to reset.'),
-        { label: 'Prep time', hint: 'Where the prep timer starts.', control:
+        tog(P.showPrep, 'Prep timer', 'Our prep clock in the top bar, beside the speech timer. Click to start or pause, right-click to reset. Both sides\' prep is always in the timer window.'),
+        { label: 'Prep time', hint: 'Each side\'s prep for the round.', control:
           select('Prep time', prep, Array.from({ length: 15 }, (_, i) => [i + 1, `${i + 1}:00`]), (m) => setPref(P.prepMin, Number(m))) },
       ]],
       ['Reading speed', [
