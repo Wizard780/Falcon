@@ -1,10 +1,11 @@
-import type { Node as PMNode } from 'prosemirror-model';
+import { DOMSerializer, type Node as PMNode } from 'prosemirror-model';
 import { buildOutline } from '../editor/outline';
+import { schema } from '../editor/schema';
 import { readJson, safeSet } from './storage';
 // the most Settings lets Home show; Home shows the first `Recent files` of them
 const MAX = 24;
 
-/** A file the user opened or saved. `blocks` is a short outline for the home peek. */
+/** A file the user opened or saved. `blocks` is a short outline; `preview` is its first page as HTML, for the home peek. */
 export type Recent = {
   name: string;
   path?: string;
@@ -12,7 +13,25 @@ export type Recent = {
   cards: number;
   blocks: { label: string; level: number; cards: number }[];
   when: number;
+  preview?: string;
 };
+
+// about a page and a half of text: more than the home page shows, less than a big file's first section
+const PEEK = 4000;
+
+/** The start of a doc as the editor would draw it, without pictures (they'd bloat storage) or live links. */
+export function peekHtml(doc: PMNode): string {
+  if (typeof document === 'undefined') return '';
+  const box = document.createElement('div');
+  const ser = DOMSerializer.fromSchema(schema);
+  for (let i = 0, chars = 0; i < doc.childCount && chars < PEEK; i++) {
+    chars += doc.child(i).textContent.length;
+    box.appendChild(ser.serializeNode(doc.child(i)));
+  }
+  box.querySelectorAll('img').forEach((e) => e.remove());
+  box.querySelectorAll('[href]').forEach((e) => e.removeAttribute('href'));
+  return box.innerHTML;
+}
 
 const KEY = 'falcon.recents.v1';
 
@@ -36,6 +55,7 @@ export function noteRecent(list: Recent[], doc: PMNode, file: { name: string; pa
     cards: items.filter((i) => i.level === 4).length,
     blocks: items.filter((i) => i.level === 2 || i.level === 3).slice(0, 7).map((i) => ({ label: i.text || 'Untitled', level: i.level, cards: i.cards })),
     when: Date.now(),
+    preview: peekHtml(doc),
   };
   return [entry, ...list.filter((r) => !same(r, file))].slice(0, MAX);
 }

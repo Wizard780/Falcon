@@ -5,7 +5,7 @@ import { keyOf, keyText } from '../editor/keybinds';
 import { SvgIcon } from './icons';
 
 
-/** The start screen (and ⌘T): the files you opened recently, the one you point at drawn as a page beside them. */
+/** The start screen (and ⌘T): the files you opened recently, the first page of the one you point at beside them. */
 export function Home(props: {
   open: boolean;
   current: string;
@@ -14,6 +14,8 @@ export function Home(props: {
   onOpen: () => void;
   onRecent: (r: Recent) => void;
   onClear: (keep: Recent[] | null) => void;
+  /** A recent from before previews were kept: read it so its page can be shown. */
+  onPeek: (r: Recent) => void;
 }) {
   const { open, recents } = props;
   const homeRef = useRef<HTMLElement>(null);
@@ -55,6 +57,8 @@ export function Home(props: {
   const shown = undo ? [] : recents;
   const at = Math.min(sel, Math.max(0, shown.length - 1));
   const pick = shown[at];
+  const { onPeek } = props;
+  useEffect(() => { if (open && pick && pick.preview === undefined) onPeek(pick); }, [open, pick, onPeek]);
   // the arrow keys walk the list (focus follows, so Enter opens the row); the page beside it follows
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && e.target === homeRef.current && pick) { e.preventDefault(); props.onRecent(pick); return; }
@@ -132,12 +136,24 @@ export function Home(props: {
   );
 }
 
-// a small seeded random, so a file's page looks the same every time it's drawn
+// a small seeded random, so the blank page looks the same every time it's drawn
 const rnd = (s: string) => { let x = [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 2147483647, 7) || 7; return () => (x = (x * 16807) % 2147483647) / 2147483647; };
 
-/** A file as a page: its name as the pocket, its hats and blocks as headings, and stand-in cards under each, cut and highlighted. */
+/** A file's first page, drawn the way the editor draws it and shrunk to fit, like a Finder preview. */
 function Sheet({ r }: { r?: Recent }) {
-  const rand = rnd(r?.name ?? 'blank');
+  if (r) return (
+    <article className="hm-sheet hm-page">
+      {r.preview
+        ? <div className="ProseMirror hm-doc" dangerouslySetInnerHTML={{ __html: r.preview }} />
+        : <p className="sh-pocket">{tidy(r.name)}</p>}
+    </article>
+  );
+  return <Blank />;
+}
+
+/** No file yet: a page with stand-in cards, cut and highlighted. */
+function Blank() {
+  const rand = rnd('blank');
   const card = (k: number) => (
     <div key={k} className="sh-card">
       <i className="sh-tag" style={{ width: `${55 + rand() * 40}%` }} />
@@ -148,16 +164,10 @@ function Sheet({ r }: { r?: Recent }) {
       })}</p>
     </div>
   );
-  const blocks = r?.blocks.length ? r.blocks.slice(0, 4) : null;
   return (
-    <article className="hm-sheet hm-page" data-blank={!r || undefined}>
-      <p className="sh-pocket">{r ? tidy(r.name) : 'Untitled'}</p>
-      {blocks ? blocks.map((b, i) => (
-        <div key={i}>
-          <p className={b.level === 2 ? 'sh-hat' : 'sh-block'}>{b.label}</p>
-          {Array.from({ length: Math.max(1, Math.min(b.cards, 2)) }, (_, k) => card(k))}
-        </div>
-      )) : [0, 1, 2].map(card)}
+    <article className="hm-sheet hm-page" data-blank>
+      <p className="sh-pocket">Untitled</p>
+      {[0, 1, 2].map(card)}
     </article>
   );
 }
