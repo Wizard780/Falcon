@@ -87,7 +87,6 @@ export function Home(props: {
 
   const now = new Date();
   const day = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  const h = now.getHours(), greeting = h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   const total = shown.reduce((s, r) => s + r.cards, 0);
   return (
     <section ref={homeRef} tabIndex={-1} className={`home${open ? ' open' : ''}`} aria-label="Home" aria-hidden={!open} onKeyDown={onKey}>
@@ -95,12 +94,15 @@ export function Home(props: {
       <div className="hm-glow" aria-hidden="true" />
       <div ref={scRef} className="hm-sc">
         <div className="hm-in">
-          <div ref={perchRef} className="hm-perch" aria-hidden="true" />
           <header className="hm-head">
             <div className="hm-text">
-              <p className="hm-date">{day}</p>
-              <h1 className="hm-hi">{greeting}</h1>
-              <p className="hm-sub">{props.current ? `${props.current} is open. Esc goes back to it` : shown.length ? `${shown.length} recent ${shown.length === 1 ? 'file' : 'files'} · ${total.toLocaleString('en-US')} cards` : 'Open a file or start a new one'}</p>
+              <div className="hm-brand">
+                <div ref={perchRef} className="hm-perch" aria-hidden="true" />
+                <div className="hm-words">
+                  <p className="hm-date">{day}</p>
+                  <p className="hm-sub">{props.current ? `${props.current} is open. Esc goes back to it` : shown.length ? `${shown.length} recent ${shown.length === 1 ? 'file' : 'files'} · ${total.toLocaleString('en-US')} cards` : 'Open a file or start a new one'}</p>
+                </div>
+              </div>
               <div className="hm-acts">
                 <button className="hm-act" onClick={props.onNew}><SvgIcon name="plus" /><span>New document</span>{keyOf('new') && <kbd>{keyText(keyOf('new'))}</kbd>}</button>
                 <button className="hm-act" onClick={props.onNewSpeech}><SvgIcon name="mic" /><span>New speech doc</span>{keyOf('newSpeech') && <kbd>{keyText(keyOf('newSpeech'))}</kbd>}</button>

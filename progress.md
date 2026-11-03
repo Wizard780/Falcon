@@ -214,6 +214,7 @@ User ask: an animated falcon that sweeps in whenever the app opens and settles a
 - [x] src/ui/falcon.ts draws a peregrine in SVG: layered coverts, secondaries and primaries built feather by feather, a far wing behind, barred chest, fanned tail, dark crown and mustache, hooked beak; eye ring and cere in the pen color (--ink)
 - [x] on a page load that starts on Home it flies over Home on an overlay (in low from the left, past close, banking up and round), wingbeats integrated by phase so the rate can slow into a glide without a jump, banking through a low-pass, an ease-out all the way to a soft landing; 2.5 s
 - [x] lands in .hm-perch, the empty strip above the date, and holds still (no loop, so Home stays at ~0 idle CPU); Home's layout is identical during, after, and with the flight off
+- [x] follow-up ("falcon too close to top"; "falcon on the left to the words, get rid of the good morning, look like our logo but masculine and detailed"): the greeting is gone; the date and the line under it sit right of the logo; what lands is the logo, the app icon's head drawn in detail (hood, mustache, heavy brow over a pen-colored eye ring, notched beak, hackles, chevron feathers), growing out of the bird's eye as the bird fades
 - [x] any key or click lands it; Settings > Appearance > Falcon on launch (falcon.launchFalcon, on) and Reduce motion skip the flight
-- [x] vitest 416 pass, tsc clean; journey launch-falcon (8 ok) films the flight in the web build
+- [x] vitest 416 pass, tsc clean; journey launch-falcon (10 ok) films the flight and the landing in the web build
 

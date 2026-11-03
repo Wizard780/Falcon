@@ -1,6 +1,6 @@
-// The falcon on Home: drawn feather by feather, it sweeps in over Home when Falcon starts and perches in the
-// empty strip above the date. Home itself doesn't move. Any key or click lands it at once. Perched, it holds
-// still, so Home costs no CPU while it sits open.
+// The falcon on Home: a bird drawn feather by feather sweeps in over Home when Falcon starts, and as it lands
+// left of the date it becomes the logo (the app icon's head, drawn in detail). Home itself doesn't move. Any key
+// or click lands it at once. Landed, it holds still, so Home costs no CPU while it sits open.
 
 const NS = 'http://www.w3.org/2000/svg';
 const f1 = (n: number) => Math.round(n * 10) / 10;
@@ -98,8 +98,41 @@ export function falconSvg(): string {
   return markup;
 }
 
-// the perch: the bird drawn this many px wide in the strip above the date
-export const PERCH_W = 118;
+// the app icon's head (logo/build-brand.mjs HEAD), without its eye hole: the detail below draws the eye
+const HEAD = 'M12 57V36A24 24 0 0 1 36 12H42C50.5 12 56 18 56 26C56 30.5 54 33.5 50.5 35.5C51 31.5 49 29 45.5 29H41C37 29 34.5 32 34.5 36V57Z';
+const EYE = { x: 39, y: 21.3 }; // in the logo's own units (viewBox 10 9 48 50)
+
+/** The logo in detail: the icon's head with a hood, mustache, heavy brow, hooked and notched beak, hackles. */
+export function logoSvg(): string {
+  // the neck's feather tips: rows of small chevrons, offset row to row
+  const chevrons = [40.5, 44.5, 48.5, 52.5].map((y, r) => {
+    let d = '';
+    for (let x = 15 + (r % 2) * 2; x < 32; x += 4) d += `M${f1(x)} ${y}l1.5 1.6l1.5 -1.6`;
+    return d;
+  }).join('');
+  return `<svg class="falcon-logo" viewBox="10 9 48 50" xmlns="${NS}" aria-hidden="true" focusable="false">
+<defs>
+  <linearGradient id="fl-head" x1=".9" y1="0" x2=".1" y2="1"><stop offset="0" stop-color="#f7f7f9"/><stop offset=".55" stop-color="#e2e2e6"/><stop offset="1" stop-color="#a9a9b0"/></linearGradient>
+  <linearGradient id="fl-hood" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#55555d"/><stop offset="1" stop-color="#26262b"/></linearGradient>
+  <linearGradient id="fl-beak" x1="0" y1="0" x2=".6" y2="1"><stop offset="0" stop-color="#4a4a53"/><stop offset="1" stop-color="#121215"/></linearGradient>
+</defs>
+<path d="M12 37.5C10.6 38.6,9.4 40.2,8.8 42C10.2 41.4,11.2 41.2,12 41.4ZM12 42.6C10.8 43.8,9.8 45.4,9.4 47C10.6 46.4,11.4 46.2,12 46.4Z" fill="#3a3a40"/>
+<path d="${HEAD}" fill="url(#fl-head)" stroke="#0f0f10" stroke-width=".55" stroke-linejoin="round"/>
+<path d="M12 44V36A24 24 0 0 1 27.8 13.45C30.5 15.6,32.4 18.6,33.6 22.2C32.4 26.2,29.6 29.4,26.6 31.4C22 34.6,18.8 39.4,17.8 45.6C15.6 44.4,13.6 44,12 44Z" fill="url(#fl-hood)"/>
+<path d="${chevrons}" stroke="#9a9aa1" stroke-width=".6" opacity=".75" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M34.5 36.4C34.6 43,34.8 50,34.5 57" stroke="#b0b0b6" stroke-width=".6" fill="none"/>
+<path d="M37 24.2C35.4 27.6,35 31,34.8 34.6C33.2 31.6,33.2 27.6,34.6 23.8C35.4 23.6,36.3 23.8,37 24.2Z" fill="url(#fl-hood)"/>
+<circle cx="${EYE.x}" cy="${EYE.y}" r="3" fill="var(--ink)"/>
+<circle cx="${EYE.x + 0.2}" cy="${EYE.y + 0.2}" r="2" fill="#0f0f10"/>
+<circle cx="${EYE.x + 0.9}" cy="${EYE.y + 0.3}" r=".55" fill="#f7f7f9"/>
+<path d="M32.8 17.6C36.4 16.6,41.2 16.8,45.6 18.6L45 20.4C41.6 19.6,38.4 19.4,35.6 20.6C34.6 21,33.6 21.4,32.9 21.9Z" fill="#1d1d22"/>
+<path d="M45.6 12.5C51.6 12.9,56 18,56 26C56 30.5,54 33.5,50.5 35.5C51 31.5,49 29,45.5 29H44.8C47.6 25.6,48 18.4,45.6 12.5Z" fill="url(#fl-beak)" stroke="#0f0f10" stroke-width=".5" stroke-linejoin="round"/>
+<path d="M50.2 29.6L51.9 31.1L50.7 31.6Z" fill="#c9c9cf"/>
+<path d="M44.3 12.9C46.8 13,48 15.8,47.6 19.4C46.6 17.4,45.5 15.3,44.3 12.9Z" fill="#6c6c74"/>
+<circle cx="49.2" cy="17.4" r=".55" fill="#0f0f10"/>
+</svg>`;
+}
+
 const SHOULDER = { near: 'translate(234 96)', far: 'translate(222 92)' };
 
 /**
@@ -116,12 +149,10 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, fly: boolean
     far.setAttribute('transform', `${SHOULDER.far} rotate(${f1(lag - 8)})`);
   };
   let raf = 0;
-  const perched = () => {
-    svg.style.cssText = '';
-    wings(0);
-    perch.appendChild(svg);
-  };
-  if (!fly) { perched(); return () => { svg.remove(); }; }
+  perch.innerHTML = logoSvg();
+  const logo = perch.firstElementChild as SVGSVGElement;
+  if (!fly) return () => { logo.remove(); };
+  logo.style.opacity = '0';
 
   // in flight the bird rides an overlay over all of Home, so nothing under it moves
   const layer = document.createElement('div');
@@ -137,7 +168,12 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, fly: boolean
   svg.style.cssText = 'position:absolute;left:0;top:0;width:400px;height:220px;transform-origin:0 0;will-change:transform';
 
   const DUR = 2500;
-  const end = () => { const h = home.getBoundingClientRect(), p = perch.getBoundingClientRect(); return { x: p.left - h.left, y: p.top - h.top, s: p.width / 400 }; };
+  // it comes in to land with its eye on the logo's eye, its head the size of the logo's
+  const end = () => {
+    const h = home.getBoundingClientRect(), p = perch.getBoundingClientRect(), u = p.width / 48;
+    const s = (24 * u) / 50, ex = p.left - h.left + (EYE.x - 10) * u, ey = p.top - h.top + (EYE.y - 9) * u;
+    return { x: ex - 333 * s, y: ey - 128 * s, s };
+  };
   const goal = end();
   // a wide sweep: in low from the left, past close to the viewer, banking up and back round to the perch
   const X = [-W * 0.38, W * 0.62, W * 0.95, goal.x], Y = [H * 0.62, H * 0.86, -H * 0.18, goal.y], S = [1.5, 1.85, 0.9, goal.s];
@@ -177,14 +213,19 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, fly: boolean
       tc.globalAlpha = 1;
     }
     if (t < DUR) { raf = requestAnimationFrame(step); return; }
-    layer.remove();
     off();
-    perched();
+    // landed: the bird fades as the logo settles in where its head was
+    const ease = 'cubic-bezier(.16,1,.3,1)';
+    svg.animate([{ opacity: 1 }, { opacity: 0 }], { duration: skip ? 1 : 260, fill: 'forwards' }).finished.then(() => layer.remove(), () => layer.remove());
+    logo.style.opacity = '';
+    // it grows out of the bird's eye, which sits right on the logo's eye
+    logo.style.transformOrigin = `${f1(((EYE.x - 10) / 48) * 100)}% ${f1(((EYE.y - 9) / 50) * 100)}%`;
+    if (!skip) logo.animate([{ opacity: 0, transform: 'scale(1.14)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: ease });
   };
   raf = requestAnimationFrame(step);
   const land = () => { skip = true; };
   const off = () => { removeEventListener('keydown', land, true); removeEventListener('pointerdown', land, true); };
   addEventListener('keydown', land, true);
   addEventListener('pointerdown', land, true);
-  return () => { cancelAnimationFrame(raf); off(); layer.remove(); svg.remove(); };
+  return () => { cancelAnimationFrame(raf); off(); layer.remove(); logo.remove(); };
 }

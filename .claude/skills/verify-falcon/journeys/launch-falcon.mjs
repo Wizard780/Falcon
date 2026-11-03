@@ -24,7 +24,7 @@ async function start(storage = {}) {
 const flying = (page) => page.evaluate(() => !!document.querySelector('.falcon-flight svg'));
 const perched = (page) => page.evaluate(() => !!document.querySelector('.hm-perch svg'));
 /** Where Home's own parts sit: these must not move for the falcon. */
-const layout = (page) => page.evaluate(() => ['.hm-date', '.hm-hi', '.hm-sub', '.hm-acts', '.hm-clock', '.hm-main']
+const layout = (page) => page.evaluate(() => ['.hm-perch', '.hm-date', '.hm-sub', '.hm-acts', '.hm-clock', '.hm-main']
   .map((s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r ? `${s} ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}` : `${s} missing`; }).join('\n'));
 
 // 1. a normal launch: the flight, filmed
@@ -32,16 +32,18 @@ let page = await start();
 want(await flying(page), 'the falcon is in flight right after launch');
 const during = await layout(page);
 const t0 = Date.now();
-for (const t of [250, 600, 950, 1300, 1700, 2100, 2600, 3200]) {
+for (const t of [250, 600, 950, 1300, 1700, 2100, 2400, 2550, 2700, 3200]) {
   const w = t - (Date.now() - t0); if (w > 0) await page.waitForTimeout(w);
   await page.screenshot({ path: `${out}/flight-${String(t).padStart(4, '0')}.png` });
 }
 want(!(await flying(page)) && await perched(page), 'it lands on the perch and the flight layer is gone');
 const after = await layout(page);
 want(during === after, 'nothing on Home moved while it flew');
-const perch = await page.evaluate(() => { const p = document.querySelector('.hm-perch').getBoundingClientRect(), d = document.querySelector('.hm-date').getBoundingClientRect(); return { bottom: p.bottom, date: d.top, left: p.left, dateLeft: d.left }; });
-want(perch.bottom <= perch.date + 1 && Math.abs(perch.left - perch.dateLeft) < 2, `the perch sits above the date, lined up with it: ${JSON.stringify(perch)}`);
-await page.locator('.hm-in').screenshot({ path: `${out}/perched.png`, clip: { x: 0, y: 0, width: 700, height: 330 } });
+const perch = await page.evaluate(() => { const p = document.querySelector('.hm-perch').getBoundingClientRect(), d = document.querySelector('.hm-date').getBoundingClientRect(), s = document.querySelector('.hm-sub').getBoundingClientRect(); return { right: Math.round(p.right), dateLeft: Math.round(d.left), mid: Math.round((p.top + p.bottom) / 2), words: Math.round((d.top + s.bottom) / 2) }; });
+want(perch.right < perch.dateLeft && Math.abs(perch.mid - perch.words) < 6, `the logo sits left of the date and the line under it, centered on them: ${JSON.stringify(perch)}`);
+want(await page.evaluate(() => !document.querySelector('.hm-hi') && !/Good (morning|afternoon|evening)|Up late/.test(document.querySelector('.hm-head').textContent)), 'no greeting');
+want(await page.evaluate(() => !!document.querySelector('.hm-perch svg.falcon-logo') && !document.querySelector('.hm-perch .falcon-bird')), 'what lands is the logo, not the flying bird');
+await page.screenshot({ path: `${out}/perched.png`, clip: { x: 0, y: 0, width: 900, height: 330 } });
 
 // 2. the same Home with the setting off: no flight, the falcon already perched, Home identical
 page = await start({ 'falcon.launchFalcon': 'off' });
