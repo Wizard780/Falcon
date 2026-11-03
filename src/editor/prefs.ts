@@ -125,6 +125,8 @@ const EXTRA: Pref<string | number | boolean>[] = [];
 export function registerPrefs(ps: Pref<string | number | boolean>[]) {
   for (const p of ps) { EXTRA.push(p); KEYS.add(p.key); }
 }
+/** Every setting declared here or registered (the shortcuts). */
+export const allPrefs = (): Pref<string | number | boolean>[] => [...Object.values(P), ...EXTRA];
 /** Put one setting back to its default. */
 export function clearPref(p: Pref<string | number | boolean>) {
   localStorage.removeItem(p.key);
@@ -135,6 +137,11 @@ export function clearPref(p: Pref<string | number | boolean>) {
 export function resetPrefs() {
   // an opt-out of usage statistics survives Restore defaults
   for (const p of [...Object.values(P), ...EXTRA]) if (p !== P.usageStats) localStorage.removeItem(p.key);
+  cache.clear();
+  changed();
+}
+/** Many settings were written straight to storage (Import settings): forget the cached values and redraw. */
+export function reloadPrefs() {
   cache.clear();
   changed();
 }

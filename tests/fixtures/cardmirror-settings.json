@@ -1,0 +1,337 @@
+{
+  "version": 1,
+  "settings": {
+    "navWidth": 338,
+    "navMaxLevel": 3,
+    "showOnboardingStarter": true,
+    "defaultSpeechDocFormat": "docx",
+    "defaultSaveFormat": "docx",
+    "prefixPresetSaveFilenames": true,
+    "sendDocPrefix": "[F] ",
+    "readDocPrefix": "[R] ",
+    "markedDocPrefix": "[MARKED] ",
+    "sendDocDestination": "fixedFolder",
+    "markedCardsDestination": "fixedFolder",
+    "theme": "light",
+    "themeAppliesToDocument": false,
+    "iconSet": "modern",
+    "showDocNameChip": false,
+    "showUndoRedoButtons": false,
+    "checkForUpdatesOnLaunch": true,
+    "commentsColumnWidth": 320,
+    "reduceMotion": "auto",
+    "disableCursorBlink": false,
+    "accessibilityTreeEnabled": false,
+    "flowHostOnLaunch": false,
+    "overrideHighlightColor": false,
+    "overrideHighlightSlots": [
+      "#ffff00"
+    ],
+    "overrideShadingColor": false,
+    "showCursorColorNames": false,
+    "colorVisionFriendly": false,
+    "annotationShapes": false,
+    "distinguishShading": false,
+    "navAnalyticItalics": false,
+    "overrideShadingSlots": [
+      "#d2d2d2"
+    ],
+    "customColorOverrides": {},
+    "formatNavPaneByType": true,
+    "timerProfile": "highSchool",
+    "timerProfiles": {
+      "highSchool": {
+        "speechPresets": [
+          4,
+          3,
+          2
+        ],
+        "prepMinutes": 3
+      },
+      "college": {
+        "speechPresets": [
+          3,
+          6,
+          9
+        ],
+        "prepMinutes": 10
+      },
+      "pomodoro": {
+        "speechPresets": [
+          25,
+          15,
+          5
+        ],
+        "prepMinutes": 0
+      }
+    },
+    "timerSpeechPresets": [
+      4,
+      3,
+      2
+    ],
+    "timerPrepMinutes": 3,
+    "timerFlashEnabled": true,
+    "timerFlashSeconds": [
+      5,
+      3,
+      1
+    ],
+    "timerCompact": false,
+    "timerPrepLabel": "both",
+    "timerPosition": "left",
+    "jumpToDocTopOnReadModeToggle": false,
+    "findResultsExpanded": true,
+    "findRememberLastQuery": false,
+    "findLastQuery": "",
+    "findCategoryOrder": [
+      "heading",
+      "tag",
+      "analytic",
+      "undertag",
+      "cite",
+      "other"
+    ],
+    "includeSpeechDocPocket": true,
+    "showCitePreview": true,
+    "showCardNumbering": true,
+    "showNumberingButtons": true,
+    "cardNumberingFormat": "period",
+    "cardNumberingSubFormat": "paren",
+    "cardNumberingSubCapitalized": false,
+    "cardNumberingSubBold": true,
+    "cardNumberingIndent": "off",
+    "cardNumberingSubIndent": "off",
+    "cardNumberingMatchHeadingColor": false,
+    "flashcardDueDot": true,
+    "editorSpellcheck": true,
+    "smartQuotes": true,
+    "autoCapitalizeSentences": false,
+    "customAutocorrectEnabled": false,
+    "customAutocorrects": [],
+    "customDashEnabled": false,
+    "enterAfterPocket": "normal",
+    "enterAfterHat": "normal",
+    "enterAfterBlock": "normal",
+    "enterAfterTag": "normal",
+    "enterAfterAnalytic": "normal",
+    "enterAfterUndertag": "normal",
+    "customDashStyle": "em",
+    "customDashTrigger": "---",
+    "voiceInputDeviceId": "",
+    "voiceAutoSleepSeconds": 60,
+    "voiceDashStyle": "em",
+    "voiceDictationModel": "standard",
+    "hideEmphasisBordersInReadMode": false,
+    "markUnreadAfterMarker": false,
+    "defaultZoomPct": 120,
+    "chromeScalePct": 100,
+    "gestureZoom": false,
+    "readers": [
+      {
+        "name": "Reader 1",
+        "wpm": 200
+      },
+      {
+        "name": "Reader 2",
+        "wpm": 260
+      }
+    ],
+    "liveSelectionWordCount": true,
+    "displaySizes": {
+      "normal": 11,
+      "pocket": 26,
+      "hat": 22,
+      "block": 16,
+      "tag": 14,
+      "analytic": 13,
+      "cite": 13,
+      "underline": 11,
+      "emphasis": 11,
+      "undertag": 12
+    },
+    "displayParagraphSpacing": {
+      "bodyBefore": 0,
+      "bodyAfter": 0,
+      "citeBefore": 0,
+      "citeAfter": 0,
+      "tagBefore": 9,
+      "tagAfter": 3,
+      "analyticBefore": 9,
+      "analyticAfter": 3,
+      "pocketBefore": 18,
+      "pocketAfter": 9,
+      "hatBefore": 15,
+      "hatAfter": 6,
+      "blockBefore": 12,
+      "blockAfter": 6,
+      "undertagBefore": 0,
+      "undertagAfter": 0
+    },
+    "displayTypography": {
+      "citeUnderlined": false,
+      "underlineBold": false,
+      "emphasisBold": true,
+      "emphasisItalic": false,
+      "emphasisBox": true,
+      "emphasisBoxSize": 1,
+      "undertagItalic": true,
+      "undertagBold": false
+    },
+    "displayColors": {
+      "analytic": "#a6a6a6",
+      "undertag": "#385623",
+      "readingMarker": "#ff0000",
+      "zoneDiverged": "#c0504d"
+    },
+    "bodyFont": "Verdana",
+    "uiFont": "",
+    "ribbonTooltipMode": "both",
+    "showDropzonePill": false,
+    "showQuickCardButtons": false,
+    "fileSearchFormats": "both",
+    "fileSearchObjectTypes": [
+      "block",
+      "tag"
+    ],
+    "fileSearchOutlineDepth": 3,
+    "fileSearchTiebreak": "recency",
+    "pinAutoEnabled": true,
+    "lineHeight": 1.3,
+    "lineHeightCite": 1.2,
+    "lineHeightTag": 1.2,
+    "lineHeightAnalytic": 1.2,
+    "lineHeightHeading": 1.2,
+    "lineHeightUndertag": 1.2,
+    "formattingPanelMode": "labels",
+    "formattingPanelPreview": true,
+    "showCharacterStyles": true,
+    "lastHighlightColor": "cyan",
+    "lastShadingColor": "C0C0C0",
+    "lastFontColor": "C0C0C0",
+    "paragraphIntegrity": true,
+    "usePilcrows": true,
+    "extractUndertagInQuotes": false,
+    "headingMode": "respect",
+    "condenseOnPaste": false,
+    "formattingGapClass": "both",
+    "autoBridgeFormattingGaps": true,
+    "clearFormattingOnNamedStyleToggleOff": true,
+    "standardizeHighlightException": "darkGray",
+    "standardizeShadingException": "FFFF00",
+    "forReferenceUseGray50": false,
+    "createReferenceIncludeHeading": true,
+    "createReferenceDelimiter": "<<",
+    "createReferenceIncludeCite": true,
+    "createReferenceCustomHeading": "",
+    "createReferenceHeadingBold": false,
+    "createReferenceHeadingItalic": false,
+    "createReferenceHeadingEmphasized": false,
+    "createReferenceHeadingUnderlined": false,
+    "createReferenceShrinks": true,
+    "createReferenceShrinkPt": 3,
+    "createReferenceHighlightMode": "shading",
+    "shrinkRestoresOmissionsToNormal": false,
+    "condenseWarningDelimiter": "<<",
+    "condenseWarningCustomPauseMarker": "",
+    "condenseWarningCustomResumeMarker": "",
+    "shrinkCustomProtections": [],
+    "acronymPatterns": [],
+    "ribbonKeyOverrides": {
+      "saveSendDoc": [
+        "Mod-Alt-s",
+        "Mod-Alt-Shift-\u00ee"
+      ],
+      "setPocket": [
+        "F4",
+        "Mod-Alt-Shift-1"
+      ],
+      "setHat": [
+        "F5",
+        "Mod-Alt-Shift-2"
+      ],
+      "setBlock": [
+        "F6",
+        "Mod-Alt-Shift-3"
+      ],
+      "setTag": [
+        "F7",
+        "Mod-Alt-Shift-4"
+      ],
+      "setAnalytic": [
+        "Mod-F7",
+        "Mod-Alt-Shift-\u00e5"
+      ],
+      "setUndertag": [
+        "Mod-F8",
+        "Mod-Alt-Shift-\u00a8"
+      ],
+      "wordCountSelection": "Mod-Shift-c",
+      "pasteAsText": [
+        "F2",
+        "Mod-Shift-v"
+      ],
+      "toggleVoice": []
+    },
+    "ribbonCustomButtons": [],
+    "keyboardMacros": [],
+    "commentAuthor": "You",
+    "commentAuthorInitials": "",
+    "commentsVisible": false,
+    "aiModelOverride": "",
+    "aiProvider": "anthropic",
+    "openrouterModel": "",
+    "aiMaxTokens": 4096,
+    "aiFeaturesEnabled": false,
+    "clodEnabled": false,
+    "clodActivitiesByTime": {
+      "morning": [],
+      "day": [],
+      "evening": [],
+      "night": []
+    },
+    "clodTimePeriods": {
+      "morning": {
+        "start": 5,
+        "end": 9
+      },
+      "day": {
+        "start": 9,
+        "end": 20
+      },
+      "evening": {
+        "start": 20,
+        "end": 23
+      },
+      "night": {
+        "start": 23,
+        "end": 5
+      }
+    },
+    "aiPersonaName": "Clod",
+    "aiPersonaPronouns": "he",
+    "aiPersonaCustomPronouns": {
+      "subject": "they",
+      "object": "them",
+      "possessive": "their",
+      "reflexive": "themself"
+    },
+    "aiCitePrompt": "",
+    "translationProvider": "auto",
+    "translationTargetLang": "en",
+    "translationSourceLang": "auto",
+    "prependTranslationMarker": true,
+    "multiDocWorkspace": true,
+    "mobileLayout": "auto",
+    "multiDocLayoutMode": "compact",
+    "quickCardActiveTags": [],
+    "cardCutterEnabled": false,
+    "cardCutterEnginePath": "",
+    "cardCutterEmphasisStyle": "voice",
+    "cardCutterReadTimeSec": 12,
+    "cardCutterAcronymSplitting": "off",
+    "cardCutterMorphologyShaving": false,
+    "cardCutterClarifyingQuestions": "when-ambiguous",
+    "cleanProtectedStyles": []
+  }
+}

@@ -3,6 +3,7 @@ import { useEffect, useState, type RefObject } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import { clearFind, findInfo, findRequest, replaceAll, replaceOne, setGrouped, setQuery, step } from '../editor/find';
 import { readSetting } from '../editor/tools';
+import { onPrefs } from '../editor/prefs';
 import { findOrderSetting } from '../editor/nav-keys';
 import { Icon, SvgIcon } from './icons';
 import './outline.css';
@@ -12,6 +13,7 @@ export function FindBar({ view, inputRef, onClose, flash }: { view: EditorView; 
   const [replace, setReplace] = useState(false);
   const [grouped, setGroupedState] = useState(() => readSetting(findOrderSetting) === 'grouped');
   const [with_, setWith] = useState('');
+  useEffect(() => onPrefs(() => setGroupedState(readSetting(findOrderSetting) === 'grouped')), []); // Import settings or Restore defaults
   // a key asked for the replace row or position order: take the request (now, and while open)
   useEffect(() => {
     const take = () => {
