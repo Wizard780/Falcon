@@ -259,7 +259,7 @@ export function Settings(props: Props) {
             <output>{Math.round(props.zoom * 100)}%</output>
             <button aria-label="More zoom" onClick={() => zoomTo(props.zoom + 0.1)}>+</button>
           </span>) },
-        tog(P.wheelZoom, 'Zoom with the scroll wheel', `${IS_MAC ? '⌘' : 'Ctrl'} and scroll, or pinch the trackpad.`),
+        tog(P.wheelZoom, 'Zoom with the scroll wheel', `${IS_MAC ? '⌘' : 'Ctrl'} and scroll. Pinching the trackpad always zooms.`),
         pick(P.textWidth, 'Text width', 'Narrower lines are easier to follow.', [['full', 'Full'], ['wide', 'Wide'], ['narrow', 'Narrow']]),
         pick(P.margins, 'Margins', 'Space at the left and right of the text.', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']]),
         tog(P.railResize, 'Resizable rail', 'Drag the rail\'s right edge to show the names of open files. Double-click the edge to go back to icons.'),
