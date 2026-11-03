@@ -217,7 +217,7 @@ export function Settings(props: Props) {
               <button className="sb-ico" aria-label={`Remove ${f.path}`} title="Remove from file search"
                 onClick={() => void bridge.removeIndexFolder!(f.path).then(setFolders)}><SvgIcon name="x" /></button>
             </span>) })),
-          { label: folders?.length ? 'Add another folder' : 'No folders yet', hint: `Files in these folders, and the folders inside them, show up in ${keyLabel('search')}. Only .docx files are listed.`, control: (
+          { label: folders?.length ? 'Add another folder' : 'No folders yet', hint: `Files in these folders, and the folders inside them, show up in ${keyLabel('search')}, and their cards in Search cards (${keyLabel('searchCards')}). Only .docx files are listed.`, control: (
             <button className="st-btn" onClick={() => void bridge.addIndexFolder!().then(setFolders)}><SvgIcon name="plus" />Add folder…</button>) },
         ]],
     ] },

@@ -78,6 +78,7 @@ const SYN: Record<string, string> = {
   regrow: 'unshrink grow undo shrink', read: 'reading present speech', marker: 'mark place stop', number: 'numbering count',
   sub: 'numbering letter', restart: 'numbering', replace: 'substitute', selectSection: 'card', copySection: 'card', deleteSection: 'card remove',
   cardUp: 'reorder', cardDown: 'reorder', sendToSpeech: 'speech doc copy tilde backtick',
+  searchCards: 'library evidence find card tag cite author backfile index files',
 };
 const TOOL_HINTS = new Map([
   ...[...DOC_TOOLS, ...CARD_TOOLS].flatMap((s) => s.items.map((it) => [it.id, it.hint] as const)),

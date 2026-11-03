@@ -7,7 +7,8 @@ import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
 import { commandOf } from '../editor/keymap';
 import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
-import { activeColors, bridge, setActiveColor, type UpdateInfo } from '../editor/host';
+import { activeColors, bridge, setActiveColor, type CardHit, type UpdateInfo } from '../editor/host';
+import { cardContent, findCard } from './card-search';
 import { ago, releaseNotes } from './update';
 import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
 import { buildOutline, currentItem, readWords, type OutlineItem } from '../editor/outline';
@@ -63,7 +64,8 @@ function later<T extends { open: boolean }>(load: () => Promise<ComponentType<T>
 const Settings = later(() => import('./Settings').then((m) => m.Settings));
 const CommandCenter = later(() => import('./CommandCenter').then((m) => m.CommandCenter));
 const Palette = later(() => import('./Palette').then((m) => m.Palette));
-export const prefetch = () => Promise.all([Settings.preload(), CommandCenter.preload(), Palette.preload(), import('../docx/import'), import('../docx/export')]).catch(() => {}); // a miss loads again when used
+const CardSearch = later(() => import('./CardSearch').then((m) => m.CardSearch));
+export const prefetch = () => Promise.all([Settings.preload(), CommandCenter.preload(), Palette.preload(), CardSearch.preload(), import('../docx/import'), import('../docx/export')]).catch(() => {}); // a miss loads again when used
 
 const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
 const MODE_PREFIX = { send: P.prefixSend, read: P.prefixRead, marked: P.prefixMarked };
@@ -82,7 +84,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['search', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'close', 'nextDoc', 'prevDoc', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'close', 'nextDoc', 'prevDoc', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -229,7 +231,8 @@ export function App() {
   const [homeOpen, setHomeOpen] = useState(() => pref(P.openHome));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<string | undefined>();
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Search files (Cmd-K) or Search cards: one box at a time
+  const [paletteOpen, setPaletteOpen] = useState<false | 'files' | 'cards'>(false);
   const [ccOpen, setCcOpen] = useState(false);
   const [settingsQuery, setSettingsQuery] = useState<string | undefined>();
   // the open warning dialog, if any: everything else waits for it
@@ -504,15 +507,39 @@ export function App() {
     catch (e) { openFailed(r.name, r.path, e); }
   }, [opened, fileOpen, switchTo, openFailed]);
   // Cmd-K: an open doc switches to it; anything else opens by path (indexed folders and recents are allowed)
-  const openHit = useCallback(async (h: FileHit) => {
+  const openHit = useCallback(async (h: FileHit): Promise<boolean> => {
     setHomeOpen(false);
-    if (h.docId !== undefined && docsRef.current.some((d) => d.id === h.docId)) { switchTo(h.docId); return; }
+    if (h.docId !== undefined && docsRef.current.some((d) => d.id === h.docId)) { switchTo(h.docId); return true; }
     const already = openedPath(h.path);
-    if (already) { switchTo(already.id); return; }
-    if (!h.path || !bridge.openPath) { void fileOpen(); return; }
-    try { opened(await openPath(h.path), 'search'); }
-    catch (e) { openFailed(h.name, h.path, e); }
+    if (already) { switchTo(already.id); return true; }
+    if (!h.path || !bridge.openPath) { void fileOpen(); return false; }
+    try { opened(await openPath(h.path), 'search'); return true; }
+    catch (e) { openFailed(h.name, h.path, e); return false; }
   }, [opened, fileOpen, switchTo, openFailed]);
+  // Search cards: Enter opens the card's file at the card; Mod-Enter puts a copy of the card into the open document
+  const pickCard = useCallback(async (h: CardHit, insert: boolean) => {
+    const open = openedPath(h.path);
+    if (insert) {
+      if (viewRef.current && isReading(viewRef.current.state)) return;
+      let doc: PMNode | undefined;
+      try { doc = open ? (open.id === activeRef.current ? viewRef.current!.state.doc : open.state?.doc) ?? undefined : (await openPath(h.path)).doc; }
+      catch (e) { flash(`Couldn't open ${h.file}: ${(e as Error).message}`); return; }
+      const pos = doc ? findCard(doc, h.tag, h.ordinal) : null;
+      const content = doc && pos !== null ? cardContent(doc, pos) : null;
+      const v = viewRef.current;
+      if (!content || !v) { flash(`Couldn't find “${h.tag}” in ${h.file}. It may have changed since it was indexed.`); return; }
+      v.dispatch(insertIntoSpeech(v.state, content).scrollIntoView());
+      v.focus();
+      return;
+    }
+    if (!(await openHit({ key: `c:${h.path}`, name: h.file, folder: '', path: h.path, kind: 'file', when: 0 }))) return; // openHit said why
+    const v = viewRef.current!; // it shows the file now
+    const pos = findCard(v.state.doc, h.tag, h.ordinal);
+    if (pos === null) { flash(`Couldn't find “${h.tag}” in ${h.file}. It may have changed since it was indexed.`); return; }
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, pos + 1)));
+    (v.dom as HTMLElement).focus({ preventScroll: true });
+    requestAnimationFrame(() => scrollToPos(v, pos)); // once the page has laid the new file out
+  }, [openHit, flash]);
   /**
    * Write the active doc. As-Is is the document itself, so the open file takes its new name and path;
    * Send, Read and Marked docs are copies and the open file stays as it was.
@@ -633,6 +660,7 @@ export function App() {
     else if (id === 'zoomOut') zoomBy(-0.1);
     else if (id === 'zoomReset') setZoom(1);
     else if (id === 'commands') setCcOpen((o) => !o);
+    else if (id === 'searchCards') setPaletteOpen('cards');
     else if (id === 'sendToSpeech') sendToSpeech();
   }, [fileSave, fileOpen, fileNew, openFind, closeDoc, cycle, zoomBy, sendToSpeech]);
 
@@ -661,7 +689,12 @@ export function App() {
       // read mode locks the keyboard: nothing that swaps the document out
       if (id && SWAPS.includes(id) && v && isReading(v.state)) return;
       // Search files opens the palette (or closes it); while it's up, only its own keys get through
-      if (id === 'search') { e.preventDefault(); e.stopPropagation(); if (paletteRef.current) setPaletteOpen(false); else if (!locked()) setPaletteOpen(true); return; }
+      if (id === 'search' || id === 'searchCards') {
+        e.preventDefault(); e.stopPropagation();
+        const want = id === 'search' ? 'files' : 'cards';
+        if (paletteRef.current) setPaletteOpen(paletteRef.current === want ? false : want); else if (!locked()) setPaletteOpen(want);
+        return;
+      }
       if (paletteRef.current) { if (mod && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // the command center opens over anything but Settings (or closes); while it's up, its box gets the keys
       if (id === 'commands') { e.preventDefault(); e.stopPropagation(); if (ccRef.current) setCcOpen(false); else if (!settingsRef.current) { setHomeOpen(false); setCcOpen(true); } return; }
@@ -826,7 +859,7 @@ export function App() {
     return () => { stopScroll(); if (sc) sc.scrollTop = top; };
   }, []);
 
-  const modal = settingsOpen || paletteOpen || ccOpen || !!ask || saveAsName !== null;
+  const modal = settingsOpen || !!paletteOpen || ccOpen || !!ask || saveAsName !== null;
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
@@ -887,7 +920,9 @@ export function App() {
       <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents.slice(0, pref(P.recentCount))}
         onNew={fileNew} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)} onPeek={peekRecent}
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
-      <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
+      <Palette open={paletteOpen === 'files'} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
+        onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
+      <CardSearch open={paletteOpen === 'cards'} onClose={() => setPaletteOpen(false)} onPick={(h, insert) => void pickCard(h, insert)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
       <CommandCenter open={ccOpen} onClose={() => setCcOpen(false)} ctx={ccCtx} flash={flash} saveScroll={saveScroll} />
       <Settings open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsPage(undefined); setSettingsQuery(undefined); }} startPage={settingsPage} startQuery={settingsQuery}
