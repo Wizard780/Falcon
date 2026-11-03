@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { bridge, type IndexedFile } from '../editor/host';
 import { collectHits, rankHits, type FileHit } from './file-search';
 import type { Recent } from './recents';
-import { loadStarred, toggleStarred } from './starred';
+import { loadStarred } from './starred';
 import { SvgIcon } from './icons';
+import { StarIcon } from './starred';
 import './palette.css';
 
 /** Cmd-K: search open documents, recent files and the folders allowed in Settings, and open one. */
@@ -40,27 +41,16 @@ export function Palette(props: {
   const all = useMemo(() => (open ? collectHits(props.docs, props.recents, files, starred) : []), [open, props.docs, props.recents, files, starred]);
   // with no query: starred files, then what's open, then recent files
   const hits = useMemo(() => (open ? rankHits(query ? all : all.filter((h) => h.kind !== 'file' || h.starred), query) : []), [open, all, query]);
-  // starring moves the file (to the top, or back down): the highlight goes with it
-  const follow = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    if (!follow.current) return;
-    const i = hits.findIndex((h) => h.path === follow.current);
-    follow.current = null;
-    if (i >= 0) setAt(i);
-  }, [hits]);
   const cur = Math.min(at, hits.length - 1);
   useEffect(() => { listRef.current?.querySelector('[data-on]')?.scrollIntoView({ block: 'nearest' }); }, [cur, hits]);
   if (!open) return null;
 
   const pick = (h: FileHit | undefined) => { if (h) { props.onClose(); props.onPick(h); } };
-  const star = (h: FileHit | undefined) => { if (h?.path) { follow.current = h.path; setStarred(toggleStarred(h.path)); } };
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (hits.length) setAt((cur + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % hits.length);
     } else if (e.key === 'Enter') { e.preventDefault(); pick(hits[cur]); }
-    // Alt-P stars, as in CardMirror (e.code: Option-P types π on a Mac)
-    else if (e.altKey && e.code === 'KeyP') { e.preventDefault(); star(hits[cur]); }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (query) { setQuery(''); setAt(0); } else props.onClose(); }
   };
 
@@ -96,18 +86,13 @@ export function Palette(props: {
                   <SvgIcon name="doc" />
                   <span className="pk-nm">{h.name}</span>
                   <span className="pk-in">{where(h)}</span>
-                  {h.path && (
-                    <button className="pk-star" aria-pressed={!!h.starred} aria-label={h.starred ? `Unstar ${h.name}` : `Star ${h.name}`}
-                      title={h.starred ? 'Starred (⌥P to unstar)' : 'Star (⌥P): keep this file at the top and hide its copies in other search folders'}
-                      onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); star(h); }}>
-                      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" /></svg>
-                    </button>
-                  )}
+                  {/* stars are set in Settings > File search, here they only mark */}
+                  {h.starred && <span className="pk-star" aria-label="Starred" title="Starred in Settings > File search"><StarIcon /></span>}
                 </div>
               </div>
             );
           })}
-          {!hits.length && <p className="pk-none">{query ? `No files match “${query.trim()}”.` : 'No recent files yet. Star a file (⌥P) to keep it here.'}</p>}
+          {!hits.length && <p className="pk-none">{query ? `No files match “${query.trim()}”.` : 'No recent files yet. Star files in Settings > File search to keep them here.'}</p>}
         </div>
         {bridge.indexedFiles && folders === 0 && (
           <button className="pk-foot" onClick={() => { props.onClose(); props.onSettings(); }}>

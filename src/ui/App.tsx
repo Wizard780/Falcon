@@ -738,7 +738,7 @@ export function App() {
       // Settings is modal: only its own keys (Esc, its shortcut) get through
       if (settingsRef.current && !(e.key === 'Escape' || id === 'settings')) { if (mod) e.preventDefault(); return; }
       // Esc in a filled Settings search clears the search before it closes Settings
-      if (e.key === 'Escape' && settingsRef.current && e.target instanceof HTMLInputElement && e.target.closest('.st-search') && e.target.value) return;
+      if (e.key === 'Escape' && settingsRef.current && e.target instanceof HTMLInputElement && (e.target.closest('.st-search') || e.target.classList.contains('st-find')) && e.target.value) return;
       if (e.key === 'Escape' && settingsRef.current) { e.preventDefault(); e.stopPropagation(); setSettingsOpen(false); return; }
       if (e.key === 'Escape' && homeRef.current) { e.preventDefault(); e.stopPropagation(); setHomeOpen(false); return; }
       if (!id) return;

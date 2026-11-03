@@ -74,6 +74,13 @@
 .st-fold output { font: 13px var(--mono); font-variant-numeric: tabular-nums; color: var(--u-mut); white-space: nowrap; }
 .st-fold .sb-ico { color: var(--u-mut); }
 .st-fold .sb-ico:hover { color: var(--u-tx); }
+/* starred files: an outline star to star, gold once starred */
+.st-find { width: 240px; }
+.st-star { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: var(--u-mut); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
+.st-star svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linejoin: round; }
+.st-star:hover { background: var(--u-hover); color: var(--u-tx); }
+.st-star[aria-pressed="true"] { color: #e2b33c; }
+.st-star[aria-pressed="true"] svg { fill: currentColor; }
 .st-txt small.path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 /* themes: a tile per theme, each a small picture of its chrome around a strip of its paper */
 .st .st-row.wide { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px 0 16px; }
