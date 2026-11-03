@@ -54,6 +54,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: false, // the round's clocks run in this page and draw into the timer window, which stays up when this one is hidden
       spellcheck: true, // Chromium's checker: the system dictionary on a Mac, Hunspell on Windows and Linux
     },
   });
@@ -76,7 +77,9 @@ function createWindow() {
     child.setMenu(null); // Windows and Linux: no File menu bar on a clock
     child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     child.webContents.on('will-navigate', (e) => e.preventDefault());
-    win.once('closed', () => { if (!child.isDestroyed()) child.close(); });
+    const closeChild = () => { if (!child.isDestroyed()) child.close(); };
+    win.once('closed', closeChild);
+    child.once('closed', () => { if (!win.isDestroyed()) win.removeListener('closed', closeChild); });
   });
   // the page blocks unloading while a doc is unsaved: the close stops here, and the page asks in its own
   // dialog. If the user says close anyway, the page sends falcon:force-close and the next try goes through.

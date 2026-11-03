@@ -6,30 +6,51 @@ import css from './timer-window.css?inline';
 export const TIMER_WINDOW = 'falcon-timer'; // the window's name: electron/main.cjs lets only this one open
 const W = 300, H = 312;
 
-/** The round's clocks, ticking once a second. `done` hears which clock ran out. */
+/**
+ * The round's clocks, counted against the wall clock: a hidden or busy page whose timers fire late
+ * still takes off every second that passed. `done` hears which clock ran out.
+ */
 export function useRoundClocks(speechMin: number, prepMin: number, done: (id: ClockId) => void) {
   const speeches = useMemo(() => roundSpeeches(speechMin), [speechMin]);
   const prepSec = prepMin * 60;
   const [c, setC] = useState<Clocks>(() => freshClocks(speeches, prepSec));
-  // a new length from Settings resets the clocks that aren't running
-  useEffect(() => { setC((c) => ({ ...c, speech: c.on === 'speech' ? c.speech : speeches[c.idx].sec })); }, [speeches]);
-  useEffect(() => { setC((c) => ({ ...c, our: c.on === 'our' ? c.our : prepSec, their: c.on === 'their' ? c.their : prepSec })); }, [prepSec]);
+  // the clocks as they are now, written before each render, so the ticker and the buttons never read an old copy
+  const cRef = useRef(c);
+  const set = (f: (c: Clocks) => Clocks) => { cRef.current = f(cRef.current); setC(cRef.current); };
+  // a new length from Settings moves the clocks still at the old full time; time already used stays used
+  const was = useRef({ speeches, prepSec });
+  useEffect(() => {
+    const old = was.current;
+    was.current = { speeches, prepSec };
+    if (old.speeches === speeches && old.prepSec === prepSec) return;
+    set((c) => ({
+      ...c,
+      speech: c.speech === old.speeches[c.idx].sec ? speeches[c.idx].sec : Math.min(c.speech, speeches[c.idx].sec),
+      our: c.our === old.prepSec ? prepSec : Math.min(c.our, prepSec),
+      their: c.their === old.prepSec ? prepSec : Math.min(c.their, prepSec),
+    }));
+  }, [speeches, prepSec]);
   const doneRef = useRef(done);
   doneRef.current = done;
   useEffect(() => {
     if (!c.on) return;
-    const t = window.setInterval(() => setC((c) => {
-      const next = tick(c, speeches);
-      if (next.done) { const d = next.done; queueMicrotask(() => doneRef.current(d)); }
-      return next.clocks;
-    }), 1000);
+    let last = Date.now();
+    const t = window.setInterval(() => {
+      const n = Math.floor((Date.now() - last) / 1000);
+      if (n < 1) return;
+      last += n * 1000;
+      let next = cRef.current, ran: ClockId | null = null;
+      for (let i = 0; i < n && next.on && !ran; i++) ({ clocks: next, done: ran } = tick(next, speeches));
+      set(() => next);
+      if (ran) doneRef.current(ran);
+    }, 250);
     return () => clearInterval(t);
   }, [c.on, speeches]);
   return {
     clocks: c, speeches, prepSec,
-    toggle: (id: ClockId) => setC((c) => toggle(c, id, speeches, prepSec)),
-    reset: (id: ClockId) => setC((c) => reset(c, id, speeches, prepSec)),
-    pick: (i: number) => setC((c) => pick(c, i, speeches)),
+    toggle: (id: ClockId) => set((c) => toggle(c, id, speeches, prepSec)),
+    reset: (id: ClockId) => set((c) => reset(c, id, speeches, prepSec)),
+    pick: (i: number) => set((c) => pick(c, i, speeches)),
   };
 }
 export type RoundClocks = ReturnType<typeof useRoundClocks>;
@@ -39,21 +60,22 @@ const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padSt
 const VARS = ['--u-panel', '--u-well', '--u-ctl', '--u-ctl2', '--u-ctl-on', '--u-line', '--u-tx', '--u-tx2', '--u-top', '--u-sh', '--ink-ui'];
 
 /**
- * Opens the timer window while `open` is true; closing it calls `onClose`. The clocks stay in this page:
- * the window is a second document this page draws into, so it can't fall out of step.
+ * Each new `req` opens the timer window, or brings it forward when it's already open. `onOpen` hears
+ * when it opens and closes. The clocks stay in this page: the window is a second document this page
+ * draws into, so the two can't fall out of step.
  */
-export function TimerWindow(props: { open: boolean; onClose: () => void; rc: RoundClocks; low: number }) {
+export function TimerWindow(props: { req: number; onOpen: (open: boolean) => void; rc: RoundClocks; low: number }) {
   const [doc, setDoc] = useState<Document | null>(null);
-  const onClose = useRef(props.onClose);
-  onClose.current = props.onClose;
-  const winRef = useRef<Window | null>(null);
+  const onOpen = useRef(props.onOpen);
+  onOpen.current = props.onOpen;
+  const live = useRef<{ w: Window; end: () => void } | null>(null);
 
   useEffect(() => {
-    if (!props.open) return;
-    if (winRef.current && !winRef.current.closed) { winRef.current.focus(); return; }
+    if (!props.req) return;
+    if (live.current && !live.current.w.closed) { live.current.w.focus(); return; }
+    live.current?.end(); // closed a moment ago, before the check below saw it
     const w = window.open('', TIMER_WINDOW, `popup,width=${W},height=${H}`);
-    if (!w) { onClose.current(); return; }
-    winRef.current = w;
+    if (!w) return;
     const d = w.document;
     d.title = 'Timer';
     const style = d.createElement('style');
@@ -72,18 +94,24 @@ export function TimerWindow(props: { open: boolean; onClose: () => void; rc: Rou
     paint();
     const mo = new MutationObserver(paint);
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'data-chrome'] });
-    setDoc(d);
-    // the user closed it (the window's own close button)
-    const poll = window.setInterval(() => { if (w.closed) onClose.current(); }, 400);
     // this page going away takes the window with it
     const bye = () => w.close();
     addEventListener('pagehide', bye);
-    return () => {
+    // the user closed it with the window's own close button
+    const poll = window.setInterval(() => { if (w.closed) end(); }, 400);
+    const end = () => {
+      if (live.current?.w !== w) return;
+      live.current = null;
       mo.disconnect(); clearInterval(poll); removeEventListener('pagehide', bye);
-      setDoc(null); winRef.current = null;
       if (!w.closed) w.close();
+      setDoc(null);
+      onOpen.current(false);
     };
-  }, [props.open]);
+    live.current = { w, end };
+    setDoc(d);
+    onOpen.current(true);
+  }, [props.req]);
+  useEffect(() => () => live.current?.end(), []); // the toolbar going away closes it
 
   // Space starts or pauses the speech, as in the toolbar
   const rc = useRef(props.rc);

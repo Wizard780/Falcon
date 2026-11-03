@@ -81,6 +81,32 @@ describe('timer window', () => {
     // clicking the toolbar again brings the open window forward instead of opening a second
     await app.act(() => btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })));
     expect(open).toHaveBeenCalledTimes(1);
+    expect(w.focus).toHaveBeenCalled();
+  });
+
+  it('a clock whose timers fire late still takes off every second that passed', async () => {
+    const { w } = fakeOpen();
+    const app = await mountApp();
+    await app.act(() => app.el.querySelector('button.timer')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })));
+    const ours = w.document.querySelector<HTMLButtonElement>('.tw-p')!;
+    await app.act(() => ours.click());
+    const real = Date.now.bind(Date), from = real();
+    vi.spyOn(Date, 'now').mockImplementation(() => real() + (real() - from > 0 ? 5000 : 0)); // the page slept 5 s
+    await app.act(() => {}, 400);
+    expect(ours.textContent).toBe('Our prep7:55');
+  });
+
+  it('a new prep length in Settings keeps the prep a side already used', async () => {
+    const { w } = fakeOpen();
+    const app = await mountApp();
+    await app.act(() => app.el.querySelector('button.timer')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })));
+    const [ours, theirs] = w.document.querySelectorAll<HTMLButtonElement>('.tw-p');
+    await app.act(() => ours.click());
+    await app.act(() => {}, 1100);
+    await app.act(() => ours.click()); // paused at 7:59
+    const { P, setPref } = await import('../src/editor/prefs');
+    await app.act(() => setPref(P.prepMin, 10));
+    expect([ours.textContent, theirs.textContent]).toEqual(['Our prep7:59', 'Their prep10:00']);
   });
 
   it('closing the window lets the toolbar open it again, and leaving the page closes it', async () => {

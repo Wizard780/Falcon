@@ -1513,6 +1513,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
     props.flash(id === 'speech' ? 'Time is up' : id === 'our' ? 'Prep is up' : 'Their prep is up');
     if (pref(P.beep)) beep();
   });
+  const [timerReq, setTimerReq] = useState(0); // each click asks the window to open, or come forward
   const [timerOpen, setTimerOpen] = useState(false);
   // the command center starts, pauses and resets the clocks the same way a click does, and opens the window
   const rcRef = useRef(rc);
@@ -1520,7 +1521,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   useEffect(() => {
     const on = (e: Event) => {
       const { which, op } = (e as CustomEvent<TimerRequest>).detail;
-      if (op === 'open') { setTimerOpen(true); return; }
+      if (op === 'open') { setTimerReq((n) => n + 1); return; }
       const id = which === 'prep' ? 'our' : which;
       if (op === 'reset') rcRef.current.reset(id); else rcRef.current.toggle(id);
     };
@@ -1561,11 +1562,11 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
           <button className="b" data-on={props.reading || undefined} title={titled('Read mode', 'read', 'show only what\'s read aloud. Typing is locked and Space drops a marker')} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
           <button className={`b timer${low('speech')}`} data-on={clocks.on === 'speech' || undefined} aria-haspopup="dialog" aria-expanded={timerOpen}
             title={`Timer: ${rc.speeches[clocks.idx].name}. Click to open the timer window, with both sides' prep. Right-click to reset`}
-            onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) setTimerOpen(true); }}
+            onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) setTimerReq((n) => n + 1); }}
             onContextMenu={(e) => { e.preventDefault(); rc.reset('speech'); }}>
             {clock(clocks.speech)}
           </button>
-          <TimerWindow open={timerOpen} onClose={() => setTimerOpen(false)} rc={rc} low={lowSec} />
+          <TimerWindow req={timerReq} onOpen={setTimerOpen} rc={rc} low={lowSec} />
           {pref(P.showSend) && (
             <button className="b" title={titled('Send to speech', 'sendToSpeech', 'copy the selection, or the card or section at the caret, into the speech doc. The file isn\'t changed. Change the key in Settings > Keybindings')} onMouseDown={(e) => { e.preventDefault(); props.onSend(); }}>Send</button>
           )}
