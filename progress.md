@@ -208,3 +208,12 @@ User report: the six-dot card grip won't let you click the text next to it.
 - [x] the outline's resize edge sits inside the pane (6px) instead of 4px over the page
 - [x] checked at narrow and normal margins, 100% and 150% zoom: a click 2px into a tag puts the caret at its start, and the grip's center is still the grip
 - [x] follow-up report "the cursor won't let me select it": the left margin (where the grip lives) was a dead zone, so a click or drag starting beside a line did nothing. A press in the margin now goes to the line's near edge (Word and CardMirror put the caret at the line's start), and the grip itself tells a click (caret at its line's start), a sideways drag (selects from the line's start) and an up/down drag (moves the card) apart. Journey margin-click covers it at normal and narrow margins
+
+## Stage: falcon on launch (2026-11-03, branch launch-falcon)
+User ask: an animated falcon that sweeps in whenever the app opens and settles at the top, with Home itself exactly the same; smooth animation, a more complex falcon.
+- [x] src/ui/falcon.ts draws a peregrine in SVG: layered coverts, secondaries and primaries built feather by feather, a far wing behind, barred chest, fanned tail, dark crown and mustache, hooked beak; eye ring and cere in the pen color (--ink)
+- [x] on a page load that starts on Home it flies over Home on an overlay (in low from the left, past close, banking up and round), wingbeats integrated by phase so the rate can slow into a glide without a jump, banking through a low-pass, an ease-out all the way to a soft landing; 2.5 s
+- [x] lands in .hm-perch, the empty strip above the date, and holds still (no loop, so Home stays at ~0 idle CPU); Home's layout is identical during, after, and with the flight off
+- [x] any key or click lands it; Settings > Appearance > Falcon on launch (falcon.launchFalcon, on) and Reduce motion skip the flight
+- [x] vitest 416 pass, tsc clean; journey launch-falcon (8 ok) films the flight in the web build
+

@@ -332,6 +332,7 @@ export function Settings(props: Props) {
         pick(P.selection, 'Selection color', 'The color behind selected text.', [['blue', 'Blue'], ['gray', 'Gray'], ['ink', 'Highlighter']]),
         tog(P.cardBar, 'Mark the current card', 'A thin line beside the card the cursor is in.'),
         tog(P.reduceMotion, 'Reduce motion', 'Turn off animations. Also on when your system asks for less motion.'),
+        tog(P.launchFalcon, 'Falcon on launch', 'The falcon sweeps in over Home when Falcon starts. Any key or click lands it.'),
       ]],
     ] },
     { id: 'editor', title: 'Editor', icon: 'doc', sections: [

@@ -3,9 +3,14 @@ import { clock, dots } from './home-fx';
 import { tidy, whenLabel, type Recent } from './recents';
 import { keyOf, keyText } from '../editor/keybinds';
 import { SvgIcon } from './icons';
+import { launchFalcon } from './falcon';
+import { reducedMotion } from './motion';
+import { P, pref } from '../editor/prefs';
 
 
 /** The start screen (and ⌘T): the files you opened recently, the first page of the one you point at beside them. */
+let launched = false; // the falcon's flight plays once per page load, not on every Home
+
 export function Home(props: {
   open: boolean;
   current: string;
@@ -27,6 +32,14 @@ export function Home(props: {
   const rows = useRef<(HTMLButtonElement | null)[]>([]);
   const [sel, setSel] = useState(0);
   const [undo, setUndo] = useState<Recent[] | null>(null);
+
+  // the falcon flies in once per launch, when Falcon starts on Home; after that it just sits on its perch
+  const perchRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const fly = open && !launched && pref(P.launchFalcon) && !reducedMotion();
+    launched = true;
+    return launchFalcon(homeRef.current!, perchRef.current!, fly);
+  }, []);
 
   // the effects run only while home is showing; focus in a layout effect, so keys pressed right after it opens land here
   useLayoutEffect(() => {
@@ -82,6 +95,7 @@ export function Home(props: {
       <div className="hm-glow" aria-hidden="true" />
       <div ref={scRef} className="hm-sc">
         <div className="hm-in">
+          <div ref={perchRef} className="hm-perch" aria-hidden="true" />
           <header className="hm-head">
             <div className="hm-text">
               <p className="hm-date">{day}</p>
