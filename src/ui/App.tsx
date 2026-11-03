@@ -17,6 +17,7 @@ import { toggleColorMark } from '../editor/commands';
 import { fontSizeOf, setFontSize } from '../editor/font-size';
 import { FONT_COLORS } from './swatches';
 import { TIMER_EVENT, type TimerRequest } from './timer-event';
+import { TimerWindow, useRoundClocks } from './TimerWindow';
 import { insertIntoSpeech, sendContent } from '../editor/speech';
 import { insertContent, insertLabel } from '../editor/linked-insert';
 import { selectionState } from './selection-state';
@@ -1504,41 +1505,30 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   const setSize = (pt: number) => run(setFontSize(pt));
   const bump = (d: number) => setSize((fontSize ?? 11) + d);
 
-  // the speech timer (and the prep timer, when Settings shows it): click to start or pause, right-click to reset
-  const [left, setLeft] = useState(SPEECH_SECONDS);
-  const [running, setRunning] = useState(false);
-  const PREP_SECONDS = pref(P.prepMin) * 60;
-  const [prepLeft, setPrepLeft] = useState(PREP_SECONDS);
-  const [prepRunning, setPrepRunning] = useState(false);
-  // a new length from Settings resets an idle timer
-  useEffect(() => { if (!running) setLeft(SPEECH_SECONDS); }, [SPEECH_SECONDS]);
-  useEffect(() => { if (!prepRunning) setPrepLeft(PREP_SECONDS); }, [PREP_SECONDS]);
+  // the round's clocks: the speech timer opens the timer window (speech, our prep, their prep); right-click resets it.
+  // The prep button, when Settings shows it, is our prep: click to start or pause, right-click to reset
   const showPrep = pref(P.showPrep);
-  // hiding the prep timer stops and resets it
-  useEffect(() => { if (!showPrep) { setPrepRunning(false); setPrepLeft(PREP_SECONDS); } }, [showPrep]);
-  const countdown = (on: boolean, setOn: (b: boolean) => void, setLeftOf: (f: (s: number) => number) => void, what: string) => {
-    if (!on) return;
-    const t = window.setInterval(() => setLeftOf((s) => {
-      if (s <= 1) { setOn(false); props.flash(what); if (pref(P.beep)) beep(); return 0; }
-      return s - 1;
-    }), 1000);
-    return () => clearInterval(t);
-  };
-  useEffect(() => countdown(running, setRunning, setLeft, 'Time is up'), [running]);
-  useEffect(() => countdown(prepRunning, setPrepRunning, setPrepLeft, 'Prep is up'), [prepRunning]);
-  // the command center starts, pauses and resets the clocks the same way a click does
+  const lowSec = pref(P.lowTime);
+  const rc = useRoundClocks(SPEECH_SECONDS / 60, pref(P.prepMin), (id) => {
+    props.flash(id === 'speech' ? 'Time is up' : id === 'our' ? 'Prep is up' : 'Their prep is up');
+    if (pref(P.beep)) beep();
+  });
+  const [timerOpen, setTimerOpen] = useState(false);
+  // the command center starts, pauses and resets the clocks the same way a click does, and opens the window
+  const rcRef = useRef(rc);
+  rcRef.current = rc;
   useEffect(() => {
     const on = (e: Event) => {
       const { which, op } = (e as CustomEvent<TimerRequest>).detail;
-      const [full, setL, setR] = which === 'prep' ? [PREP_SECONDS, setPrepLeft, setPrepRunning] : [SPEECH_SECONDS, setLeft, setRunning];
-      if (op === 'reset') { setR(false); setL(full); return; }
-      setL((s) => (s === 0 ? full : s));
-      setR((r) => !r);
+      if (op === 'open') { setTimerOpen(true); return; }
+      const id = which === 'prep' ? 'our' : which;
+      if (op === 'reset') rcRef.current.reset(id); else rcRef.current.toggle(id);
     };
     addEventListener(TIMER_EVENT, on);
     return () => removeEventListener(TIMER_EVENT, on);
-  }, [SPEECH_SECONDS, PREP_SECONDS]);
-  const low = (on: boolean, s: number) => (on && s <= pref(P.lowTime) ? ' low' : '');
+  }, []);
+  const { clocks } = rc;
+  const low = (id: 'speech' | 'our') => (clocks.on === id && lowSec > 0 && clocks[id] <= lowSec ? ' low' : '');
 
   return (
     <header className="toolbar">
@@ -1569,19 +1559,21 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
         </div>
         <div className="end">
           <button className="b" data-on={props.reading || undefined} title={titled('Read mode', 'read', 'show only what\'s read aloud. Typing is locked and Space drops a marker')} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
-          <button className={`b timer${low(running, left)}`} data-on={running || undefined} title="Speech timer: click to start or pause. Right-click to reset"
-            onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (left === 0) setLeft(SPEECH_SECONDS); setRunning((r) => !r); } }}
-            onContextMenu={(e) => { e.preventDefault(); setRunning(false); setLeft(SPEECH_SECONDS); }}>
-            {clock(left)}
+          <button className={`b timer${low('speech')}`} data-on={clocks.on === 'speech' || undefined} aria-haspopup="dialog" aria-expanded={timerOpen}
+            title={`Timer: ${rc.speeches[clocks.idx].name}. Click to open the timer window, with both sides' prep. Right-click to reset`}
+            onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) setTimerOpen(true); }}
+            onContextMenu={(e) => { e.preventDefault(); rc.reset('speech'); }}>
+            {clock(clocks.speech)}
           </button>
+          <TimerWindow open={timerOpen} onClose={() => setTimerOpen(false)} rc={rc} low={lowSec} />
           {pref(P.showSend) && (
             <button className="b" title={titled('Send to speech', 'sendToSpeech', 'copy the selection, or the card or section at the caret, into the speech doc. The file isn\'t changed. Change the key in Settings > Keybindings')} onMouseDown={(e) => { e.preventDefault(); props.onSend(); }}>Send</button>
           )}
           {showPrep && (
-            <button className={`b timer prep${low(prepRunning, prepLeft)}`} data-on={prepRunning || undefined} title="Prep timer: click to start or pause. Right-click to reset"
-              onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (prepLeft === 0) setPrepLeft(PREP_SECONDS); setPrepRunning((r) => !r); } }}
-              onContextMenu={(e) => { e.preventDefault(); setPrepRunning(false); setPrepLeft(PREP_SECONDS); }}>
-              Prep {clock(prepLeft)}
+            <button className={`b timer prep${low('our')}`} data-on={clocks.on === 'our' || undefined} title="Our prep: click to start or pause. Right-click to reset"
+              onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) rc.toggle('our'); }}
+              onContextMenu={(e) => { e.preventDefault(); rc.reset('our'); }}>
+              Prep {clock(clocks.our)}
             </button>
           )}
         </div>
