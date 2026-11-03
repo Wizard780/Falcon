@@ -187,8 +187,8 @@ User ask: drag the left rail wider so the open files' names show.
 
 ## Stage: toolbar fills the bar, Grey theme, reader speeds for tags (2026-11-02, branch ui-polish on top of sel-read-words)
 User ask (screenshots): the toolbar left a gap between the tools row and Pocket; black is too harsh, wants a greyish theme; nicer spacing; the status bar should give a selection's words and read time; each reader needs a card speed and a tags-and-analytics speed (CardMirror's tagWpm).
-- [x] toolbar groups spread across the space right of the tools row (space-between, capped at 1360px), rows 6px apart
+- [x] toolbar groups sit together right after the tools row (spreading them apart split Cite/Emphasis off from the styles), Read and the timer at the far right, rows 6px apart
 - [x] Grey preset (#202124 chrome, white page), between Dark and Light
-- [x] status bar: `Sel: 14 words · Read: 7 · 0:02 / 0:01`, set off by a divider
+- [x] status bar: `Sel: 7 words · 0:02 / 0:01`, only the read words (highlighted, tags, analytics, cites), set off by a divider
 - [x] Settings > Speech and timers: Reader 1/2 cards, Reader 1/2 tags and analytics (Same as cards by default); cites count with tags, as in CardMirror; CardMirror settings import maps readers[n].tagWpm
 - [x] vitest 332 pass, tsc clean; journeys themes, settings, command-center, card-formatting, outline ok

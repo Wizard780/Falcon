@@ -32,8 +32,9 @@ it('counts only the read words in a selection', async () => {
     v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, 1, v.state.doc.content.size - 1)));
   }, 400);
   const status = app.el.querySelector('footer.status')!.textContent;
-  // 3 tag words + 2 highlighted body words are read; 10 words selected in all
-  expect(status).toContain('Sel: 10 words · Read: 5 · 0:02 / 0:01');
+  // 3 tag words + 2 highlighted body words are read; the 5 plain words in between don't count
+  expect(status).toContain('Sel: 5 words · 0:02 / 0:01');
+  expect(status).not.toContain('10 words');
 });
 
 it('reads tags, analytics and cites at each reader\'s tag speed', async () => {

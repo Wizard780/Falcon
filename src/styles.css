@@ -196,8 +196,9 @@ svg { flex: none; }
 .toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: flex-start; background: var(--u-deep); user-select: none; min-width: 0;
   overflow-x: auto; scrollbar-width: none; container-type: inline-size; }
 .toolbar::-webkit-scrollbar { display: none; }
-/* the groups spread out to fill the space right of the tools row, evenly, up to a point on very wide windows */
-.bar { position: relative; flex: 1 0 auto; max-width: 1360px; display: flex; align-items: center; justify-content: space-between; height: 100%; padding: 0 28px 0 20px; gap: 32px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
+/* the groups sit together right after the tools row (no centering gap on the left); Read and the timer go to the far right */
+.bar { position: relative; flex: 1 0 auto; display: flex; align-items: center; height: 100%; padding: 0 24px 0 20px; gap: 32px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
+.bar .end { margin-left: auto; }
 .bar .g, .bar .end { display: grid; grid-template-rows: 32px 32px; grid-auto-flow: column; gap: 6px 4px; }
 .bar .g > .b, .bar .end > .b { width: 100%; }
 .b { position: relative; isolation: isolate; height: 32px; padding: 0 12px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; transition: transform 160ms cubic-bezier(.23, 1, .32, 1); }
