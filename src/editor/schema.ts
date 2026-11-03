@@ -234,12 +234,26 @@ export const schema = new Schema({
   marks,
 });
 
-/** Word's 15 highlight colors (the names .docx uses) and how they render. */
+/** The highlight colors and how they render, in CardMirror's order: Word's 15 (the names .docx uses) plus Falcon's deep turquoise (Turquoise a step deeper, so it shows on white). */
 export const HIGHLIGHTS: Record<string, string> = {
-  yellow: '#FFFF00', green: '#00FF00', cyan: '#00FFFF', magenta: '#FF00FF', blue: '#0000FF',
-  red: '#FF0000', darkBlue: '#000080', darkCyan: '#008080', darkGreen: '#008000', darkMagenta: '#800080',
-  darkRed: '#800000', darkYellow: '#808000', darkGray: '#808080', lightGray: '#C0C0C0', black: '#000000',
+  yellow: '#FFFF00', green: '#00FF00', cyan: '#00FFFF', deepTurquoise: '#00DAFF', magenta: '#FF00FF', blue: '#0000FF',
+  red: '#FF0000', darkYellow: '#808000', darkGreen: '#008000', darkCyan: '#008080', darkMagenta: '#800080',
+  darkBlue: '#000080', darkRed: '#800000', lightGray: '#C0C0C0', darkGray: '#808080', black: '#000000',
 };
+/** Deep turquoise isn't one of Word's: a .docx gets Turquoise with a deep turquoise fill under it, and reading that back gives deep turquoise. */
+export const DEEP_TURQUOISE_UNDER = 'cyan';
+/** What each highlight color is called, CardMirror's (and Word's) names. */
+export const HIGHLIGHT_NAMES: Record<string, string> = {
+  yellow: 'Yellow', green: 'Bright Green', cyan: 'Turquoise', deepTurquoise: 'Deep Turquoise', magenta: 'Pink', blue: 'Blue', red: 'Red',
+  darkYellow: 'Dark Yellow', darkGreen: 'Dark Green', darkCyan: 'Teal', darkMagenta: 'Violet', darkBlue: 'Dark Blue',
+  darkRed: 'Dark Red', lightGray: 'Gray 25%', darkGray: 'Gray 50%', black: 'Black',
+};
+/** The toolbar's background colors: [color, name]. */
+export const SHADES: [string, string][] = [
+  ['#D9D9D9', 'Light gray'], ['#BFBFBF', 'Gray'], ['#F2F2F2', 'Faint gray'], ['#FFF2CC', 'Light gold'], ['#FCE4D6', 'Light orange'],
+  ['#E2EFDA', 'Light green'], ['#DDEBF7', 'Light blue'], ['#EDE7F6', 'Light purple'], ['#FDE2E4', 'Light pink'], ['#C6E0B4', 'Green'],
+  ['#BDD7EE', 'Blue'], ['#F8CBAD', 'Orange'], ['#FFE699', 'Gold'], ['#A9D08E', 'Deep green'], ['#9BC2E6', 'Deep blue'],
+];
 export function highlightCss(name: string): string {
   return HIGHLIGHTS[name] ?? (color(name) || '#FFFF00');
 }

@@ -15,7 +15,7 @@ import { readSetting, type SettingSpec } from '../editor/tools';
 import { DOC_TOOLS, docToolSettings } from '../editor/doc-tools';
 import { CARD_TOOLS, cardToolSettings } from '../editor/card-tools';
 import { navSettings } from '../editor/nav-keys';
-import { LEVEL, schema, type ParaStyle } from '../editor/schema';
+import { HIGHLIGHTS, HIGHLIGHT_NAMES, LEVEL, schema, type ParaStyle } from '../editor/schema';
 import { brushKey } from '../editor/editor';
 import { toggleColorMark } from '../editor/commands';
 import { fontSizeAt, setFontSize } from '../editor/font-size';
@@ -147,7 +147,7 @@ type Value = string | number | boolean;
 /** One setting: its Settings row (page and label) and how to read and change it. No options = on/off. */
 export type SettingDef = { id: string; label: string; page: string; hint?: string; query?: string; get: () => Value; set: (v: Value) => void; options?: [Value, string][]; link?: boolean };
 
-const PENS: [string, string][] = [['yellow', 'Yellow'], ['green', 'Green'], ['cyan', 'Cyan'], ['magenta', 'Magenta'], ['lightGray', 'Gray']];
+const PENS: [string, string][] = Object.keys(HIGHLIGHTS).map((k) => [k, HIGHLIGHT_NAMES[k]]);
 const FONTS: [string, string][] = [['calibri', 'Calibri'], ['arial', 'Arial'], ['verdana', 'Verdana'], ['georgia', 'Georgia'], ['times', 'Times New Roman'], ['comic', 'Comic Sans']];
 const UI_FONTS: [string, string][] = [['system', 'System'], ['geist', 'Geist'], ['inter', 'Inter'], ['switzer', 'Switzer'], ['figtree', 'Figtree'], ['halden', 'Halden']]; // Settings.tsx UI_FONTS
 const STYLES: [string, string][] = [['normal', 'Normal text'], ['pocket', 'Pocket'], ['hat', 'Hat'], ['block', 'Block'], ['tag', 'Tag'], ['analytic', 'Analytic'], ['undertag', 'Undertag']];

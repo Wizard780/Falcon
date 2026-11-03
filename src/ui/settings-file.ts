@@ -4,7 +4,7 @@
  * Import also reads CardMirror's settings export, carrying over the settings Falcon has an equivalent for.
  */
 import { P, allPrefs, reloadPrefs } from '../editor/prefs';
-import { HIGHLIGHTS } from '../editor/schema';
+import { HIGHLIGHTS, SHADES } from '../editor/schema';
 import type { SettingSpec } from '../editor/tools';
 import { navSettings } from '../editor/nav-keys';
 import { docToolSettings } from '../editor/doc-tools';
@@ -148,12 +148,12 @@ const CM_MAP: [string, string, (get: Get) => string | undefined][] = [
   ['condense', 'paragraphIntegrity,usePilcrows', (g) => (g('paragraphIntegrity') === true ? 'integrity' : g('paragraphIntegrity') === false ? (g('usePilcrows') === true ? 'pilcrows' : 'merge') : undefined)],
   ['pasteCondense', 'condenseOnPaste', (g) => bool(g('condenseOnPaste'))],
   ['read.top', 'jumpToDocTopOnReadModeToggle', (g) => bool(g('jumpToDocTopOnReadModeToggle'))],
-  ['highlight', 'lastHighlightColor', (g) => oneOf(g('lastHighlightColor'), ['yellow', 'green', 'cyan', 'magenta', 'lightGray'])],
+  ['highlight', 'lastHighlightColor', (g) => oneOf(g('lastHighlightColor'), Object.keys(HIGHLIGHTS))],
   ['autoBridge', 'autoBridgeFormattingGaps', (g) => bool(g('autoBridgeFormattingGaps'))],
   ['bridgeGaps', 'formattingGapClass', (g) => oneOf(g('formattingGapClass'), ['both', 'space'])],
   ['extractUndertag.quotes', 'extractUndertagInQuotes', (g) => bool(g('extractUndertagInQuotes'))],
-  ['standardizeHighlightException', 'standardizeHighlightException', (g) => oneOf(g('standardizeHighlightException'), ['yellow', 'green', 'cyan', 'magenta', 'lightGray'])],
-  ['standardizeShadingException', 'standardizeShadingException', (g) => oneOf(hex(g('standardizeShadingException')), ['#FFFF00', '#D9D9D9', '#BFBFBF', '#00FF00', '#00FFFF'])],
+  ['standardizeHighlightException', 'standardizeHighlightException', (g) => oneOf(g('standardizeHighlightException'), Object.keys(HIGHLIGHTS))],
+  ['standardizeShadingException', 'standardizeShadingException', (g) => oneOf(hex(g('standardizeShadingException')), ['#FFFF00', '#00FF00', '#00FFFF', ...SHADES.map(([c]) => c)])],
   ['reference.heading', 'createReferenceIncludeHeading', (g) => bool(g('createReferenceIncludeHeading'))],
   ['reference.shrink', 'createReferenceShrinkPt,createReferenceShrinks', (g) => (g('createReferenceShrinks') === false ? '0' : num(g('createReferenceShrinkPt'), 0, 4))],
   ['reference.highlights', 'createReferenceHighlightMode', (g) => oneOf(g('createReferenceHighlightMode'), ['shading', 'convert', 'keep', 'remove'])],
