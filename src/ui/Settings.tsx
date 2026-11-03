@@ -324,7 +324,7 @@ export function Settings(props: Props) {
         styled('Undertag', 'undertag', 'Undertag', sizes(P.szUndertag, 'Undertag size', 8, 14)),
         styled('Cite', `cite${pref(P.citeBold) ? '' : ' plain'}`, <b>Clare ’23</b>, sizes(P.szCite, 'Cite size', 10, 16)),
         styled('Body text', 'und', 'Body text', sizes(P.szNormal, 'Body text size', 8, 14)),
-        styled('Emphasis', `emph${pref(P.emphasisBox) ? '' : ' nobox'}`, <>hollow <span>DIB</span> can’t deter</>,
+        styled('Emphasis', `emph${pref(P.emphasisBox) ? '' : ' nobox'}`, <>only the <span>plan</span> solves</>,
           select('Emphasis', pref(P.emphasisBox) ? 'box' : 'bold', [['box', 'Bold and box'], ['bold', 'Bold only']], (o) => setPref(P.emphasisBox, o === 'box'))),
         styled('Unread text', 'small', 'the rest of the paragraph, shrunk so the card stays short',
           select('Shrink down to', pref(P.shrinkMin), [[4, '4 pt'], [6, '6 pt'], [8, '8 pt']], (o) => setPref(P.shrinkMin, Number(o))), 'The smallest size Shrink steps down to.'),
