@@ -43,6 +43,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Stable card ids](./card-ids.md) covers the hidden id on every heading: given on open, kept through edits, saved as a `_fc_` bookmark.
 - [Pending cards](./pending-cards.md) covers cards Claude added: light orange until approved, Approve and Reject (buttons, keys, Card menu), the status bar count, and a clean save.
 - [Open docs and changes on disk](./disk-sync.md) covers `open-docs.json`, merging a file another program wrote into the open doc, the conflict dialog, and the refused stale save (desktop only).
+- [The record of the user's edits](./edit-log.md) covers `edits/<hash>.json`: each card the user changed since the checkpoint, its before and after, carried across sessions and reset by an outside write (desktop only).
 - [Tables, pictures and footnotes](./tables-images-footnotes.md) covers opening and saving them, column and picture resizing, the table bar, cell keys, footnote editing and pasting tables and screenshots.
 - [Card formatting](./card-formatting.md) covers the F-key paragraph styles, cite, underline, emphasis, highlight and Clear, from keys and the format grid.
 - [Outline pane](./outline.md) covers heading rows, the 1-4 depth buttons, jumping by row, and stored depth.

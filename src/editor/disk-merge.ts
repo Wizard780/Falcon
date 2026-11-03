@@ -16,8 +16,10 @@ export type ConflictKind = 'both-changed' | 'mine-changed-disk-deleted' | 'mine-
 export type Conflict = { key: string; kind: ConflictKind; title: string };
 /** How to settle a conflict: keep the open doc's version, take the file's, or keep both (the file's as a pending copy). */
 export type Choice = 'mine' | 'disk' | 'both';
-/** `base`: the file as read, with its cards keyed the way the open doc keys them: what the next merge compares against. */
-export type Merge = { nodes: PMNode[]; conflicts: Conflict[]; added: number; updated: number; removed: number; base: PMNode };
+/** `base`: the file as read, with its cards keyed the way the open doc keys them: what the next merge compares against.
+ *  `checkpoint`: the same with the cards this merge brought in marked pending, as the open doc has them, so the
+ *  user's own edits (edit-log.ts) start from there and approving one of them counts. */
+export type Merge = { nodes: PMNode[]; conflicts: Conflict[]; added: number; updated: number; removed: number; base: PMNode; checkpoint: PMNode };
 
 export function units(doc: PMNode): Unit[] {
   const out: Unit[] = [];
@@ -166,6 +168,7 @@ export function mergeFromDisk(base: PMNode | null, mine: PMNode, disk: PMNode, c
   const result = new Map<string, Unit>();
   const after = new Map<string, Unit>(); // a pending copy that goes right after the key's unit ("keep both")
   const conflicts: Conflict[] = [];
+  const cameIn = new Set<string>(); // new on disk, brought in pending
   let added = 0, updated = 0, removed = 0;
   const title = (u: Unit | undefined) => (u ? u.nodes[0].textContent.trim().slice(0, 80) || '(untitled)' : '');
   const settle = (key: string, kind: ConflictKind, m: Unit | undefined, d: Unit) => {
@@ -196,7 +199,7 @@ export function mergeFromDisk(base: PMNode | null, mine: PMNode, disk: PMNode, c
       else settle(key, 'mine-changed-disk-deleted', m, { key, nodes: [] });
     } else if (d) {
       // not in the open doc: new on disk, or deleted here
-      if (!b) { result.set(key, key ? withPending(d) : d); added++; }
+      if (!b) { result.set(key, key ? withPending(d) : d); if (key) cameIn.add(key); added++; }
       else if (!same(d, b)) settle(key, 'mine-deleted-disk-changed', undefined, d);
     }
   }
@@ -225,7 +228,8 @@ export function mergeFromDisk(base: PMNode | null, mine: PMNode, disk: PMNode, c
   const next = disk.copy(Fragment.from(diskUnits.flatMap((u) => u.nodes)));
   const real = idsInFile.get(disk);
   if (real) idsInFile.set(next, real);
-  return { nodes, conflicts, added, updated, removed, base: next };
+  const checkpoint = cameIn.size ? disk.copy(Fragment.from(diskUnits.flatMap((u) => (cameIn.has(u.key) ? withPending(u) : u).nodes))) : next;
+  return { nodes, conflicts, added, updated, removed, base: next, checkpoint };
 }
 
 /** One step that turns `state`'s doc into `nodes`, replacing only the stretch between what's unchanged at either end. */

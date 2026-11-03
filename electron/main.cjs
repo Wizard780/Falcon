@@ -170,6 +170,14 @@ const docSync = () => (sync ??= createDocSync({
   notify: (p) => { for (const w of BrowserWindow.getAllWindows()) w.webContents.send('falcon:doc-changed', p); },
 }));
 ipcMain.on('falcon:open-docs', (_e, list) => docSync().setDocs(list));
+ipcMain.on('falcon:edits', (_e, p, edits) => { if (typeof p === 'string') docSync().writeEdits(path.resolve(p), edits); });
+ipcMain.handle('falcon:edit-checkpoint', async (_e, p) => {
+  if (typeof p !== 'string' || !p.toLowerCase().endsWith('.docx')) return null;
+  const abs = path.resolve(p);
+  if (!(await loadRecent()).includes(abs) && !(await index().allows(abs))) return null; // only files Falcon may open
+  const r = await docSync().checkpoint(abs);
+  return { continued: r.continued, data: r.data ? new Uint8Array(r.data) : null };
+});
 app.on('will-quit', () => sync?.stop());
 const cards = () => (cardIndex ??= createCardIndex(path.join(app.getPath('userData'), 'card-index.json'), () => index().files()));
 

@@ -58,6 +58,11 @@ type FalconBridge = {
   track?: (event: string, props?: Record<string, string | number | boolean>) => void;
   /** The open docs, for open-docs.json in userData (electron/docsync.cjs); their files are watched while open. */
   setOpenDocs?: (docs: { path?: string; name: string; unsaved: boolean; active: boolean }[]) => void;
+  /** The user's edits to the file at `path` since its checkpoint (edit-log.ts), for edits/<hash>.json in userData. */
+  writeEdits?: (path: string, edits: { cards: unknown[]; unsaved: boolean }) => void;
+  /** The checkpoint the edits count from: `data` is the file to count from when it isn't the doc as opened (an earlier
+   *  session's, or a restored doc's file); null when it is. Null for a file Falcon may not open. */
+  editCheckpoint?: (path: string) => Promise<{ continued: boolean; data: Uint8Array | null } | null>;
   /** An open doc's file changed on disk (another program wrote it). Returns an unsubscribe. */
   onDocChanged?: (f: (path: string) => void) => () => void;
   /** SpeechDrop (electron/speechdrop.cjs): rooms, live file lists, uploads and downloads. */

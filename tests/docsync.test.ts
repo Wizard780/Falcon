@@ -63,4 +63,44 @@ describe('open docs and outside changes', () => {
     expect(await sync.changed(join(doc, '..', 'never-read.docx'))).toBe(false);
     sync.stop();
   });
+
+  it('keeps the user\'s edits in edits/<hash>.json, from a copy of the file as opened; open-docs.json points at it', async () => {
+    const { doc, sync, status } = setup();
+    await sync.read(doc, () => readFile(doc));
+    sync.setDocs([{ path: doc, name: 'AT Neg', unsaved: true, active: true }]);
+    const file = status().docs[0].edits;
+    expect(file).toMatch(/edits\/[0-9a-f]{16}\.json$/);
+    sync.writeEdits(doc, { cards: [{ id: 'aa', changes: ['tag'] }], unsaved: true });
+    const rec = JSON.parse(readFileSync(file, 'utf8'));
+    expect(rec).toMatchObject({ version: 1, path: doc, checkpoint: { why: 'opened' }, unsaved: true, cards: [{ id: 'aa', changes: ['tag'] }] });
+    expect(readFileSync(rec.checkpoint.base, 'utf8')).toBe('v1');
+    expect(rec.continued).toBeUndefined();
+    sync.stop();
+  });
+
+  it('reopening a file still as Falcon saved it keeps counting from the old checkpoint; another program\'s write starts over', async () => {
+    const { dir, doc, sync, outside } = setup();
+    await sync.read(doc, () => readFile(doc));
+    sync.setDocs([{ path: doc, name: 'AT Neg', unsaved: false, active: true }]);
+    sync.writeEdits(doc, { cards: [{ id: 'aa' }], unsaved: true });
+    writeFileSync(doc, 'v2 saved by falcon'); await sync.wrote(doc);
+    sync.stop();
+    // next session, same userData
+    const again = createDocSync({ statusFile: join(dir, 'userData', 'open-docs.json'), notify: () => {} });
+    expect(await again.checkpoint(doc)).toMatchObject({ continued: true });
+    expect(String((await again.checkpoint(doc)).data)).toBe('v1');
+    outside('claude wrote this');
+    await again.read(doc, () => readFile(doc));
+    const cp = await again.checkpoint(doc);
+    expect(cp).toEqual({ continued: false, data: null });
+    again.stop();
+  });
+
+  it('a doc restored from a backup (never read this session) counts from the file as it is now', async () => {
+    const { doc, sync } = setup();
+    const cp = await sync.checkpoint(doc);
+    expect(cp.continued).toBe(false);
+    expect(String(cp.data)).toBe('v1');
+    sync.stop();
+  });
 });

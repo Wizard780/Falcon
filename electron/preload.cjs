@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('falcon', {
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
   // open docs for open-docs.json, and the files among them that changed on disk (docsync.cjs)
   setOpenDocs: (docs) => ipcRenderer.send('falcon:open-docs', docs),
+  // the user's edits since the checkpoint, for edits/<hash>.json, and the checkpoint to count them from
+  writeEdits: (p, edits) => ipcRenderer.send('falcon:edits', p, edits),
+  editCheckpoint: (p) => ipcRenderer.invoke('falcon:edit-checkpoint', p),
   onDocChanged: (f) => {
     const on = (_e, p) => { if (typeof p === 'string') f(p); };
     ipcRenderer.on('falcon:doc-changed', on);

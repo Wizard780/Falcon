@@ -35,6 +35,7 @@ import './display'; // the display settings (fonts, sizes, root classes) apply a
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
 import { Chooser, Confirm, nameList, type Ask, type Choose } from './Confirm';
 import { applyMerge, mergeFromDisk, type Choice, type ConflictKind } from '../editor/disk-merge';
+import { cardEdits } from '../editor/edit-log';
 import { ComparePanel } from './ComparePanel';
 import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
 import { NewSpeech, SaveAs } from './SaveAs';
@@ -279,6 +280,25 @@ export function App() {
 
   const patch = useCallback((id: number, p: Partial<OpenDoc>) => setDocs((ds) => ds.map((d) => (d.id === id ? { ...d, ...p } : d))), []);
 
+  // ---------- the user's own edits since the checkpoint, card by card, for Claude (edit-log.ts, docsync.cjs) ----------
+  // Nothing shows in Falcon. The checkpoint is the file as opened, or as another program last wrote it.
+  const checkpoints = useRef(new Map<number, PMNode>());
+  const writeEdits = (id: number) => {
+    const d = docsRef.current.find((x) => x.id === id);
+    const cp = checkpoints.current.get(id);
+    const doc = id === activeRef.current ? viewRef.current?.state.doc : d?.state?.doc;
+    if (d?.meta.path && cp && doc) bridge.writeEdits?.(d.meta.path, { cards: cardEdits(cp, doc), unsaved: d.dirty });
+  };
+  const editsTimer = useRef(0);
+  const editsSoon = useRef((id: number) => { window.clearTimeout(editsTimer.current); editsTimer.current = window.setTimeout(() => whenIdle(() => writeEdits(id)), 1000); });
+  /** Count `id`'s edits from its file's checkpoint: the doc as opened, unless it's an earlier session's or a restored doc's. */
+  const loadCheckpoint = async (id: number, path: string, opened: PMNode | null) => {
+    if (opened) checkpoints.current.set(id, opened);
+    const cp = await bridge.editCheckpoint?.(path).catch(() => null);
+    if (cp?.data) checkpoints.current.set(id, await (await import('../docx/import')).docxToDoc(cp.data));
+    writeEdits(id);
+  };
+
   const warnedBig = useRef(false);
   const warnBig = () => {
     if (warnedBig.current) return;
@@ -311,6 +331,7 @@ export function App() {
     // since its save, comes back clean (backups from before the flag guess: anything with text is unsaved)
     const restored: OpenDoc[] = backups.map((b) => ({ id: b === first ? 1 : nextDocId++, meta: b.meta, dirty: b.dirty ?? (b !== first || !!b.doc.textContent.trim()), state: b === first ? null : createState(b.doc), scroll: 0 }));
     restored.forEach((d, i) => { if (!d.dirty) savedDocs.current.set(d.id, backups[i].doc); });
+    for (const d of restored) if (d.meta.path) void loadCheckpoint(d.id, d.meta.path, null);
     if (restored.length) {
       setDocs(restored);
       const spoken = backups.findIndex((b) => b.speech);
@@ -329,6 +350,7 @@ export function App() {
         window.clearTimeout(outlineTimer);
         outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
         backupSoon.current();
+        editsSoon.current(id);
       }
     }, doc);
     lastDoc.current = view.state.doc;
@@ -457,6 +479,7 @@ export function App() {
     const id = blank ? cur.id : nextDocId++;
     const fresh: OpenDoc = { id, meta: m, dirty: false, state: null, scroll: 0 };
     savedDocs.current.set(id, doc);
+    if (m.path) void loadCheckpoint(id, m.path, doc);
     if (blank) setDocs((ds) => ds.map((d) => (d.id === id ? fresh : d)));
     else {
       const out = stash();
@@ -470,6 +493,7 @@ export function App() {
     if (i < 0) return;
     setSpeechId((s) => (s === id ? null : s));
     savedDocs.current.delete(id);
+    checkpoints.current.delete(id);
     const rest = list.filter((x) => x.id !== id);
     if (id !== activeRef.current) { setDocs(rest); return; }
     if (!rest.length) {
@@ -668,7 +692,9 @@ export function App() {
       // typing during the save keeps the doc marked unsaved
       const now = activeRef.current === id ? viewRef.current!.state.doc : docsRef.current.find((x) => x.id === id)?.state?.doc;
       savedDocs.current.set(id, saved);
+      if (m.path !== meta.path) checkpoints.current.set(id, saved); // saved as a new file: its edits start here
       patch(id, { meta: m, dirty: !!now && isDirty(id, now) });
+      window.setTimeout(() => writeEdits(id), 300); // once the patch has rendered, so the record says saved
       setRecents((list) => noteRecent(list, saved, m));
       flash(`Saved ${m.name}`);
     } catch (e) {
@@ -705,6 +731,8 @@ export function App() {
       const r = mergeFromDisk(base, st.doc, disk, () => pick);
       const tr = applyMerge(st, r.nodes);
       savedDocs.current.set(id, r.base); // the file as it is now is what the doc is based on
+      checkpoints.current.set(id, r.checkpoint); // and the user's own edits count from it
+      editsSoon.current(id);
       if (id === activeRef.current) viewRef.current!.dispatch(tr);
       else { const next = st.apply(tr); patch(id, { state: next, dirty: isDirty(id, next.doc) }); }
       const parts = [r.added && `${r.added} new (orange)`, r.updated && `${r.updated} updated`, r.removed && `${r.removed} removed`].filter(Boolean);
