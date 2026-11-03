@@ -57,6 +57,20 @@ describe('restart with a crash-recovery copy', () => {
   });
 });
 
+describe('reload right after typing', () => {
+  it('writes the waiting crash-recovery copy on the way out, so the last edit comes back', async () => {
+    const first = await mountApp({ saveFile });
+    await first.type('first ');
+    await tick(1100); // backed up
+    await first.type('last');
+    dispatchEvent(new Event('pagehide')); // the page goes away before the backup's timer fires
+    await first.unmount();
+
+    const again = await mountApp({ saveFile });
+    expect(again.text()).toBe('first last');
+  });
+});
+
 describe('crash recovery when storage is nearly full', () => {
   it('keeps the unsaved docs that fit when the open doc is too big to keep', async () => {
     const real = Storage.prototype.setItem;

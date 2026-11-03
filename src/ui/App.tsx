@@ -311,8 +311,11 @@ export function App() {
     viewRef.current = view;
     setTick(1);
     mounted.current = true;
+    // leaving the page (reload, window closed) with a backup still waiting: write it now, or the last edits are lost
+    const flush = () => { window.clearTimeout(saveTimer); backup(); };
+    addEventListener('pagehide', flush);
     // a backup still waiting for idle time must not write over storage the next page (or test) starts from
-    return () => { mounted.current = false; window.clearTimeout(saveTimer); window.clearTimeout(outlineTimer); view.destroy(); };
+    return () => { mounted.current = false; removeEventListener('pagehide', flush); window.clearTimeout(saveTimer); window.clearTimeout(outlineTimer); view.destroy(); };
   }, []);
 
   useEffect(() => { document.documentElement.style.setProperty('--zoom', String(zoom)); safeSet('falcon.zoom', String(zoom)); }, [zoom]);
