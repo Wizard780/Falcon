@@ -25,7 +25,7 @@ import { tablePlugins } from './tables';
 import { imagePlugin } from './images';
 import { footnotePlugin } from './footnotes';
 import { WINDOW_META, windowPlugin } from './window';
-import { yearQuotePlugin } from './quotes';
+import { smartQuotesPlugin } from './quotes';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -136,7 +136,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       ...tablePlugins, // before the keymap (Tab moves between cells) and mouse selection (column edges, cell drags)
       falconKeymap(),
       keymap(baseKeymap),
-      yearQuotePlugin,
+      smartQuotesPlugin,
       history({ newGroupDelay: 500 }),
       dropCursor({ color: '#3b82f6', width: 2 }),
       brush,

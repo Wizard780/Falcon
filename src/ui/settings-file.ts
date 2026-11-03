@@ -169,6 +169,7 @@ const CM_MAP: [string, string, (get: Get) => string | undefined][] = [
   ['paper', 'themeAppliesToDocument', (g) => (g('themeAppliesToDocument') === false ? 'white' : g('themeAppliesToDocument') === true ? 'theme' : undefined)],
   ['citeBold', 'unboldCites', (g) => not(g('unboldCites'))],
   ['smartPaste', 'smartPasteConversion', (g) => bool(g('smartPasteConversion'))],
+  ['smartQuotes', 'smartQuotes', (g) => bool(g('smartQuotes'))],
   ['hlUnderlined', 'highlightUnderlinedOnly', (g) => bool(g('highlightUnderlinedOnly'))],
   ['citeNearest', 'copyPreviousCiteNearestOnly', (g) => bool(g('copyPreviousCiteNearestOnly'))],
   ['styleOffClears', 'clearFormattingOnNamedStyleToggleOff', (g) => bool(g('clearFormattingOnNamedStyleToggleOff'))],

@@ -410,6 +410,7 @@ export function Settings(props: Props) {
         tog(P.smartShrink, 'Smart Shrink', 'Mod-8 shrinks in one pass: paragraphs you don\'t read drop to 5 pt, the words between read ones to 8 pt.'),
       ]],
       ['Pasting', [
+        tog(P.smartQuotes, 'Smart quotes', 'Typed \' and " curl the right way. Backspace right after one puts the straight quote back, and a space curls it again.'),
         tog(P.smartPaste, 'Smart paste', 'Word and Verbatim formatting pastes as cites, underlining and highlights. F2 always pastes plain.'),
         tog(P.citeNearest, 'Copy previous cite: first line only', 'Off, Alt-F8 also copies the cite lines right after it.'),
         tog(P.hlUnderlined, 'Highlight underlined text only', 'Highlighting skips text that isn\'t underlined, emphasized or cited.'),

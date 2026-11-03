@@ -68,6 +68,7 @@ export const P = {
   shrinkProtect: def('shrinkProtect', true),
   smartShrink: def('smartShrink', false),
   smartPaste: def('smartPaste', true),
+  smartQuotes: def('smartQuotes', true), // typed ' and " curl (quotes.ts)
   citeNearest: def('citeNearest', true),
   hlUnderlined: def('hlUnderlined', false),
   styleOffClears: def('styleOffClears', true), // taking underline off also clears size, bold, highlight... (CardMirror's default)
