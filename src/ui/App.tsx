@@ -915,7 +915,7 @@ export function App() {
         <span>Σ</span>
         <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {r1(split)} · Reader 2: {r2(split)}</span>
         {/* only what's read aloud counts, the same rule as Doc: highlighted text, tags, analytics and cites */}
-        {sel && sel.selWords > 0 && <span className="sel" title="Words you'd read aloud in the selection (highlighted text, tags, analytics and cites), and how long Reader 1 and Reader 2 take">Sel: {sel.selRead.toLocaleString('en-US')} {sel.selRead === 1 ? 'word' : 'words'} · {r1(sel.selSplit)} / {r2(sel.selSplit)}</span>}
+        {sel && sel.selRead > 0 && <span className="sel" title="Words you'd read aloud in the selection (highlighted text, tags, analytics and cites), and how long Reader 1 and Reader 2 take">Sel: {sel.selRead.toLocaleString('en-US')} {sel.selRead === 1 ? 'word' : 'words'} · {r1(sel.selSplit)} / {r2(sel.selSplit)}</span>}
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />

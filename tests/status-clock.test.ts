@@ -52,3 +52,13 @@ it('reads tags, analytics and cites at each reader\'s tag speed', async () => {
   // Reader 1: 200 cards at 200 + 300 tags at 300 = 2:00; Reader 2 has no tag speed, so 500 at 300 = 1:40
   expect(status).toContain('Doc: 500 · Reader 1: 2:00 · Reader 2: 1:40');
 });
+
+it('shows no selection count when nothing selected is read aloud', async () => {
+  const app = await mountApp();
+  await app.act(() => {
+    const v = app.view(), { schema } = v.state;
+    v.dispatch(v.state.tr.replaceWith(0, v.state.doc.content.size, schema.nodes.paragraph.create(null, schema.text('plain unhighlighted words'))));
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, 1, v.state.doc.content.size - 1)));
+  }, 400);
+  expect(app.el.querySelector('footer.status .sel')).toBeNull();
+});

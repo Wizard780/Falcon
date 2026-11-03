@@ -58,14 +58,12 @@ function dragView(view: EditorView) {
     grip.style.left = `${-Math.min(24, Math.max(0, pad - 2))}px`;
   };
   view.dom.addEventListener('mousemove', onMove);
-  // off the text (onto the outline, below the last line) the grip goes, after a beat so crossing the margin to reach it works
+  // off the text (onto the outline, below the last line) the grip goes, after a beat; the grip is inside host, so reaching it doesn't count as leaving
   let leaving = 0;
   const stay = () => clearTimeout(leaving);
   const onLeave = () => { stay(); leaving = window.setTimeout(() => { if (!dragging) hideGrip(); }, 300); };
   host.addEventListener('mouseleave', onLeave);
   host.addEventListener('mouseenter', stay);
-  grip.addEventListener('mouseenter', stay);
-  grip.addEventListener('mouseleave', onLeave);
 
   // ---- dragging ----
   let dragging: { sec: Section; gaps: number[]; target: number | null; y: number; raf: number } | null = null;

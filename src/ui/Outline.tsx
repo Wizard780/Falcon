@@ -447,6 +447,8 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
 function OutlineGrip() {
   const [width, setWidth] = useState(loadOutlineWidth);
   useLayoutEffect(() => { document.documentElement.style.setProperty('--ol-w', `${width}px`); }, [width]);
+  // a narrower window shrinks it to fit; the saved width stays for when the window grows again
+  useEffect(() => { const fit = () => setWidth(loadOutlineWidth()); addEventListener('resize', fit); return () => removeEventListener('resize', fit); }, []);
   const resize = (w: number) => { setWidth(w); saveOutlineWidth(w); };
   const grab = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
