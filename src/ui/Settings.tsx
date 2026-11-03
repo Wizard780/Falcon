@@ -12,7 +12,8 @@ import { safeSet } from './storage';
 import { readSetting, type SettingSpec } from '../editor/tools';
 import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
 import { newFileName } from './files';
-import { bridge, type IndexFolder } from '../editor/host';
+import { bridge, setActiveColor, type IndexFolder } from '../editor/host';
+import { downloadSettings, importSettings } from './settings-file';
 import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
 
 const PENS = ['yellow', 'green', 'cyan', 'magenta', 'lightGray'];
@@ -59,6 +60,8 @@ export function Settings(props: Props) {
   const [query, setQuery] = useState('');
   const [, setSpecTick] = useState(0); // a feature setting changed: redraw its row
   const [keyNote, setKeyNote] = useState<KeyNote>(null); // the recorder's note under a shortcut's label
+  const [importNote, setImportNote] = useState<{ text: string; bad?: boolean } | null>(null); // how the last Import went
+  const fileInput = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => { if (props.open) { setQuery(props.startQuery ?? ''); if (props.startPage) setPageId(props.startPage); ref.current?.focus({ preventScroll: true }); } }, [props.open, props.startPage, props.startQuery]);
   // File search folders live in the desktop app's main process, not in prefs
   const [folders, setFolders] = useState<IndexFolder[] | null>(null);
@@ -193,6 +196,12 @@ export function Settings(props: Props) {
           select('Name new files', pref(P.newName), (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), (h) => setPref(P.newName, h as 'untitled')) },
         tog(P.savePrefix, 'Prefix Save As copies', 'Send, Read and Marked Doc copies start with a prefix, so you can tell them apart from the file.'),
         prefixRow(P.prefixSend, 'Send Doc'), prefixRow(P.prefixRead, 'Read Doc'), prefixRow(P.prefixMarked, 'Marked Doc'),
+      ]],
+      ['Transfer', [
+        { label: 'Export settings', hint: 'Save every setting to a .json file, to move them to another computer or keep a copy.', control:
+          <button className="st-btn" onClick={downloadSettings}>Export</button> },
+        { label: 'Import settings', hint: importNote?.text ?? 'Load a settings file from Falcon, or one exported from CardMirror.', bad: importNote?.bad, control: (
+          <button className="st-btn" onClick={() => fileInput.current?.click()}>Import</button>) },
       ]],
       ['Privacy', [
         tog(P.usageStats, 'Share usage statistics', 'Send anonymous counts of which features get used, like opening and saving files. Never file names or anything you type. Desktop app only.'),
@@ -359,6 +368,24 @@ export function Settings(props: Props) {
     setKeyNote(null);
   };
 
+  /** Apply a picked settings file. Zoom, speech length, outline, depth and the pens live in App's state, so they're handed over too. */
+  const importFile = async (f: File) => {
+    const r = importSettings(await f.text());
+    if (!r.ok) { setImportNote({ text: r.error, bad: true }); return; }
+    const get = (k: string) => localStorage.getItem(`falcon.${k}`);
+    props.onZoom(Number(get('zoom')) || DEFAULTS.zoom);
+    props.onSpeechMin(Number(get('speech')) || DEFAULTS.speechMin);
+    props.onShowOutline(get('outline') !== 'off');
+    props.onDepth(Number(get('depth')) || DEFAULTS.depth);
+    props.onHighlight(get('highlight') ?? DEFAULTS.highlight);
+    setActiveColor('shading', get('shading') ?? '#D9D9D9');
+    setSpecTick((t) => t + 1);
+    const n = (x: number) => `${x} setting${x === 1 ? '' : 's'}`;
+    setImportNote({ text: r.from === 'CardMirror'
+      ? `Brought over ${n(r.applied)} from CardMirror. ${r.skipped ? `${n(r.skipped)} ${r.skipped === 1 ? "has" : "have"} no Falcon match yet.` : ''}`.trim()
+      : `Loaded ${n(r.applied)}.` });
+  };
+
   let lastGroup: string | undefined;
   return (
     <div className="st-back" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
@@ -390,6 +417,8 @@ export function Settings(props: Props) {
           })}
           <div className="grow" />
           <div className="st-ver">Falcon {version}</div>
+          <input ref={fileInput} type="file" accept=".json,application/json" hidden aria-label="Settings file"
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importFile(f); }} />
         </nav>
         <div className="st-main">
           <div className="st-head">

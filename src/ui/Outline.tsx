@@ -8,9 +8,8 @@ import { copySlice } from '../editor/nav/clipboard';
 import { numberMarks, setNavScope, toggleRestart, toggleRole } from '../editor/nav/numbering';
 import { copyModifier } from '../editor/nav/page-drag';
 import { readSetting, type SettingSpec } from '../editor/tools';
+import { onPrefs } from '../editor/prefs';
 
-/** autoFocus for a box shown after load (Preact only sets the attribute, which browsers ignore then): a stable ref, so it runs once. */
-const focusOnMount = (el: HTMLInputElement | null) => el?.focus();
 import { outlineContentSetting, outlineHideSetting, outlineLevelSetting } from '../editor/nav-keys';
 import { SvgIcon } from './icons';
 import { tidy } from './recents';
@@ -18,6 +17,9 @@ import { safeSet } from './storage';
 import { reducedMotion } from './motion';
 import { IS_MAC } from '../editor/keybinds';
 import './outline.css';
+
+/** autoFocus for a box shown after load (Preact only sets the attribute, which browsers ignore then): a stable ref, so it runs once. */
+const focusOnMount = (el: HTMLInputElement | null) => el?.focus();
 
 const modKey = (e: { metaKey: boolean; ctrlKey: boolean }) => (IS_MAC ? e.metaKey : e.ctrlKey);
 const save = (spec: SettingSpec, v: string | boolean) => safeSet(spec.key, typeof v === 'boolean' ? (v ? 'on' : 'off') : v);
@@ -43,6 +45,10 @@ export function OutlinePane(props: Props) {
   const [hide, setHide] = useState(() => readSetting(outlineHideSetting) as boolean);
   const [content, setContent] = useState(() => readSetting(outlineContentSetting) as boolean);
   const [step, setStep] = useState(-1); // which match Up/Down is on
+  // Import settings or Restore defaults changed them underneath
+  useEffect(() => onPrefs(() => {
+    setLevel(readSetting(outlineLevelSetting) as string); setHide(readSetting(outlineHideSetting) as boolean); setContent(readSetting(outlineContentSetting) as boolean);
+  }), []);
   const lvRef = useRef<HTMLDivElement>(null);
   const hlRef = useRef<HTMLSpanElement>(null);
   // the 1-4 highlight slides to the chosen level
