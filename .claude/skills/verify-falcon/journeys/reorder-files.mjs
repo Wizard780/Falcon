@@ -8,7 +8,7 @@ const newDoc = async (text) => { await page.click('.ProseMirror'); await page.ke
 await newDoc('one'); await newDoc('two'); await page.click('.ProseMirror'); await page.keyboard.type('three');
 const order = (sel) => page.$$eval(sel, (rs) => rs.map((r) => r.dataset.id).join(','));
 const active = () => page.$eval('.doc-row[data-on]', (r) => r.dataset.id);
-const drag = async (from, to, name) => {
+const drag = async (from, to, name, hold = false) => {
   const a = await from.boundingBox(), b = await to.boundingBox();
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
   await page.mouse.down();
@@ -16,6 +16,7 @@ const drag = async (from, to, name) => {
   const dy = b.y - a.y + Math.sign(b.y - a.y) * 8;
   for (let i = 1; i <= 10; i++) await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2 + (dy * i) / 10);
   await f.shot(`${name}-mid-drag`);
+  if (hold) return;
   await page.mouse.up();
 };
 
@@ -26,6 +27,15 @@ await f.shot('before');
 
 // rail: drag the last icon to the top
 let rows = await page.$$('.fs-docs .doc-row');
+// mid-drag a line marks the gap and nothing has moved yet; Escape puts it back
+await drag(rows[2], rows[0], 'rail-esc', true);
+f.want((await page.$$('.fs-docs .doc-row[data-drop]')).length === 1, 'a drop line shows in the rail mid-drag');
+f.want(await order('.fs-docs .doc-row') === before, 'nothing moves until the file is let go');
+await page.keyboard.press('Escape');
+await page.mouse.up();
+f.want(await order('.fs-docs .doc-row') === before, 'Escape leaves the order as it was');
+f.want(!(await page.$('[data-drag], [data-drop]')), 'Escape clears the lift and the line');
+rows = await page.$$('.fs-docs .doc-row');
 await drag(rows[2], rows[0], 'rail');
 const want1 = [ids[2], ids[0], ids[1]].join(',');
 const got1 = await order('.fs-docs .doc-row');

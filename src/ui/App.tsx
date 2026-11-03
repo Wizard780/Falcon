@@ -1456,34 +1456,57 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
   const hide = () => { clearTimeout(timer.current); if (!moving.current) timer.current = window.setTimeout(() => setOpen(false), 180); };
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  // press a file and drag it up or down to reorder; it takes each slot it passes, live. A press that
-  // doesn't move 4px stays a click, and the click after a real drag is swallowed
+  // press a file and drag it up or down to reorder, the way the outline's rows go: a line marks the gap it
+  // will land in, letting go moves it there, Escape puts it back. A press that doesn't move 5px stays a
+  // click, and the click after a real drag is swallowed
   const moving = useRef(false);
   const [dragId, setDragId] = useState<number | null>(null);
+  const [gap, setGap] = useState<number | null>(null); // the gap the line sits in: before row `gap`, or after the last
   const reorder = (id: number) => (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest('.doc-x, .files-x')) return;
-    const box = e.currentTarget.parentElement!, y0 = e.clientY;
+    const box = e.currentTarget.parentElement!, x0 = e.clientX, y0 = e.clientY;
+    let y = y0, at: number | null = null, raf = 0;
+    const rows = () => ([...box.children] as HTMLElement[]).filter((r) => r.dataset.id); // docs only: the SpeechDrop row stays last
+    // the gap nearest the pointer; the two beside the file itself change nothing
+    const aim = () => {
+      const rs = rows(), from = rs.findIndex((r) => r.dataset.id === String(id));
+      let g = rs.findIndex((r) => { const b = r.getBoundingClientRect(); return y < b.top + b.height / 2; });
+      if (g < 0) g = rs.length;
+      at = g === from || g === from + 1 ? null : g;
+      setGap(at);
+    };
+    // near the top or bottom of a scrolling list, it scrolls on
+    const tick = () => {
+      const r = box.getBoundingClientRect();
+      const dy = y < r.top + 24 ? y - (r.top + 24) : y > r.bottom - 24 ? y - (r.bottom - 24) : 0;
+      if (dy) { box.scrollTop += Math.max(-12, Math.min(12, dy / 2)); aim(); }
+      raf = requestAnimationFrame(tick);
+    };
     const move = (m: PointerEvent) => {
+      y = m.clientY;
       if (!moving.current) {
-        if (Math.abs(m.clientY - y0) < 4) return;
+        if (Math.hypot(m.clientX - x0, y - y0) < 5) return;
         moving.current = true;
         setDragId(id);
+        raf = requestAnimationFrame(tick);
       }
       m.preventDefault();
-      const rows = ([...box.children] as HTMLElement[]).filter((r) => r.dataset.id); // docs only: the SpeechDrop row stays last
-      const from = rows.findIndex((r) => r.dataset.id === String(id));
-      // the slot under the pointer: past a neighbour's middle, take its place
-      let to = from;
-      rows.forEach((r, i) => { const b = r.getBoundingClientRect(), mid = b.top + b.height / 2; if (i < from && m.clientY < mid) to = Math.min(to, i); if (i > from && m.clientY > mid) to = i; });
-      if (to !== from) props.onMove(id, to);
+      aim();
     };
-    const up = () => {
+    const end = (ok: boolean) => {
       removeEventListener('pointermove', move);
       removeEventListener('pointerup', up);
-      removeEventListener('pointercancel', up);
-      removeEventListener('blur', up);
+      removeEventListener('pointercancel', cancel);
+      removeEventListener('blur', cancel);
+      removeEventListener('keydown', key, true);
+      cancelAnimationFrame(raf);
       if (!moving.current) return;
       setDragId(null);
+      setGap(null);
+      if (ok && at !== null) {
+        const from = rows().findIndex((r) => r.dataset.id === String(id));
+        props.onMove(id, at > from ? at - 1 : at);
+      }
       // the click that ends a drag isn't a switch; clear the flag after it would have fired
       addEventListener('click', swallow, true);
       setTimeout(() => {
@@ -1493,11 +1516,14 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         if (!strip.current?.matches(':hover') && !list.current?.parentElement?.matches(':hover')) hide();
       }, 0);
     };
+    const up = () => end(true), cancel = () => end(false);
+    const key = (k: KeyboardEvent) => { if (k.key === 'Escape') { k.preventDefault(); k.stopPropagation(); end(false); } };
     const swallow = (c: MouseEvent) => { c.stopPropagation(); c.preventDefault(); };
     addEventListener('pointermove', move);
     addEventListener('pointerup', up);
-    addEventListener('pointercancel', up);
-    addEventListener('blur', up);
+    addEventListener('pointercancel', cancel);
+    addEventListener('blur', cancel);
+    addEventListener('keydown', key, true);
   };
   // both lists scroll together, so each row stays level with its icon
   useLayoutEffect(() => { if (open && list.current && strip.current) list.current.scrollTop = strip.current.scrollTop; }, [open, props.docs.length]);
@@ -1590,7 +1616,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
       <div ref={strip} className="fs-docs" role="tablist" aria-label="Open documents" onPointerEnter={wide ? undefined : show} onPointerLeave={wide ? undefined : hide}
         onScroll={(e) => { if (list.current) list.current.scrollTop = e.currentTarget.scrollTop; }}>
         {props.docs.map((d, i) => (
-          <div key={d.id} className="doc-row" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-sel={sel.includes(d.id) || undefined} data-join={joinAt(i)}
+          <div key={d.id} className="doc-row" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-drop={gap === i ? 'before' : gap === props.docs.length && i === props.docs.length - 1 ? 'after' : undefined} data-sel={sel.includes(d.id) || undefined} data-join={joinAt(i)}
             onPointerDown={reorder(d.id)} onContextMenu={openMenu(d.id)}>
             <button className="fs-b doc-nm" role="tab" aria-selected={isOn(d)} aria-label={d.speech ? `${d.name} (speech doc)` : d.name} data-on={isOn(d) || undefined}
               onClick={pick(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
@@ -1616,7 +1642,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         <div ref={list} className="files-l" style={{ top: at.list }}
           onScroll={(e) => { if (strip.current) strip.current.scrollTop = e.currentTarget.scrollTop; }}>
           {props.docs.map((d, i) => (
-            <div key={d.id} className="files-r" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-sel={sel.includes(d.id) || undefined} data-join={joinAt(i)}
+            <div key={d.id} className="files-r" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-drop={gap === i ? 'before' : gap === props.docs.length && i === props.docs.length - 1 ? 'after' : undefined} data-sel={sel.includes(d.id) || undefined} data-join={joinAt(i)}
               onPointerDown={reorder(d.id)} onContextMenu={openMenu(d.id)}>
               <button tabIndex={-1} className="files-b" onClick={pick(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
                 <SvgIcon name="doc" /><span className="nm">{tidy(d.name)}</span>{d.speech && <i className="spk" aria-hidden="true">S</i>}{d.dirty && <i className="dot" />}
