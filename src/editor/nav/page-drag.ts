@@ -53,8 +53,19 @@ function dragView(view: EditorView) {
     grip.style.display = '';
     const lh = Math.min(dom.offsetHeight, parseFloat(getComputedStyle(dom).lineHeight) || 20);
     grip.style.top = `${dom.offsetTop + lh / 2 - 9}px`;
+    // in the margin, but never past the page's edge: narrow margins put it under the outline's resize edge
+    const pad = parseFloat(getComputedStyle(host.parentElement ?? host).paddingLeft) || 30;
+    grip.style.left = `${-Math.min(24, Math.max(0, pad - 2))}px`;
   };
   view.dom.addEventListener('mousemove', onMove);
+  // off the text (onto the outline, below the last line) the grip goes, after a beat so crossing the margin to reach it works
+  let leaving = 0;
+  const stay = () => clearTimeout(leaving);
+  const onLeave = () => { stay(); leaving = window.setTimeout(() => { if (!dragging) hideGrip(); }, 300); };
+  host.addEventListener('mouseleave', onLeave);
+  host.addEventListener('mouseenter', stay);
+  grip.addEventListener('mouseenter', stay);
+  grip.addEventListener('mouseleave', onLeave);
 
   // ---- dragging ----
   let dragging: { sec: Section; gaps: number[]; target: number | null; y: number; raf: number } | null = null;
@@ -129,7 +140,7 @@ function dragView(view: EditorView) {
   return {
     // the doc changed under the grip: it comes back on the next mouse move
     update(_v: EditorView, prev: { doc: unknown }) { if (!dragging && head >= 0 && prev.doc !== view.state.doc) hideGrip(); },
-    destroy() { view.dom.removeEventListener('mousemove', onMove); grip.remove(); line.remove(); },
+    destroy() { stay(); view.dom.removeEventListener('mousemove', onMove); host.removeEventListener('mouseleave', onLeave); host.removeEventListener('mouseenter', stay); grip.remove(); line.remove(); },
   };
 }
 
