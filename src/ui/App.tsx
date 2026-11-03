@@ -255,18 +255,44 @@ export function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [homeOpen, setHomeOpen] = useState(() => pref(P.openHome));
-  // the SpeechDrop tab: open (a row in the rail) and lit (covering the page, as Home does). Home and it never both show.
-  const [sdTab, setSdTab] = useState(false);
-  const [sdOn, setSdOn] = useState(false);
-  const [sdInfo, setSdInfo] = useState<SdTab>({ room: null, fresh: 0 });
-  const sdTabRef = useRef(sdTab), sdOnRef = useRef(sdOn);
-  sdTabRef.current = sdTab;
+  // the SpeechDrop tabs, one per room (or the lobby), each a row in the rail after the docs; `sdLit` is the one
+  // covering the page, as Home does. Home and it never both show.
+  const [sdTabs, setSdTabs] = useState<{ key: number; info: SdTab }[]>([]);
+  const [sdLit, setSdLit] = useState<number | null>(null);
+  const sdOn = sdLit !== null;
+  const sdTabsRef = useRef(sdTabs), sdLitRef = useRef(sdLit), sdOnRef = useRef(sdOn), sdLast = useRef<number | null>(null), sdNext = useRef(0);
+  sdTabsRef.current = sdTabs;
+  sdLitRef.current = sdLit;
   sdOnRef.current = sdOn;
-  useEffect(() => { if (homeOpen) setSdOn(false); }, [homeOpen]);
-  const openSd = useCallback(() => { setSdTab(true); setSdOn(true); setHomeOpen(false); }, []);
+  useEffect(() => { if (homeOpen) setSdLit(null); }, [homeOpen]);
+  const showSd = useCallback((key: number) => { sdLast.current = key; setSdLit(key); setHomeOpen(false); }, []);
+  const newSd = useCallback(() => {
+    const key = sdNext.current++;
+    setSdTabs((t) => [...t, { key, info: { room: null, fresh: 0 } }]);
+    showSd(key);
+  }, [showSd]);
+  /** The SpeechDrop tab last shown, else the last one, else a new one. */
+  const openSd = useCallback(() => {
+    const t = sdTabsRef.current;
+    const key = t.some((x) => x.key === sdLast.current) ? sdLast.current : t.at(-1)?.key;
+    if (key === undefined || key === null) newSd(); else showSd(key);
+  }, [newSd, showSd]);
   /** Before acting on the open doc: take Home or SpeechDrop off it, so the change is seen. */
-  const showEditor = () => { setHomeOpen(false); setSdOn(false); };
-  const closeSd = useCallback(() => { setSdOn(false); setSdTab(false); setSdInfo({ room: null, fresh: 0 }); viewRef.current?.focus(); }, []);
+  const showEditor = () => { setHomeOpen(false); setSdLit(null); };
+  const closeSd = useCallback((key = sdLitRef.current) => {
+    if (key === null) return;
+    setSdTabs((t) => t.filter((x) => x.key !== key));
+    if (sdLitRef.current === key) { setSdLit(null); viewRef.current?.focus(); }
+  }, []);
+  const sdInfo = useCallback((key: number, info: SdTab) => setSdTabs((t) => t.map((x) => (x.key === key ? { ...x, info } : x))), []);
+  /** A room open in another SpeechDrop tab: that tab shows instead, and the lobby that asked closes. */
+  const sdElsewhere = useCallback((key: number, code: string) => {
+    const o = sdTabsRef.current.find((x) => x.key !== key && x.info.room?.code === code);
+    if (!o) return false;
+    setSdTabs((t) => t.filter((x) => x.key !== key));
+    showSd(o.key);
+    return true;
+  }, [showSd]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<string | undefined>();
   // Search files (Cmd-K) or Search cards: one box at a time
@@ -444,7 +470,7 @@ export function App() {
     const backedUp = v.state.doc.content.size <= (bridge.recovery ? DISK_MAX : AUTOSAVE_MAX);
     warnedBig.current = !backedUp; // the open message carries the warning
     setHomeOpen(false);
-    setSdOn(false);
+    setSdLit(null);
     v.focus();
     setTick((t) => t + 1);
     return backedUp;
@@ -459,7 +485,7 @@ export function App() {
   };
 
   const switchTo = useCallback((id: number) => {
-    if (id === activeRef.current) { setHomeOpen(false); setSdOn(false); viewRef.current?.focus(); return; }
+    if (id === activeRef.current) { setHomeOpen(false); setSdLit(null); viewRef.current?.focus(); return; }
     const target = docsRef.current.find((d) => d.id === id);
     if (!target?.state) return;
     const out = stash(), cur = activeRef.current;
@@ -562,14 +588,15 @@ export function App() {
     return () => { removeEventListener('keyup', up, true); removeEventListener('blur', blur); };
   }, [endSw]);
 
-  // the SpeechDrop tab (-1) comes after the docs, as its row does in the rail
+  // the SpeechDrop tabs (-1 - key; doc ids are positive) come after the docs, as their rows do in the rail
   const cycle = useCallback((dir: 1 | -1) => {
-    const ring = [...docsRef.current.map((d) => d.id), ...(sdTabRef.current ? [-1] : [])];
+    const ring = [...docsRef.current.map((d) => d.id), ...sdTabsRef.current.map((x) => -1 - x.key)];
     if (ring.length < 2) return;
-    const i = ring.indexOf(sdOnRef.current ? -1 : activeRef.current);
+    const lit = sdLitRef.current;
+    const i = ring.indexOf(lit !== null ? -1 - lit : activeRef.current);
     const next = ring[(i + dir + ring.length) % ring.length];
-    if (next === -1) openSd(); else switchTo(next);
-  }, [switchTo, openSd]);
+    if (next < 0) showSd(-1 - next); else switchTo(next);
+  }, [switchTo, showSd]);
 
   const openedPath = (p?: string) => (p ? docsRef.current.find((d) => d.meta.path === p) : undefined);
   const opened = useCallback((r: { doc: PMNode; meta: DocMeta }, source: DocSource) => {
@@ -1084,7 +1111,7 @@ export function App() {
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc} onMove={moveDoc}
-        sd={sdTab ? { on: sdOn, name: sdInfo.room?.name ?? 'SpeechDrop', fresh: sdInfo.fresh } : null} onSd={openSd} onSdClose={closeSd}
+        sd={sdTabs.map((x) => ({ key: x.key, on: sdLit === x.key, name: x.info.room?.name ?? 'SpeechDrop', fresh: x.info.fresh }))} onSd={showSd} onSdClose={closeSd}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
 
@@ -1140,7 +1167,10 @@ export function App() {
       </div>
 
       <div className="covered" inert={modal}>
-      {sdTab && <SpeechDrop open={sdOn} docName={name} exportDoc={exportActive} onOpenDocx={openFromSd} onTab={setSdInfo} flash={flash} confirm={confirmAsk} />}
+      {sdTabs.map((x) => (
+        <SpeechDrop key={x.key} open={sdLit === x.key} docName={name} exportDoc={exportActive} onOpenDocx={openFromSd} onTab={(t) => sdInfo(x.key, t)} flash={flash} confirm={confirmAsk}
+          onShow={() => showSd(x.key)} onAnother={newSd} openElsewhere={(code) => sdElsewhere(x.key, code)} />
+      ))}
       </div>
       <div className="covered" inert={!!ask}>
       <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents.slice(0, pref(P.recentCount))}
@@ -1196,9 +1226,9 @@ const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor
 // ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
 type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech: boolean };
-/** The SpeechDrop tab's row: lit or not, the room's name, and how many files came that you haven't seen. */
-type SdRow = { on: boolean; name: string; fresh: number };
-function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void; sd: SdRow | null; onSd: () => void; onSdClose: () => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
+/** A SpeechDrop tab's row: lit or not, the room's name, and how many files came that you haven't seen. */
+type SdRow = { key: number; on: boolean; name: string; fresh: number };
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void; sd: SdRow[]; onSd: (key: number) => void; onSdClose: (key: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -1296,8 +1326,8 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
     resize(railWidth(to, railMax()));
   };
 
-  const isOn = (d: DocRow) => d.id === props.active && !props.home && !props.sd?.on;
-  const sd = props.sd, sdLabel = sd ? `SpeechDrop${sd.name !== 'SpeechDrop' ? `: ${sd.name}` : ''}${sd.fresh ? ` (${sd.fresh} new)` : ''}` : '';
+  const isOn = (d: DocRow) => d.id === props.active && !props.home && !props.sd.some((s) => s.on);
+  const sdLabel = (sd: SdRow) => `SpeechDrop${sd.name !== 'SpeechDrop' ? `: ${sd.name}` : ''}${sd.fresh ? ` (${sd.fresh} new)` : ''}`;
   const sdTip = titled('SpeechDrop', 'speechdrop', 'the room\'s files, live. Middle-click to close');
   return (
     <nav className="fstrip" aria-label="Open documents" data-wide={wide || undefined}>
@@ -1313,15 +1343,15 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
             {wide && <button tabIndex={-1} className="doc-x" title={titled('Close', 'close', 'close this file')} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>}
           </div>
         ))}
-        {sd && (
-          <div className="doc-row sd-tab" data-on={sd.on || undefined}>
-            <button className="fs-b doc-nm" role="tab" aria-selected={sd.on} aria-label={sdLabel} title={sdTip} data-on={sd.on || undefined}
-              onClick={props.onSd} onAuxClick={(e) => { if (e.button === 1) props.onSdClose(); }}>
+        {props.sd.map((sd) => (
+          <div key={`sd${sd.key}`} className="doc-row sd-tab" data-on={sd.on || undefined}>
+            <button className="fs-b doc-nm" role="tab" aria-selected={sd.on} aria-label={sdLabel(sd)} title={sdTip} data-on={sd.on || undefined}
+              onClick={() => props.onSd(sd.key)} onAuxClick={(e) => { if (e.button === 1) props.onSdClose(sd.key); }}>
               <SvgIcon name="inbox" />{wide && <span className="lbl">{sd.name}</span>}{sd.fresh > 0 && <i className="dot new" aria-hidden="true" />}
             </button>
-            {wide && <button tabIndex={-1} className="doc-x" title="Close SpeechDrop" onClick={props.onSdClose}><SvgIcon name="x" /></button>}
+            {wide && <button tabIndex={-1} className="doc-x" title="Close SpeechDrop" onClick={() => props.onSdClose(sd.key)}><SvgIcon name="x" /></button>}
           </div>
-        )}
+        ))}
       </div>
       {/* mouse-only: the tabs in the rail are what the keyboard and screen readers use; inert while
           closed so its rows can't take clicks */}
@@ -1337,14 +1367,14 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
               <button tabIndex={-1} className="files-x" title={titled('Close', 'close', 'close this file')} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
             </div>
           ))}
-          {sd && (
-            <div className="files-r" data-on={sd.on || undefined}>
-              <button tabIndex={-1} className="files-b" onClick={props.onSd} onAuxClick={(e) => { if (e.button === 1) props.onSdClose(); }}>
+          {props.sd.map((sd) => (
+            <div key={`sd${sd.key}`} className="files-r" data-on={sd.on || undefined}>
+              <button tabIndex={-1} className="files-b" onClick={() => props.onSd(sd.key)} onAuxClick={(e) => { if (e.button === 1) props.onSdClose(sd.key); }}>
                 <SvgIcon name="inbox" /><span className="nm">{sd.name}</span>{sd.fresh > 0 && <i className="dot new" />}
               </button>
-              <button tabIndex={-1} className="files-x" title="Close SpeechDrop" onClick={props.onSdClose}><SvgIcon name="x" /></button>
+              <button tabIndex={-1} className="files-x" title="Close SpeechDrop" onClick={() => props.onSdClose(sd.key)}><SvgIcon name="x" /></button>
             </div>
-          )}
+          ))}
         </div>
       </aside>
       <div className="grow" />

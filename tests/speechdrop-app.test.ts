@@ -9,7 +9,8 @@ function fakeSd(files: File[] = [{ index: 0, name: 'Aff 1AC.docx', ctime: Date.n
   let push: ((u: { room: string; files: File[]; live: boolean }) => void) | null = null;
   let list = files;
   const api = {
-    room: vi.fn(async (room: string) => (room === 'rd3abc' ? { ok: true, value: { room, name: 'Round 3', files: list } } : { ok: false, error: 'no_room' })),
+    room: vi.fn(async (room: string) => (room === 'rd3abc' ? { ok: true, value: { room, name: 'Round 3', files: list } }
+      : room === 'rd4xyz' ? { ok: true, value: { room, name: 'Round 4', files: [] } } : { ok: false, error: 'no_room' })),
     make: vi.fn(async () => ({ ok: true, value: 'rd3abc' })),
     upload: vi.fn(async (_room: string, name: string) => {
       list = [{ index: list.length, name, ctime: Date.now() }, ...list];
@@ -20,9 +21,14 @@ function fakeSd(files: File[] = [{ index: 0, name: 'Aff 1AC.docx', ctime: Date.n
     open: vi.fn(async (_room: string, _i: number, name: string) => ({ ok: true, value: { path: `/dl/${name}`, docx: name.endsWith('.docx') } })),
     download: vi.fn(async () => ({ ok: true, value: '/dl/x' })),
     archive: vi.fn(async () => ({ ok: true, value: { path: '/dl/Round 3.zip', count: 1, skipped: 0 } })),
-    watch: vi.fn((_room: string, _f: unknown, f: typeof push) => { push = f; return () => { push = null; }; }),
+    watch: vi.fn((room: string, _f: unknown, f: typeof push) => {
+      rooms.add(room);
+      if (room === 'rd3abc') push = f;
+      return () => { rooms.delete(room); if (room === 'rd3abc') push = null; };
+    }),
   };
-  return { api, push: (f: File[]) => { list = f; push?.({ room: 'rd3abc', files: f, live: true }); }, watching: () => push !== null };
+  const rooms = new Set<string>();
+  return { api, push: (f: File[]) => { list = f; push?.({ room: 'rd3abc', files: f, live: true }); }, watching: () => push !== null, rooms };
 }
 
 const panel = () => document.querySelector('section.sd');
@@ -180,6 +186,47 @@ describe('SpeechDrop tab', () => {
     expect(panel()?.classList.contains('open')).toBe(true);
     expect(document.querySelector('.home.open')).toBeNull();
     await tick();
+  });
+
+  it('joins several rooms at once: each is a tab in the rail, and every one keeps watching', async () => {
+    const { app, sd } = await joined();
+    await app.click(button('Another room'));
+    expect(document.querySelector('section.sd.open .sd-hi')?.textContent).toBe('Join a room');
+    await app.fill(document.querySelector('section.sd.open input[aria-label="Room code"]'), 'rd4xyz', 100);
+    expect(app.tabs()).toEqual(['Untitled', 'SpeechDrop: Round 3', 'SpeechDrop: Round 4']);
+    expect([...sd.rooms].sort()).toEqual(['rd3abc', 'rd4xyz']);
+    expect(document.querySelector('section.sd.open .sd-hi')?.textContent).toBe('Round 4');
+    // a file in Round 3 while Round 4 shows: Round 3's tab gets the dot, and Show goes to Round 3
+    await app.act(() => sd.push([{ index: 1, name: 'Neg 1NC.docx', ctime: Date.now() }, { index: 0, name: 'Aff 1AC.docx', ctime: 1 }]));
+    expect(app.tab('SpeechDrop: Round 3 (1 new)')).not.toBeNull();
+    await app.click(app.tab('Untitled'));
+    await app.act(() => sd.push([{ index: 2, name: 'Neg 2NR.docx', ctime: Date.now() }, { index: 1, name: 'Neg 1NC.docx', ctime: 2 }, { index: 0, name: 'Aff 1AC.docx', ctime: 1 }]));
+    await app.click(document.querySelector('.toast button'));
+    expect(document.querySelector('section.sd.open .sd-hi')?.textContent).toBe('Round 3');
+    // next doc walks every tab; Mod-W closes only the one showing
+    await app.press(']', { ctrlKey: true, shiftKey: true, code: 'BracketRight' });
+    expect(document.querySelector('section.sd.open .sd-hi')?.textContent).toBe('Round 4');
+    await app.press('w', { ctrlKey: true });
+    expect(app.tabs()).toEqual(['Untitled', 'SpeechDrop: Round 3 (2 new)']);
+    expect([...sd.rooms]).toEqual(['rd3abc']);
+  });
+
+  it('joining a room that is already open shows its tab instead of joining twice', async () => {
+    const { app, sd } = await joined();
+    await app.click(button('Another room'));
+    await app.fill(document.querySelector('section.sd.open input[aria-label="Room code"]'), 'rd3abc', 100);
+    expect(app.tabs()).toEqual(['Untitled', 'SpeechDrop: Round 3']);
+    expect(document.querySelector('section.sd.open .sd-hi')?.textContent).toBe('Round 3');
+    expect(sd.api.room).toHaveBeenCalledTimes(1);
+  });
+
+  it('a room joined before can be taken off the list', async () => {
+    const { app } = await joined();
+    await app.click(button('Leave room'));
+    expect([...document.querySelectorAll('.sd-rr .nm')].map((n) => n.textContent)).toEqual(['Round 3']);
+    await app.click(document.querySelector('[aria-label="Forget Round 3"]'));
+    expect(document.querySelector('.sd-rr')).toBeNull();
+    expect(JSON.parse(localStorage.getItem('falcon.sd.rooms') ?? '[]')).toEqual([]);
   });
 
   it('the web build says it needs the desktop app', async () => {
