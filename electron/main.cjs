@@ -261,6 +261,32 @@ ipcMain.handle('falcon:save-file', (e, opts) => {
   return turn;
 });
 
+// Crash recovery for docs too big for the page's localStorage (about 5M characters, so any block file): the
+// page sends their backup here and it's kept in userData. Only the newest copy waits while one is written, and
+// each write goes through a temp file so a crash mid-write keeps the last good copy. '' removes the file.
+const recoveryFile = () => path.join(app.getPath('userData'), 'recovery.json');
+let recoveryNext = null, recoveryBusy = null;
+function writeRecovery(text) {
+  recoveryNext = text;
+  recoveryBusy ??= (async () => {
+    while (recoveryNext !== null) {
+      const t = recoveryNext;
+      recoveryNext = null;
+      const p = recoveryFile(), tmp = `${p}.tmp`;
+      try {
+        if (!t) await fs.rm(p, { force: true });
+        else { await fs.writeFile(tmp, t); await fs.rename(tmp, p); }
+      } catch { /* a full disk: the next backup tries again */ }
+    }
+    recoveryBusy = null;
+  })();
+}
+ipcMain.on('falcon:recovery-write', (e, text) => { if (typeof text === 'string') writeRecovery(text); });
+// read once, as the page starts: synchronous, so these docs come back with the rest before the first render
+ipcMain.on('falcon:recovery-read', (e) => {
+  try { e.returnValue = fsSync.readFileSync(recoveryFile(), 'utf8'); } catch { e.returnValue = ''; }
+});
+
 // "Mod-Shift-s" (a keymap name, as Settings saves it) as an Electron accelerator, "Cmd+Shift+S"
 const ACC = { Mod: 'Cmd', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Shift', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', ' ': 'Space' };
 const accelerator = (k) => (k ? k.split(/-(?!$)/).map((p) => ACC[p] ?? (p.length === 1 ? p.toUpperCase() : p)).join('+') : undefined);

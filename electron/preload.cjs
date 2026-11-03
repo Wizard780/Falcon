@@ -76,4 +76,6 @@ contextBridge.exposeInMainWorld('falcon', {
     },
   },
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
+  // crash recovery for docs too big for localStorage: read once as the page starts, written on every backup
+  recovery: { read: () => ipcRenderer.sendSync('falcon:recovery-read'), write: (text) => ipcRenderer.send('falcon:recovery-write', String(text)) },
 });

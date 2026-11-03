@@ -50,6 +50,8 @@ type FalconBridge = {
   /** The theme changed: the window's own background (shown before the page paints) and native menus follow it.
    *  system: the theme is System, so native stays on the OS setting (forcing it would freeze prefers-color-scheme). */
   setTheme?: (bg: string, dark: boolean, system: boolean) => void;
+  /** Crash recovery for docs too big for localStorage: the desktop app keeps them in a file. `write('')` clears it. */
+  recovery?: { read: () => string; write: (text: string) => void };
   /** A newer Falcon, downloaded and ready to install (null: none). Fires with the current state on subscribe. Returns an unsubscribe. */
   onUpdate?: (f: (u: UpdateInfo | null) => void) => () => void;
   /** Install the downloaded update and restart (or open its disk image when Falcon can't replace itself). */
