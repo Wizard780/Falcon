@@ -51,7 +51,7 @@ export function StarTree(props: { root: string; files: IndexedFile[]; starred: s
           <span className="stt-chev"><SvgIcon name="chev" /></span>
           <SvgIcon name="open" />
           <span className="stt-name">{x.name}</span>
-          {stars > 0 && <span className="stt-stars" title={`${stars} starred inside`}>★ {stars}</span>}
+          {stars > 0 && <span className="stt-stars" title={`${stars} starred or pinned inside`}>★ {stars}</span>}
           <output>{x.count.toLocaleString('en-US')}</output>
         </button>,
         ...(isOpen ? level(x, depth + 1) : []),

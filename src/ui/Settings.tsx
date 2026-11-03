@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
 import { HIGHLIGHTS } from '../editor/schema';
 import { SvgIcon } from './icons';
@@ -14,7 +14,7 @@ import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/pref
 import { newFileName, speechFileName } from './files';
 import { bridge, setActiveColor, type IndexFolder, type IndexedFile } from '../editor/host';
 import { collectHits, rankHits, type FileHit } from './file-search';
-import { StarIcon, loadStarred, toggleStarred } from './starred';
+import { PinIcon, StarIcon, loadPinned, loadStarred, togglePinned, toggleStarred } from './starred';
 import { StarTree } from './StarTree';
 import { downloadSettings, importSettings } from './settings-file';
 import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
@@ -80,19 +80,25 @@ export function Settings(props: Props) {
   const [words, setWords] = useState<string[]>([]);
   useEffect(() => { if (props.open && bridge.dictionaryWords) bridge.dictionaryWords().then(setWords, () => {}); }, [props.open]);
   useEffect(() => onPrefs(() => setSpecTick((t) => t + 1)), []);
-  // starred files get picked here, from what the search folders hold
+  // starred and pinned files get picked here, from what the search folders hold
   const [starred, setStarred] = useState<string[]>(loadStarred);
+  const [pinned, setPinned] = useState<string[]>(loadPinned);
   const [files, setFiles] = useState<IndexedFile[]>([]);
   const [starQuery, setStarQuery] = useState('');
   const [openFolders, setOpenFolders] = useState<string[]>([]); // search folders opened to star inside them
   useEffect(() => {
     if (!props.open) return;
     setStarred(loadStarred());
+    setPinned(loadPinned());
     setStarQuery('');
     let live = true;
     void bridge.indexedFiles?.().then((f) => live && setFiles(f), () => {});
     return () => { live = false; };
   }, [props.open]);
+  // every file, copies included, to find one to mark; and the marked ones, with the copies each hides
+  const plainHits = useMemo(() => collectHits([], [], files), [files]);
+  const markedHits = useMemo(() => collectHits([], [], files, starred, pinned).filter((h) => h.starred || h.pinned), [files, starred, pinned]);
+  const markedPaths = useMemo(() => [...new Set([...pinned, ...starred])], [pinned, starred]);
   if (!props.open) return null;
 
   const zoomTo = (z: number) => props.onZoom(Math.max(0.5, Math.min(3, +z.toFixed(2))));
@@ -168,32 +174,36 @@ export function Settings(props: Props) {
   });
   const keyLabel = (id: string) => keyText(keyOf(id)) || 'no shortcut';
 
-  // Starred files: typing finds files to star, otherwise the starred ones, sorted by search folder
-  const allHits = collectHits([], [], files, starred);
+  // Starred and pinned files: typing finds files to mark, otherwise the marked ones, sorted by search folder
   const where = (h: FileHit) => (h.source && h.source !== h.folder ? `${h.source} › ${h.folder}` : h.folder);
-  const starBtn = (path: string, name: string) => {
-    const on = starred.includes(path);
-    return <button className="st-star" aria-pressed={on} aria-label={`${on ? 'Unstar' : 'Star'} ${name}`}
-      title={on ? 'Unstar' : `Star: keep it at the top of ${keyLabel('search')}`} onClick={() => setStarred(toggleStarred(path))}><StarIcon /></button>;
+  const markBtns = (path: string, name: string) => {
+    const pin = pinned.includes(path), star = starred.includes(path);
+    return (<>
+      <button className="st-star st-pin" aria-pressed={pin} aria-label={`${pin ? 'Unpin' : 'Pin'} ${name}`}
+        title={pin ? 'Unpin' : `Pin: always list it first in ${keyLabel('search')}`} onClick={() => setPinned(togglePinned(path))}><PinIcon /></button>
+      <button className="st-star" aria-pressed={star} aria-label={`${star ? 'Unstar' : 'Star'} ${name}`}
+        title={star ? 'Unstar' : `Star: put it first in ${keyLabel('search')} when it matches`} onClick={() => setStarred(toggleStarred(path))}><StarIcon /></button>
+    </>);
   };
-  const fileRow = (h: FileHit, note: string): Row => ({ label: h.name, hint: h.path, path: true, search: 'starred star', control: (
-    <span className="st-fold"><output>{note}</output>{starBtn(h.path!, h.name)}</span>) });
+  const fileRow = (h: FileHit, note: string): Row => ({ label: h.name, hint: h.path, path: true, search: 'starred star pinned pin', control: (
+    <span className="st-fold"><output>{note}</output>{markBtns(h.path!, h.name)}</span>) });
   const sq = starQuery.trim();
-  const byPath = new Map(allHits.filter((h) => h.starred).map((h) => [h.path!, h]));
+  const byPath = new Map(markedHits.map((h) => [h.path!, h]));
   const starRows: Row[] = sq
-    ? rankHits(allHits.filter((h) => h.path), sq, 8).map((h) => fileRow(h, where(h)))
-    : starred
+    ? rankHits(plainHits, sq, 8).map((h) => fileRow(h, where(h)))
+    : markedPaths
       .map((p): FileHit => byPath.get(p) ?? { key: p, name: p.split(/[\\/]/).pop()!.replace(/\.docx$/i, ''), folder: '', path: p, kind: 'file' as const, when: 0 })
       .sort((a, b) => (a.source ?? '~').localeCompare(b.source ?? '~') || a.name.localeCompare(b.name))
       .map((h) => fileRow(h, !byPath.has(h.path!) ? 'Not found' : h.hidden ? `${where(h)} · hides ${h.hidden} ${h.hidden === 1 ? 'copy' : 'copies'}` : where(h)));
-  const starFind: Row = { label: 'Star a file', search: 'starred star', hint: `Starred files stay at the top of ${keyLabel('search')}, marked with a star, and their copies in your other search folders are hidden.`, control: (
-    <input className="st-text st-find" aria-label="Find a file to star" placeholder="Find a file…" spellCheck={false} value={starQuery}
+  const starFind: Row = { label: 'Star or pin a file', search: 'starred star pinned pin', hint: `A starred file goes first in ${keyLabel('search')} when it matches what you type. A pinned one always shows there, first, before you type. Both hide their copies in your other search folders.`, control: (
+    <input className="st-text st-find" aria-label="Find a file to star or pin" placeholder="Find a file…" spellCheck={false} value={starQuery}
       onChange={(e) => setStarQuery(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && starQuery) { e.preventDefault(); e.stopPropagation(); setStarQuery(''); }
-        else if (e.key === 'Enter' && sq) { const h = rankHits(allHits.filter((x) => x.path), sq, 1)[0]; if (h) setStarred(toggleStarred(h.path!)); }
+        // Enter stars the top match (and leaves it starred if it already is)
+        else if (e.key === 'Enter' && sq) { const h = rankHits(plainHits, sq, 1)[0]; if (h && !starred.includes(h.path!)) setStarred(toggleStarred(h.path!)); }
       }} />) };
-  const starNone: Row = { label: sq ? `No files match “${sq}”` : 'No starred files yet', hint: sq ? 'Only .docx files in your search folders can be starred.' : 'Find a file above and click its star.', control: null };
+  const starNone: Row = { label: sq ? `No files match “${sq}”` : 'No starred or pinned files yet', hint: sq ? 'Only .docx files in your search folders can be starred or pinned.' : 'Find a file above and click its star or pin.', control: null };
   const prep = pref(P.prepMin);
 
   // themes: a tile per theme, each a small picture of it; a custom theme's colors and name edit in place
@@ -272,12 +282,12 @@ export function Settings(props: Props) {
                   onClick={() => void bridge.removeIndexFolder!(f.path).then(setFolders)}><SvgIcon name="x" /></button>
               </span>) },
             ...(canOpen && isOpen ? [{ id: `tree:${f.path}`, label: '', wide: true, control: (
-              <StarTree root={f.path} files={files} starred={starred} star={starBtn} />) }] : [])];
+              <StarTree root={f.path} files={files} starred={markedPaths} star={markBtns} />) }] : [])];
           }),
           { label: folders?.length ? 'Add another folder' : 'No folders yet', hint: `Files in these folders, and the folders inside them, show up in ${keyLabel('search')}, and their cards in Search cards (${keyLabel('searchCards')}). Only .docx files are listed.`, control: (
             <button className="st-btn" onClick={() => void bridge.addIndexFolder!().then(setFolders)}><SvgIcon name="plus" />Add folder…</button>) },
         ]],
-      ...(bridge.indexedFiles ? [['Starred files', [starFind, ...(starRows.length ? starRows : [starNone])]] as [string, Row[]]] : []),
+      ...(bridge.indexedFiles ? [['Starred and pinned files', [starFind, ...(starRows.length ? starRows : [starNone])]] as [string, Row[]]] : []),
     ] },
     { id: 'appearance', title: 'Appearance', icon: 'contrast', sections: [
       ['Theme', [

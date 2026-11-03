@@ -81,6 +81,9 @@
 .st-star:hover { background: var(--u-hover); color: var(--u-tx); }
 .st-star[aria-pressed="true"] { color: #e2b33c; }
 .st-star[aria-pressed="true"] svg { fill: currentColor; }
+/* the pin sits right beside its star */
+.st-pin { margin-right: -12px; }
+.stt-file .st-pin { margin-right: -4px; }
 /* a search folder opens in place to star files inside it */
 .st-row:has(> .st-chev) { gap: 10px; }
 .st-row > .st-chev + .st-txt { flex: 1; }
