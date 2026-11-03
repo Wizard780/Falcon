@@ -159,7 +159,7 @@ describe('doing things', () => {
   });
   it('settings that live in the app go through it', () => {
     const f = fake(sample());
-    settingEntries(f.ctx).find((e) => e.label === 'Highlighter: Green')!.run!();
+    settingEntries(f.ctx).find((e) => e.label === 'Highlighter: Bright Green')!.run!();
     settingEntries(f.ctx).find((e) => e.label === 'Zoom: 150%')!.run!();
     expect(f.calls).toEqual(['pen:green', 'zoom:1.5']);
   });

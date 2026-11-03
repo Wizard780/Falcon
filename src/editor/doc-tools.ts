@@ -4,7 +4,7 @@ import { NO_BRIDGE, cardAround, selectedParas } from './commands';
 import { activeColors } from './host';
 import { MultiSelection, spansOf, type Span } from './multi';
 import { isReading } from './read';
-import { schema } from './schema';
+import { HIGHLIGHTS, HIGHLIGHT_NAMES, SHADES, schema } from './schema';
 import { readSetting, type SettingSpec, type ToolSection } from './tools';
 import { autoBridgePlugin, autoBridgeSetting, fixFormattingGaps, gapClassSetting, scopeOf } from './doc-tools/gaps';
 import { linkClickPlugin, linkUrls, removeHyperlinks } from './doc-tools/links';
@@ -14,15 +14,18 @@ import { insertFootnote } from './footnotes';
 
 const M = schema.marks;
 
+const SHADE_EXCEPTIONS: [string, string][] = [['#FFFF00', 'Yellow'], ['#00FF00', 'Bright Green'], ['#00FFFF', 'Turquoise'], ...SHADES];
 const highlightException: SettingSpec = {
   section: 'Standardize', key: 'falcon.standardizeHighlightException', kind: 'choice', default: 'yellow',
-  options: [['yellow', 'Yellow'], ['green', 'Green'], ['cyan', 'Cyan'], ['magenta', 'Magenta'], ['lightGray', 'Gray']],
+  // every color the highlighter has
+  options: Object.keys(HIGHLIGHTS).map((k): [string, string] => [k, HIGHLIGHT_NAMES[k]]), colors: HIGHLIGHTS,
   label: 'Highlighting exception',
   hint: 'The highlight color Standardize Highlighting (except) leaves alone.',
 };
 const shadingException: SettingSpec = {
   section: 'Standardize', key: 'falcon.standardizeShadingException', kind: 'choice', default: '#FFFF00',
-  options: [['#FFFF00', 'Yellow'], ['#D9D9D9', 'Light gray'], ['#BFBFBF', 'Gray'], ['#00FF00', 'Green'], ['#00FFFF', 'Cyan']],
+  // the background pen's colors, plus the bright ones pasted or CardMirror files tend to have
+  options: SHADE_EXCEPTIONS, colors: Object.fromEntries(SHADE_EXCEPTIONS.map(([c]) => [c, c])),
   label: 'Background color exception',
   hint: 'The background color Standardize Background Color (except) leaves alone.',
 };

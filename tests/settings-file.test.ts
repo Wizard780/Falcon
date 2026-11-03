@@ -84,7 +84,7 @@ describe('settings file', () => {
     expect([s('sz.pocket'), s('sz.hat'), s('sz.tag'), s('sz.undertag')]).toEqual(['26', '22', '14', '12']);
     expect(s('lineHeight')).toBe('1.2'); // CardMirror's 1.3 isn't a Falcon choice: nearest one
     expect([s('condense'), s('emphasisBox'), s('spellcheck'), s('highlight'), s('markerColor')]).toEqual(['integrity', 'on', 'on', 'cyan', '#FF0000']);
-    expect(s('standardizeHighlightException')).toBeNull(); // CardMirror's dark gray has no Falcon match
+    expect(s('standardizeHighlightException')).toBe('darkGray'); // every Word highlight color is a choice now
     expect(s('standardizeShadingException')).toBe('#FFFF00');
     expect(s('reference.shrink')).toBe('3');
     if (r.ok) expect(r.applied + r.skipped).toBeGreaterThan(100);
