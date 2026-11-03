@@ -41,7 +41,7 @@ describe('file search ranking', () => {
     expect(parentName('C:\\Debate\\Neg\\Cap K.docx')).toBe('Neg');
     expect(parentName('/d/Aff/x.docx')).toBe('Aff');
   });
-  it('starred files come first, beat other matches and hide their same-named copies', () => {
+  it('starred files come first, beat other matches and hide their copies in other search folders', () => {
     const dropboxes = [
       { path: '/Users/a/Dropbox/DA/Impact Defense.docx', root: '/Users/a/Dropbox', mtime: 1 },
       { path: '/Users/a/Team Dropbox/DA/Impact Defense.docx', root: '/Users/a/Team Dropbox/', mtime: 9 },
@@ -55,6 +55,14 @@ describe('file search ranking', () => {
     expect(hits[0]).toMatchObject({ name: 'Impact Defense', source: 'Dropbox', starred: true, hidden: 1 });
     expect(hits.filter((h) => h.name === 'Impact Defense')).toHaveLength(1);
     expect(rankHits(hits, 'impact').map((h) => `${h.name} ${h.source}`)).toEqual(['Impact Defense Dropbox', 'Impact Turns Team Dropbox']);
+  });
+  it('a same-named file in another folder is not a copy', () => {
+    const hits = collectHits([], [], [
+      { path: '/d/Dropbox/Aff/1AC.docx', root: '/d/Dropbox', mtime: 1 },
+      { path: 'C:\\Team Dropbox\\Aff\\1AC.docx', root: 'C:\\Team Dropbox\\', mtime: 3 },
+      { path: '/d/Dropbox/Old Topic/1AC.docx', root: '/d/Dropbox', mtime: 2 },
+    ], ['/d/Dropbox/Aff/1AC.docx']);
+    expect(hits.map((h) => `${h.folder}${h.starred ? '*' : ''}${h.hidden ?? ''}`)).toEqual(['Aff*1', 'Old Topic']);
   });
   it('an open copy of a starred file still shows, and a star on a missing file does nothing', () => {
     const hits = collectHits([{ id: 1, name: 'Impact Defense', path: '/t/Impact Defense.docx' }], [], [{ path: '/d/Impact Defense.docx', mtime: 1 }], ['/d/Impact Defense.docx', '/gone.docx']);

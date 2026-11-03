@@ -91,14 +91,14 @@ export function Palette(props: {
                 {head && <div className="pk-head">{head}</div>}
                 <div id={`pk-${i}`} className="pk-row" role="option" aria-selected={i === cur} data-on={i === cur || undefined}
                   data-star={h.starred || undefined}
-                  title={h.hidden ? `${h.path}\n${h.hidden} other ${h.hidden === 1 ? 'file' : 'files'} named ${h.name} hidden while this one is starred` : h.path}
+                  title={h.hidden ? `${h.path}\n${h.hidden} ${h.hidden === 1 ? 'copy' : 'copies'} in other search folders hidden while this one is starred` : h.path}
                   onMouseMove={() => { if (i !== cur) setAt(i); }} onClick={() => pick(h)}>
                   <SvgIcon name="doc" />
                   <span className="pk-nm">{h.name}</span>
                   <span className="pk-in">{where(h)}</span>
                   {h.path && (
                     <button className="pk-star" aria-pressed={!!h.starred} aria-label={h.starred ? `Unstar ${h.name}` : `Star ${h.name}`}
-                      title={h.starred ? 'Starred (⌥P to unstar)' : 'Star (⌥P): keep this file at the top and hide other files with the same name'}
+                      title={h.starred ? 'Starred (⌥P to unstar)' : 'Star (⌥P): keep this file at the top and hide its copies in other search folders'}
                       onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); star(h); }}>
                       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" /></svg>
                     </button>

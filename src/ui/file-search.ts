@@ -13,9 +13,9 @@ export type FileHit = {
   when: number;
   /** the search folder it came from ("Dropbox", "Team Dropbox"), so same-named files can be told apart */
   source?: string;
-  /** starred in file search: listed first, and same-named copies elsewhere are hidden */
+  /** starred in file search: listed first, and its copies in other search folders are hidden */
   starred?: boolean;
-  /** how many same-named files this starred one hides */
+  /** how many copies this starred one hides */
   hidden?: number;
 };
 
@@ -27,7 +27,7 @@ export const parentName = (p: string) => { const parts = p.split(SEP); return pa
 
 /**
  * Starred files first, then open docs, recents and indexed files; each path appears once, as its first source.
- * A starred file hides the other files with its name (an open one stays: it's open).
+ * A starred file hides its copies: the same path inside another search folder (an open one stays: it's open).
  */
 export function collectHits(
   open: { id: number; name: string; path?: string }[],
@@ -48,12 +48,19 @@ export function collectHits(
   for (const f of files) add({ key: `f:${f.path}`, name: stripDocx(base(f.path)), folder: parentName(f.path), path: f.path, kind: 'file', when: f.mtime, source: f.root ? base(f.root.replace(/[\\/]+$/, '')) : undefined });
   if (!starred.length) return out;
   const stars = new Set(starred);
+  // a copy is the same path inside another search folder (Dropbox/DA/x and Team Dropbox/DA/x), not just the same name
+  const roots = [...new Set(files.map((f) => f.root?.replace(/[\\/]+$/, '')).filter((r): r is string => !!r))].sort((a, b) => b.length - a.length);
+  const rel = (p?: string) => {
+    const r = p && roots.find((r) => p.startsWith(r) && SEP.test(p[r.length] ?? ''));
+    return r ? p.slice(r.length + 1).replace(/\\/g, '/').toLowerCase() : undefined;
+  };
   const top = out.filter((h) => h.path && stars.has(h.path)).map((h) => ({ ...h, starred: true, hidden: 0 }));
-  const byName = new Map(top.map((h) => [h.name.toLowerCase(), h]));
+  const byRel = new Map(top.flatMap((h) => { const k = rel(h.path); return k ? [[k, h] as const] : []; }));
   const rest: FileHit[] = [];
   for (const h of out) {
     if (h.path && stars.has(h.path)) continue;
-    const twin = h.kind !== 'open' ? byName.get(h.name.toLowerCase()) : undefined;
+    const k = h.kind !== 'open' ? rel(h.path) : undefined;
+    const twin = k ? byRel.get(k) : undefined;
     if (twin) twin.hidden! += 1; else rest.push(h);
   }
   return [...top, ...rest];

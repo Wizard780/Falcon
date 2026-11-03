@@ -1,6 +1,6 @@
 import { safeSet } from './storage';
 
-/** Starred files: kept at the top of file search, and their same-named copies elsewhere hidden. Paths, in starring order. */
+/** Starred files: kept at the top of file search, and their copies in other search folders hidden. Paths, in starring order. */
 const KEY = 'falcon.starredFiles';
 
 export function loadStarred(): string[] {
