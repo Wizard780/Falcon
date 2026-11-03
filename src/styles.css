@@ -14,7 +14,7 @@
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --doc-font: Calibri, Carlito, Arial, sans-serif;
   --zoom: 1;
-  --bar-h: 88px; --status-h: 28px; --nav-w: 280px; --tools-w: 280px;
+  --bar-h: 88px; --status-h: 28px; --ol-w: 280px; --nav-w: var(--ol-w); --tools-w: 280px; /* --ol-w: the outline's dragged width; the toolbar stays put beside the tools row either way */
   /* the rail's dragged width (--rail-w, set by the rail), held to 30% of a narrow window */
   --strip-w: min(var(--rail-w, 56px), max(140px, 30vw));
 }
@@ -166,9 +166,15 @@ svg { flex: none; }
 .sb-row .ct { font: 12px var(--mono); color: var(--u-mut); font-variant-numeric: tabular-nums; }
 
 /* the outline: attached to the document, docked on the page's left edge */
-.olp { position: absolute; top: var(--bar-h); bottom: var(--status-h); left: var(--strip-w); width: 280px; z-index: 240; display: flex; flex-direction: column; background: var(--u-deep); color: var(--u-tx); user-select: none;
+.olp { position: absolute; top: var(--bar-h); bottom: var(--status-h); left: var(--strip-w); width: var(--ol-w); z-index: 240; display: flex; flex-direction: column; background: var(--u-deep); color: var(--u-tx); user-select: none;
   transform: translateX(-100%); opacity: 0; pointer-events: none; transition: transform 220ms var(--u-ease), opacity 150ms var(--u-ease); }
 .olp.shown { transform: none; opacity: 1; pointer-events: auto; }
+/* the outline's right edge drags it wider or narrower, like the rail's */
+.ol-grip { position: absolute; z-index: 2; top: 0; bottom: 0; right: -4px; width: 8px; cursor: col-resize; touch-action: none; outline: none; }
+.ol-grip::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background 150ms ease-out; }
+.ol-grip:hover::after { background: var(--u-ctl-on); transition-delay: 150ms; }
+.ol-grip:focus-visible::after, :root[data-ol-drag] .ol-grip::after { background: var(--ink-ui); transition-delay: 0s; }
+:root[data-ol-drag], :root[data-ol-drag] * { cursor: col-resize !important; user-select: none !important; }
 .ol-head { display: flex; align-items: center; gap: 6px; padding: 4px 0 8px; }
 .ol-head .sb-label { flex: 1; padding: 0 0 0 10px; }
 .ol-head .sb-ico { width: 26px; height: 26px; }
@@ -406,7 +412,7 @@ button.b:active { transform: scale(.97); }
 
 /* desktop: the window drags by the chrome; on macOS the strip and panel start below the traffic lights */
 .desktop .toolbar, .desktop .fstrip, .desktop .tools, .desktop .status { -webkit-app-region: drag; }
-.desktop button, .desktop .pop, .desktop input, .desktop .files[data-open], .desktop .rail-grip { -webkit-app-region: no-drag; }
+.desktop button, .desktop .pop, .desktop input, .desktop .files[data-open], .desktop .rail-grip, .desktop .ol-grip { -webkit-app-region: no-drag; }
 /* Electron cuts drag areas in page order, so the toolbar (later in the page) would turn the open files
    panel's rows over it back into window drags; it gives up dragging while the panel is open */
 .desktop .app:has(.files[data-open]) .toolbar { -webkit-app-region: no-drag; }

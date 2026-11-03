@@ -192,3 +192,4 @@ User ask (screenshots): the toolbar left a gap between the tools row and Pocket;
 - [x] status bar: `Sel: 7 words · 0:02 / 0:01`, only the read words (highlighted, tags, analytics, cites), set off by a divider
 - [x] Settings > Speech and timers: Reader 1/2 cards, Reader 1/2 tags and analytics (Same as cards by default); cites count with tags, as in CardMirror; CardMirror settings import maps readers[n].tagWpm
 - [x] vitest 332 pass, tsc clean; journeys themes, settings, command-center, card-formatting, outline ok
+- [x] the outline pane's right edge drags it from 200 to 560px (40% of a narrow window), double-click resets to 280, arrows step it; kept in falcon.outlineWidth. The toolbar stays beside the tools row at any outline width
