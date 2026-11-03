@@ -88,6 +88,18 @@ describe('Join', () => {
     expect(paneText(b)).toBe('Beta');
   });
 
+  it('the first send makes the speech doc after the group, so the joined files stay together', async () => {
+    const app = await three();
+    await joinRows(app, 0, 1);
+    await into(app, panes(app)[0]);
+    const v = app.view();
+    await app.act(() => { v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, 1, 6))); });
+    await app.press('`');
+    expect(rows(app).map((r) => r.dataset.join ?? null)).toEqual(['first', 'last', null, null]);
+    expect(app.tabs()[2]).toBe('Speech (speech doc)');
+    expect(panes(app)).toHaveLength(2);
+  });
+
   it('another file shows alone and the group stays joined; going back shows the group with its edits and undo', async () => {
     const app = await three();
     await joinRows(app, 0, 1);

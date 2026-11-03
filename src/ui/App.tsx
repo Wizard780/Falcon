@@ -592,7 +592,7 @@ export function App() {
       lastDocs.current.set(m, m.state.doc);
       appRef.current!.dataset.split = '';
     }
-    for (const id of ids) {
+    ids.forEach((id, i) => {
       let p = panes.current.get(id);
       const s = p ? null : stateOf(id);
       if (!p && s) {
@@ -615,11 +615,13 @@ export function App() {
         panes.current.set(id, p);
         scroll.scrollTop = s.scroll;
       }
-      if (p) box.append(p.el); // in group order
-    }
+      // in group order; a pane already in place isn't moved (taking it out of the page would lose its scroll)
+      if (p && box.children[i] !== p.el) { const top = p.scroll.scrollTop; box.insertBefore(p.el, box.children[i] ?? null); p.scroll.scrollTop = top; }
+    });
     setDocs((ds) => keep(ds, new Set(panes.current.keys())));
     setSplitOn(true);
     focusPane(panes.current.has(focus) ? focus : panes.current.keys().next().value!);
+    setTestView(viewRef.current); // createView points it at the newest pane
   }, [focusPane]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const switchTo = useCallback((id: number) => {
@@ -954,7 +956,9 @@ export function App() {
       target = { id: nextDocId++, meta: { name }, dirty: false, state: null, scroll: 0 };
       base = createState(emptyDoc());
       const made = target;
-      setDocs((ds) => { const i = ds.findIndex((d) => d.id === activeRef.current); const n = [...ds]; n.splice(i + 1, 0, made); return n; });
+      // after this file, or after its group when files are joined, so the group stays together in the rail
+      const g = panes.current.size ? groupRef.current ?? [] : [];
+      setDocs((ds) => { const i = Math.max(ds.findIndex((d) => d.id === activeRef.current), ...ds.map((d, j) => (g.includes(d.id) ? j : -1))); const n = [...ds]; n.splice(i + 1, 0, made); return n; });
       speechRef.current = made.id;
       setSpeechId(made.id);
     }
