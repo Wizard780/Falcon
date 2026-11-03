@@ -42,6 +42,7 @@ import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recen
 import { P, onPrefs, pref } from '../editor/prefs';
 import { track, type DocSource } from './analytics';
 import { readJson, safeSet } from './storage';
+import { RAIL_MAX, RAIL_MIN, RAIL_NAMES, loadRail, railMax, railWidth, saveRail } from './rail';
 import { reducedMotion } from './motion';
 
 // Settings, the command center and file search load the first time they open (and in the background once the
@@ -923,18 +924,55 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
   useEffect(() => () => clearTimeout(timer.current), []);
   // both lists scroll together, so each row stays level with its icon
   useLayoutEffect(() => { if (open && list.current && strip.current) list.current.scrollTop = strip.current.scrollTop; }, [open, props.docs.length]);
+
+  // the right edge drags the rail wider; wide enough, the names show in the rail and the hover panel stays shut
+  // off (Settings > Appearance > Resizable rail), it stays icons only; the dragged width is kept for when it's back on
+  const resizable = pref(P.railResize);
+  const [dragged, setWidth] = useState(loadRail);
+  const width = resizable ? dragged : RAIL_MIN;
+  const wide = width >= RAIL_NAMES;
+  useLayoutEffect(() => { document.documentElement.style.setProperty('--rail-w', `${width}px`); }, [width]);
+  useEffect(() => { if (wide) setOpen(false); }, [wide]);
+  const resize = (w: number) => { setWidth(w); saveRail(w); };
+  const grab = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const from = e.clientX - width, root = document.documentElement;
+    let w = width, raf = 0;
+    root.dataset.railDrag = '';
+    const move = (m: PointerEvent) => { w = railWidth(m.clientX - from, railMax()); cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setWidth(w)); };
+    const up = () => {
+      cancelAnimationFrame(raf);
+      delete root.dataset.railDrag;
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', up);
+      resize(w);
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
+  };
+  const step = (e: React.KeyboardEvent) => {
+    const to = { ArrowLeft: width - 16 < RAIL_NAMES ? RAIL_MIN : width - 16, ArrowRight: wide ? width + 16 : RAIL_NAMES, Home: RAIL_MIN, End: RAIL_MAX }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    resize(railWidth(to, railMax()));
+  };
+
   const isOn = (d: DocRow) => d.id === props.active && !props.home;
   return (
-    <nav className="fstrip" aria-label="Open documents">
-      <button ref={logo} className="sb-logo" title={titled('Home', 'home', 'recent files and new documents')} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /></button>
-      <div ref={strip} className="fs-docs" role="tablist" aria-label="Open documents" onPointerEnter={show} onPointerLeave={hide}
+    <nav className="fstrip" aria-label="Open documents" data-wide={wide || undefined}>
+      <button ref={logo} className="sb-logo" title={titled('Home', 'home', 'recent files and new documents')} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /><span className="lbl">Falcon</span></button>
+      <div ref={strip} className="fs-docs" role="tablist" aria-label="Open documents" onPointerEnter={wide ? undefined : show} onPointerLeave={wide ? undefined : hide}
         onScroll={(e) => { if (list.current) list.current.scrollTop = e.currentTarget.scrollTop; }}>
         {props.docs.map((d) => (
           <div key={d.id} className="doc-row" data-on={isOn(d) || undefined}>
             <button className="fs-b doc-nm" role="tab" aria-selected={isOn(d)} aria-label={d.speech ? `${d.name} (speech doc)` : d.name} data-on={isOn(d) || undefined}
               onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
-              <SvgIcon name="doc" />{d.dirty && <i className="dot" aria-label="unsaved" />}{d.speech && <i className="spk" aria-hidden="true">S</i>}
+              <SvgIcon name="doc" />{wide && <span className="lbl">{tidy(d.name)}</span>}{d.dirty && <i className="dot" aria-label="unsaved" />}{d.speech && <i className="spk" aria-hidden="true">S</i>}
             </button>
+            {wide && <button tabIndex={-1} className="doc-x" title={titled('Close', 'close', 'close this file')} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>}
           </div>
         ))}
       </div>
@@ -956,7 +994,11 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
       </aside>
       <div className="grow" />
       {props.update && <UpdateButton u={props.update} onInstall={props.onUpdate} />}
-      <button className="fs-b gear-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /></button>
+      <button className="fs-b gear-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /><span className="lbl">Settings</span></button>
+      {resizable && <div className="rail-grip" role="separator" aria-orientation="vertical" aria-label="Rail width" tabIndex={0}
+        aria-valuemin={RAIL_MIN} aria-valuemax={RAIL_MAX} aria-valuenow={width}
+        title="Rail width: drag to show file names, double-click to reset"
+        onPointerDown={grab} onDoubleClick={() => resize(RAIL_MIN)} onKeyDown={step} />}
     </nav>
   );
 }

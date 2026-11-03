@@ -165,3 +165,13 @@ Failed attempts:
 - React.lazy + Suspense for the modals: the re-render lands outside Preact's act in tests; replaced by a small `later()` loader.
 Open:
 - Find selects a match but doesn't scroll to it (main does the same; not from this work).
+
+## Stage: resizable rail (2026-11-02, branch rail-resize)
+User ask: drag the left rail wider so the open files' names show.
+- [x] a handle on the rail's right edge (`.rail-grip`, a separator: drag, arrow keys, Home/End); double-click resets to icons only
+- [x] 56px (icons) to 300px; short of 98px it snaps back to icons, from there it opens to at least 140px, where names show (`src/ui/rail.ts`)
+- [x] wide: logo, files and Settings show their names, each file gets a close button, and the hover files panel stays shut
+- [x] width kept in `falcon.rail` (like zoom and outline), so it survives a restart; held to 30% of a narrow window
+- [x] the toolbar packs closer by its own width (a container query) instead of the window's, so a wide rail doesn't clip it
+- [x] vitest 313 pass (tests/rail.test.ts), tsc clean; drove it in the web build and in Electron (drag, relaunch on the same profile, double-click)
+- [x] behind a setting, off by default (Settings > Appearance > Resizable rail, `falcon.railResize`, also in the command center): off, no handle and icons only; the dragged width is kept for when it's back on

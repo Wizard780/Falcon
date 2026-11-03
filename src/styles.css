@@ -14,7 +14,9 @@
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --doc-font: Calibri, Carlito, Arial, sans-serif;
   --zoom: 1;
-  --bar-h: 88px; --status-h: 28px; --strip-w: 56px; --nav-w: 280px; --tools-w: 280px;
+  --bar-h: 88px; --status-h: 28px; --nav-w: 280px; --tools-w: 280px;
+  /* the rail's dragged width (--rail-w, set by the rail), held to 30% of a narrow window */
+  --strip-w: min(var(--rail-w, 56px), max(140px, 30vw));
 }
 
 /* the pen color where the chrome uses it as a mark: darkened on light themes, where a yellow line would vanish */
@@ -46,6 +48,31 @@ svg { flex: none; }
 .spk { font: 600 10px/1 var(--mono); font-style: normal; color: var(--ink-ui); }
 .doc-row .spk { position: absolute; right: 6px; top: 6px; }
 .files-b .spk { flex: none; margin-right: 6px; }
+/* the rail's right edge drags it wider (RAIL_MIN to RAIL_MAX in src/ui/rail.ts); a line shows on hover, the pen color while dragging */
+.rail-grip { position: absolute; z-index: 2; top: 0; bottom: 0; right: -4px; width: 8px; cursor: col-resize; touch-action: none; outline: none; }
+.rail-grip::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background 150ms ease-out; }
+.rail-grip:hover::after { background: var(--u-ctl-on); transition-delay: 150ms; }
+.rail-grip:focus-visible::after, :root[data-rail-drag] .rail-grip::after { background: var(--ink-ui); transition-delay: 0s; }
+:root[data-rail-drag], :root[data-rail-drag] * { cursor: col-resize !important; user-select: none !important; }
+/* wide: each button stretches to a row with its name, icons where they sat in the narrow rail */
+.fstrip .lbl { display: none; }
+.fstrip[data-wide] { align-items: stretch; padding-left: 10px; padding-right: 10px; }
+.fstrip[data-wide] .lbl { display: block; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.fstrip[data-wide] .sb-logo, .fstrip[data-wide] .fs-b:not(.upd) { width: 100%; display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 0 10px; }
+.fstrip[data-wide] .sb-logo { padding: 0 8px; }
+.fstrip[data-wide] .sb-logo .lbl { font-size: 15px; font-weight: 500; }
+.fstrip[data-wide] .fs-b.upd { align-self: flex-start; }
+.fstrip[data-wide] .doc-nm { color: var(--u-tx2); }
+.fstrip[data-wide] .doc-nm svg { color: var(--u-mut); }
+.fstrip[data-wide] .doc-nm:hover, .fstrip[data-wide] .doc-nm[data-on], .fstrip[data-wide] .doc-nm[data-on] svg { color: var(--u-tx); }
+.fstrip[data-wide] .doc-row .dot { position: static; flex: none; margin-right: 6px; box-shadow: none; }
+.fstrip[data-wide] .doc-row .spk { position: static; flex: none; }
+.fstrip[data-wide] .doc-row:hover .dot, .fstrip[data-wide] .doc-row:hover .spk { visibility: hidden; }
+.doc-x { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--u-mut); cursor: pointer;
+  opacity: 0; transition: opacity 120ms ease-out, background 120ms ease-out, color 120ms ease-out; }
+.fstrip .doc-x svg { width: 12px; height: 12px; }
+.doc-row:hover .doc-x { opacity: 1; }
+.doc-x:hover { color: var(--u-tx); background: var(--u-ctl-on); }
 /* the files panel: hovering the file icons slides it out beside the rail, every row level with its icon */
 .files { position: fixed; z-index: 1; top: 8px; bottom: 8px; left: calc(var(--strip-w) + 4px); width: 280px; border-radius: 20px; background: var(--u-deep);
   box-shadow: inset 0 0 0 1px var(--u-hover), 0 8px 24px rgba(0, 0, 0, calc(.35 * var(--u-sh))); color: var(--u-tx); font-size: 14px;
@@ -161,7 +188,9 @@ svg { flex: none; }
 .sb-row.ol.l3[data-on], .sb-row.ol.l4[data-on] { color: var(--u-tx); }
 
 /* the top bar: Classic, a two-row grid where each button previews its style */
-.toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: safe center; background: var(--u-deep); user-select: none; min-width: 0; overflow: hidden; }
+.toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: safe center; background: var(--u-deep); user-select: none; min-width: 0;
+  overflow-x: auto; scrollbar-width: none; container-type: inline-size; }
+.toolbar::-webkit-scrollbar { display: none; }
 .bar { position: relative; display: flex; align-items: center; height: 100%; padding: 0 24px; gap: 32px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
 .bar .g, .bar .end { display: grid; grid-template-rows: 32px 32px; grid-auto-flow: column; gap: 4px; }
 .bar .g > .b, .bar .end > .b { width: 100%; }
@@ -321,7 +350,7 @@ button.b:active { transform: scale(.97); }
 
 /* desktop: the window drags by the chrome; on macOS the strip and panel start below the traffic lights */
 .desktop .toolbar, .desktop .fstrip, .desktop .tools, .desktop .status { -webkit-app-region: drag; }
-.desktop button, .desktop .pop, .desktop input, .desktop .files[data-open] { -webkit-app-region: no-drag; }
+.desktop button, .desktop .pop, .desktop input, .desktop .files[data-open], .desktop .rail-grip { -webkit-app-region: no-drag; }
 /* Electron cuts drag areas in page order, so the toolbar (later in the page) would turn the open files
    panel's rows over it back into window drags; it gives up dragging while the panel is open */
 .desktop .app:has(.files[data-open]) .toolbar { -webkit-app-region: no-drag; }
@@ -461,10 +490,9 @@ button.b:active { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) { .st-keys, .st-keys kbd, .st-keytype i { animation: none !important; } }
 
 /* narrow windows: the tools row takes the toolbar's left 280px, so the groups pack closer, and past that the bar scrolls sideways */
-@media (max-width: 1190px) {
+/* short of room for the bar (954px wide at full spacing), it packs closer and scrolls sideways; a wider rail leaves it less */
+@container (max-width: 960px) {
   .bar { gap: 12px; padding: 0 12px; }
-  .toolbar { overflow-x: auto; scrollbar-width: none; }
-  .toolbar::-webkit-scrollbar { display: none; }
 }
 
 /* warnings: Falcon's own confirm dialog, in place of the OS alert */

@@ -195,6 +195,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.wheelZoom, 'Zoom with the scroll wheel', 'appearance'),
     pick(P.textWidth, 'Text width', 'appearance', [['full', 'Full'], ['wide', 'Wide'], ['narrow', 'Narrow']]),
     pick(P.margins, 'Margins', 'appearance', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']]),
+    tog(P.railResize, 'Resizable rail', 'appearance', 'Drag the rail\'s right edge to show the names of open files.'),
     pick(P.caret, 'Cursor color', 'appearance', [['auto', 'Text'], ['blue', 'Blue'], ['red', 'Red'], ['ink', 'Highlighter']]),
     pick(P.selection, 'Selection color', 'appearance', [['blue', 'Blue'], ['gray', 'Gray'], ['ink', 'Highlighter']]),
     tog(P.cardBar, 'Mark the current card', 'appearance', 'A thin line beside the card the cursor is in.'),
