@@ -26,6 +26,7 @@ import { FONTS, SIZE_PREFS, UI_FONTS } from './display';
 
 const STYLE_OPTS: [string, string][] = [['normal', 'Normal text'], ['pocket', 'Pocket'], ['hat', 'Hat'], ['block', 'Block'], ['tag', 'Tag'], ['analytic', 'Analytic'], ['undertag', 'Undertag']];
 const WPM: [number, string][] = Array.from({ length: 12 }, (_, i) => [150 + i * 25, `${150 + i * 25} wpm`]);
+const WPM_TAGS: [number, string][] = [[0, 'Same as cards'], ...WPM];
 const MARKERS: [string, string][] = [['#FF0000', 'Red'], ['#0070C0', 'Blue'], ['#00B050', 'Green'], ['#7030A0', 'Purple']];
 
 type Props = {
@@ -352,8 +353,10 @@ export function Settings(props: Props) {
           select('Prep time', prep, Array.from({ length: 15 }, (_, i) => [i + 1, `${i + 1}:00`]), (m) => setPref(P.prepMin, Number(m))) },
       ]],
       ['Reading speed', [
-        pickNum(P.wpm1, 'Reader 1', 'Words per minute for the first read time in the status bar.', WPM),
-        pickNum(P.wpm2, 'Reader 2', 'Words per minute for the second read time.', WPM),
+        pickNum(P.wpm1, 'Reader 1: cards', 'How fast Reader 1 reads highlighted card text. The first read time in the status bar.', WPM),
+        pickNum(P.wpm1Tags, 'Reader 1: tags and analytics', 'How fast Reader 1 reads tags, analytics and cites, usually faster than cards.', WPM_TAGS),
+        pickNum(P.wpm2, 'Reader 2: cards', 'How fast Reader 2 reads highlighted card text. The second read time.', WPM),
+        pickNum(P.wpm2Tags, 'Reader 2: tags and analytics', 'How fast Reader 2 reads tags, analytics and cites.', WPM_TAGS),
       ]],
     ] },
   ];
