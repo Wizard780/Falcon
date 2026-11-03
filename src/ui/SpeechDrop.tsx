@@ -9,7 +9,8 @@ import './speechdrop.css';
  * The SpeechDrop tab: SpeechDrop's own site (join a room by its code or make one; the room's files, live,
  * newest first; upload by button or drop; download one or all; delete what you uploaded) inside Falcon.
  * A .docx opens as a Falcon tab, and "Upload" sends the doc you came from without saving it first.
- * It stays mounted while the tab is open, so the room keeps updating behind the editor.
+ * It stays mounted while the tab is open, so the room keeps updating behind the editor. Each room joined
+ * is its own tab, so several rooms update at once.
  */
 
 const ROOMS_KEY = 'falcon.sd.rooms'; // rooms joined, newest first: [{ code, name, when }]
@@ -70,6 +71,12 @@ export function SpeechDrop(props: {
   onTab: (t: SdTab) => void;
   flash: (msg: string, action?: { label: string; run: () => void }) => void;
   confirm: (a: Omit<Ask, 'done'>) => Promise<boolean>;
+  /** shows this tab (the toast's Show button) */
+  onShow: () => void;
+  /** a new tab, in the lobby, for joining another room */
+  onAnother: () => void;
+  /** a room already open in another tab: shows that tab and answers true, so it isn't joined twice */
+  openElsewhere: (code: string) => boolean;
 }) {
   const api = bridge.speechdrop;
   const [room, setRoom] = useState<Room | null>(null);
@@ -86,9 +93,12 @@ export function SpeechDrop(props: {
   const uploading = useRef(new Set<string>());
   const openRef = useRef(props.open);
   openRef.current = props.open;
-  const { onTab, flash } = props;
+  const { flash } = props;
+  // the tab's callbacks are made fresh each render; these always reach the latest
+  const cb = useRef(props);
+  cb.current = props;
 
-  useEffect(() => { onTab({ room, fresh: fresh.size }); }, [room, fresh, onTab]);
+  useEffect(() => { cb.current.onTab({ room, fresh: fresh.size }); }, [room, fresh]);
 
   /** A new list: anything not seen before is fresh, unless this Falcon is the one uploading it. */
   const take = useCallback((list: SdFile[], announce: boolean) => {
@@ -102,7 +112,7 @@ export function SpeechDrop(props: {
     const added = list.filter((f) => !seen.has(f.index) && !uploading.current.has(f.name));
     setFresh((s) => (added.length || [...s].some((i) => !here.has(i)) ? new Set([...[...s].filter((i) => here.has(i)), ...added.map((f) => f.index)]) : s));
     if (!added.length) return;
-    if (announce && !openRef.current) flash(added.length === 1 ? `New in SpeechDrop: ${added[0].name}` : `${added.length} new files in SpeechDrop`, { label: 'Show', run: () => window.dispatchEvent(new Event(SHOW_EVENT)) });
+    if (announce && !openRef.current) flash(added.length === 1 ? `New in SpeechDrop: ${added[0].name}` : `${added.length} new files in SpeechDrop`, { label: 'Show', run: () => cb.current.onShow() });
   }, [flash]);
 
   // the live list, for as long as the tab is open on this room
@@ -114,6 +124,7 @@ export function SpeechDrop(props: {
 
   const join = useCallback(async (code: string): Promise<boolean> => {
     if (!api) return false;
+    if (cb.current.openElsewhere(code)) return true;
     const r = await api.room(code);
     if (!r.ok) { flash(say(r.error)); return false; }
     known.current = null;
@@ -242,6 +253,7 @@ export function SpeechDrop(props: {
                 </button>
                 <button className="hm-act" onClick={() => void uploadPicked()} disabled={!!busy}><SvgIcon name="open" /><span>Upload file…</span></button>
                 {files.length > 0 && <button className="hm-act" onClick={() => void downloadAll()} disabled={!!busy}><SvgIcon name="download" /><span>Download all</span></button>}
+                <button className="hm-act" onClick={props.onAnother} title="Join or make another room in a new tab; this one keeps updating"><SvgIcon name="plus" /><span>Another room</span></button>
                 <button className="hm-act sd-leave" onClick={leave}><span>Leave room</span></button>
               </div>
             </header>
@@ -277,7 +289,7 @@ export function SpeechDrop(props: {
   );
 }
 
-/** Opens the SpeechDrop tab (the toast's Show button). */
+/** Opens the SpeechDrop tab: the last one shown, or a new one. */
 export const SHOW_EVENT = 'falcon:sd-show';
 
 /** Join by code (typing the 6th character joins, as on SpeechDrop's site), a room joined before, or make a new one. */
@@ -286,7 +298,12 @@ function Lobby(props: { join: (code: string) => Promise<boolean>; make: (name: s
   const [name, setName] = useState('');
   const [checking, setChecking] = useState(false);
   const [bad, setBad] = useState(false);
-  const [recent] = useState(recentRooms);
+  const [recent, setRecent] = useState(recentRooms);
+  const forget = (code: string) => {
+    const left = recentRooms().filter((r) => r.code !== code);
+    safeSet(ROOMS_KEY, JSON.stringify(left));
+    setRecent(left);
+  };
   const codeRef = useRef<HTMLInputElement>(null);
   useEffect(() => { codeRef.current?.focus(); }, []);
   const tryJoin = async (c: string) => {
@@ -318,9 +335,12 @@ function Lobby(props: { join: (code: string) => Promise<boolean>; make: (name: s
         <div className="sd-recent">
           <div className="hm-lab"><span>Joined before</span></div>
           {recent.map((r) => (
-            <button key={r.code} className="sd-f sd-rr" onClick={() => void tryJoin(r.code)}>
-              <span className="ic"><SvgIcon name="doc" /></span><span className="nm">{r.name}</span><span className="wh">{r.code}</span>
-            </button>
+            <div key={r.code} className="sd-row">
+              <button className="sd-f sd-rr" onClick={() => void tryJoin(r.code)}>
+                <span className="ic"><SvgIcon name="inbox" /></span><span className="nm">{r.name}</span><span className="wh">{r.code}</span>
+              </button>
+              <button className="sd-x" title={`Take ${r.name} off this list`} aria-label={`Forget ${r.name}`} onClick={() => forget(r.code)}><SvgIcon name="x" /></button>
+            </div>
           ))}
         </div>
       )}

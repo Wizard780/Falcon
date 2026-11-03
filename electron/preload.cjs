@@ -67,12 +67,12 @@ contextBridge.exposeInMainWorld('falcon', {
     open: (room, index, name) => ipcRenderer.invoke('falcon:sd-open', room, index, name),
     download: (room, index, name) => ipcRenderer.invoke('falcon:sd-download', room, index, name),
     archive: (room, title) => ipcRenderer.invoke('falcon:sd-archive', room, title),
-    // the live list of `room` (null stops); returns an unsubscribe
+    // the live list of `room`, one watch per room; returns an unsubscribe
     watch: (room, files, f) => {
       const on = (_e, u) => { if (u && u.room === room) f(u); };
       ipcRenderer.on('falcon:sd-files', on);
       ipcRenderer.send('falcon:sd-watch', room, files);
-      return () => { ipcRenderer.removeListener('falcon:sd-files', on); ipcRenderer.send('falcon:sd-watch', null); };
+      return () => { ipcRenderer.removeListener('falcon:sd-files', on); ipcRenderer.send('falcon:sd-unwatch', room); };
     },
   },
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),

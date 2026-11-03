@@ -121,7 +121,30 @@ want(!!made && (await win.textContent('.sd-code'))?.trim() === made[0], `Make ro
 want((await win.$$eval('.sd-rr', (r) => r.length).catch(() => 0)) === 0, 'in the room, not the lobby');
 await shot('5-made-room');
 
-// Mod-W closes the tab and leaves the docs alone
+// another room at once: both are tabs, and both keep updating while you're in a doc
+await win.click('.sd.open button:has-text("Another room")');
+await win.waitForSelector('section.sd.open input[aria-label="Room code"]');
+await win.hover('.sd.open .sd-rr');
+await shot('6-lobby-second');
+await win.click('section.sd.open input[aria-label="Room code"]');
+await win.keyboard.type('abc234');
+await win.waitForSelector('section.sd.open .sd-hi:has-text("Round 3")');
+const twoRooms = async () => { const t = await tabs(); return t.includes('SpeechDrop: Doubles Flight B') && t.includes('SpeechDrop: Round 3 <Flight A>'); };
+await until(twoRooms, 3000);
+const both = await tabs();
+want(both.filter((t) => t.startsWith('SpeechDrop: ')).length === 2 && both.includes('SpeechDrop: Doubles Flight B') && both.includes('SpeechDrop: Round 3 <Flight A>'), `two rooms, two tabs: ${both}`);
+await win.click('.fs-docs .doc-nm[aria-label="Untitled"]');
+mock.rooms.get('abc234').files.push({ name: 'Neg 1AR.docx', ctime: Date.now(), bytes: seedDocx });
+mock.rooms.get(made[0]).files.push({ name: 'Aff 2AC.docx', ctime: Date.now(), bytes: seedDocx });
+want(await until(async () => (await win.$$('.fs-docs .sd-tab .dot.new')).length === 2, 12000), 'a new file in each room puts a dot on each tab');
+await shot('7-two-rooms');
+
+// Mod-W closes the SpeechDrop tab showing and leaves the docs alone
+await win.click('.fs-docs .sd-tab .doc-nm');
+await win.keyboard.press(`${mod}+w`);
+await win.waitForTimeout(300);
+want((await tabs()).filter((t) => t.startsWith('SpeechDrop')).length === 1, `Mod-W closes one SpeechDrop tab: ${await tabs()}`);
+await win.click('.fs-docs .sd-tab .doc-nm');
 await win.keyboard.press(`${mod}+w`);
 await win.waitForTimeout(300);
 want(JSON.stringify(await tabs()) === '["Untitled","Aff 1AC"]', `Mod-W closes the SpeechDrop tab only: ${await tabs()}`);

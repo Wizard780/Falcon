@@ -54,7 +54,7 @@
   transition: box-shadow 150ms var(--u-ease); }
 .sd input:focus { box-shadow: inset 0 0 0 1px var(--u-ctl-on), var(--u-top); }
 .sd input::placeholder { color: var(--u-mut); }
-.sd .sd-in-code { max-width: 260px; height: 52px; font: 22px var(--mono); letter-spacing: .12em; }
+.sd .sd-in-code { max-width: 260px; height: 52px; padding-left: calc(14px + .12em); text-align: center; font: 22px var(--mono); letter-spacing: .12em; }
 .sd .sd-in-code::placeholder { font: 16px var(--ui-font); letter-spacing: 0; }
 .sd .sd-in-code[data-bad] { box-shadow: inset 0 0 0 1px #c25454, var(--u-top); }
 .sd-hint { margin: 8px 2px 0; font-size: 13px; color: var(--u-mut); }
