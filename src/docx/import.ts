@@ -92,6 +92,9 @@ function paraStyleOf(styles: Map<string, StyleInfo>, id: string | null, ppr: Ele
 const STYLE_PT: Record<ParaStyle, number> = { normal: 11, undertag: 11, pocket: 26, hat: 22, block: 16, tag: 13, analytic: 13 };
 
 type CharKind = 'cite' | 'underline' | 'emphasis' | null;
+/** A character style as runs see it: its kind, whether it draws a box, and for a style of no kind ("Strong",
+ *  "8-point small", "Heading 4 Char") the bold, italic, size and color it gives, nearest in its chain first. */
+type CharStyle = { kind: CharKind; box?: boolean; look: Partial<Record<'b' | 'i' | 'sz' | 'color', Element>> };
 const CHAR_BY_ID: Record<string, CharKind> = { style13ptbold: 'cite', cite: 'cite', styleunderline: 'underline', underline: 'underline', emphasis: 'emphasis' };
 function charByName(n: string): CharKind {
   if (/^emphasis$/.test(n)) return 'emphasis';
@@ -99,20 +102,26 @@ function charByName(n: string): CharKind {
   if (/^cite$|^style 13 ?pt bold$/.test(n)) return 'cite';
   return null;
 }
-function charStyleOf(styles: Map<string, StyleInfo>, id: string | null): CharKind {
+const uIsOn = (u: Element | undefined) => !!u && val(u) !== 'none' && val(u) !== '0';
+/** A border's state: true for a box, false for one switched off (none/nil), undefined when not set. */
+const boxOf = (bdr: Element | undefined) => (bdr ? !['none', 'nil'].includes(val(bdr) ?? '') : undefined);
+function charStyleOf(styles: Map<string, StyleInfo>, id: string | null): CharStyle {
+  const look: CharStyle['look'] = {};
+  let box: boolean | undefined;
   for (const [sid, s] of chain(styles, id)) {
+    box ??= boxOf(kid(s.rpr, 'bdr'));
     const hit = CHAR_BY_ID[sid.toLowerCase()] ?? charByName(s.name) ?? charByName(s.alias);
-    if (hit) return hit;
+    if (hit) return { kind: hit, box, look: {} };
     // unknown custom style: judge by its look
     const r = s.rpr;
     if (r) {
       const u = kid(r, 'u');
-      const uOn = !!u && val(u) !== 'none' && val(u) !== '0';
-      if (kid(r, 'bdr') && uOn) return 'emphasis';
-      if (uOn) return 'underline';
+      if (box && uIsOn(u)) return { kind: 'emphasis', box, look: {} };
+      if (uIsOn(u)) return { kind: 'underline', box, look: {} };
+      for (const k of ['b', 'i', 'sz', 'color'] as const) look[k] ??= kid(r, k);
     }
   }
-  return null;
+  return { kind: null, look };
 }
 
 const HL_NAMES = new Set(Object.keys(HIGHLIGHTS));
@@ -128,37 +137,45 @@ function readLinks(xml: string | undefined): Map<string, string> {
   return map;
 }
 
-function runMarks(styles: Map<string, StyleInfo>, rpr: Element | undefined, paraStyle: ParaStyle, cache: Map<string, CharKind>): Mark[] {
+const NO_STYLE: CharStyle = { kind: null, look: {} };
+function runMarks(styles: Map<string, StyleInfo>, rpr: Element | undefined, paraStyle: ParaStyle, cache: Map<string, CharStyle>): Mark[] {
   const marks: Mark[] = [];
   if (!rpr) return marks;
   const rs = val(kid(rpr, 'rStyle'));
-  let kind: CharKind = null;
+  let style = NO_STYLE;
   if (rs) {
     if (!cache.has(rs)) cache.set(rs, charStyleOf(styles, rs));
-    kind = cache.get(rs)!;
+    style = cache.get(rs)!;
   }
+  const { kind, look } = style;
   const u = kid(rpr, 'u');
-  const uOn = !!u && val(u) !== 'none' && val(u) !== '0';
-  const emph = kind === 'emphasis' || (!!kid(rpr, 'bdr') && uOn && kind !== 'underline');
+  const uOn = uIsOn(u);
+  const box = boxOf(kid(rpr, 'bdr'));
+  // the run's own <w:u w:val="none"/> or <w:bdr w:val="none"/> beats its style, as in Word: shrunk text
+  // often keeps the Emphasis or Underline style with its underline switched off. Emphasis with its underline
+  // off stays boxed only where Word still draws the box (Falcon has no box without the underline).
+  const underlined = u ? uOn : kind === 'underline' || kind === 'emphasis';
+  const emph = kind === 'emphasis' ? (underlined ? box !== false : !!(box ?? style.box)) : underlined && !!box && uOn && kind !== 'underline';
   if (emph) marks.push(M.emphasis.create());
-  else if (kind === 'underline' || uOn) marks.push(M.underline.create());
+  else if (underlined) marks.push(M.underline.create());
   if (kind === 'cite') marks.push(M.cite.create());
-  const b = kid(rpr, 'b');
+  const boldDefault = (paraStyle !== 'normal' && paraStyle !== 'undertag') || kind === 'cite' || emph;
+  // a style's bold only counts on text that isn't bold already (Word flips bold styles on bold text)
+  const b = kid(rpr, 'b') ?? (boldDefault ? undefined : look.b);
   if (b) {
-    const boldDefault = (paraStyle !== 'normal' && paraStyle !== 'undertag') || kind === 'cite' || emph;
     if (on(b) && !boldDefault) marks.push(M.bold.create());
     else if (!on(b) && boldDefault) marks.push(M.unbold.create());
   }
-  if (on(kid(rpr, 'i'))) marks.push(M.italic.create());
+  if (on(kid(rpr, 'i') ?? look.i)) marks.push(M.italic.create());
   if (on(kid(rpr, 'strike'))) marks.push(M.strike.create());
   const hl = val(kid(rpr, 'highlight'));
   if (hl && hl !== 'none' && HL_NAMES.has(hl)) marks.push(M.highlight.create({ color: hl }));
   const shd = kid(rpr, 'shd');
   const fill = shd?.getAttributeNS(W, 'fill') ?? shd?.getAttribute('w:fill');
   if (fill && /^[0-9a-f]{6}$/i.test(fill) && fill.toUpperCase() !== 'FFFFFF') marks.push(M.shading.create({ color: `#${fill.toUpperCase()}` }));
-  const color = val(kid(rpr, 'color'));
+  const color = val(kid(rpr, 'color') ?? look.color);
   if (color && /^[0-9a-f]{6}$/i.test(color) && color !== '000000') marks.push(M.color.create({ color: `#${color.toUpperCase()}` }));
-  const sz = Number(val(kid(rpr, 'sz')));
+  const sz = Number(val(kid(rpr, 'sz') ?? look.sz));
   if (sz) {
     const pt = sz / 2;
     const natural = kind === 'cite' ? 13 : STYLE_PT[paraStyle]; // cite text is 13pt in any paragraph
@@ -254,7 +271,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
   // endnotes come in as footnotes (Falcon has one kind of note), so their text is kept
   const noteSets = { footnoteReference: { notes: readFootnotes(str('word/footnotes.xml')), rels: relsOf('footnotes') }, endnoteReference: { notes: readFootnotes(str('word/endnotes.xml'), 'endnote'), rels: relsOf('endnotes') } };
   const body = kid(parseXml(strFromU8(docXml)).documentElement, 'body');
-  const cache = new Map<string, CharKind>();
+  const cache = new Map<string, CharStyle>();
   const pstyleCache = new Map<string, ParaStyle>();
 
   const styleOf = (ppr: Element | undefined): ParaStyle => {

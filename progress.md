@@ -209,6 +209,13 @@ User report: the six-dot card grip won't let you click the text next to it.
 - [x] checked at narrow and normal margins, 100% and 150% zoom: a click 2px into a tag puts the caret at its start, and the grip's center is still the grip
 - [x] follow-up report "the cursor won't let me select it": the left margin (where the grip lives) was a dead zone, so a click or drag starting beside a line did nothing. A press in the margin now goes to the line's near edge (Word and CardMirror put the caret at the line's start), and the grip itself tells a click (caret at its line's start), a sideways drag (selects from the line's start) and an up/down drag (moves the card) apart. Journey margin-click covers it at normal and narrow margins
 
+## Fix: backfiles open with the underline Word shows (2026-11-03, branch import-run-overrides)
+Bug hunt (Aarav asked for "bugs and everything"): opened 500 of his .docx files through the importer and compared what Word shows with what Falcon shows and saves.
+- [x] a run that keeps the Underline or Emphasis style but switches its underline off (`<w:u w:val="none"/>`, usually shrunk unread text) showed, and saved, as underlined: 101k characters in 106 of 500 files. It now shows without it; Emphasis with its underline off stays boxed only where Word still draws the box. A run's `<w:bdr w:val="none"/>` turns an Emphasis box off (underline stays)
+- [x] character styles with no Falcon name lost their look: "Heading 4 Char" cites showed plain, "Strong" not bold, "8-point small" full size (45k characters in 95 of 500 files). Their bold (only on text that isn't bold already), italic, size and color now carry over
+- [x] his own NATO block files open and save exactly as before (effective formatting diffed run by run)
+- [x] vitest tests/import-overrides.test.ts (fails on main), journey backfile-overrides; before/after screenshot of a real Impact Defense card
+
 ## Stage: stable card ids (2026-11-03, branch stable-card-ids)
 Groundwork for Claude and Aarav editing the same block file (open-doc status, his edits for Claude, pending cards). No UI.
 - [x] every top-level heading (pocket, hat, block, tag, analytic) has a `card` attr: 8 random lowercase letters/digits (`src/editor/card-ids.ts`)
