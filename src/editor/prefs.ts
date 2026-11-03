@@ -69,6 +69,7 @@ export const P = {
   smartPaste: def('smartPaste', true),
   citeNearest: def('citeNearest', true),
   hlUnderlined: def('hlUnderlined', false),
+  styleOffClears: def('styleOffClears', true), // taking underline off also clears size, bold, highlight... (CardMirror's default)
   enterPocket: def<Style>('enter.pocket', 'normal'),
   enterHat: def<Style>('enter.hat', 'normal'),
   enterBlock: def<Style>('enter.block', 'normal'),

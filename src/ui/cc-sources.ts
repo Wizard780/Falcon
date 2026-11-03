@@ -231,6 +231,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.smartPaste, 'Smart paste', 'editor', 'Word and Verbatim formatting pastes as cites, underlining and highlights.'),
     tog(P.citeNearest, 'Copy previous cite: first line only', 'editor'),
     tog(P.hlUnderlined, 'Highlight underlined text only', 'editor'),
+    tog(P.styleOffClears, 'Clear formatting when underline comes off', 'editor'),
     enterAfter('pocket', P.enterPocket), enterAfter('hat', P.enterHat), enterAfter('block', P.enterBlock),
     enterAfter('tag', P.enterTag), enterAfter('analytic', P.enterAnalytic), enterAfter('undertag', P.enterUndertag),
     ...[...navSettings, ...docToolSettings, ...cardToolSettings].map(spec),
