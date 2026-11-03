@@ -35,8 +35,9 @@ export function reserve(list: [key: string, label: string][]) {
   for (const [k, what] of list) RESERVED.set(norm(k), what);
 }
 reserve([
-  ['Mod-c', 'Copy'], ['Mod-x', 'Cut'], ['Mod-v', 'Paste'], ['Mod-q', 'Quit'], ['Escape', 'Close'],
-  ...(IS_MAC ? [['Mod-h', 'Hide Falcon'], ['Mod-Alt-h', 'Hide others'], ['Mod-m', 'Minimize']] as [string, string][] : []),
+  ['Mod-c', 'Copy'], ['Mod-x', 'Cut'], ['Mod-v', 'Paste'], ['Escape', 'Close'],
+  // Windows has no menu bar (electron/main.cjs), so nothing there quits on Ctrl+Q and it stays free to bind
+  ...(IS_MAC ? [['Mod-q', 'Quit'], ['Mod-h', 'Hide Falcon'], ['Mod-Alt-h', 'Hide others'], ['Mod-m', 'Minimize']] as [string, string][] : []),
 ]);
 
 export const keyOf = (id: string): string => { const b = byId.get(id); return b ? pref(b.pref) : ''; };
