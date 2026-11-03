@@ -1,5 +1,6 @@
 // Falcon main process: one window, native file dialogs, and the clipboard bridge.
 const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, shell } = require('electron');
+const crypto = require('node:crypto');
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -8,6 +9,7 @@ const { createCardIndex } = require('./cards.cjs');
 const updater = require('./updater.cjs');
 const speechdrop = require('./speechdrop.cjs');
 const telemetry = require('./telemetry.cjs');
+const { createEditorBridge, bridgeDir } = require('./editor-bridge.cjs');
 
 const DEV = process.env.FALCON_DEV === '1';
 const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a window
@@ -416,6 +418,36 @@ ipcMain.on('falcon:sd-watch', (e, room, files) => {
 });
 app.on('will-quit', () => sdWatcher.stop());
 
+// Nimbus and other debate apps send cards in over the same local bridge CardMirror has (see editor-bridge.cjs).
+// Each request goes to the page, which knows the open docs, and comes back with its answer.
+let bridgePage = null;
+const bridgeWaits = new Map();
+function askPage(kind, payload) {
+  const wc = bridgePage && !bridgePage.isDestroyed() ? bridgePage : null;
+  if (!wc) return Promise.resolve(kind === 'docs' ? { docs: [] } : kind === 'ping' ? { hasActiveDoc: false } : { ok: false, error: 'no-target-doc' });
+  return new Promise((resolve) => {
+    const id = crypto.randomBytes(8).toString('hex');
+    // a person reads the consent question; everything else answers right away
+    const timer = setTimeout(() => { bridgeWaits.delete(id); resolve(kind === 'consent' ? { answer: null } : { ok: false, error: 'internal' }); }, kind === 'consent' ? 180000 : 5000);
+    bridgeWaits.set(id, (a) => { clearTimeout(timer); resolve(a); });
+    // the question shows in Falcon while the user is in the other app: make the Dock or taskbar say so
+    if (kind === 'consent' && !HEADLESS) { if (process.platform === 'darwin') app.dock?.bounce('critical'); else BrowserWindow.fromWebContents(wc)?.flashFrame(true); }
+    wc.send('falcon:bridge', id, kind, payload);
+  });
+}
+ipcMain.on('falcon:bridge-ready', (e) => { bridgePage = e.sender; });
+ipcMain.on('falcon:bridge-answer', (_e, id, answer) => { const done = bridgeWaits.get(id); if (done) { bridgeWaits.delete(id); done(answer); } });
+let editorBridge = null;
+const linkedApps = () => editorBridge?.apps() ?? [];
+ipcMain.handle('falcon:bridge-apps', () => linkedApps());
+ipcMain.handle('falcon:bridge-allow', (_e, appId, on) => { if (typeof appId === 'string') { if (on === null) editorBridge?.forget(appId); else editorBridge?.setAllowed(appId, on === true); } return linkedApps(); });
+function startEditorBridge() {
+  if (HEADLESS && !process.env.CARDMIRROR_BRIDGE_DIR) return; // tests never show up in the real folder
+  editorBridge = createEditorBridge({ dir: bridgeDir(app.getPath('appData')), appVersion: app.getVersion(), consentFile: path.join(app.getPath('userData'), 'linked-apps.json'), ask: askPage });
+  editorBridge.start().catch(() => { editorBridge = null; });
+}
+app.on('will-quit', () => editorBridge?.stop());
+
 ipcMain.on('falcon:track', (_e, event, props) => {
   if (telemetry.enabled({ dev: DEV, headless: HEADLESS })) telemetry.track(event, props);
 });
@@ -424,6 +456,7 @@ if (primary) app.whenReady().then(() => {
   buildMenu();
   createWindow();
   updater.start();
+  startEditorBridge();
   // read changed files into the card index after launch settles, so Search cards is current when first opened
   if (!HEADLESS) setTimeout(() => void cards().scan().catch(() => {}), 10000);
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
