@@ -70,7 +70,7 @@ const NOT_COMMANDS = new Set(['New line', 'Delete back', 'Delete forward']);
 const SYN: Record<string, string> = {
   home: 'start recent', settings: 'preferences options config', outline: 'nav pane navigation sidebar', find: 'search text look for',
   zoomIn: 'bigger magnify', zoomOut: 'smaller', zoomReset: '100% reset zoom', new: 'blank file create', open: 'docx file',
-  save: 'write disk', saveAs: 'copy rename export', close: 'tab', nextDoc: 'switch tab', prevDoc: 'switch tab',
+  save: 'write disk', saveAs: 'copy rename export', close: 'tab', nextDoc: 'switch tab', prevDoc: 'switch tab', recentDoc: 'switch tab last previous mru ctrl tab', recentDocBack: 'switch tab mru',
   pastePlain: 'plain text unformatted', condense: 'paragraph integrity spaces', changeCase: 'uppercase lowercase title caps',
   pocket: 'heading style h1', hat: 'heading style h2', block: 'heading style h3', tag: 'heading style card h4', analytic: 'analysis arg',
   undertag: 'annotation note', cite: 'citation author date', copyCite: 'citation duplicate', emphasis: 'box bold',
