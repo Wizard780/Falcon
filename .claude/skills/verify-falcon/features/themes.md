@@ -1,6 +1,6 @@
 # Themes
 
-Settings > Appearance > Theme picks the colors of the chrome and the page from a row of tiles, each a small picture of its theme: System (Light or Dark, following the OS live), Dark (the default graphite), Light, Night (graphite with a dark page), Midnight, Sepia and High contrast. New theme copies the one that's on into a custom theme, whose name and four colors (Background, Text, Paper, Paper text) then edit in place; every other chrome shade is the text mixed into the background. Document paper (Theme, White, Dark) overrides just the page. Nothing here changes the saved file.
+Settings > Appearance > Theme picks the colors of the chrome and the page from a row of tiles, each a small picture of its theme: System (Light or Dark, following the OS live), Dark (the default graphite), Grey (softer grey chrome with a white page), Light, Night (graphite with a dark page), Midnight, Sepia and High contrast. New theme copies the one that's on into a custom theme, whose name and four colors (Background, Text, Paper, Paper text) then edit in place; every other chrome shade is the text mixed into the background. Document paper (Theme, White, Dark) overrides just the page. Nothing here changes the saved file.
 
 ## Sub-features
 

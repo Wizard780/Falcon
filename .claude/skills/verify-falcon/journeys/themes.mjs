@@ -21,7 +21,7 @@ const before = await f.markMap();
 want(await bg() === 'rgb(15, 15, 16)' && await chrome() === 'dark', 'Dark is the default: graphite chrome');
 await appearance();
 const names = await page.$$eval('[aria-label="Theme"] [role=radio]', (b) => b.map((x) => x.getAttribute('aria-label')));
-want(names.join() === 'System,Dark,Light,Night,Midnight,Sepia,High contrast', `presets: ${names.join(', ')}`);
+want(names.join() === 'System,Dark,Grey,Light,Night,Midnight,Sepia,High contrast', `presets: ${names.join(', ')}`);
 want(await checked('Dark'), 'Dark is checked');
 
 // a preset

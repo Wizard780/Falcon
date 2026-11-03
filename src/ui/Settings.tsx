@@ -11,7 +11,7 @@ import { KeyField, type KeyNote } from './KeyField';
 import { safeSet } from './storage';
 import { readSetting, type SettingSpec } from '../editor/tools';
 import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
-import { newFileName } from './files';
+import { newFileName, speechFileName } from './files';
 import { bridge, setActiveColor, type IndexFolder } from '../editor/host';
 import { downloadSettings, importSettings } from './settings-file';
 import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
@@ -26,6 +26,7 @@ import { FONTS, SIZE_PREFS, UI_FONTS } from './display';
 
 const STYLE_OPTS: [string, string][] = [['normal', 'Normal text'], ['pocket', 'Pocket'], ['hat', 'Hat'], ['block', 'Block'], ['tag', 'Tag'], ['analytic', 'Analytic'], ['undertag', 'Undertag']];
 const WPM: [number, string][] = Array.from({ length: 12 }, (_, i) => [150 + i * 25, `${150 + i * 25} wpm`]);
+const WPM_TAGS: [number, string][] = [[0, 'Same as cards'], ...WPM];
 const MARKERS: [string, string][] = [['#FF0000', 'Red'], ['#0070C0', 'Blue'], ['#00B050', 'Green'], ['#7030A0', 'Purple']];
 
 type Props = {
@@ -194,6 +195,10 @@ export function Settings(props: Props) {
         pickNum(P.recentCount, 'Recent files', 'How many files Home lists.', [[6, '6'], [12, '12'], [24, '24']]),
         { label: 'Name new files', hint: 'What an Untitled document is called when you first save it.', control:
           select('Name new files', pref(P.newName), (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), (h) => setPref(P.newName, h as 'untitled')) },
+        { label: 'Speech doc name', wide: true, search: 'speech filename template date',
+          hint: `What New speech doc names the file. {speech} is the name you type at the prompt. {date:…} is the date and time: YYYY YY, M MM MMM MMMM, D DD ddd dddd, h hh (12-hour), H HH (24-hour), m mm, s ss, and A or a for AM/PM. Anything else stays as typed; inside {date:…} put a word in [brackets]. Example: ${speechFileName('1NC')}.docx`,
+          control: <input className="st-text st-wide" aria-label="Speech doc name" spellCheck={false} maxLength={120} value={pref(P.speechName)}
+            onChange={(e) => setPref(P.speechName, e.target.value)} /> },
         tog(P.savePrefix, 'Prefix Save As copies', 'Send, Read and Marked Doc copies start with a prefix, so you can tell them apart from the file.'),
         prefixRow(P.prefixSend, 'Send Doc'), prefixRow(P.prefixRead, 'Read Doc'), prefixRow(P.prefixMarked, 'Marked Doc'),
       ]],
@@ -348,8 +353,10 @@ export function Settings(props: Props) {
           select('Prep time', prep, Array.from({ length: 15 }, (_, i) => [i + 1, `${i + 1}:00`]), (m) => setPref(P.prepMin, Number(m))) },
       ]],
       ['Reading speed', [
-        pickNum(P.wpm1, 'Reader 1', 'Words per minute for the first read time in the status bar.', WPM),
-        pickNum(P.wpm2, 'Reader 2', 'Words per minute for the second read time.', WPM),
+        pickNum(P.wpm1, 'Reader 1: cards', 'How fast Reader 1 reads highlighted card text. The first read time in the status bar.', WPM),
+        pickNum(P.wpm1Tags, 'Reader 1: tags and analytics', 'How fast Reader 1 reads tags, analytics and cites, usually faster than cards.', WPM_TAGS),
+        pickNum(P.wpm2, 'Reader 2: cards', 'How fast Reader 2 reads highlighted card text. The second read time.', WPM),
+        pickNum(P.wpm2Tags, 'Reader 2: tags and analytics', 'How fast Reader 2 reads tags, analytics and cites.', WPM_TAGS),
       ]],
     ] },
   ];

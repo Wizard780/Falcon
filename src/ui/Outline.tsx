@@ -15,6 +15,7 @@ import { SvgIcon } from './icons';
 import { tidyHeading } from './recents';
 import { safeSet } from './storage';
 import { reducedMotion } from './motion';
+import { OL_DEFAULT, OL_MAX, OL_MIN, loadOutlineWidth, outlineMax, outlineWidth, saveOutlineWidth } from './outline-width';
 import { IS_MAC } from '../editor/keybinds';
 import './outline.css';
 
@@ -87,6 +88,7 @@ export function OutlinePane(props: Props) {
   // hidden means gone: no strip on the page's edge, nothing to hover
   return (
     <aside className={`olp${shown ? ' shown' : ''}`} aria-hidden={!shown}>
+      <OutlineGrip />
       <div className="sb-scroll">
         <div className="ol-head">
           <span className="sb-label">Outline</span>
@@ -440,3 +442,42 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
     </div>
   );
 });
+
+/** The outline's right edge: drag it wider or narrower, double-click for the default, arrows step it. */
+function OutlineGrip() {
+  const [width, setWidth] = useState(loadOutlineWidth);
+  useLayoutEffect(() => { document.documentElement.style.setProperty('--ol-w', `${width}px`); }, [width]);
+  // a narrower window shrinks it to fit; the saved width stays for when the window grows again
+  useEffect(() => { const fit = () => setWidth(loadOutlineWidth()); addEventListener('resize', fit); return () => removeEventListener('resize', fit); }, []);
+  const resize = (w: number) => { setWidth(w); saveOutlineWidth(w); };
+  const grab = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const from = e.clientX - width, root = document.documentElement;
+    let w = width, raf = 0;
+    root.dataset.olDrag = '';
+    const move = (m: PointerEvent) => { w = outlineWidth(m.clientX - from, outlineMax()); cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setWidth(w)); };
+    const up = () => {
+      cancelAnimationFrame(raf);
+      delete root.dataset.olDrag;
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', up);
+      resize(w);
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
+  };
+  const step = (e: React.KeyboardEvent) => {
+    const to = { ArrowLeft: width - 16, ArrowRight: width + 16, Home: OL_MIN, End: OL_MAX }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    resize(outlineWidth(to, outlineMax()));
+  };
+  return <div className="ol-grip" role="separator" aria-orientation="vertical" aria-label="Outline width" tabIndex={0}
+    aria-valuemin={OL_MIN} aria-valuemax={OL_MAX} aria-valuenow={width}
+    title="Outline width: drag to resize, double-click to reset"
+    // a mouse drag leaves focus where it was, so the edge doesn't stay lit after letting go
+    onPointerDown={grab} onMouseDown={(e) => e.preventDefault()} onDoubleClick={() => resize(OL_DEFAULT)} onKeyDown={step} />;
+}
