@@ -30,6 +30,7 @@ export const P = {
   openDepth: def('openDepth', 0), // 0: opening a file keeps the current depth
   // Appearance
   railResize: def('railResize', false), // the rail's right edge drags it wider to show file names
+  joinMax: def('joinMax', 3), // how many files Join puts side by side
   wheelZoom: def('wheelZoom', false),
   theme: def('theme', 'dark'), // a preset id, 'system', or a custom theme's id (src/ui/theme.ts)
   paper: def<'theme' | 'white' | 'dark'>('paper', 'theme'),

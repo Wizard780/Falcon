@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import { createPortal } from 'react-dom';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
@@ -231,11 +232,30 @@ type Toast = { msg: string; action?: { label: string; run: () => void } };
 /** One open document. The active one lives in the editor view; the others keep their state (undo history included) here. */
 type OpenDoc = { id: number; meta: DocMeta; dirty: boolean; state: EditorState | null; scroll: number };
 let nextDocId = 2;
+/** A joined file's editor, side by side with the others (Join in the rail). */
+type Pane = { view: EditorView; el: HTMLElement; scroll: HTMLDivElement; head: HTMLElement };
+type Held = { state: EditorState; scroll: number };
+const setTestView = (v: EditorView | null) => { (window as unknown as Record<string, unknown>).__falconView = v; };
 
 export function App() {
+  const appRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // the main editor, which docs swap in and out of; joined files each get their own (panes). viewRef and
+  // scrollRef are whichever one has focus: the toolbar, outline, find and keys act on it
+  const mainView = useRef<EditorView | null>(null);
+  const mainScroll = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const panes = useRef(new Map<number, Pane>());
+  const splitBox = useRef<HTMLDivElement>(null);
+  // the joined files, in rail order (one group at a time); shown side by side while one of them is the open doc
+  const [group, setGroupState] = useState<number[] | null>(null);
+  const groupRef = useRef(group);
+  const setGroup = (g: number[] | null) => { groupRef.current = g; setGroupState(g); };
+  const [splitOn, setSplitOn] = useState(false);
+  /** The editor holding doc `id` right now (the focused one or another pane), or null when it's put away. */
+  const liveView = (id: number) => (id === activeRef.current ? viewRef.current : panes.current.get(id)?.view ?? null);
+  const liveState = (id: number) => liveView(id)?.state ?? docsRef.current.find((d) => d.id === id)?.state ?? null;
   const [tick, setTick] = useState(0);
   const [docVersion, setDocVersion] = useState(0);
   const [showOutline, setShowOutline] = useState(() => localStorage.getItem('falcon.outline') !== 'off');
@@ -314,7 +334,7 @@ export function App() {
   const [recents, setRecents] = useState<Recent[]>(loadRecents);
   const [curItem, setCurItem] = useState(-1); // the outline row to light (see measureRead)
   const findRef = useRef<HTMLInputElement>(null);
-  const lastDoc = useRef<PMNode | null>(null);
+  const lastDocs = useRef(new WeakMap<EditorView, PMNode>()); // each editor's doc at its last change
   // each doc as it was last opened or saved: an edit that puts it back the same makes it clean again
   const savedDocs = useRef(new Map<number, PMNode>());
   const isDirty = (id: number, doc: PMNode) => {
@@ -342,12 +362,14 @@ export function App() {
   const mounted = useRef(true);
   const backup = useCallback(() => !mounted.current || autosave(docsRef.current.flatMap((d) => {
     const isActive = d.id === activeRef.current;
-    const doc = isActive ? viewRef.current?.state.doc : d.state?.doc;
+    const doc = liveState(d.id)?.doc;
     const speech = d.id === speechRef.current;
     // the speech doc is kept even when saved, so its marker comes back after a crash
     return doc && (isActive || d.dirty || speech) ? [{ meta: d.meta, doc, active: isActive, dirty: d.dirty, speech: speech || undefined }] : [];
   })), []);
   const backupSoon = useRef(() => {});
+  const viewChanged = useRef<(v: EditorView, id: number) => void>(() => {});
+  const measureRef = useRef(() => {}); // measureRead, for the panes' scroll listeners
   useEffect(() => {
     const backups = loadBackups();
     const first = backups.find((b) => b.active) ?? backups[0];
@@ -363,29 +385,38 @@ export function App() {
     }
     let saveTimer = 0, outlineTimer = 0;
     backupSoon.current = () => { window.clearTimeout(saveTimer); saveTimer = window.setTimeout(() => whenIdle(() => { if (!backup()) warnBig(); }), 800); };
-    const view = createView(mountRef.current!, (v) => {
-      setTick((t) => t + 1);
-      if (v.state.doc !== lastDoc.current) {
-        lastDoc.current = v.state.doc;
-        const id = activeRef.current;
-        const dirty = isDirty(id, v.state.doc);
-        setDocs((ds) => (ds.some((d) => d.id === id && d.dirty !== dirty) ? ds.map((d) => (d.id === id ? { ...d, dirty } : d)) : ds));
+    // an editor changed: `id` is the doc it holds. Only the focused one redraws the toolbar and outline
+    viewChanged.current = (v, id) => {
+      const focused = v === viewRef.current;
+      if (focused) setTick((t) => t + 1);
+      if (v.state.doc === lastDocs.current.get(v)) return;
+      lastDocs.current.set(v, v.state.doc);
+      const dirty = isDirty(id, v.state.doc);
+      setDocs((ds) => (ds.some((d) => d.id === id && d.dirty !== dirty) ? ds.map((d) => (d.id === id ? { ...d, dirty } : d)) : ds));
+      if (focused) {
         // the outline and word count walk the whole doc: refresh them when typing pauses, not per keystroke
         window.clearTimeout(outlineTimer);
         outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
-        backupSoon.current();
       }
-    }, doc);
-    lastDoc.current = view.state.doc;
+      backupSoon.current();
+    };
+    // the main editor sits empty and hidden while joined files show: a settings redraw there isn't an edit
+    const view = createView(mountRef.current!, (v) => { if (v === viewRef.current) viewChanged.current(v, activeRef.current); }, doc);
+    lastDocs.current.set(view, view.state.doc);
     if (!restored.length) savedDocs.current.set(1, view.state.doc);
-    viewRef.current = view;
+    mainView.current = viewRef.current = view;
+    scrollRef.current = mainScroll.current;
     setTick(1);
     mounted.current = true;
     // leaving the page (reload, window closed) with a backup still waiting: write it now, or the last edits are lost
     const flush = () => { window.clearTimeout(saveTimer); backup(); };
     addEventListener('pagehide', flush);
     // a backup still waiting for idle time must not write over storage the next page (or test) starts from
-    return () => { mounted.current = false; removeEventListener('pagehide', flush); window.clearTimeout(saveTimer); window.clearTimeout(outlineTimer); view.destroy(); };
+    return () => {
+      mounted.current = false; removeEventListener('pagehide', flush); window.clearTimeout(saveTimer); window.clearTimeout(outlineTimer); view.destroy();
+      for (const p of panes.current.values()) p.view.destroy();
+      panes.current.clear();
+    };
   }, []);
 
   useEffect(() => { document.documentElement.style.setProperty('--zoom', String(zoom)); safeSet('falcon.zoom', String(zoom)); }, [zoom]);
@@ -462,7 +493,7 @@ export function App() {
     const v = viewRef.current!;
     stopScroll();
     v.updateState(state);
-    lastDoc.current = v.state.doc;
+    lastDocs.current.set(v, v.state.doc);
     activeRef.current = id;
     setActiveId(id);
     setDocVersion((n) => n + 1);
@@ -485,24 +516,147 @@ export function App() {
     return { state: v.state, scroll: scrollRef.current?.scrollTop ?? 0 };
   };
 
+  // ---- joined files: one editor per file, side by side ----
+  /** Make pane `id` the one the toolbar, outline, find and keys act on; `take` moves the keyboard into it too. */
+  const focusPane = useCallback((id: number, take = true) => {
+    const p = panes.current.get(id);
+    if (!p) return;
+    if (viewRef.current !== p.view) {
+      const old = viewRef.current;
+      if (old && !old.isDestroyed && findInfo(old.state)) clearFind(old); // find belongs to the file it searched
+      setFindOpen(false);
+      stopScroll();
+      viewRef.current = p.view;
+      scrollRef.current = p.scroll;
+      activeRef.current = id;
+      setTestView(p.view);
+      for (const [k, q] of panes.current) q.el.toggleAttribute('data-on', k === id);
+      setActiveId(id);
+      setDocVersion((n) => n + 1);
+      setTick((t) => t + 1);
+    }
+    setHomeOpen(false);
+    setSdLit(null);
+    if (take) p.view.focus();
+  }, []);
+  /** Take pane `id` down; returns its doc as it was, to keep. */
+  const dropPane = (id: number): Held | null => {
+    const p = panes.current.get(id);
+    if (!p) return null;
+    if (findInfo(p.view.state)) clearFind(p.view);
+    const held = { state: p.view.state, scroll: p.scroll.scrollTop };
+    p.view.destroy();
+    p.el.remove();
+    panes.current.delete(id);
+    return held;
+  };
+  /** Take every pane down and hand the keyboard back to the main editor; returns each doc as it was. */
+  const releasePanes = () => {
+    const held = new Map<number, Held>();
+    for (const id of [...panes.current.keys()]) held.set(id, dropPane(id)!);
+    delete appRef.current?.dataset.split;
+    viewRef.current = mainView.current;
+    scrollRef.current = mainScroll.current;
+    setTestView(mainView.current);
+    setSplitOn(false);
+    setFindOpen(false);
+    return held;
+  };
+  /**
+   * Show `ids` side by side with `focus` focused, or with `ids` null, `focus` alone in the main editor.
+   * Docs leaving an editor keep their state (undo history and scroll) in the tab list. `keepMain` false:
+   * the doc in the main editor is being closed, so it isn't kept.
+   */
+  const arrange = useCallback((ids: number[] | null, focus: number, keepMain = true) => {
+    const held = new Map<number, Held>();
+    const fromMain = !panes.current.size;
+    if (fromMain && keepMain) held.set(activeRef.current, stash());
+    const want = new Set(ids ?? []);
+    if (!ids) for (const [id, h] of releasePanes()) held.set(id, h);
+    else for (const id of [...panes.current.keys()]) if (!want.has(id)) held.set(id, dropPane(id)!);
+    const stateOf = (id: number): Held | null => {
+      const d = docsRef.current.find((x) => x.id === id);
+      return held.get(id) ?? (d?.state ? { state: d.state, scroll: d.scroll } : null);
+    };
+    const keep = (ds: OpenDoc[], live: Set<number>) => ds.map((d) => (live.has(d.id) ? { ...d, state: null } : held.has(d.id) ? { ...d, ...held.get(d.id)! } : d));
+    if (!ids) {
+      const s = stateOf(focus)!;
+      setDocs((ds) => keep(ds, new Set([focus])));
+      show(focus, s.state, s.scroll);
+      return;
+    }
+    const box = splitBox.current!;
+    if (fromMain) {
+      // the main editor lets go of its doc (it would hold a second, stale copy) and hides
+      const m = mainView.current!;
+      m.updateState(createState(emptyDoc()));
+      lastDocs.current.set(m, m.state.doc);
+      appRef.current!.dataset.split = '';
+    }
+    ids.forEach((id, i) => {
+      let p = panes.current.get(id);
+      const s = p ? null : stateOf(id);
+      if (!p && s) {
+        const el = document.createElement('section'), head = document.createElement('div'), scroll = document.createElement('div'), page = document.createElement('div'), mount = document.createElement('div');
+        el.className = 'pane';
+        head.className = 'pane-h';
+        scroll.className = 'f-scroll';
+        page.className = 'page';
+        page.append(mount);
+        scroll.append(page);
+        el.append(head, scroll);
+        box.append(el);
+        const view = createView(mount, (v) => viewChanged.current(v, id), s.state);
+        lastDocs.current.set(view, view.state.doc);
+        // clicking into a pane focuses it; a click in its margin puts the caret in it, as the main page does
+        el.addEventListener('focusin', () => { if (activeRef.current !== id) focusPane(id, false); });
+        el.addEventListener('mousedown', (e) => { if (e.target === scroll || head.contains(e.target as Node)) { e.preventDefault(); focusPane(id); } });
+        scroll.addEventListener('scroll', () => { if (scrollRef.current === scroll) measureRef.current(); }, { passive: true });
+        p = { view, el, scroll, head };
+        panes.current.set(id, p);
+        scroll.scrollTop = s.scroll;
+      }
+      // in group order; a pane already in place isn't moved (taking it out of the page would lose its scroll)
+      if (p && box.children[i] !== p.el) { const top = p.scroll.scrollTop; box.insertBefore(p.el, box.children[i] ?? null); p.scroll.scrollTop = top; }
+    });
+    setDocs((ds) => keep(ds, new Set(panes.current.keys())));
+    setSplitOn(true);
+    focusPane(panes.current.has(focus) ? focus : panes.current.keys().next().value!);
+    setTestView(viewRef.current); // createView points it at the newest pane
+  }, [focusPane]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const switchTo = useCallback((id: number) => {
     if (id === activeRef.current) { setHomeOpen(false); setSdLit(null); viewRef.current?.focus(); return; }
+    if (panes.current.has(id)) { focusPane(id); return; }
     const target = docsRef.current.find((d) => d.id === id);
     if (!target?.state) return;
+    // a joined file shows its group side by side; any other file shows alone (the group stays joined)
+    if (groupRef.current?.includes(id)) { arrange(groupRef.current, id); return; }
+    if (panes.current.size) { arrange(null, id); return; }
     const out = stash(), cur = activeRef.current;
     setDocs((ds) => ds.map((d) => (d.id === cur ? { ...d, ...out } : d.id === id ? { ...d, state: null } : d)));
     show(id, target.state, target.scroll);
-  }, [show]);
+  }, [show, arrange, focusPane]);
 
   /** A new tab for `doc`, after the current one. An untouched blank Untitled is replaced instead. */
   const addDoc = useCallback((doc: PMNode, m: DocMeta) => {
     const v = viewRef.current!;
     const cur = docsRef.current.find((d) => d.id === activeRef.current)!;
-    const blank = !cur.dirty && !cur.meta.path && !v.state.doc.textContent.trim() && v.state.doc.childCount <= 1 && cur.id !== speechRef.current;
+    // joined files showing: the new one opens alone in the main editor, after the group, which stays joined
+    const split = panes.current.size > 0;
+    const blank = !split && !cur.dirty && !cur.meta.path && !v.state.doc.textContent.trim() && v.state.doc.childCount <= 1 && cur.id !== speechRef.current;
     const id = blank ? cur.id : nextDocId++;
     const fresh: OpenDoc = { id, meta: m, dirty: false, state: null, scroll: 0 };
     savedDocs.current.set(id, doc);
     if (blank) setDocs((ds) => ds.map((d) => (d.id === id ? fresh : d)));
+    else if (split) {
+      const held = releasePanes(), g = groupRef.current ?? [];
+      setDocs((ds) => {
+        const n = ds.map((d) => (held.has(d.id) ? { ...d, ...held.get(d.id)! } : d));
+        n.splice(Math.max(...n.map((d, i) => (g.includes(d.id) ? i : -1))) + 1, 0, fresh);
+        return n;
+      });
+    }
     else {
       const out = stash();
       setDocs((ds) => { const i = ds.findIndex((d) => d.id === cur.id); const n = ds.map((d) => (d.id === cur.id ? { ...d, ...out } : d)); n.splice(i + 1, 0, fresh); return n; });
@@ -516,6 +670,23 @@ export function App() {
     setSpeechId((s) => (s === id ? null : s));
     savedDocs.current.delete(id);
     const rest = list.filter((x) => x.id !== id);
+    // a joined file closing: the group shrinks, and comes apart below two
+    const g = groupRef.current, left = g?.filter((x) => x !== id) ?? null;
+    if (g?.includes(id)) setGroup(left!.length >= 2 ? left : null);
+    if (panes.current.has(id)) {
+      dropPane(id);
+      if (left!.length >= 2) {
+        setDocs(rest);
+        if (id === activeRef.current) focusPane(left![Math.min(g!.indexOf(id), left!.length - 1)]);
+        return;
+      }
+      // one file left: it goes back to the main editor on its own
+      const held = releasePanes(), [only] = left!;
+      const h = held.get(only)!;
+      setDocs(rest.map((x) => (x.id === only ? { ...x, state: null } : held.has(x.id) ? { ...x, ...held.get(x.id)! } : x)));
+      show(only, h.state, h.scroll);
+      return;
+    }
     if (id !== activeRef.current) { setDocs(rest); return; }
     if (!rest.length) {
       const nid = nextDocId++, blankDoc = emptyDoc();
@@ -526,9 +697,12 @@ export function App() {
       return;
     }
     const next = rest[Math.min(i, rest.length - 1)];
+    // the next file is joined: its group shows, side by side (the closed file's doc isn't kept)
+    const ng = groupRef.current;
+    if (ng?.includes(next.id)) { setDocs(rest); arrange(ng, next.id, false); return; }
     setDocs(rest.map((x) => (x.id === next.id ? { ...x, state: null } : x)));
     show(next.id, next.state!, next.scroll);
-  }, [show]);
+  }, [show, arrange, focusPane]);
   // dragging a file in the rail or the files panel moves it to slot `to`
   const moveDoc = useCallback((id: number, to: number) => {
     setDocs((ds) => {
@@ -548,6 +722,29 @@ export function App() {
     void confirmAsk({ title: `Close ${name} without saving?`, body: 'Your changes will be lost.', ok: 'Close Without Saving' })
       .then((yes) => { if (yes) dropDoc(id); });
   }, [dropDoc, confirmAsk]);
+
+  /** Join: show these files side by side (in rail order, gathered where the first one sits in the rail). */
+  const join = useCallback((ids: number[]) => {
+    const order = docsRef.current.map((d) => d.id).filter((x) => ids.includes(x));
+    if (order.length < 2) return;
+    const max = pref(P.joinMax);
+    if (order.length > max) { flash(`You can join up to ${max} files. Change it in Settings > Appearance.`); return; }
+    if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to join files.'); return; }
+    setDocs((ds) => {
+      const at = ds.findIndex((d) => order.includes(d.id));
+      const n = ds.filter((d) => !order.includes(d.id));
+      n.splice(at, 0, ...order.map((x) => ds.find((d) => d.id === x)!));
+      return n;
+    });
+    setGroup(order);
+    arrange(order, order.includes(activeRef.current) ? activeRef.current : order[0]);
+  }, [arrange, flash]);
+  /** Unjoin: the files go back to one at a time, the focused one staying on screen. */
+  const unjoin = useCallback(() => {
+    if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to unjoin files.'); return; }
+    setGroup(null);
+    if (panes.current.size) arrange(null, activeRef.current);
+  }, [arrange, flash]);
 
   // Ctrl-Tab's order: docs by when you were last on them
   const mru = useRef<number[]>([]);
@@ -671,7 +868,7 @@ export function App() {
       showEditor();
       const into = activeRef.current;
       let doc: PMNode | undefined;
-      try { doc = open ? (open.id === activeRef.current ? viewRef.current!.state.doc : open.state?.doc) ?? undefined : (await openPath(h.path)).doc; }
+      try { doc = open ? liveState(open.id)?.doc : (await openPath(h.path)).doc; }
       catch (e) { flash(`Couldn't open ${h.file}: ${(e as Error).message}`); return; }
       const pos = doc ? findCard(doc, h.tag, h.ordinal, true) : null; // a copy has to be the right card, not just the right spot
       const content = doc && pos !== null ? cardContent(doc, pos) : null;
@@ -712,7 +909,7 @@ export function App() {
       }
       if (mode !== 'asis') { flash(`Saved ${MODE_NAME[mode]} ${m.name}`); return; }
       // typing during the save keeps the doc marked unsaved
-      const now = activeRef.current === id ? viewRef.current!.state.doc : docsRef.current.find((x) => x.id === id)?.state?.doc;
+      const now = liveState(id)?.doc;
       savedDocs.current.set(id, saved);
       patch(id, { meta: m, dirty: !!now && isDirty(id, now) });
       setRecents((list) => noteRecent(list, saved, m));
@@ -751,7 +948,7 @@ export function App() {
     const sent = sendContent(v.state);
     if (!sent) { flash('Nothing to send. Put the caret in a card or select some text.'); return; }
     let target = docsRef.current.find((d) => d.id === speechRef.current);
-    let base = target?.state;
+    let base = target ? liveState(target.id) : null; // it may be showing beside this file, joined
     if (!target || !base) {
       // the speech doc is made on the first send, beside this file, and stays in the background
       const names = new Set(docsRef.current.map((d) => d.meta.name));
@@ -760,20 +957,24 @@ export function App() {
       target = { id: nextDocId++, meta: { name }, dirty: false, state: null, scroll: 0 };
       base = createState(emptyDoc());
       const made = target;
-      setDocs((ds) => { const i = ds.findIndex((d) => d.id === activeRef.current); const n = [...ds]; n.splice(i + 1, 0, made); return n; });
+      // after this file, or after its group when files are joined, so the group stays together in the rail
+      const g = panes.current.size ? groupRef.current ?? [] : [];
+      setDocs((ds) => { const i = Math.max(ds.findIndex((d) => d.id === activeRef.current), ...ds.map((d, j) => (g.includes(d.id) ? j : -1))); const n = [...ds]; n.splice(i + 1, 0, made); return n; });
       speechRef.current = made.id;
       setSpeechId(made.id);
     }
     const { id } = target, speechName = target.meta.name || 'Speech';
-    const next = base.apply(insertIntoSpeech(base, sent.content));
-    patch(id, { state: next, dirty: true });
+    const tr = insertIntoSpeech(base, sent.content), shown = liveView(id);
+    let next: EditorState;
+    if (shown) { shown.dispatch(tr.scrollIntoView()); next = shown.state; } // joined: you see the card land
+    else { next = base.apply(tr); patch(id, { state: next, dirty: true }); }
     // Undo only while the speech doc is still exactly as the send left it, so it can't undo later typing
     const takeBack = () => {
-      const isView = id === activeRef.current;
-      const now = isView ? viewRef.current?.state : docsRef.current.find((d) => d.id === id)?.state;
+      const on = liveView(id);
+      const now = on?.state ?? docsRef.current.find((d) => d.id === id)?.state;
       if (!now) return;
       if (now.doc !== next.doc) { flash(`${speechName} has changed since. Undo it there with ${keyText('Mod-z')}.`); return; }
-      undo(now, (tr) => { if (isView) viewRef.current!.dispatch(tr); else patch(id, { state: now.apply(tr), dirty: true }); });
+      undo(now, (t) => { if (on) on.dispatch(t); else patch(id, { state: now.apply(t), dirty: true }); });
     };
     flash(`Sent “${sent.label}” to ${speechName}`, { label: 'Undo', run: takeBack });
   }, [flash, patch]);
@@ -798,23 +999,23 @@ export function App() {
     // no target: the speech doc, else the doc on screen (CardMirror's fallback is the focused doc)
     const doc = want ? docsRef.current.find((d) => target(d) === want) : docsRef.current.find((d) => d.id === speechRef.current) ?? docsRef.current.find((d) => d.id === activeRef.current);
     if (!doc) return { ok: false, error: 'target-not-found' };
-    const isView = doc.id === activeRef.current;
-    const base = isView ? viewRef.current?.state : doc.state;
+    const shown = liveView(doc.id);
+    const base = shown?.state ?? doc.state;
     if (!base) return { ok: false, error: 'no-target-doc' };
     if (isReading(base)) return { ok: false, error: 'doc-readonly', docTitle: doc.meta.name };
     const content = insertContent(p.html, p.text);
     if (!content) return { ok: false, error: 'bad-request' };
     const tr = insertIntoSpeech(base, content);
     let next = base.apply(tr);
-    if (isView) { viewRef.current!.dispatch(tr); next = viewRef.current!.state; } else patch(doc.id, { state: next, dirty: true });
+    if (shown) { shown.dispatch(tr); next = shown.state; } else patch(doc.id, { state: next, dirty: true });
     const docName = doc.meta.name || 'Untitled';
     // same undo as Send to speech: only while the doc is still as the insert left it
     const takeBack = () => {
-      const onView = doc.id === activeRef.current;
-      const now = onView ? viewRef.current?.state : docsRef.current.find((d) => d.id === doc.id)?.state;
+      const on = liveView(doc.id);
+      const now = on?.state ?? docsRef.current.find((d) => d.id === doc.id)?.state;
       if (!now) return;
       if (now.doc !== next.doc) { flash(`${docName} has changed since. Undo it there with ${keyText('Mod-z')}.`); return; }
-      undo(now, (t) => { if (onView) viewRef.current!.dispatch(t); else patch(doc.id, { state: now.apply(t), dirty: true }); });
+      undo(now, (t) => { if (on) on.dispatch(t); else patch(doc.id, { state: now.apply(t), dirty: true }); });
     };
     flash(`${name} sent “${insertLabel(content)}” to ${docName}`, { label: 'Undo', run: takeBack });
     return { ok: true, docTitle: docName };
@@ -969,7 +1170,7 @@ export function App() {
   // scroll: the last heading above the reading line.
   const measureRead = useCallback(() => {
     const v = viewRef.current, sc = scrollRef.current;
-    if (!v || !sc) return;
+    if (!v || !sc || v.isDestroyed) return; // a frame queued before its pane closed
     const box = sc.getBoundingClientRect(), head = v.state.selection.head;
     const caret = v.coordsAtPos(head);
     // stores the row index, not the position, so typing within a block doesn't re-render the app
@@ -980,10 +1181,11 @@ export function App() {
     const hit = v.posAtCoords({ left: pm.left + 4, top: Math.min(top, pm.bottom - 2) });
     mark(hit ? hit.pos : v.state.doc.content.size);
   }, []);
+  measureRef.current = measureRead;
   useEffect(() => {
-    const sc = scrollRef.current!;
+    const sc = mainScroll.current!;
     let raf = 0;
-    const on = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(measureRead); };
+    const on = () => { if (scrollRef.current !== sc) return; cancelAnimationFrame(raf); raf = requestAnimationFrame(measureRead); };
     sc.addEventListener('scroll', on, { passive: true });
     return () => { sc.removeEventListener('scroll', on); cancelAnimationFrame(raf); };
   }, [measureRead]);
@@ -1057,7 +1259,7 @@ export function App() {
       const pinch = e.ctrlKey && !ctrlDown && !e.metaKey;
       if (!pinch && !((e.ctrlKey || e.metaKey) && pref(P.wheelZoom))) return;
       e.preventDefault();
-      if (settingsRef.current || !scrollRef.current?.contains(e.target as Node)) return;
+      if (settingsRef.current || !(e.target as Element | null)?.closest?.('.f-scroll')) return;
       // a mouse wheel notch is ~100, way more than a pinch frame
       const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
       zoomWheel(pinch ? dy : Math.max(-12, Math.min(12, dy)), e.clientX, e.clientY);
@@ -1109,9 +1311,10 @@ export function App() {
 
   const modal = settingsOpen || !!paletteOpen || ccOpen || !!ask || saveAsName !== null || speechAsk;
   return (
-    <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
+    <div ref={appRef} className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc} onMove={moveDoc}
+        group={group} onJoin={join} onUnjoin={unjoin} flash={flash}
         sd={sdTabs.map((x) => ({ key: x.key, on: sdLit === x.key, name: x.info.room?.name ?? 'SpeechDrop', fresh: x.info.fresh }))} onSd={showSd} onSdClose={closeSd}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
@@ -1148,9 +1351,15 @@ export function App() {
         numbers={view ? outlineNumbers(view.state) : []} getView={getView} onPeek={peek} flash={flash}
         onDepth={setDepth} onJump={jump} />
 
-      <div ref={scrollRef} className="f-scroll" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); viewRef.current?.focus(); } }}>
+      <div ref={mainScroll} className="f-scroll f-main" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); viewRef.current?.focus(); } }}>
         <div className="page"><div ref={mountRef} /></div>
       </div>
+      {/* joined files: arrange() builds a pane per file in here, each with its own editor; React draws their names */}
+      <div ref={splitBox} className="split" />
+      {splitOn && [...panes.current].map(([id, p]) => {
+        const d = docs.find((x) => x.id === id);
+        return d && createPortal(<><span className="nm">{tidy(d.meta.name || 'Untitled')}</span>{d.dirty && <i className="dot" aria-label="unsaved" />}{id === speechId && <i className="spk" aria-hidden="true">S</i>}</>, p.head, String(id));
+      })}
       {findOpen && view && <FindBar view={view} inputRef={findRef} flash={flash} onClose={() => setFindOpen(false)} />}
 
       <footer className="status">
@@ -1183,7 +1392,7 @@ export function App() {
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
       {sw?.shown && <Switcher sel={sw.sel} onHover={(i) => { if (swRef.current) setSw({ ...swRef.current, sel: i }); }} onPick={(i) => endSw(true, i)} onCancel={() => endSw(false)}
         docs={sw.ids.flatMap((id) => {
-          const d = docs.find((x) => x.id === id), doc = id === activeId ? viewRef.current?.state.doc : d?.state?.doc;
+          const d = docs.find((x) => x.id === id), doc = liveState(id)?.doc;
           return d && doc ? [{ id, name: d.meta.name || 'Untitled', dirty: d.dirty, doc, top: tops.current.get(id) ?? 0 }] : [];
         })} />}
       <CommandCenter open={ccOpen} onClose={() => setCcOpen(false)} ctx={ccCtx} flash={flash} saveScroll={saveScroll} />
@@ -1229,7 +1438,8 @@ const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor
 type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech: boolean };
 /** A SpeechDrop tab's row: lit or not, the room's name, and how many files came that you haven't seen. */
 type SdRow = { key: number; on: boolean; name: string; fresh: number };
-function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void; sd: SdRow[]; onSd: (key: number) => void; onSdClose: (key: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void;
+  group: number[] | null; onJoin: (ids: number[]) => void; onUnjoin: () => void; flash: (m: string) => void; sd: SdRow[]; onSd: (key: number) => void; onSdClose: (key: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -1327,6 +1537,50 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
     resize(railWidth(to, railMax()));
   };
 
+  // Shift-click picks files without opening them; right-click a picked one to Join them side by side
+  const [sel, setSel] = useState<number[]>([]);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { setSel((s) => (s.every((id) => props.docs.some((d) => d.id === id)) ? s : s.filter((id) => props.docs.some((d) => d.id === id)))); }, [props.docs]);
+  const pick = (id: number) => (e: React.MouseEvent) => {
+    if (!e.shiftKey) { setSel([]); props.onSwitch(id); return; }
+    e.preventDefault();
+    if (sel.includes(id)) { setSel(sel.filter((x) => x !== id)); return; }
+    const max = pref(P.joinMax);
+    if (sel.length >= max) { props.flash(`You can join up to ${max} files. Change it in Settings > Appearance.`); return; }
+    setSel([...sel, id]);
+  };
+  // right-clicking a file while others are picked counts it in, so pick two and right-click either
+  const joining = menu ? (sel.length ? [...new Set([...sel, menu.id])] : []) : [];
+  const member = !!menu && !!props.group?.includes(menu.id);
+  const openMenu = (id: number) => (e: React.MouseEvent) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, id }); };
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el || !menu) return;
+    el.style.left = `${Math.max(8, Math.min(menu.x, innerWidth - el.offsetWidth - 8))}px`;
+    el.style.top = `${Math.max(8, Math.min(menu.y, innerHeight - el.offsetHeight - 8))}px`;
+    requestAnimationFrame(() => el.classList.add('in'));
+  }, [menu]);
+  useEffect(() => {
+    if (!menu && !sel.length) return;
+    const down = (e: PointerEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(null); };
+    // Esc shuts the menu, then lets go of the picked files
+    const key = (e: KeyboardEvent) => { if (e.key !== 'Escape') return; if (menu) setMenu(null); else setSel([]); };
+    const close = () => setMenu(null);
+    document.addEventListener('pointerdown', down, true);
+    addEventListener('keydown', key);
+    addEventListener('resize', close);
+    addEventListener('blur', close);
+    return () => { document.removeEventListener('pointerdown', down, true); removeEventListener('keydown', key); removeEventListener('resize', close); removeEventListener('blur', close); };
+  }, [menu, sel.length]);
+  // joined files read as one capsule in both lists, where they sit together
+  const joinAt = (i: number) => {
+    const g = props.group, d = props.docs;
+    if (!g?.includes(d[i].id)) return undefined;
+    const up = i > 0 && g.includes(d[i - 1].id), down = i < d.length - 1 && g.includes(d[i + 1].id);
+    return up && down ? 'mid' : up ? 'last' : down ? 'first' : 'solo';
+  };
+
   const isOn = (d: DocRow) => d.id === props.active && !props.home && !props.sd.some((s) => s.on);
   const sdLabel = (sd: SdRow) => `SpeechDrop${sd.name !== 'SpeechDrop' ? `: ${sd.name}` : ''}${sd.fresh ? ` (${sd.fresh} new)` : ''}`;
   const sdTip = titled('SpeechDrop', 'speechdrop', 'the room\'s files, live. Middle-click to close');
@@ -1335,10 +1589,11 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
       <button ref={logo} className="sb-logo" title={titled('Home', 'home', 'recent files and new documents')} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /><span className="lbl">Falcon</span></button>
       <div ref={strip} className="fs-docs" role="tablist" aria-label="Open documents" onPointerEnter={wide ? undefined : show} onPointerLeave={wide ? undefined : hide}
         onScroll={(e) => { if (list.current) list.current.scrollTop = e.currentTarget.scrollTop; }}>
-        {props.docs.map((d) => (
-          <div key={d.id} className="doc-row" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} onPointerDown={reorder(d.id)}>
+        {props.docs.map((d, i) => (
+          <div key={d.id} className="doc-row" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-sel={sel.includes(d.id) || undefined} data-join={joinAt(i)}
+            onPointerDown={reorder(d.id)} onContextMenu={openMenu(d.id)}>
             <button className="fs-b doc-nm" role="tab" aria-selected={isOn(d)} aria-label={d.speech ? `${d.name} (speech doc)` : d.name} data-on={isOn(d) || undefined}
-              onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
+              onClick={pick(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
               <SvgIcon name="doc" />{wide && <span className="lbl">{tidy(d.name)}</span>}{d.dirty && <i className="dot" aria-label="unsaved" />}{d.speech && <i className="spk" aria-hidden="true">S</i>}
             </button>
             {wide && <button tabIndex={-1} className="doc-x" title={titled('Close', 'close', 'close this file')} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>}
@@ -1360,9 +1615,10 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         <div className="files-h" style={{ top: at.head }}><b>Falcon</b><span>{props.docs.length} open</span></div>
         <div ref={list} className="files-l" style={{ top: at.list }}
           onScroll={(e) => { if (strip.current) strip.current.scrollTop = e.currentTarget.scrollTop; }}>
-          {props.docs.map((d) => (
-            <div key={d.id} className="files-r" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} onPointerDown={reorder(d.id)}>
-              <button tabIndex={-1} className="files-b" onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
+          {props.docs.map((d, i) => (
+            <div key={d.id} className="files-r" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-sel={sel.includes(d.id) || undefined} data-join={joinAt(i)}
+              onPointerDown={reorder(d.id)} onContextMenu={openMenu(d.id)}>
+              <button tabIndex={-1} className="files-b" onClick={pick(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
                 <SvgIcon name="doc" /><span className="nm">{tidy(d.name)}</span>{d.speech && <i className="spk" aria-hidden="true">S</i>}{d.dirty && <i className="dot" />}
               </button>
               <button tabIndex={-1} className="files-x" title={titled('Close', 'close', 'close this file')} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
@@ -1378,6 +1634,15 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
           ))}
         </div>
       </aside>
+      {menu && (joining.length >= 2 || member) && (
+        <div ref={menuRef} className="pop menu rail-menu" role="menu" aria-label="File">
+          {joining.length >= 2 && <>
+            <div className="mn-h">{joining.length} files selected</div>
+            <button className="mn-i" role="menuitem" onClick={() => { setMenu(null); setSel([]); props.onJoin(joining); }}><span>Join</span></button>
+          </>}
+          {member && <button className="mn-i" role="menuitem" onClick={() => { setMenu(null); props.onUnjoin(); }}><span>Unjoin</span></button>}
+        </div>
+      )}
       <div className="grow" />
       {props.update ? <UpdateButton u={props.update} onInstall={props.onUpdate} />
         : props.onCheck && <button className="fs-b chk" title={props.checking ? 'Checking for updates' : 'Check for updates'} aria-label="Check for updates"

@@ -209,6 +209,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     pick(P.textWidth, 'Text width', 'appearance', [['full', 'Full'], ['wide', 'Wide'], ['narrow', 'Narrow']]),
     pick(P.margins, 'Margins', 'appearance', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']]),
     tog(P.railResize, 'Resizable rail', 'appearance', 'Drag the rail\'s right edge to show the names of open files.'),
+    pick(P.joinMax, 'Files side by side', 'appearance', [[2, '2'], [3, '3'], [4, '4'], [5, '5']], 'The most files Join shows at once.'),
     pick(P.caret, 'Cursor color', 'appearance', [['auto', 'Text'], ['blue', 'Blue'], ['red', 'Red'], ['ink', 'Highlighter']]),
     pick(P.selection, 'Selection color', 'appearance', [['blue', 'Blue'], ['gray', 'Gray'], ['ink', 'Highlighter']]),
     tog(P.cardBar, 'Mark the current card', 'appearance', 'A thin line beside the card the cursor is in.'),

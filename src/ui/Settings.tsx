@@ -369,6 +369,7 @@ export function Settings(props: Props) {
         pick(P.textWidth, 'Text width', 'Narrower lines are easier to follow.', [['full', 'Full'], ['wide', 'Wide'], ['narrow', 'Narrow']]),
         pick(P.margins, 'Margins', 'Space at the left and right of the text.', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']]),
         tog(P.railResize, 'Resizable rail', 'Drag the rail\'s right edge to show the names of open files. Double-click the edge to go back to icons.'),
+        pickNum(P.joinMax, 'Files side by side', 'The most files Join shows at once. Shift-click files in the rail, then right-click and pick Join.', [[2, '2'], [3, '3'], [4, '4'], [5, '5']]),
       ]],
       ['Cursor and motion', [
         pick(P.caret, 'Cursor color', 'Highlighter matches your highlight color.', [['auto', 'Text'], ['blue', 'Blue'], ['red', 'Red'], ['ink', 'Highlighter']]),
