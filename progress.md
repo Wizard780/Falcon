@@ -208,3 +208,12 @@ User report: the six-dot card grip won't let you click the text next to it.
 - [x] the outline's resize edge sits inside the pane (6px) instead of 4px over the page
 - [x] checked at narrow and normal margins, 100% and 150% zoom: a click 2px into a tag puts the caret at its start, and the grip's center is still the grip
 - [x] follow-up report "the cursor won't let me select it": the left margin (where the grip lives) was a dead zone, so a click or drag starting beside a line did nothing. A press in the margin now goes to the line's near edge (Word and CardMirror put the caret at the line's start), and the grip itself tells a click (caret at its line's start), a sideways drag (selects from the line's start) and an up/down drag (moves the card) apart. Journey margin-click covers it at normal and narrow margins
+
+## Fix: crash recovery for block files (2026-11-03, branch big-file-recovery)
+Bug hunt: opening either NATO block file said "too big for crash recovery, so save often". Crash recovery lived in localStorage (about 5M characters), so any doc over 400k (every block file and most backfiles) had none.
+- [x] the desktop app keeps the docs localStorage can't hold in `userData/recovery.json` (written through a temp file, only the newest copy queued), up to 10M of content; small docs stay in localStorage as before, and the rail comes back in its order across the two
+- [x] cost measured on real files: a block file's copy takes ~7 ms, a 30 MB backfile with pictures ~60 ms, once per pause in typing (800 ms debounce, at idle)
+- [x] the web build has no file, so it keeps the 400k limit and the warning
+- [x] vitest tests/big-recovery.test.ts (3 of 4 fail on main); scripts/electron-recovery.mjs kills the real app mid-edit and relaunches: the edit is back, unsaved, on a generated file and on a copy of NATO AT Neg; electron-smoke passes with `recovery` added to the bridge
+- Note: in the app tests, a backup taken inside the same `act` as the typing records the doc as saved, because the render that marks it unsaved waits for the act to end. Not an app bug; wait in a second act (`typeAndBackUp`)
+
