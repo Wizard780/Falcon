@@ -611,7 +611,7 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => compareRef.current !== null || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
     if (askRef.current || saveAsRef.current) return; // a warning or Save As is up: it gets answered first
     if (paletteRef.current || ccRef.current) return; // file search or the command center is up: it gets closed first
@@ -655,6 +655,8 @@ export function App() {
       if (askRef.current) { if (e.ctrlKey || e.metaKey) e.preventDefault(); return; }
       // Save As is up: its name field keeps text editing keys, nothing else
       if (saveAsRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
+      // Compare Text is up: text editing keys and its own (Mod-Enter), nothing else
+      if (compareRef.current !== null) { if ((e.ctrlKey || e.metaKey) && !/^([acvxz]|Enter)$/i.test(e.key)) e.preventDefault(); return; }
       // Send to speech (` unless changed in Settings), so the page can't type that key (AltGr layouts too: their character arrives with Ctrl+Alt held). Boxes with their own text field keep it.
       if (sendPressed(e) && !settingsRef.current && !e.isComposing && !homeRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
         e.preventDefault(); e.stopPropagation();
@@ -694,6 +696,8 @@ export function App() {
   homeRef.current = homeOpen;
   const settingsRef = useRef(settingsOpen);
   const saveAsRef = useRef(saveAsName);
+  const compareRef = useRef(compareWith);
+  compareRef.current = compareWith;
   saveAsRef.current = saveAsName;
   settingsRef.current = settingsOpen;
   const paletteRef = useRef(paletteOpen);

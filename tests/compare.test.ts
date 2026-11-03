@@ -1,128 +1,85 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { TextSelection } from 'prosemirror-state';
-import { compareDecorations, compareKey, compareText, compareTexts, selectionText, summary, TOAST_EVENT, type CompareOpts } from '../src/editor/doc-tools/compare';
+import { COMPARE_EVENT, compareText, compareTexts, selectionText, type Piece } from '../src/editor/doc-tools/compare';
 import { createView } from '../src/editor/editor';
-import { bridge } from '../src/editor/host';
 import { BINDINGS } from '../src/editor/keybinds';
 import '../src/editor/keymap';
-import { at, make, select } from './helpers';
+import { make } from './helpers';
 
-/** Each edit as "removed>added", in the two texts. */
-const show = (a: string, b: string, opts: CompareOpts = {}) =>
-  compareTexts(a, b, opts).edits.map((e) => `${a.slice(e.aFrom, e.aTo)}>${b.slice(e.bFrom, e.bTo)}`);
-
-beforeEach(() => localStorage.clear());
+// the plugin's own cases, so Falcon's panel finds the same differences
+const marked = (pieces: Piece[]) => pieces.filter((p) => p.kind).map((p) => (p.kind === 3 ? '|' : p.text));
+const joined = (pieces: Piece[]) => pieces.map((p) => p.text).join('');
 
 describe('compareTexts', () => {
-  it('finds nothing in identical text', () => {
-    expect(show('The plan solves war.', 'The plan solves war.')).toEqual([]);
+  it('finds no differences in identical texts', () => {
+    const r = compareTexts('Same text.\nTwo lines.', 'Same text.\nTwo lines.');
+    expect(r.diffs).toBe(0);
+    expect(r.left).toEqual([{ text: 'Same text.\nTwo lines.', kind: 0, g: -1 }]);
   });
-  it('marks a swapped word whole', () => {
-    expect(show('growth is nearly certain', 'growth is almost certain')).toEqual(['nearly>almost']);
+  it('rebuilds each side’s own text exactly', () => {
+    const pairs = [['The big red dog ran home.', 'The small blue dog ran.'], ['', 'only right'], ['only left', ''],
+      ['Hello  World\nagain', 'hello World again'], ['a b c d e f', 'f e d c b a'], ['don’t — stop', "don't - stop!"]];
+    for (const [a, b] of pairs) for (const o of [{}, { mode: 'chars' as const }, { ignoreCase: true, ignoreSpace: true }, { mode: 'chars' as const, ignoreSpace: true }]) {
+      const r = compareTexts(a, b, o);
+      expect(joined(r.left), JSON.stringify([a, b, o])).toBe(a);
+      expect(joined(r.right), JSON.stringify([a, b, o])).toBe(b);
+    }
   });
-  it('marks just the letters when the words mostly match', () => {
-    expect(show('the colour of money', 'the color of money')).toEqual(['u>']);
-    expect(show('it’s over', "it's over")).toEqual(['’>\'']);
+  it('makes a rewritten phrase one difference, and an insertion leaves a marker on the other side', () => {
+    const r = compareTexts('The big red dog ran home.', 'The small blue dog ran home.');
+    expect(r.diffs).toBe(1);
+    expect([marked(r.left), marked(r.right)]).toEqual([['big red'], ['small blue']]);
+    expect([r.removed, r.added, r.unit]).toEqual([2, 2, 'word']);
+    const merged = compareTexts('hyperscalers a recession', 'investors a slowdown');
+    expect(merged.diffs).toBe(1);
+    expect([merged.removed, merged.added]).toEqual([2, 2]);
+    const ins = compareTexts('cause a recession.', 'could cause a severe recession.');
+    expect(ins.diffs).toBe(2);
+    expect([marked(ins.left), marked(ins.right)]).toEqual([['|', '|'], ['could ', ' severe']]);
   });
-  it('finds a dropped and an added word', () => {
-    expect(show('China will not attack Taiwan', 'China will attack Taiwan')).toEqual(['not >']);
-    expect(show('China will attack Taiwan', 'China will not attack Taiwan')).toEqual(['>not ']);
+  it('marks the exact byte in Characters mode when the words mostly match, whole words otherwise', () => {
+    const quote = compareTexts('don’t stop', "don't stop", { mode: 'chars' });
+    expect([marked(quote.left), marked(quote.right)]).toEqual([['don', '’', 't'], ['don', "'", 't']]);
+    expect(quote.left.filter((p) => p.kind === 2).map((p) => p.text)).toEqual(['’']);
+    expect([quote.removed, quote.added, quote.unit]).toEqual([1, 1, 'character']);
+    const swap = compareTexts('nearly all', 'almost all', { mode: 'chars' });
+    expect([marked(swap.left), marked(swap.right)]).toEqual([['nearly'], ['almost']]);
   });
-  it('joins a rewritten phrase across a short match', () => {
-    expect(show('a sharp rise in the rates', 'a sudden fall in the prices')).toEqual(['sharp rise>sudden fall', 'rates>prices']);
+  it('flags spacing and case in Words mode; the Ignore options hide only those', () => {
+    expect(compareTexts('Data  center', 'Data center').diffs).toBe(1);
+    expect(compareTexts('Data center', 'data center').diffs).toBe(1);
+    expect(compareTexts('Data  center\nboom', 'Data center boom', { ignoreSpace: true }).diffs).toBe(0);
+    expect(compareTexts('DATA center', 'data Center', { ignoreCase: true }).diffs).toBe(0);
+    expect(compareTexts('Data center', 'Datacenter', { ignoreSpace: true }).diffs).toBe(1);
+    const comma = compareTexts('a, b', 'a b');
+    expect([comma.diffs, comma.removed, comma.added]).toEqual([1, 0, 0]);
   });
-  it('ignores spacing and line breaks when asked', () => {
-    expect(show('one two\nthree', 'one  two three', { ignoreSpace: true })).toEqual([]);
-    expect(show('one two\nthree', 'one  two three')).toEqual(['> ', '\n> ']);
-  });
-  it('ignores case only when asked', () => {
-    expect(show('The Plan', 'the plan')).toEqual(['T>t', 'P>p']);
-    expect(show('The Plan', 'the plan', { ignoreCase: true })).toEqual([]);
-  });
-  it('leaves the rest of the copied article out when the selection is part of it', () => {
-    const card = 'The economy grows when trade is open.';
-    const article = 'Last year was hard. The plan failed. The economy grows when trade is open. Critics disagree.';
-    const r = compareTexts(card, article, { ignoreSpace: true });
-    expect(r.edits).toEqual([]);
-    expect(r.moreBefore && r.moreAfter).toBe(true);
-    expect(summary(card, article, r, { ignoreSpace: true })).toBe('Matches the clipboard (ignoring spacing). The clipboard also has text before and after it');
-  });
-  it('leaves out copied text before the selection even when the selection’s first word is in it', () => {
-    const r = compareTexts('The economy grows.', 'The plan failed. The economy grows. More.', { ignoreSpace: true });
-    expect(r.edits).toEqual([]);
-    expect(r.moreBefore && r.moreAfter).toBe(true);
-    const r2 = compareTexts('grows fast', 'It grows fast and grows', { ignoreSpace: true });
-    expect(r2.edits).toEqual([]);
-  });
-  it('still finds a change inside an excerpt', () => {
-    const article = 'Intro text. The economy grows when trade is open. Critics disagree.';
-    expect(show('The economy shrinks when trade is open.', article, { ignoreSpace: true })).toEqual(['shrinks>grows']);
-  });
-  it('says identical only when the text is the same byte for byte', () => {
-    const r = compareTexts('a b', 'a  b', { ignoreSpace: true });
-    expect(summary('a b', 'a  b', r, { ignoreSpace: true })).toBe('Matches the clipboard (ignoring spacing)');
-    expect(summary('a b', 'a b', compareTexts('a b', 'a b'), {})).toBe('Identical to the clipboard');
-  });
-});
-
-describe('marks on the page', () => {
-  const doc = () => make([['tag', 'Tag'], ['normal', 'alpha beta'], ['normal', 'gamma delta']]);
-  it('reads the selection with a break between paragraphs and keeps each character’s position', () => {
-    const s = select(doc(), 'beta', 'gamma');
-    const { text, pos } = selectionText(s);
-    expect(text).toBe('beta\ngamma');
-    expect(pos[0]).toBe(at(s, 'beta'));
-    expect(pos[4]).toBe(-1);
-    expect(pos[5]).toBe(at(s, 'gamma'));
-  });
-  it('adds no line break when the selection ends at the start of the next paragraph', () => {
-    const s0 = doc();
-    const from = at(s0, 'gamma') - 12, to = at(s0, 'gamma');
-    const s = s0.apply(s0.tr.setSelection(TextSelection.create(s0.doc, from, to)));
-    expect(selectionText(s).text).toBe('alpha beta');
-  });
-  it('strikes removed words and puts clipboard-only text where it goes', () => {
-    const s = select(doc(), 'alpha', 'delta');
-    const { text, pos } = selectionText(s);
-    const b = 'alpha beta gamma new delta';
-    const r = compareTexts(text, b, { ignoreSpace: true });
-    const set = compareDecorations(s.doc, pos, b, r.edits, s.selection.to);
-    const found = set.find();
-    expect(found).toHaveLength(1);
-    expect(found[0].from).toBe(at(s, 'gamma', 5)); // right after "gamma"
-    const r2 = compareTexts(text, 'alpha gamma delta', { ignoreSpace: true });
-    const del = compareDecorations(s.doc, pos, 'alpha gamma delta', r2.edits, s.selection.to).find();
-    expect(del.map((d) => [d.from, d.to])).toEqual([[at(s, 'beta'), at(s, 'beta', 4)]]);
+  it('compares a card against its whole source article fast and exactly', () => {
+    const words = Array.from({ length: 9000 }, (_, i) => `w${(i * 7919) % 1000}`);
+    const t = Date.now();
+    const r = compareTexts(words.slice(4000, 4300).join(' '), words.join(' '));
+    expect(Date.now() - t).toBeLessThan(1000);
+    expect(r.timedOut).toBe(false);
+    expect(r.removed).toBe(0);
   });
 });
 
 describe('the Compare Text command', () => {
-  let toasts: string[] = [];
-  const onToast = (e: Event) => toasts.push((e as CustomEvent<string>).detail);
-  beforeEach(() => { toasts = []; addEventListener(TOAST_EVENT, onToast); });
-  afterEach(() => { removeEventListener(TOAST_EVENT, onToast); delete bridge.readClipboardText; vi.restoreAllMocks(); });
-
-  it('is a command in the command center, not a menu item', () => {
+  it('is a command, and reads the selection with each paragraph on its own line', () => {
     expect(BINDINGS.find((b) => b.id === 'compareText')?.label).toBe('Compare Text');
+    const s = make([['normal', 'alpha beta'], ['normal', 'gamma delta']]);
+    const s2 = s.apply(s.tr.setSelection(TextSelection.create(s.doc, 7, s.doc.content.size - 7)));
+    expect(selectionText(s2)).toBe('beta\ngamma');
   });
-  it('marks the selection against the clipboard, and an edit or Esc clears the marks', async () => {
-    const host = document.createElement('div');
-    const view = createView(host, () => {}, make([['normal', 'China will not attack Taiwan today']]).doc);
-    bridge.readClipboardText = async () => 'China will attack Taiwan soon';
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, view.state.doc.content.size - 1)));
+  it('opens the panel with the selection as Text 1', () => {
+    const got: string[] = [];
+    const on = (e: Event) => got.push((e as CustomEvent<string>).detail);
+    addEventListener(COMPARE_EVENT, on);
+    const view = createView(document.createElement('div'), () => {}, make([['normal', 'China will attack']]).doc);
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 6)));
     expect(compareText(view.state, view.dispatch, view)).toBe(true);
-    await vi.waitFor(() => expect(compareKey.getState(view.state)).not.toBeNull());
-    expect(host.querySelector('.f-cmp-del')?.textContent).toBe('not');
-    expect(host.querySelector('.f-cmp-ins')?.textContent).toBe('soon');
-    expect(toasts[0]).toMatch(/^2 differences/);
-    view.someProp('handleKeyDown', (f) => f(view, new KeyboardEvent('keydown', { key: 'Escape' })));
-    expect(compareKey.getState(view.state)).toBeNull();
+    removeEventListener(COMPARE_EVENT, on);
     view.destroy();
-  });
-  it('asks for a selection first', () => {
-    const view = createView(document.createElement('div'), () => {}, make([['normal', 'text']]).doc);
-    expect(compareText(view.state, view.dispatch, view)).toBe(true);
-    expect(toasts[0]).toMatch(/^Select the text/);
-    view.destroy();
+    expect(got).toEqual(['China']);
   });
 });

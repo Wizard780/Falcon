@@ -49,6 +49,8 @@ export function ComparePanel({ open, onClose, readSelection }: { open: string | 
   const [res, setRes] = useState<CompareResult | null>(null); // showing the result
   const [cur, setCur] = useState(-1);
   const [picking, setPicking] = useState<0 | 1 | null>(null);
+  const pickRef = useRef(picking); // the Esc listener reads it as of now, not as of its last effect
+  pickRef.current = picking;
   const [note, setNote] = useState('');
   const boxes = [useRef<HTMLTextAreaElement>(null), useRef<HTMLTextAreaElement>(null)];
   const outs = useRef<HTMLDivElement>(null);
@@ -71,11 +73,14 @@ export function ComparePanel({ open, onClose, readSelection }: { open: string | 
     const t: [string, string] = open.trim() ? [open, kept[1]] : kept;
     put(t);
     setRes(null); setNote(''); setPicking(null);
-    requestAnimationFrame(() => {
-      const k = t[0] ? 1 : 0;
-      boxes[k].current?.focus();
+    const focus = () => {
+      const k = t[0] ? 1 : 0, box = boxes[k].current;
+      if (!box || document.activeElement === box) return;
+      box.focus();
       if (t[0] && t[1]) boxes[1].current?.select(); // pasting replaces the kept Text 2
-    });
+    };
+    setTimeout(focus, 0); // after this render, and again after whatever closed (the command center) hands focus back
+    setTimeout(focus, 60);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setOpt = (o: CompareOpts) => { setOpts(o); safeSet(OPTS_KEY, JSON.stringify(o)); if (res) run(texts, o, true); };
@@ -86,16 +91,18 @@ export function ComparePanel({ open, onClose, readSelection }: { open: string | 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault(); e.stopPropagation();
-      if (picking !== null) { setPicking(null); edit(picking); } else onClose();
+      const k = pickRef.current;
+      if (k !== null) { pickRef.current = null; setPicking(null); edit(k); } else onClose();
     };
     addEventListener('keydown', onKey, true);
     return () => removeEventListener('keydown', onKey, true);
-  }, [open, picking, onClose, edit]);
+  }, [open, onClose, edit]);
 
   if (open === null) return null;
 
   const finishPick = () => {
     const k = picking!, got = readSelection();
+    pickRef.current = null;
     setPicking(null);
     if (!got.trim()) { edit(k); setNote('Nothing was selected. Select text in the document first'); return; }
     const t: [string, string] = k ? [texts[0], got] : [got, texts[1]];
@@ -106,7 +113,7 @@ export function ComparePanel({ open, onClose, readSelection }: { open: string | 
     return (
       <div className="cmp-pick" role="status">
         <span>Select the text for Text {picking + 1} in your document</span>
-        <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const k = picking; setPicking(null); edit(k); }}>Cancel</button>
+        <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const k = picking; pickRef.current = null; setPicking(null); edit(k); }}>Cancel</button>
         <button className="cmp-main" onMouseDown={(e) => e.preventDefault()} onClick={finishPick}>Use selection</button>
       </div>
     );
