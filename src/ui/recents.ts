@@ -30,6 +30,7 @@ export function peekHtml(doc: PMNode): string {
   }
   box.querySelectorAll('img').forEach((e) => e.remove());
   box.querySelectorAll('[href]').forEach((e) => e.removeAttribute('href'));
+  box.querySelectorAll('p:empty, h1:empty, h2:empty, h3:empty, h4:empty').forEach((e) => e.append(document.createElement('br'))); // a blank line keeps its height, as in the editor
   return box.innerHTML;
 }
 

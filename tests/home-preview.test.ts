@@ -10,6 +10,7 @@ describe('home preview', () => {
     const doc = schema.nodes.doc.create(null, [
       p('pocket', schema.text('1NC---OFF')),
       p('tag', schema.text('Data centers outbid factories for power')),
+      p('normal'),
       p('normal', schema.text('the grid is ', []), schema.text('full', [schema.marks.highlight.create({ color: 'cyan' })]), schema.text(' now', [schema.marks.link.create({ href: 'https://x.org' })])),
       schema.nodes.paragraph.create(null, [img]),
     ]);
@@ -21,6 +22,7 @@ describe('home preview', () => {
     expect(box.querySelector('.f-highlight')?.textContent).toBe('full');
     expect(box.querySelector('img')).toBeNull();
     expect(box.querySelector('[href]')).toBeNull();
+    expect([...box.querySelectorAll('p')].filter((e) => !e.textContent).every((e) => e.querySelector('br'))).toBe(true); // blank lines and the emptied picture line keep their height
   });
 
   it('stops after about a page and a half of a big file', () => {
