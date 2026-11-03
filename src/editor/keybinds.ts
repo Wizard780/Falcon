@@ -172,6 +172,8 @@ bind('Files', [
   { id: 'save', label: 'Save', key: 'Mod-s' }, { id: 'saveAs', label: 'Save As', key: 'Mod-Shift-s' }, { id: 'close', label: 'Close document', key: 'Mod-w' },
   { id: 'nextDoc', label: 'Next open document', key: 'Ctrl-Tab' }, { id: 'prevDoc', label: 'Previous open document', key: 'Ctrl-Shift-Tab' },
 ]);
+// the SpeechDrop tab (no key until you give it one)
+bind('SpeechDrop', [{ id: 'speechdrop', label: 'SpeechDrop: join a room, upload and open its files' }]);
 // a plain key on purpose: the page can't type it while it's bound (text boxes still can)
 bind('Speech', [{ id: 'sendToSpeech', label: 'Send to speech', key: '`' }]);
 // second keys that always work: Mod-Shift-] / [ also switch documents
