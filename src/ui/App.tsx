@@ -29,6 +29,8 @@ import { Home } from './Home';
 import './display'; // the display settings (fonts, sizes, root classes) apply at startup
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
 import { Confirm, nameList, type Ask } from './Confirm';
+import { ComparePanel } from './ComparePanel';
+import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
 import { NewSpeech, SaveAs } from './SaveAs';
 import { copyName, docForMode, type SaveMode } from '../editor/save-modes';
 import { Tips, parseTip } from './Tips';
@@ -234,6 +236,7 @@ export function App() {
   const [settingsQuery, setSettingsQuery] = useState<string | undefined>();
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
+  const [compareWith, setCompareWith] = useState<string | null>(null); // Compare Text is open, Text 1 from this selection
   const [speechAsk, setSpeechAsk] = useState(false); // the New speech doc dialog is up
   const [saveAsName, setSaveAsName] = useState<string | null>(null); // the Save As dialog is up, offering this name
   const askRef = useRef(ask);
@@ -572,6 +575,13 @@ export function App() {
   };
   const closeSaveAs = useCallback(() => setSaveAsName(null), []);
 
+  const closeCompare = useCallback(() => { setCompareWith(null); viewRef.current?.focus(); }, []);
+  const readSelection = useCallback(() => (viewRef.current ? selectionText(viewRef.current.state) : ''), []);
+  useEffect(() => {
+    const on = (e: Event) => setCompareWith((e as CustomEvent<string>).detail);
+    addEventListener(COMPARE_EVENT, on);
+    return () => removeEventListener(COMPARE_EVENT, on);
+  }, []);
   const openFind = useCallback(() => { setHomeOpen(false); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
   const zoomBy = useCallback((d: number) => setZoom((z) => Math.max(0.5, Math.min(3, +(z + d).toFixed(2)))), []);
 
@@ -618,7 +628,7 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => compareRef.current !== null || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
     if (askRef.current || saveAsRef.current || speechAskRef.current) return; // a warning, Save As or New speech doc is up: it gets answered first
     if (paletteRef.current || ccRef.current) return; // file search or the command center is up: it gets closed first
@@ -663,6 +673,9 @@ export function App() {
       if (askRef.current) { if (e.ctrlKey || e.metaKey) e.preventDefault(); return; }
       // Save As is up: its name field keeps text editing keys, nothing else
       if (saveAsRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
+      // Compare Text is up: text editing keys and its own (Mod-Enter), nothing else
+      // (inside the panel its text boxes keep every editing key: word jumps, AltGr characters)
+      if (compareRef.current !== null) { if ((e.ctrlKey || e.metaKey) && !(e.target as Element | null)?.closest?.('.cmp') && !/^([acvxz]|Enter)$/i.test(e.key)) e.preventDefault(); return; }
       // so is New speech doc (its own Esc and Enter included)
       if (speechAskRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // Send to speech (` unless changed in Settings), so the page can't type that key (AltGr layouts too: their character arrives with Ctrl+Alt held). Boxes with their own text field keep it.
@@ -704,6 +717,8 @@ export function App() {
   homeRef.current = homeOpen;
   const settingsRef = useRef(settingsOpen);
   const saveAsRef = useRef(saveAsName);
+  const compareRef = useRef(compareWith);
+  compareRef.current = compareWith;
   saveAsRef.current = saveAsName;
   const speechAskRef = useRef(speechAsk);
   speechAskRef.current = speechAsk;
@@ -919,6 +934,7 @@ export function App() {
       </div>
       <Confirm ask={ask} />
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
+      <ComparePanel open={compareWith} onClose={closeCompare} readSelection={readSelection} />
       <NewSpeech open={speechAsk} onMake={makeSpeech} onClose={closeNewSpeech} />
       <div className={`toast${toast ? ' show' : ''}${toast?.action ? ' has-action' : ''}`} role="status">
         {toast?.msg}
