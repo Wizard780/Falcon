@@ -1,0 +1,88 @@
+{
+  "bundle": {
+    "js": 565803,
+    "jsGz": 192662,
+    "css": 69667,
+    "cssGz": 15101,
+    "fonts": 1790216,
+    "total": 2426741,
+    "initialJsCss": 529365,
+    "initialJsCssGz": 166131
+  },
+  "files": {
+    "d_nordics.docx": {
+      "firstMs": 977.8999999761581,
+      "settledMs": 979.1000000238419,
+      "blocks": 15079,
+      "keyMedian": 27.899999976158142,
+      "keyP90": 35.5,
+      "cpuPerKey": 23.1714,
+      "scriptPerKey": 4.9839666666666655,
+      "cpuPerScrollFrame": 23.307611111111115,
+      "heapMB": 125.18555068969727,
+      "saveFreeze": 232.10000002384186,
+      "saveTotal": 527.5
+    },
+    "c_impactturns.docx": {
+      "firstMs": 736.6999999284744,
+      "settledMs": 737.5,
+      "blocks": 10779,
+      "keyMedian": 20.200000047683716,
+      "keyP90": 31.40000009536743,
+      "cpuPerKey": 17.1446,
+      "scriptPerKey": 4.2798,
+      "cpuPerScrollFrame": 16.711155555555553,
+      "heapMB": 65.58523941040039,
+      "saveFreeze": 190.10000002384186,
+      "saveTotal": 426.5
+    },
+    "b_spark.docx": {
+      "firstMs": 143.20000004768372,
+      "settledMs": 143.80000007152557,
+      "blocks": 1289,
+      "keyMedian": 16,
+      "keyP90": 16.200000047683716,
+      "cpuPerKey": 5.777400000000001,
+      "scriptPerKey": 1.4100666666666666,
+      "cpuPerScrollFrame": 5.757444444444444,
+      "heapMB": 35.5346794128418,
+      "saveFreeze": 38.5,
+      "saveTotal": 78
+    },
+    "e_atneg.docx": {
+      "firstMs": 98,
+      "settledMs": 100.39999997615814,
+      "blocks": 1125,
+      "keyMedian": 16.100000023841858,
+      "keyP90": 17,
+      "cpuPerKey": 5.264966666666667,
+      "scriptPerKey": 1.4399333333333335,
+      "cpuPerScrollFrame": 4.877477777777778,
+      "heapMB": 21.63605499267578,
+      "saveFreeze": 66.10000002384186,
+      "saveTotal": 65.5
+    },
+    "a_animal.docx": {
+      "firstMs": 88.29999995231628,
+      "settledMs": 91.29999995231628,
+      "blocks": 338,
+      "keyMedian": 16,
+      "keyP90": 16.699999928474426,
+      "cpuPerKey": 4.656633333333334,
+      "scriptPerKey": 1.264433333333333,
+      "cpuPerScrollFrame": 2.322,
+      "heapMB": 18.06588363647461,
+      "saveFreeze": 35.39999997615814,
+      "saveTotal": 34.5
+    }
+  },
+  "idle": {
+    "editorMsPerSec": 0.7498000000000005,
+    "homeMsPerSec": 0.16140000000000043
+  },
+  "cold": {
+    "readyMs": 4209,
+    "networkIdleMs": 7272,
+    "bytes": 271802
+  }
+}

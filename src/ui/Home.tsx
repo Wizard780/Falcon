@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { clock, dots } from './home-fx';
 import { tidy, whenLabel, type Recent } from './recents';
 import { keyOf, keyText } from '../editor/keybinds';
@@ -24,8 +24,8 @@ export function Home(props: {
   const [sel, setSel] = useState(0);
   const [undo, setUndo] = useState<Recent[] | null>(null);
 
-  // the effects run only while home is showing
-  useEffect(() => {
+  // the effects run only while home is showing; focus in a layout effect, so keys pressed right after it opens land here
+  useLayoutEffect(() => {
     if (!open) return;
     setSel(0);
     scRef.current!.scrollTop = 0;

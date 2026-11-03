@@ -53,8 +53,8 @@ export type Ctx = {
 };
 
 /** The clocks live in the toolbar; the command center asks them through an event. */
-export const TIMER_EVENT = 'falcon-timer';
-export type TimerRequest = { which: 'speech' | 'prep'; op: 'toggle' | 'reset' };
+import { TIMER_EVENT, type TimerRequest } from './timer-event';
+export { TIMER_EVENT, type TimerRequest };
 const timer = (r: TimerRequest) => dispatchEvent(new CustomEvent(TIMER_EVENT, { detail: r }));
 
 export const PAGES: Record<string, string> = {

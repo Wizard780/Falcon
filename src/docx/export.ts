@@ -1,4 +1,4 @@
-import { strToU8, zipSync } from 'fflate';
+import { strToU8, zip, zipSync, type Zippable } from 'fflate';
 import type { Mark, Node as PMNode } from 'prosemirror-model';
 import { TableMap } from 'prosemirror-tables';
 import { colWidths, schema } from '../editor/schema';
@@ -10,7 +10,8 @@ export const PSTYLE: Record<string, string | null> = {
 };
 
 // characters XML 1.0 forbids (control codes, lone surrogates) are dropped so Word can always open the file
-const esc = (s: string) => s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const NEEDS_ESC = /[&<>"\x00-\x08\x0B\x0C\x0E-\x1F\uD800-\uDFFF\uFFFE\uFFFF]/;
+const esc = (s: string) => !NEEDS_ESC.test(s) ? s : s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const hex = (c: string) => {
   const m = c.trim().match(/^#?([0-9a-f]{6})$/i);
   if (m) return m[1].toUpperCase();
@@ -252,7 +253,7 @@ export async function docToDocx(doc: PMNode): Promise<Uint8Array> {
   const exts = [...new Set([...pkg.media.values()].map((m) => m.name.split('.').pop()!))];
   const notes: Record<string, Uint8Array> = hasNotes ? { 'word/footnotes.xml': strToU8(footnotesXml(pkg.notes)), 'word/settings.xml': strToU8(SETTINGS) } : {};
   if (pkg.notesPart?.rels.size) notes['word/_rels/footnotes.xml.rels'] = strToU8(pkg.notesPart.relsXml());
-  return zipSync({
+  const files: Zippable = {
     '[Content_Types].xml': strToU8(contentTypes(exts, hasNotes)),
     '_rels/.rels': strToU8(RELS),
     'word/document.xml': strToU8(xml),
@@ -260,5 +261,10 @@ export async function docToDocx(doc: PMNode): Promise<Uint8Array> {
     'word/styles.xml': strToU8(STYLES_XML),
     ...notes,
     ...pkg.files,
-  });
+  };
+  // a big file compresses in workers, so the window doesn't freeze while it saves (same bytes either way);
+  // a small one is quicker done here than starting the workers
+  if (xml.length < ASYNC_ZIP_MIN || typeof Worker === 'undefined') return zipSync(files);
+  return new Promise((resolve, reject) => zip(files, (err, out) => (err ? reject(err) : resolve(out))));
 }
+const ASYNC_ZIP_MIN = 2_000_000;

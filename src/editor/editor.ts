@@ -24,6 +24,7 @@ import { docToolPlugins } from './doc-tools';
 import { tablePlugins } from './tables';
 import { imagePlugin } from './images';
 import { footnotePlugin } from './footnotes';
+import { WINDOW_META, windowPlugin } from './window';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -144,6 +145,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       wordSelection(),
       gapCursor(),
       selectionClasses,
+      windowPlugin,
       findPlugin,
       prefsWatch,
     ],
@@ -165,7 +167,8 @@ export function createView(mount: HTMLElement, onChange: (view: EditorView) => v
     dispatchTransaction(tr) {
       const next = view.state.apply(tr);
       view.updateState(next);
-      onChange(view);
+      // the drawn range moved on a scroll: nothing the app shows changed
+      if (!tr.getMeta(WINDOW_META)) onChange(view);
     },
     // read again on every update, so the Check spelling setting applies at once; read mode is never
     // checked (no underlines while reading, and no guesses to click that would edit the locked doc)
