@@ -257,6 +257,7 @@ export function Settings(props: Props) {
         tog(P.wheelZoom, 'Zoom with the scroll wheel', `${IS_MAC ? '⌘' : 'Ctrl'} and scroll, or pinch the trackpad.`),
         pick(P.textWidth, 'Text width', 'Narrower lines are easier to follow.', [['full', 'Full'], ['wide', 'Wide'], ['narrow', 'Narrow']]),
         pick(P.margins, 'Margins', 'Space at the left and right of the text.', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']]),
+        tog(P.railResize, 'Resizable rail', 'Drag the rail\'s right edge to show the names of open files. Double-click the edge to go back to icons.'),
       ]],
       ['Cursor and motion', [
         pick(P.caret, 'Cursor color', 'Highlighter matches your highlight color.', [['auto', 'Text'], ['blue', 'Blue'], ['red', 'Red'], ['ink', 'Highlighter']]),

@@ -28,6 +28,7 @@ export const P = {
   prefixMarked: def('prefix.marked', 'MARKED_'),
   openDepth: def('openDepth', 0), // 0: opening a file keeps the current depth
   // Appearance
+  railResize: def('railResize', false), // the rail's right edge drags it wider to show file names
   wheelZoom: def('wheelZoom', false),
   theme: def('theme', 'dark'), // a preset id, 'system', or a custom theme's id (src/ui/theme.ts)
   paper: def<'theme' | 'white' | 'dark'>('paper', 'theme'),

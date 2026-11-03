@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { freshStorage, mountApp, unmountAll } from './app-harness';
 import { RAIL_MAX, RAIL_MIN, RAIL_NAMES, railWidth } from '../src/ui/rail';
+import { P, setPref } from '../src/editor/prefs';
 
-beforeEach(async () => { await freshStorage(); });
+beforeEach(async () => { await freshStorage({ 'falcon.railResize': 'on' }); });
 afterEach(async () => { await unmountAll(); });
 
 const railW = () => document.documentElement.style.getPropertyValue('--rail-w');
@@ -76,5 +77,28 @@ describe('the rail', () => {
     localStorage.setItem('falcon.rail', '9000');
     await mountApp();
     expect(railW()).toBe(`${RAIL_MAX}px`);
+  });
+});
+
+describe('the Resizable rail setting', () => {
+  it('is off by default: no handle, icons only, even with a width saved', async () => {
+    await freshStorage({ 'falcon.rail': '240' });
+    const app = await mountApp();
+    expect(grip(app.el)).toBeNull();
+    expect(railW()).toBe(`${RAIL_MIN}px`);
+    expect(names(app.el)).toEqual([]);
+  });
+
+  it('turning it on brings back the saved width, and off goes back to icons', async () => {
+    await freshStorage({ 'falcon.rail': '240' });
+    const app = await mountApp();
+    await app.act(() => { setPref(P.railResize, true); });
+    expect(grip(app.el)).not.toBeNull();
+    expect(railW()).toBe('240px');
+    expect(names(app.el)).toEqual(['Untitled']);
+    await app.act(() => { setPref(P.railResize, false); });
+    expect(grip(app.el)).toBeNull();
+    expect(railW()).toBe(`${RAIL_MIN}px`);
+    expect(localStorage.getItem('falcon.rail')).toBe('240');
   });
 });

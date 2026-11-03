@@ -926,7 +926,10 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
   useLayoutEffect(() => { if (open && list.current && strip.current) list.current.scrollTop = strip.current.scrollTop; }, [open, props.docs.length]);
 
   // the right edge drags the rail wider; wide enough, the names show in the rail and the hover panel stays shut
-  const [width, setWidth] = useState(loadRail);
+  // off (Settings > Appearance > Resizable rail), it stays icons only; the dragged width is kept for when it's back on
+  const resizable = pref(P.railResize);
+  const [dragged, setWidth] = useState(loadRail);
+  const width = resizable ? dragged : RAIL_MIN;
   const wide = width >= RAIL_NAMES;
   useLayoutEffect(() => { document.documentElement.style.setProperty('--rail-w', `${width}px`); }, [width]);
   useEffect(() => { if (wide) setOpen(false); }, [wide]);
@@ -992,10 +995,10 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
       <div className="grow" />
       {props.update && <UpdateButton u={props.update} onInstall={props.onUpdate} />}
       <button className="fs-b gear-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /><span className="lbl">Settings</span></button>
-      <div className="rail-grip" role="separator" aria-orientation="vertical" aria-label="Rail width" tabIndex={0}
+      {resizable && <div className="rail-grip" role="separator" aria-orientation="vertical" aria-label="Rail width" tabIndex={0}
         aria-valuemin={RAIL_MIN} aria-valuemax={RAIL_MAX} aria-valuenow={width}
         title="Rail width: drag to show file names, double-click to reset"
-        onPointerDown={grab} onDoubleClick={() => resize(RAIL_MIN)} onKeyDown={step} />
+        onPointerDown={grab} onDoubleClick={() => resize(RAIL_MIN)} onKeyDown={step} />}
     </nav>
   );
 }

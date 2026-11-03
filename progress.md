@@ -174,3 +174,4 @@ User ask: drag the left rail wider so the open files' names show.
 - [x] width kept in `falcon.rail` (like zoom and outline), so it survives a restart; held to 30% of a narrow window
 - [x] the toolbar packs closer by its own width (a container query) instead of the window's, so a wide rail doesn't clip it
 - [x] vitest 313 pass (tests/rail.test.ts), tsc clean; drove it in the web build and in Electron (drag, relaunch on the same profile, double-click)
+- [x] behind a setting, off by default (Settings > Appearance > Resizable rail, `falcon.railResize`, also in the command center): off, no handle and icons only; the dragged width is kept for when it's back on
