@@ -864,7 +864,7 @@ export function App() {
 
       <footer className="status">
         <span>Σ</span>
-        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {clock((words / pref(P.wpm1)) * 60)} · Reader 2: {clock((words / pref(P.wpm2)) * 60)}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
+        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {clock((words / pref(P.wpm1)) * 60)} · Reader 2: {clock((words / pref(P.wpm2)) * 60)}{sel && sel.selWords ? ` | Sel: ${sel.selWords} · Read: ${sel.selRead} · ${clock((sel.selRead / pref(P.wpm1)) * 60)} / ${clock((sel.selRead / pref(P.wpm2)) * 60)}` : ''}</span>
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
