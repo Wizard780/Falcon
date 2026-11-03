@@ -16,6 +16,7 @@ This directory is the maintained source for verifying Falcon's user-facing behav
 - Set selections with `f.select(text)`. A headless page has no OS focus, so Shift-Arrow and drag selection do nothing.
 - Read state with `f.markMap()` and `window.__falconView.state` for evidence only. Never dispatch an edit through them.
 - Prefer `aria-label`, `title^="Label (Key)"`, `role` and `placeholder` handles over CSS position.
+- Move the caret with clicks or `f.select`, not End/Home: in a headless page they also smooth-scroll the page to its end a moment later. `journeys/typing-new-paragraphs.mjs` checks that a split or joined paragraph stays drawn in a long file (the off-screen skip in `src/editor/window.ts`).
 - Run a journey with `$V run .claude/skills/verify-falcon/journeys/<feature>.mjs`. Exit 0 means every check was `ok`.
 
 ## Proof and skip reporting

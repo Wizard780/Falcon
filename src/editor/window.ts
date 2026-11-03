@@ -1,4 +1,4 @@
-import { Plugin, PluginKey } from 'prosemirror-state';
+import { Plugin, PluginKey, type Transaction } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
 import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
 
@@ -27,6 +27,36 @@ function decorate(doc: PMNode, from: number, to: number): DecorationSet {
     pos += n.nodeSize;
   }
   return DecorationSet.create(doc, decos);
+}
+
+/** Typing maps the marks along (the next measure squares the range up), then re-marks the paragraphs
+ *  the edit touched: mapping drops the mark from a paragraph Enter splits or Backspace joins (its edge
+ *  moves), and the next measure finds the range unchanged, so it stayed skipped (blank) once the caret
+ *  left it. Not decorate(): DecorationSet.create costs ~4 ms a key on a 15k-paragraph file. */
+function remark(tr: Transaction, v: Win): DecorationSet {
+  const doc = tr.doc;
+  let decos = v.decos.map(tr.mapping, doc);
+  let lo = Infinity, hi = -Infinity;
+  tr.mapping.maps.forEach((m, i) => m.forEach((_a, _b, start, end) => {
+    const rest = tr.mapping.slice(i + 1);
+    lo = Math.min(lo, rest.map(start, -1));
+    hi = Math.max(hi, rest.map(end, 1));
+  }));
+  if (lo > hi || !doc.childCount) return decos;
+  const a = doc.resolve(Math.min(lo, doc.content.size)).index(0);
+  const b = Math.min(doc.resolve(Math.min(hi, doc.content.size)).index(0), doc.childCount - 1);
+  // a wide edit (replace all, a long paste): each find/remove below scans every mark, so rebuild once
+  if (b - a > 64) return decorate(doc, v.from, v.to);
+  let pos = doc.resolve(Math.min(lo, doc.content.size)).posAtIndex(a, 0);
+  const add: Decoration[] = [];
+  for (let i = a; i <= b; i++) {
+    const n = doc.child(i);
+    // find() also returns the neighbours' marks that only touch this paragraph's edges
+    decos = decos.remove(decos.find(pos, pos + n.nodeSize).filter((d) => d.from < pos + n.nodeSize && d.to > pos));
+    if (i >= v.from && i < v.to) add.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-near' }));
+    pos += n.nodeSize;
+  }
+  return add.length ? decos.add(doc, add) : decos;
 }
 
 /** The top-level child range near the screen, or null when it can't be measured (not laid out). */
@@ -61,8 +91,7 @@ export const windowPlugin = new Plugin<Win>({
     apply(tr, v) {
       const w = tr.getMeta(windowKey) as { from: number; to: number } | undefined;
       if (w) return { ...w, decos: decorate(tr.doc, w.from, w.to) };
-      // typing maps the range along; the next measure squares it up
-      return tr.docChanged ? { ...v, decos: v.decos.map(tr.mapping, tr.doc) } : v;
+      return tr.docChanged ? { ...v, decos: remark(tr, v) } : v;
     },
   },
   props: { decorations: (state) => windowKey.getState(state)!.decos },
