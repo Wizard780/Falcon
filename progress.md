@@ -201,3 +201,10 @@ User ask: in the library (file search folders, e.g. four Dropboxes), star a file
 - [x] a starred file hides its copies, the same path inside another search folder (not open docs, not a same-named file in another folder); its row says "N more hidden" and the tooltip explains
 - [x] rows name the search folder a file came from (`Team Dropbox › DA`), so same-named files can be told apart
 - [x] stored in falcon.starredFiles; vitest file-search covers ranking and hiding; journey starred-files drives it with a stand-in bridge
+
+## Fix: card grip covered the start of a line (2026-11-03, branch grip-click)
+User report: the six-dot card grip won't let you click the text next to it.
+- [x] with narrow margins the grip (pulled inside the page in #71) sat over the first 6 to 9px of each tag, so a click there grabbed the grip; it now slims to fit the margin (pad - 2px, 8 to 16px wide) and ends before the text
+- [x] the outline's resize edge sits inside the pane (6px) instead of 4px over the page
+- [x] checked at narrow and normal margins, 100% and 150% zoom: a click 2px into a tag puts the caret at its start, and the grip's center is still the grip
+- [x] follow-up report "the cursor won't let me select it": the left margin (where the grip lives) was a dead zone, so a click or drag starting beside a line did nothing. A press in the margin now goes to the line's near edge (Word and CardMirror put the caret at the line's start), and the grip itself tells a click (caret at its line's start), a sideways drag (selects from the line's start) and an up/down drag (moves the card) apart. Journey margin-click covers it at normal and narrow margins
