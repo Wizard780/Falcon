@@ -456,6 +456,17 @@ export function App() {
     setDocs(rest.map((x) => (x.id === next.id ? { ...x, state: null } : x)));
     show(next.id, next.state!, next.scroll);
   }, [show]);
+  // dragging a file in the rail or the files panel moves it to slot `to`
+  const moveDoc = useCallback((id: number, to: number) => {
+    setDocs((ds) => {
+      const i = ds.findIndex((d) => d.id === id);
+      if (i < 0 || i === to) return ds;
+      const n = [...ds];
+      n.splice(to, 0, ...n.splice(i, 1));
+      return n;
+    });
+    backupSoon.current();
+  }, []);
   const closeDoc = useCallback((id: number) => {
     const d = docsRef.current.find((x) => x.id === id);
     if (!d) return;
@@ -906,7 +917,7 @@ export function App() {
   return (
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
-      <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
+      <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc} onMove={moveDoc}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
 
@@ -1010,7 +1021,7 @@ const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor
 // ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
 type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech: boolean };
-function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -1024,8 +1035,45 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
     setAt({ head: logo.current!.getBoundingClientRect().top - 8, list: strip.current!.getBoundingClientRect().top - 8 });
     setOpen(true);
   };
-  const hide = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(false), 180); };
+  const hide = () => { clearTimeout(timer.current); if (!moving.current) timer.current = window.setTimeout(() => setOpen(false), 180); };
   useEffect(() => () => clearTimeout(timer.current), []);
+
+  // press a file and drag it up or down to reorder; it takes each slot it passes, live. A press that
+  // doesn't move 4px stays a click, and the click after a real drag is swallowed
+  const moving = useRef(false);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const reorder = (id: number) => (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('.doc-x, .files-x')) return;
+    const box = e.currentTarget.parentElement!, y0 = e.clientY;
+    const move = (m: PointerEvent) => {
+      if (!moving.current) {
+        if (Math.abs(m.clientY - y0) < 4) return;
+        moving.current = true;
+        setDragId(id);
+      }
+      m.preventDefault();
+      const rows = [...box.children] as HTMLElement[];
+      const from = rows.findIndex((r) => r.dataset.id === String(id));
+      // the slot under the pointer: past a neighbour's middle, take its place
+      let to = from;
+      rows.forEach((r, i) => { const b = r.getBoundingClientRect(), mid = b.top + b.height / 2; if (i < from && m.clientY < mid) to = Math.min(to, i); if (i > from && m.clientY > mid) to = i; });
+      if (to !== from) props.onMove(id, to);
+    };
+    const up = () => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', up);
+      if (!moving.current) return;
+      setDragId(null);
+      // the click that ends a drag isn't a switch; clear the flag after it would have fired
+      addEventListener('click', swallow, true);
+      setTimeout(() => { removeEventListener('click', swallow, true); moving.current = false; }, 0);
+    };
+    const swallow = (c: MouseEvent) => { c.stopPropagation(); c.preventDefault(); };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
+  };
   // both lists scroll together, so each row stays level with its icon
   useLayoutEffect(() => { if (open && list.current && strip.current) list.current.scrollTop = strip.current.scrollTop; }, [open, props.docs.length]);
 
@@ -1071,7 +1119,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
       <div ref={strip} className="fs-docs" role="tablist" aria-label="Open documents" onPointerEnter={wide ? undefined : show} onPointerLeave={wide ? undefined : hide}
         onScroll={(e) => { if (list.current) list.current.scrollTop = e.currentTarget.scrollTop; }}>
         {props.docs.map((d) => (
-          <div key={d.id} className="doc-row" data-on={isOn(d) || undefined}>
+          <div key={d.id} className="doc-row" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} onPointerDown={reorder(d.id)}>
             <button className="fs-b doc-nm" role="tab" aria-selected={isOn(d)} aria-label={d.speech ? `${d.name} (speech doc)` : d.name} data-on={isOn(d) || undefined}
               onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
               <SvgIcon name="doc" />{wide && <span className="lbl">{tidy(d.name)}</span>}{d.dirty && <i className="dot" aria-label="unsaved" />}{d.speech && <i className="spk" aria-hidden="true">S</i>}
@@ -1087,7 +1135,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         <div ref={list} className="files-l" style={{ top: at.list }}
           onScroll={(e) => { if (strip.current) strip.current.scrollTop = e.currentTarget.scrollTop; }}>
           {props.docs.map((d) => (
-            <div key={d.id} className="files-r" data-on={isOn(d) || undefined}>
+            <div key={d.id} className="files-r" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} onPointerDown={reorder(d.id)}>
               <button tabIndex={-1} className="files-b" onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
                 <SvgIcon name="doc" /><span className="nm">{tidy(d.name)}</span>{d.speech && <i className="spk" aria-hidden="true">S</i>}{d.dirty && <i className="dot" />}
               </button>
