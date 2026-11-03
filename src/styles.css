@@ -415,7 +415,8 @@ button.b:active { transform: scale(.97); }
 
 /* desktop: the window drags by the chrome; on macOS the strip and panel start below the traffic lights */
 .desktop .toolbar, .desktop .fstrip, .desktop .tools, .desktop .status { -webkit-app-region: drag; }
-.desktop button, .desktop .pop, .desktop input, .desktop .files[data-open], .desktop .rail-grip, .desktop .ol-grip { -webkit-app-region: no-drag; }
+.desktop button, .desktop .pop, .desktop input, .desktop .files, .desktop .rail-grip, .desktop .ol-grip { -webkit-app-region: no-drag; }
+/* the closed files panel still has a box under the page, and Electron drags by box not by what's on top, so as drag it ate clicks on line starts */
 /* Electron cuts drag areas in page order, so the toolbar (later in the page) would turn the open files
    panel's rows over it back into window drags; it gives up dragging while the panel is open */
 .desktop .app:has(.files[data-open]) .toolbar { -webkit-app-region: no-drag; }
