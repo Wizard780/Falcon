@@ -30,13 +30,14 @@ import './display'; // the display settings (fonts, sizes, root classes) apply a
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
 import { Confirm, nameList, type Ask } from './Confirm';
 import { SaveAs } from './SaveAs';
+import { ComparePanel } from './ComparePanel';
+import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
 import { copyName, docForMode, type SaveMode } from '../editor/save-modes';
 import { Tips, parseTip } from './Tips';
 import { OutlinePane } from './Outline';
 import { FindBar } from './FindBar';
 import { outlineNumbers } from '../editor/nav/numbering';
 import { DOC_TOOLS } from '../editor/doc-tools';
-import { TOAST_EVENT } from '../editor/doc-tools/compare';
 import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, peekHtml, saveRecents, tidy, type Recent } from './recents';
@@ -235,6 +236,7 @@ export function App() {
   const [settingsQuery, setSettingsQuery] = useState<string | undefined>();
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
+  const [compareWith, setCompareWith] = useState<string | null>(null); // Compare Text is open, Text 1 from this selection
   const [saveAsName, setSaveAsName] = useState<string | null>(null); // the Save As dialog is up, offering this name
   const askRef = useRef(ask);
   askRef.current = ask;
@@ -265,7 +267,7 @@ export function App() {
   const flash = useCallback((msg: string, action?: Toast['action']) => {
     const t: Toast = { msg, action };
     setToast(t);
-    window.setTimeout(() => setToast((cur) => (cur === t ? null : cur)), action || msg.includes('crash recovery') ? 6000 : msg.length > 60 ? 4500 : 2200);
+    window.setTimeout(() => setToast((cur) => (cur === t ? null : cur)), action || msg.includes('crash recovery') ? 6000 : 2200);
   }, []);
   flashRef.current = flash;
 
@@ -350,6 +352,15 @@ export function App() {
     }))) return;
     void bridge.installUpdate?.();
   }, [confirmAsk, update]);
+  // no update waiting: the same spot in the rail checks now
+  const [checking, setChecking] = useState(false);
+  const checkUpdate = useCallback(async () => {
+    setChecking(true);
+    const r = await bridge.checkUpdate!().catch(() => 'failed' as const);
+    setChecking(false);
+    if (r === 'none') flash('Falcon is up to date');
+    else if (r === 'failed') flash("Couldn't check for updates. Try again when you're online.");
+  }, [flash]);
   useEffect(() => {
     const onUnload = (e: BeforeUnloadEvent) => { if (docsRef.current.some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ''; } };
     addEventListener('beforeunload', onUnload);
@@ -547,6 +558,13 @@ export function App() {
   };
   const closeSaveAs = useCallback(() => setSaveAsName(null), []);
 
+  const closeCompare = useCallback(() => { setCompareWith(null); viewRef.current?.focus(); }, []);
+  const readSelection = useCallback(() => (viewRef.current ? selectionText(viewRef.current.state) : ''), []);
+  useEffect(() => {
+    const on = (e: Event) => setCompareWith((e as CustomEvent<string>).detail);
+    addEventListener(COMPARE_EVENT, on);
+    return () => removeEventListener(COMPARE_EVENT, on);
+  }, []);
   const openFind = useCallback(() => { setHomeOpen(false); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
   const zoomBy = useCallback((d: number) => setZoom((z) => Math.max(0.5, Math.min(3, +(z + d).toFixed(2)))), []);
 
@@ -731,12 +749,6 @@ export function App() {
   const peek = useCallback((item: OutlineItem) => { const v = viewRef.current; if (v) scrollToPos(v, item.pos); }, []);
   // Find and Replace and find-by-position keys live in the editor keymap and ask for the bar here
   useEffect(() => { addEventListener('falcon-find', openFind); return () => removeEventListener('falcon-find', openFind); }, [openFind]);
-  // editor commands that report back (Compare Text)
-  useEffect(() => {
-    const on = (e: Event) => flash((e as CustomEvent<string>).detail);
-    addEventListener(TOAST_EVENT, on);
-    return () => removeEventListener(TOAST_EVENT, on);
-  }, [flash]);
 
   const colorButton = (kind: 'highlight' | 'shading') => {
     const v = viewRef.current;
@@ -829,7 +841,7 @@ export function App() {
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
-        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} />
+        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
 
       <div className="covered" inert={homeOpen || modal}>
@@ -895,6 +907,7 @@ export function App() {
       </div>
       <Confirm ask={ask} />
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
+      <ComparePanel open={compareWith} onClose={closeCompare} readSelection={readSelection} />
       <div className={`toast${toast ? ' show' : ''}${toast?.action ? ' has-action' : ''}`} role="status">
         {toast?.msg}
         {toast?.action && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const a = toast.action!; setToast(null); a.run(); }}>{toast.action.label}</button>}
@@ -926,7 +939,7 @@ const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor
 // ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
 type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech: boolean };
-function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void }) {
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -1013,7 +1026,10 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         </div>
       </aside>
       <div className="grow" />
-      {props.update && <UpdateButton u={props.update} onInstall={props.onUpdate} />}
+      {props.update ? <UpdateButton u={props.update} onInstall={props.onUpdate} />
+        : props.onCheck && <button className="fs-b chk" title={props.checking ? 'Checking for updates' : 'Check for updates'} aria-label="Check for updates"
+            aria-busy={props.checking || undefined} data-busy={props.checking || undefined} onClick={() => { if (!props.checking) props.onCheck!(); }}>
+            <SvgIcon name="refresh" /><span className="lbl">{props.checking ? 'Checking' : 'Check for updates'}</span></button>}
       <button className="fs-b gear-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /><span className="lbl">Settings</span></button>
       {resizable && <div className="rail-grip" role="separator" aria-orientation="vertical" aria-label="Rail width" tabIndex={0}
         aria-valuemin={RAIL_MIN} aria-valuemax={RAIL_MAX} aria-valuenow={width}

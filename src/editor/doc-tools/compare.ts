@@ -1,39 +1,20 @@
 /**
- * Compare Text: how the selection differs from the text on the clipboard, marked in place. Text only
- * on the page is struck through in red; text only on the clipboard shows in green where it would go.
- * Nothing in the document changes; the marks go away on the next edit, on Esc, or on the next compare.
+ * Compare Text: two texts side by side with their differences marked, as in the debate-uploader plugin.
+ * Words are diffed first; in Characters mode each changed stretch is then diffed letter by letter, so
+ * anything left unmarked is identical, byte for byte, unless an Ignore option is on.
  */
-import type { Node as PMNode } from 'prosemirror-model';
-import { Plugin, PluginKey, type Command, type EditorState } from 'prosemirror-state';
-import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
-import { bridge } from '../host';
-import { readSetting, type SettingSpec } from '../tools';
+import type { Command, EditorState } from 'prosemirror-state';
 import { spansOf } from '../multi';
 
-export const compareIgnoreCase: SettingSpec = {
-  section: 'Compare Text', key: 'falcon.compareIgnoreCase', kind: 'toggle', default: false,
-  label: 'Ignore case', hint: 'Compare Text treats "The" and "the" as the same.',
-};
-export const compareIgnoreSpacing: SettingSpec = {
-  section: 'Compare Text', key: 'falcon.compareIgnoreSpacing', kind: 'toggle', default: true,
-  label: 'Ignore spacing', hint: 'Compare Text skips extra spaces and line breaks, so text copied from a PDF or web page lines up.',
-};
-
-export type CompareOpts = { ignoreCase?: boolean; ignoreSpace?: boolean };
-/** A[aFrom, aTo) became `b` (offsets into the two texts). An empty range is an insertion, an empty b a removal. */
-export type Edit = { aFrom: number; aTo: number; bFrom: number; bTo: number };
-export type CompareResult = {
-  edits: Edit[];
-  /** the clipboard has text before / after everything the selection matches (left unmarked) */
-  moreBefore: boolean; moreAfter: boolean;
-  timedOut: boolean;
-};
+export type CompareOpts = { mode?: 'words' | 'chars'; ignoreCase?: boolean; ignoreSpace?: boolean };
+/** kind 0 = the same, 1 = in a change but the same letters (Characters mode), 2 = changed, 3 = where the other side has text. g: the difference it belongs to. */
+export type Piece = { text: string; kind: 0 | 1 | 2 | 3; g: number };
+export type CompareResult = { diffs: number; removed: number; added: number; unit: 'word' | 'character'; left: Piece[]; right: Piece[]; timedOut: boolean };
 
 // ---------- the diff ----------
-// Myers' diff in linear space (the middle-snake bisect, after diff-match-patch, Apache 2.0), as in the
-// debate-uploader plugin's Compare text. It runs over integer ids, one per distinct unit.
+// Myers' diff in linear space (the middle-snake bisect, after diff-match-patch, Apache 2.0), over integer ids.
 const TIMED_OUT = 'timed out';
-const COMPARE_MS = 2000; // past this, what's left is one big change
+const COMPARE_MS = 2500; // past this, what's left is shown as one big change
 
 function bisect(a: Int32Array, b: Int32Array, deadline: number): [number, number] | typeof TIMED_OUT | null {
   const n = a.length, m = b.length, maxD = Math.ceil((n + m) / 2), off = maxD, len = 2 * maxD;
@@ -111,250 +92,128 @@ function diffSeq(a: Int32Array, b: Int32Array, deadline: number): { ops: Op[]; t
 // ---------- units ----------
 /** A word (with inner apostrophes), a run of spaces, or any other single character. */
 const WORD_RE = /\s+|[\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*|[^]/gu;
-type Unit = { from: number; to: number };
 
-function unitsOf(text: string, from: number, to: number, words: boolean, ignoreSpace: boolean): Unit[] {
-  const out: Unit[] = [];
-  const s = text.slice(from, to);
-  if (words) for (const m of s.matchAll(WORD_RE)) out.push({ from: from + m.index!, to: from + m.index! + m[0].length });
-  else for (let i = 0; i < s.length;) { const n = s.codePointAt(i)! > 0xffff ? 2 : 1; out.push({ from: from + i, to: from + i + n }); i += n; }
-  // with Ignore spacing, spaces aren't compared at all
-  return ignoreSpace ? out.filter((u) => !/^\s+$/.test(s.slice(u.from - from, u.to - from))) : out;
-}
-
-function ids(a: string, ua: Unit[], b: string, ub: Unit[], opts: CompareOpts): [Int32Array, Int32Array] {
-  const map = new Map<string, number>();
-  const id = (text: string) => (u: Unit) => {
-    let k = text.slice(u.from, u.to);
-    if (opts.ignoreCase) k = k.toLowerCase();
-    if (!map.has(k)) map.set(k, map.size);
-    return map.get(k)!;
-  };
-  return [Int32Array.from(ua, id(a)), Int32Array.from(ub, id(b))];
-}
-
-/** A run of changed units, by index: a[a0, a1) became b[b0, b1). */
-type Run = { a0: number; a1: number; b0: number; b1: number };
-function runsOf(ops: Op[]): Run[] {
-  const out: Run[] = [];
-  let i = 0, j = 0;
-  for (const [t, n] of ops) {
-    if (t === '=') { i += n; j += n; continue; }
-    let last = out[out.length - 1];
-    if (!last || last.a1 !== i || last.b1 !== j) out.push((last = { a0: i, a1: i, b0: j, b1: j }));
-    if (t === '-') last.a1 = i += n; else last.b1 = j += n;
+/** With Ignore spacing, whitespace rides along with the unit before it and never counts. */
+function units(text: string, words: boolean, ignoreSpace: boolean): string[] {
+  const raw = words ? text.match(WORD_RE) ?? [] : Array.from(text);
+  if (!ignoreSpace) return raw;
+  const out: string[] = [];
+  let lead = '';
+  for (const u of raw) {
+    if (!/^\s+$/.test(u)) { out.push(lead + u); lead = ''; } else if (out.length) out[out.length - 1] += u; else lead += u;
   }
+  if (lead) out.push(lead);
   return out;
 }
 
-const size = (u: Unit[], i: number, j: number) => (j > i ? u[j - 1].to - u[i].from : 0);
-/** Text offsets of units [i0, i1); an empty run sits right after the unit before it. */
-const at = (u: Unit[], i0: number, i1: number): [number, number] => {
-  const p = i1 > i0 ? u[i0].from : i0 > 0 ? u[i0 - 1].to : u.length ? u[0].from : 0;
-  return [p, i1 > i0 ? u[i1 - 1].to : p];
-};
+function encode(listA: string[], listB: string[], opts: CompareOpts): [Int32Array, Int32Array] {
+  const ids = new Map<string, number>();
+  const key = (u: string) => {
+    let k = opts.ignoreSpace ? u.replace(/\s+/g, '') : u;
+    if (opts.ignoreCase) k = k.toLowerCase();
+    if (!ids.has(k)) ids.set(k, ids.size);
+    return ids.get(k)!;
+  };
+  return [Int32Array.from(listA, key), Int32Array.from(listB, key)];
+}
 
-export function compareTexts(a: string, b: string, opts: CompareOpts = {}): CompareResult {
+const textLen = (list: string[], i: number, j: number) => { let n = 0; for (let k = i; k < j; k++) n += list[k].length; return n; };
+const isWord = (u: string) => /[\p{L}\p{N}]/u.test(u);
+
+export function compareTexts(left: string, right: string, opts: CompareOpts = {}): CompareResult {
   const deadline = Date.now() + COMPARE_MS;
-  const space = !!opts.ignoreSpace;
-  const ua = unitsOf(a, 0, a.length, true, space), ub = unitsOf(b, 0, b.length, true, space);
-  const [x, y] = ids(a, ua, b, ub, opts);
-  const { ops, timedOut: slow } = diffSeq(x, y, deadline);
+  const words = opts.mode !== 'chars', space = !!opts.ignoreSpace;
+  const ta = units(left, true, space), tb = units(right, true, space);
+  const [a, b] = encode(ta, tb, opts);
+  const { ops, timedOut: slow } = diffSeq(a, b, deadline);
   let timedOut = slow;
-  let runs = runsOf(ops);
 
-  // The selection is usually part of what was copied (a card from its article): clipboard-only text
-  // before the first and after the last match isn't a difference.
-  // Clipboard-only text the diff could put in more than one place goes where it reaches an end
-  // ("The [plan failed. The] economy" is "[The plan failed.] The economy"); otherwise as far right as it goes.
-  const touch = (p: Run, q: Run) => p.a1 === q.a0 && p.b1 === q.b0;
-  for (let k = 0; k < runs.length; k++) {
-    const r = runs[k], p = runs[k - 1], q = runs[k + 1];
-    if (r.a0 !== r.a1) continue;
-    const left = { ...r };
-    while (left.a0 > (p?.a1 ?? 0) && left.b0 > (p?.b1 ?? 0) && x[left.a0 - 1] === y[left.b1 - 1]) { left.a0--; left.a1--; left.b0--; left.b1--; }
-    if (!p && left.a0 === 0 && left.b0 === 0) { Object.assign(r, left); continue; }
-    // reaches clipboard-only text that is already at the start: one run
-    if (p && p.a0 === 0 && p.a1 === 0 && p.b0 === 0 && touch(p, left)) { p.b1 = left.b1; runs.splice(k--, 1); continue; }
-    while (r.a0 < (q?.a0 ?? ua.length) && r.b1 < (q?.b0 ?? ub.length) && x[r.a0] === y[r.b0]) { r.a0++; r.a1++; r.b0++; r.b1++; }
-    if (q && touch(r, q)) { q.a0 = r.a0; q.b0 = r.b0; runs.splice(k--, 1); }
+  // equal runs and changes, by unit index
+  type Seg = { eq: boolean; a0: number; a1: number; b0: number; b1: number };
+  const segs: Seg[] = [];
+  let i = 0, j = 0, removedWords = 0, addedWords = 0;
+  for (const [t, n] of ops) {
+    if (t === '-') removedWords += ta.slice(i, i + n).filter(isWord).length;
+    if (t === '+') addedWords += tb.slice(j, j + n).filter(isWord).length;
+    if (t === '=') { segs.push({ eq: true, a0: i, a1: i + n, b0: j, b1: j + n }); i += n; j += n; continue; }
+    let last = segs[segs.length - 1];
+    if (!last || last.eq) segs.push((last = { eq: false, a0: i, a1: i, b0: j, b1: j }));
+    if (t === '-') last.a1 = i += n; else last.b1 = j += n;
   }
-  let moreBefore = false, moreAfter = false;
-  if (ua.length && runs.length && runs[0].a0 === 0 && runs[0].b0 === 0 && runs[0].a1 === 0) { moreBefore = true; runs.shift(); }
-  const last = runs[runs.length - 1];
-  if (ua.length && last && last.a0 === ua.length && last.b1 === ub.length) { moreAfter = true; runs.pop(); }
-
-  // A short match between two bigger changes ("the") joins them, so a rewritten phrase reads as one change.
+  // A short equal run between two bigger changes ("the", a space) joins them, so a rewritten phrase
+  // reads as one change instead of confetti.
   for (let again = true; again;) {
     again = false;
-    for (let k = 0; k + 1 < runs.length; k++) {
-      const p = runs[k], q = runs[k + 1];
-      const gap = size(ua, p.a1, q.a0);
-      const big = (r: Run) => Math.max(size(ua, r.a0, r.a1), size(ub, r.b0, r.b1));
-      if (gap <= big(p) && gap <= big(q)) { runs.splice(k, 2, { a0: p.a0, a1: q.a1, b0: p.b0, b1: q.b1 }); again = true; }
+    for (let k = 1; k < segs.length - 1; k++) {
+      const p = segs[k - 1], e = segs[k], q = segs[k + 1];
+      if (!e.eq || p.eq || q.eq) continue;
+      const n = textLen(ta, e.a0, e.a1);
+      if (n <= Math.max(textLen(ta, p.a0, p.a1), textLen(tb, p.b0, p.b1)) && n <= Math.max(textLen(ta, q.a0, q.a1), textLen(tb, q.b0, q.b1))) {
+        segs.splice(k - 1, 3, { eq: false, a0: p.a0, a1: q.a1, b0: p.b0, b1: q.b1 });
+        again = true;
+      }
     }
   }
 
-  const edits: Edit[] = [];
-  for (const r of runs) {
-    // where in each text the change sits; an empty side sits right after the unit before it
-    const [aFrom, aTo] = at(ua, r.a0, r.a1), [bFrom, bTo] = at(ub, r.b0, r.b1);
-    // Inside a changed stretch, mark just the letters when only a few differ ("colour"/"color",
-    // a curly apostrophe); a swapped word ("nearly"/"almost", "rates"/"prices") stays whole.
-    if (aTo > aFrom && bTo > bFrom) {
-      const ca = unitsOf(a, aFrom, aTo, false, space), cb = unitsOf(b, bFrom, bTo, false, space);
-      const [cx, cy] = ids(a, ca, b, cb, opts);
-      const sub = diffSeq(cx, cy, deadline);
+  const sides: [Piece[], Piece[]] = [[], []];
+  const push = (side: Piece[], text: string, kind: Piece['kind'], g: number) => {
+    if (!text && kind !== 3) return;
+    const last = side[side.length - 1];
+    if (last && last.kind === kind && last.g === g && kind !== 3) last.text += text; else side.push({ text, kind, g });
+  };
+  let g = 0, removed = words ? removedWords : 0, added = words ? addedWords : 0;
+  for (const s of segs) {
+    const at = ta.slice(s.a0, s.a1).join(''), bt = tb.slice(s.b0, s.b1).join('');
+    if (s.eq) { push(sides[0], at, 0, -1); push(sides[1], bt, 0, -1); continue; }
+    if (!at || !bt) {
+      push(sides[0], at, at ? 2 : 3, g);
+      push(sides[1], bt, bt ? 2 : 3, g);
+    }
+    // Characters mode marks the exact letters only when the two sides mostly share them
+    // ("colour"/"color"); a swapped word ("nearly"/"almost") stays whole.
+    let sub: ReturnType<typeof diffSeq> | null = null, ca: string[] = [], cb: string[] = [];
+    if (!words && at && bt) {
+      ca = units(at, false, space);
+      cb = units(bt, false, space);
+      const [x, y] = encode(ca, cb, opts);
+      sub = diffSeq(x, y, deadline);
       timedOut ||= sub.timedOut;
       const same = sub.ops.reduce((n, [t, c]) => (t === '=' ? n + c : n), 0);
-      if ((ca.length - same) + (cb.length - same) <= Math.max(ca.length, cb.length) / 2) {
-        for (const s of runsOf(sub.ops)) {
-          const [f, t] = at(ca, s.a0, s.a1), [g, h] = at(cb, s.b0, s.b1);
-          edits.push({ aFrom: f, aTo: t, bFrom: g, bTo: h });
-        }
-        continue;
+      if (same * 2 < Math.min(ca.length, cb.length)) sub = null;
+    }
+    if (at && bt && !sub) {
+      push(sides[0], at, 2, g);
+      push(sides[1], bt, 2, g);
+    }
+    if (words) {
+      // counted above, from the edit script (a merged "the" is in both texts)
+    } else if (!sub) {
+      removed += units(at, false, space).length;
+      added += units(bt, false, space).length;
+    } else {
+      let ci = 0, cj = 0;
+      for (const [t, n] of sub.ops) {
+        if (t !== '+') { const part = ca.slice(ci, ci + n).join(''); ci += n; push(sides[0], part, t === '=' ? 1 : 2, g); if (t === '-') removed += n; }
+        if (t !== '-') { const part = cb.slice(cj, cj + n).join(''); cj += n; push(sides[1], part, t === '=' ? 1 : 2, g); if (t === '+') added += n; }
       }
     }
-    edits.push({ aFrom, aTo, bFrom, bTo });
+    g++;
   }
-  return { edits, moreBefore, moreAfter, timedOut };
+  return { diffs: g, removed, added, unit: words ? 'word' : 'character', left: sides[0], right: sides[1], timedOut };
 }
 
-// ---------- the page ----------
-/** The selection's text, with each character's document position (paragraph breaks are '\n' with no position). */
-export function selectionText(state: EditorState): { text: string; pos: number[] } {
-  let text = '';
-  const pos: number[] = [];
-  let first = true;
-  for (const r of spansOf(state.selection)) {
-    state.doc.nodesBetween(r.from, r.to, (node: PMNode, at: number) => {
-      if (node.isTextblock) {
-        if (at + 1 >= r.to) return false; // the selection ends where this paragraph starts
-        if (!first) { text += '\n'; pos.push(-1); }
-        first = false;
-        return true;
-      }
-      if (node.isText) {
-        const from = Math.max(r.from, at), to = Math.min(r.to, at + node.nodeSize);
-        text += node.text!.slice(from - at, to - at);
-        for (let p = from; p < to; p++) pos.push(p);
-      } else if (node.isInline) {
-        const from = Math.max(r.from, at);
-        if (from < Math.min(r.to, at + node.nodeSize)) { text += node.type.name === 'hard_break' ? '\n' : '￼'; pos.push(from); }
-      }
-      return true;
-    });
-  }
-  return { text, pos };
+/** The selection's text, paragraphs on their own lines. */
+export function selectionText(state: EditorState): string {
+  const parts: string[] = [];
+  for (const r of spansOf(state.selection)) parts.push(state.doc.textBetween(r.from, r.to, '\n', '\n'));
+  return parts.join('\n');
 }
 
-type CmpState = { decos: DecorationSet } | null;
-export const compareKey = new PluginKey<CmpState>('compare');
+/** The app opens the Compare Text panel on this event; detail is the selection's text. */
+export const COMPARE_EVENT = 'falcon-compare';
 
-function mark(cls: string, text: string, title: string): HTMLElement {
-  const el = document.createElement('span');
-  el.className = cls;
-  el.textContent = text;
-  el.title = title;
-  return el;
-}
-function clipWidget(text: string): HTMLElement {
-  return mark('f-cmp-ins', /^\s+$/.test(text) ? text.replace(/\n/g, '↵').replace(/[^↵]/g, '␣') : text.replace(/\n/g, ' ↵ '), 'Only on the clipboard');
-}
-
-/** Marks for `edits` over the selection text whose characters sit at `pos`. */
-export function compareDecorations(doc: PMNode, pos: number[], b: string, edits: Edit[], end: number): DecorationSet {
-  const decos: Decoration[] = [];
-  // where text inserted before character i goes: that character, or right after the one before it
-  const placeAt = (i: number) => {
-    for (let k = i; k < pos.length; k++) if (pos[k] >= 0) return pos[k];
-    for (let k = i - 1; k >= 0; k--) if (pos[k] >= 0) return pos[k] + 1;
-    return end;
-  };
-  for (const e of edits) {
-    // removed: one inline mark per stretch of consecutive positions
-    for (let i = e.aFrom; i < e.aTo;) {
-      if (pos[i] < 0) { // a paragraph break only in the selection
-        decos.push(Decoration.widget(placeAt(i), () => mark('f-cmp-del', '↵', 'Only in the selection'), { side: -1, key: `cmp-br-${i}`, ignoreSelection: true }));
-        i++;
-        continue;
-      }
-      let j = i + 1;
-      while (j < e.aTo && pos[j] === pos[j - 1] + 1) j++;
-      decos.push(Decoration.inline(pos[i], pos[j - 1] + 1, { class: 'f-cmp-del', title: 'Only in the selection' }));
-      i = j;
-    }
-    if (e.bTo > e.bFrom) {
-      const text = b.slice(e.bFrom, e.bTo);
-      // after the removed text, so a replacement reads old then new
-      const i = e.aTo > e.aFrom ? e.aTo : e.aFrom;
-      const at = i > 0 && pos[i - 1] >= 0 ? pos[i - 1] + 1 : placeAt(i);
-      decos.push(Decoration.widget(at, () => clipWidget(text), { side: 1, key: `cmp-${e.bFrom}-${text}`, ignoreSelection: true }));
-    }
-  }
-  return DecorationSet.create(doc, decos);
-}
-
-export const comparePlugin = new Plugin<CmpState>({
-  key: compareKey,
-  state: {
-    init: () => null,
-    apply(tr, prev) {
-      const meta = tr.getMeta(compareKey) as CmpState | undefined;
-      if (meta !== undefined) return meta;
-      return tr.docChanged ? null : prev; // any edit clears the marks
-    },
-  },
-  props: {
-    decorations: (state) => compareKey.getState(state)?.decos ?? null,
-    handleKeyDown(view, ev) {
-      if (ev.key !== 'Escape' || !compareKey.getState(view.state)) return false;
-      view.dispatch(view.state.tr.setMeta(compareKey, null));
-      return true;
-    },
-  },
-});
-
-/** The app shows these as a toast. */
-export const TOAST_EVENT = 'falcon-toast';
-const toast = (msg: string) => dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: msg }));
-
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
-
-export function summary(a: string, b: string, r: CompareResult, opts: CompareOpts): string {
-  const more = [r.moreBefore && 'before', r.moreAfter && 'after'].filter(Boolean).join(' and ');
-  const tail = (more ? `. The clipboard also has text ${more} it` : '') + (r.timedOut ? '. Too long to compare closely: big changes are marked whole' : '');
-  if (r.edits.length) return `${plural(r.edits.length, 'difference')}: red is only in the selection, green only on the clipboard${tail}`;
-  if (a === b) return 'Identical to the clipboard';
-  const ignoring = [opts.ignoreCase && 'case', opts.ignoreSpace && 'spacing'].filter(Boolean).join(' and ');
-  return `Matches the clipboard${ignoring ? ` (ignoring ${ignoring})` : ''}${tail}`;
-}
-
-/** Compare the selection with the clipboard and mark the differences. */
-export async function runCompare(view: EditorView): Promise<void> {
-  let b = '';
-  try {
-    b = bridge.readClipboardText ? await bridge.readClipboardText() : await navigator.clipboard.readText();
-  } catch {
-    toast("Couldn't read the clipboard");
-    return;
-  }
-  if (!b.trim()) { toast('Copy the text to compare with first: the clipboard is empty'); return; }
-  const state = view.state;
-  if (view.isDestroyed || state.selection.empty) return; // clicked away (or closed) while the clipboard was read
-  const { text, pos } = selectionText(state);
-  const opts = { ignoreCase: readSetting(compareIgnoreCase) as boolean, ignoreSpace: readSetting(compareIgnoreSpacing) as boolean };
-  const r = compareTexts(text, b, opts);
-  const decos = compareDecorations(state.doc, pos, b, r.edits, state.selection.to);
-  view.dispatch(view.state.tr.setMeta(compareKey, r.edits.length ? { decos } : null));
-  toast(summary(text, b, r, opts));
-}
-
+/** Compare Text: the panel, with the selection (if any) as Text 1. */
 export const compareText: Command = (state, _dispatch, view) => {
-  if (!view) return !state.selection.empty;
-  if (state.selection.empty) { toast('Select the text to compare first, with the other version on the clipboard'); return true; }
-  void runCompare(view);
+  if (view) dispatchEvent(new CustomEvent(COMPARE_EVENT, { detail: selectionText(state) }));
   return true;
 };
-
-export const compareSettings: SettingSpec[] = [compareIgnoreSpacing, compareIgnoreCase];

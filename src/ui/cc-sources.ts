@@ -78,12 +78,12 @@ const SYN: Record<string, string> = {
   regrow: 'unshrink grow undo shrink', read: 'reading present speech', marker: 'mark place stop', number: 'numbering count',
   sub: 'numbering letter', restart: 'numbering', replace: 'substitute', selectSection: 'card', copySection: 'card', deleteSection: 'card remove',
   cardUp: 'reorder', cardDown: 'reorder', sendToSpeech: 'speech doc copy tilde backtick',
-  compareText: 'diff difference clipboard check source match changes',
+  compareText: 'diff difference check source match changes side by side',
 };
 const TOOL_HINTS = new Map([
   ...[...DOC_TOOLS, ...CARD_TOOLS].flatMap((s) => s.items.map((it) => [it.id, it.hint] as const)),
   ['sendToSpeech', 'Copy the selection, or the card or section at the caret, into the speech doc'],
-  ['compareText', 'Mark how the selection differs from the clipboard: red only in the selection, green only on the clipboard. Esc clears'],
+  ['compareText', 'Two texts side by side with the differences marked. The selection becomes Text 1'],
 ]);
 const keyWords = (k: string) => (k ? `${k} ${keyText(k)}` : '');
 type Extra = Omit<Entry, 'source'>;
