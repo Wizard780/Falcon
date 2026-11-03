@@ -1,4 +1,4 @@
-import { Plugin, PluginKey } from 'prosemirror-state';
+import { Plugin, PluginKey, TextSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
 import { cardAround } from '../commands';
 import { isReading } from '../read';
@@ -69,7 +69,8 @@ function dragView(view: EditorView) {
   host.addEventListener('mouseenter', stay);
 
   // ---- dragging ----
-  let dragging: { sec: Section; gaps: number[]; target: number | null; y: number; raf: number } | null = null;
+  // mode: undecided until the pointer moves; up or down moves the card, sideways selects text from the line's start
+  let dragging: { sec: Section; gaps: number[]; target: number | null; y: number; x0: number; y0: number; mode: 'card' | 'select' | null; raf: number } | null = null;
   const zoom = () => host.getBoundingClientRect().height / (host.offsetHeight || 1) || 1;
   const gapY = (pos: number) => {
     const doc = view.state.doc;
@@ -98,21 +99,23 @@ function dragView(view: EditorView) {
     if (sc) {
       const r = sc.getBoundingClientRect(), y = dragging.y;
       const d = y < r.top + 48 ? -(r.top + 48 - y) : y > r.bottom - 48 ? y - (r.bottom - 48) : 0;
-      if (d) { sc.scrollTop += Math.max(-24, Math.min(24, d / 2)); aim(); }
+      if (d) { sc.scrollTop += Math.max(-24, Math.min(24, d / 2)); if (dragging.mode === 'card') aim(); }
     }
     dragging.raf = requestAnimationFrame(tick);
   };
   const finish = (drop: boolean, copy = false) => {
     if (!dragging) return;
-    const { sec, target, raf } = dragging;
+    const { sec, target, raf, mode } = dragging;
     cancelAnimationFrame(raf);
     dragging = null;
     line.style.display = 'none';
     document.body.classList.remove('f-grabbing');
     window.removeEventListener('keydown', onKey, true);
     view.dispatch(view.state.tr.setMeta(key, null));
-    const tr = drop && target !== null ? moveSections(view.state, [sec.from], target, copy) : null;
+    const tr = drop && mode === 'card' && target !== null ? moveSections(view.state, [sec.from], target, copy) : null;
     if (tr) view.dispatch(tr);
+    // a click on the grip, not a drag: the caret goes to the start of the line beside it, like a click in the margin
+    else if (drop && mode === null) view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, sec.from + 1)));
     hideGrip();
     view.focus();
   };
@@ -128,13 +131,27 @@ function dragView(view: EditorView) {
     doc.forEach((n, p) => { const l = levelOf(n); if (l > 0 && l <= sec.level && !(p > sec.from && p < sec.to)) gaps.push(p); });
     gaps.push(doc.content.size);
     grip.setPointerCapture(e.pointerId);
-    dragging = { sec, gaps, target: null, y: e.clientY, raf: 0 };
+    dragging = { sec, gaps, target: null, y: e.clientY, x0: e.clientX, y0: e.clientY, mode: null, raf: 0 };
     document.body.classList.add('f-grabbing');
     window.addEventListener('keydown', onKey, true);
     view.dispatch(view.state.tr.setMeta(key, sec));
     dragging.raf = requestAnimationFrame(tick);
   });
-  grip.addEventListener('pointermove', (e) => { if (dragging) { dragging.y = e.clientY; aim(); } });
+  grip.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    dragging.y = e.clientY;
+    const dx = e.clientX - dragging.x0, dy = e.clientY - dragging.y0;
+    if (!dragging.mode) {
+      if (Math.abs(dx) > 4 && Math.abs(dx) > Math.abs(dy)) { dragging.mode = 'select'; document.body.classList.remove('f-grabbing'); view.dispatch(view.state.tr.setMeta(key, null)); }
+      else if (Math.abs(dy) > 3) dragging.mode = 'card';
+    }
+    if (dragging.mode === 'card') aim();
+    else if (dragging.mode === 'select') {
+      const r = view.dom.getBoundingClientRect();
+      const hit = view.posAtCoords({ left: Math.max(r.left + 2, e.clientX), top: e.clientY });
+      if (hit) view.dispatch(view.state.tr.setSelection(TextSelection.between(view.state.doc.resolve(dragging.sec.from + 1), view.state.doc.resolve(hit.pos))));
+    }
+  });
   grip.addEventListener('pointerup', (e) => finish(true, copyModifier(e)));
   grip.addEventListener('pointercancel', () => finish(false));
 
