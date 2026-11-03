@@ -35,26 +35,37 @@ export function currentItem(items: OutlineItem[], pos: number): number {
 }
 
 /** Words a reader would say: tags and analytics, cites, and highlighted body text (not pockets/hats/blocks). */
-export function readWords(doc: PMNode): number {
-  let n = 0;
+export const readWords = (doc: PMNode): number => { const r = readSplit(doc); return r.cards + r.tags; };
+
+/** The read words split by how fast they're read: highlighted card text, and tags, analytics and cites. */
+export type ReadSplit = { cards: number; tags: number };
+export function readSplit(doc: PMNode): ReadSplit {
+  const r: ReadSplit = { cards: 0, tags: 0 };
+  const body = (p: PMNode) => { const [all, cites] = bodyWords(p); r.tags += cites; r.cards += all - cites; };
   doc.forEach((para) => {
     // a table's highlighted and cited text is read too
-    if (!para.isTextblock) { para.descendants((p) => { if (p.isTextblock) n += bodyWords(p); return !p.isTextblock; }); return; }
+    if (!para.isTextblock) { para.descendants((p) => { if (p.isTextblock) body(p); return !p.isTextblock; }); return; }
     const level = levelOf(para);
-    if (level === 4) { n += count(para.textContent); return; }
+    if (level === 4) { r.tags += count(para.textContent); return; }
     if (level > 0) return;
-    n += bodyWords(para);
+    body(para);
   });
-  return n;
+  return r;
 }
-function bodyWords(para: PMNode): number {
-  let buf = '';
+/** [read words, how many of them are cite words] in one body paragraph. */
+function bodyWords(para: PMNode): [number, number] {
+  let buf = '', cite = '';
   para.forEach((t) => {
-    const read = t.marks.some((m) => m.type.name === 'highlight' || m.type.name === 'cite');
+    const isCite = t.marks.some((m) => m.type.name === 'cite');
+    const read = isCite || t.marks.some((m) => m.type.name === 'highlight');
     buf += read ? (t.text ?? '') : ' ';
+    cite += isCite ? (t.text ?? '') : ' ';
   });
-  return count(buf);
+  const all = count(buf);
+  return [all, Math.min(all, count(cite))];
 }
+/** Seconds to read `r` at `cardWpm`, with tags, analytics and cites at `tagWpm` (0: the card speed). */
+export const readSeconds = (r: ReadSplit, cardWpm: number, tagWpm = 0) => (r.cards / cardWpm + r.tags / (tagWpm || cardWpm)) * 60;
 const count = (s: string) => (s.match(/[\p{L}\p{N}][\p{L}\p{N}'’.-]*/gu) ?? []).length;
 
 /**

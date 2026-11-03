@@ -28,6 +28,8 @@ const DARK_PAPER = { paper: '#1e1e20', paperInk: '#e6e6e6' };
 
 export const PRESETS: Theme[] = [
   { id: 'dark', name: 'Dark', bg: '#0f0f10', text: '#ededed', ...WHITE_PAPER, tokens: DARK_TOKENS },
+  // Dark's softer sibling: grey chrome instead of near-black, so the white page doesn't glare against it
+  { id: 'grey', name: 'Grey', bg: '#202124', text: '#e3e3e6', ...WHITE_PAPER },
   { id: 'light', name: 'Light', bg: '#f4f4f5', text: '#1d1d1f', ...WHITE_PAPER, tokens: { pop: '#ffffff', panel: '#fafafa', well: '#ffffff', card: '#efeff0' } },
   { id: 'night', name: 'Night', bg: '#0f0f10', text: '#ededed', ...DARK_PAPER, tokens: DARK_TOKENS },
   { id: 'midnight', name: 'Midnight', bg: '#0b0f1a', text: '#e4e8f1', paper: '#141a28', paperInk: '#dde3ee' },

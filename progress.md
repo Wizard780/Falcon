@@ -184,3 +184,13 @@ User ask: drag the left rail wider so the open files' names show.
 - [x] the toolbar packs closer by its own width (a container query) instead of the window's, so a wide rail doesn't clip it
 - [x] vitest 313 pass (tests/rail.test.ts), tsc clean; drove it in the web build and in Electron (drag, relaunch on the same profile, double-click)
 - [x] behind a setting, off by default (Settings > Appearance > Resizable rail, `falcon.railResize`, also in the command center): off, no handle and icons only; the dragged width is kept for when it's back on
+
+## Stage: toolbar fills the bar, Grey theme, reader speeds for tags (2026-11-02, branch ui-polish on top of sel-read-words)
+User ask (screenshots): the toolbar left a gap between the tools row and Pocket; black is too harsh, wants a greyish theme; nicer spacing; the status bar should give a selection's words and read time; each reader needs a card speed and a tags-and-analytics speed (CardMirror's tagWpm).
+- [x] toolbar groups run as one evenly spaced row (4px, like the buttons inside a group) right after the tools row; spreading them apart split Cite/Emphasis off from the styles. Read and the timer at the far right, rows 6px apart
+- [x] Grey preset (#202124 chrome, white page), between Dark and Light
+- [x] status bar: `Sel: 7 words · 0:02 / 0:01`, only the read words (highlighted, tags, analytics, cites), set off by a divider
+- [x] Settings > Speech and timers: Reader 1/2 cards, Reader 1/2 tags and analytics (Same as cards by default); cites count with tags, as in CardMirror; CardMirror settings import maps readers[n].tagWpm
+- [x] vitest 332 pass, tsc clean; journeys themes, settings, command-center, card-formatting, outline ok
+- [x] the outline pane's right edge drags it from 200 to 560px (40% of a narrow window), double-click resets to 280, arrows step it; kept in falcon.outlineWidth. The toolbar stays beside the tools row at any outline width
+- [x] the card drag grip (six dots) hides once the mouse leaves the text (300ms grace so crossing the margin onto it still works); it used to stay stuck beside the last card. With narrow margins it sat 12px outside the page, clipped and under the outline's resize edge; it now stays inside the page

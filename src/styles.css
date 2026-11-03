@@ -14,7 +14,7 @@
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --doc-font: Calibri, Carlito, Arial, sans-serif;
   --zoom: 1;
-  --bar-h: 88px; --status-h: 28px; --nav-w: 280px; --tools-w: 280px;
+  --bar-h: 88px; --status-h: 28px; --ol-w: 280px; --nav-w: var(--ol-w); --tools-w: 280px; /* --ol-w: the outline's dragged width; the toolbar stays put beside the tools row either way */
   /* the rail's dragged width (--rail-w, set by the rail), held to 30% of a narrow window */
   --strip-w: min(var(--rail-w, 56px), max(140px, 30vw));
 }
@@ -166,9 +166,15 @@ svg { flex: none; }
 .sb-row .ct { font: 12px var(--mono); color: var(--u-mut); font-variant-numeric: tabular-nums; }
 
 /* the outline: attached to the document, docked on the page's left edge */
-.olp { position: absolute; top: var(--bar-h); bottom: var(--status-h); left: var(--strip-w); width: 280px; z-index: 240; display: flex; flex-direction: column; background: var(--u-deep); color: var(--u-tx); user-select: none;
+.olp { position: absolute; top: var(--bar-h); bottom: var(--status-h); left: var(--strip-w); width: var(--ol-w); z-index: 240; display: flex; flex-direction: column; background: var(--u-deep); color: var(--u-tx); user-select: none;
   transform: translateX(-100%); opacity: 0; pointer-events: none; transition: transform 220ms var(--u-ease), opacity 150ms var(--u-ease); }
 .olp.shown { transform: none; opacity: 1; pointer-events: auto; }
+/* the outline's right edge drags it wider or narrower, like the rail's */
+.ol-grip { position: absolute; z-index: 2; top: 0; bottom: 0; right: -4px; width: 8px; cursor: col-resize; touch-action: none; outline: none; }
+.ol-grip::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background 150ms ease-out; }
+.ol-grip:hover::after { background: var(--u-ctl-on); transition-delay: 150ms; }
+.ol-grip:focus-visible::after, :root[data-ol-drag] .ol-grip::after { background: var(--ink-ui); transition-delay: 0s; }
+:root[data-ol-drag], :root[data-ol-drag] * { cursor: col-resize !important; user-select: none !important; }
 .ol-head { display: flex; align-items: center; gap: 6px; padding: 4px 0 8px; }
 .ol-head .sb-label { flex: 1; padding: 0 0 0 10px; }
 .ol-head .sb-ico { width: 26px; height: 26px; }
@@ -193,11 +199,13 @@ svg { flex: none; }
 .sb-row.ol.l3[data-on], .sb-row.ol.l4[data-on] { color: var(--u-tx); }
 
 /* the top bar: Classic, a two-row grid where each button previews its style */
-.toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: safe center; background: var(--u-deep); user-select: none; min-width: 0;
+.toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: flex-start; background: var(--u-deep); user-select: none; min-width: 0;
   overflow-x: auto; scrollbar-width: none; container-type: inline-size; }
 .toolbar::-webkit-scrollbar { display: none; }
-.bar { position: relative; display: flex; align-items: center; height: 100%; padding: 0 24px; gap: 32px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
-.bar .g, .bar .end { display: grid; grid-template-rows: 32px 32px; grid-auto-flow: column; gap: 4px; }
+/* every group in one run, spaced like the buttons inside a group, right after the tools row; Read and the timer go to the far right */
+.bar { position: relative; flex: 1 0 auto; display: flex; align-items: center; height: 100%; padding: 0 24px 0 6px; gap: 4px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
+.bar .end { margin-left: auto; }
+.bar .g, .bar .end { display: grid; grid-template-rows: 32px 32px; grid-auto-flow: column; gap: 6px 4px; }
 .bar .g > .b, .bar .end > .b { width: 100%; }
 .b { position: relative; isolation: isolate; height: 32px; padding: 0 12px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; transition: transform 160ms cubic-bezier(.23, 1, .32, 1); }
 .b::before, .b::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity 150ms ease-out; }
@@ -257,12 +265,15 @@ button.b:active { transform: scale(.97); }
 .f-scroll { grid-column: 3; grid-row: 2; overflow: auto; background: var(--page); min-height: 0; }
 
 /* status bar */
-.status { grid-column: 3; grid-row: 3; display: flex; align-items: center; gap: 16px; padding: 0 12px 0 20px; font-size: 12px; color: var(--u-mut); background: var(--u-deep); white-space: nowrap; overflow: hidden; user-select: none; }
+.status { grid-column: 3; grid-row: 3; display: flex; align-items: center; gap: 16px; padding: 0 14px 0 24px; font-size: 12px; color: var(--u-mut); background: var(--u-deep); white-space: nowrap; overflow: hidden; user-select: none; }
 .status .grow { flex: 1; }
 .status button { color: var(--u-mut); height: 22px; min-width: 22px; border-radius: 6px; margin-left: -8px; }
 .status button:hover { color: var(--u-tx); background: var(--u-hover); }
 .status .zoom { font-family: var(--mono); min-width: 42px; text-align: center; }
 .status .lit { color: var(--u-tx); }
+/* the selection's count, set off from the whole doc's by a thin line */
+.status .sel { display: inline-flex; align-items: center; gap: 16px; color: var(--u-tx2); }
+.status .sel::before { content: ''; width: 1px; height: 12px; background: var(--u-ctl-on); }
 
 /* find, same surface as the popovers */
 .findbar { position: fixed; top: calc(var(--bar-h) + 8px); right: 24px; z-index: 40; display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 12px; border-radius: 12px; background: var(--u-pop); color: var(--u-mut);
@@ -401,7 +412,7 @@ button.b:active { transform: scale(.97); }
 
 /* desktop: the window drags by the chrome; on macOS the strip and panel start below the traffic lights */
 .desktop .toolbar, .desktop .fstrip, .desktop .tools, .desktop .status { -webkit-app-region: drag; }
-.desktop button, .desktop .pop, .desktop input, .desktop .files[data-open], .desktop .rail-grip { -webkit-app-region: no-drag; }
+.desktop button, .desktop .pop, .desktop input, .desktop .files[data-open], .desktop .rail-grip, .desktop .ol-grip { -webkit-app-region: no-drag; }
 /* Electron cuts drag areas in page order, so the toolbar (later in the page) would turn the open files
    panel's rows over it back into window drags; it gives up dragging while the panel is open */
 .desktop .app:has(.files[data-open]) .toolbar { -webkit-app-region: no-drag; }
@@ -541,10 +552,9 @@ button.b:active { transform: scale(.97); }
 @keyframes st-bob { 40% { transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .st-keys, .st-keys kbd, .st-keytype i { animation: none !important; } }
 
-/* narrow windows: the tools row takes the toolbar's left 280px, so the groups pack closer, and past that the bar scrolls sideways */
-/* short of room for the bar (954px wide at full spacing), it packs closer and scrolls sideways; a wider rail leaves it less */
+/* short of room for the bar, it trims its edges, and past that it scrolls sideways; a wider rail leaves it less */
 @container (max-width: 960px) {
-  .bar { gap: 12px; padding: 0 12px; }
+  .bar { padding: 0 12px 0 4px; }
 }
 
 /* warnings: Falcon's own confirm dialog, in place of the OS alert */
