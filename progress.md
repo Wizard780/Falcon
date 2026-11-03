@@ -194,3 +194,10 @@ User ask (screenshots): the toolbar left a gap between the tools row and Pocket;
 - [x] vitest 332 pass, tsc clean; journeys themes, settings, command-center, card-formatting, outline ok
 - [x] the outline pane's right edge drags it from 200 to 560px (40% of a narrow window), double-click resets to 280, arrows step it; kept in falcon.outlineWidth. The toolbar stays beside the tools row at any outline width
 - [x] the card drag grip (six dots) hides once the mouse leaves the text (300ms grace so crossing the margin onto it still works); it used to stay stuck beside the last card. With narrow margins it sat 12px outside the page, clipped and under the outline's resize edge; it now stays inside the page
+
+## Stage: starred files in file search (2026-11-03, branch starred-files)
+User ask: in the library (file search folders, e.g. four Dropboxes), star a file so it shows first and marked as starred, and its same-named copies in the other Dropboxes stop showing.
+- [x] star from Cmd-K with Alt-P (CardMirror's key) or the row's star button; starred rows get a gold star, sit under "Starred" first with no query, and outrank every other match
+- [x] a starred file hides its copies, the same path inside another search folder (not open docs, not a same-named file in another folder); its row says "N more hidden" and the tooltip explains
+- [x] rows name the search folder a file came from (`Team Dropbox › DA`), so same-named files can be told apart
+- [x] stored in falcon.starredFiles; vitest file-search covers ranking and hiding; journey starred-files drives it with a stand-in bridge
