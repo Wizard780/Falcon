@@ -54,6 +54,7 @@ export type Ctx = {
 
 /** The clocks live in the toolbar; the command center asks them through an event. */
 import { TIMER_EVENT, type TimerRequest } from './timer-event';
+import { FORMAT_NAME, FORMAT_PREP, type RoundFormat } from './round-clock';
 export { TIMER_EVENT, type TimerRequest };
 const timer = (r: TimerRequest) => dispatchEvent(new CustomEvent(TIMER_EVENT, { detail: r }));
 
@@ -122,10 +123,12 @@ export function commandEntries(ctx: Ctx): Entry[] {
     { key: 'x:speechDoc', label: ctx.isSpeech ? 'Stop using this file as the speech doc' : 'Make this file the speech doc', group: 'Speech', keywords: 'speech doc mark', run: () => { ctx.toggleSpeech(); return true; } },
     { key: 'x:timer', label: 'Start or pause the speech timer', group: 'Speech', keywords: 'clock countdown stopwatch', run: () => { timer({ which: 'speech', op: 'toggle' }); return true; } },
     { key: 'x:timerReset', label: 'Reset the speech timer', group: 'Speech', keywords: 'clock countdown', run: () => { timer({ which: 'speech', op: 'reset' }); return true; } },
-    ...(pref(P.showPrep) ? [
-      { key: 'x:prep', label: 'Start or pause the prep timer', group: 'Speech', keywords: 'clock countdown', run: () => { timer({ which: 'prep', op: 'toggle' }); return true; } },
-      { key: 'x:prepReset', label: 'Reset the prep timer', group: 'Speech', keywords: 'clock countdown', run: () => { timer({ which: 'prep', op: 'reset' }); return true; } },
-    ] : [{ key: 'x:prepOn', label: 'Show the prep timer', group: 'Speech', keywords: 'clock prep time', run: () => { setPref(P.showPrep, true); return true; } }]),
+    { key: 'x:timerWindow', label: 'Open the timer window', group: 'Speech', keywords: 'clock countdown stopwatch prep round speeches', run: () => { timer({ which: 'speech', op: 'open' }); return true; } },
+    { key: 'x:prep', label: 'Start or pause our prep', group: 'Speech', keywords: 'clock countdown prep timer', run: () => { timer({ which: 'prep', op: 'toggle' }); return true; } },
+    { key: 'x:prepReset', label: 'Reset our prep', group: 'Speech', keywords: 'clock countdown prep timer', run: () => { timer({ which: 'prep', op: 'reset' }); return true; } },
+    { key: 'x:theirPrep', label: 'Start or pause their prep', group: 'Speech', keywords: 'clock countdown prep timer opponent other team', run: () => { timer({ which: 'their', op: 'toggle' }); return true; } },
+    { key: 'x:theirPrepReset', label: 'Reset their prep', group: 'Speech', keywords: 'clock countdown prep timer opponent other team', run: () => { timer({ which: 'their', op: 'reset' }); return true; } },
+    ...(pref(P.showPrep) ? [] : [{ key: 'x:prepOn', label: 'Show the prep timer in the top bar', group: 'Speech', keywords: 'clock prep time', run: () => { setPref(P.showPrep, true); return true; } }]),
     ...['pockets only', 'down to hats', 'down to blocks', 'down to tags'].map((what, i): Extra => ({
       key: `x:depth${i + 1}`, label: `Outline: ${what}`, group: 'Outline', keywords: `depth level ${i + 1}`, state: ctx.showOutline && ctx.depth === i + 1 ? 'Now' : undefined,
       run: () => { ctx.setDepth(i + 1); ctx.setShowOutline(true); return true; },
@@ -249,12 +252,14 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: P.colorUndertag.key, label: 'Undertag color', page: 'formatting', hint: 'Pick it in Settings.', link: true, get: () => pref(P.colorUndertag), set: () => {} },
     tog(P.shadingDots, 'Dots on background color', 'formatting'),
     // Speech and timers
+    { id: P.round.key, label: 'Round', page: 'speech', hint: 'The speeches the timer window steps through.', options: (['policy', 'ld', 'pf'] as const).map((f) => [f, FORMAT_NAME[f]]),
+      get: () => pref(P.round), set: (v) => { const f = v as RoundFormat; setPref(P.round, f); setPref(P.prepMin, f === 'policy' && ctx.speechMin === 9 ? 10 : FORMAT_PREP[f]); } },
     { id: 'app.event', label: 'Event', page: 'speech', hint: 'High school: 8 minute speeches, 8 of prep. College: 9 and 10.', options: [['hs', 'High school'], ['college', 'College']],
       get: () => (ctx.speechMin === 8 && prep === 8 ? 'hs' : ctx.speechMin === 9 && prep === 10 ? 'college' : ''),
       set: (v) => { ctx.setSpeechMin(v === 'hs' ? 8 : 9); setPref(P.prepMin, v === 'hs' ? 8 : 10); } },
     { id: 'app.speech', label: 'Speech length', page: 'speech', options: range(1, 30, 1, min), get: () => ctx.speechMin, set: (v) => ctx.setSpeechMin(v as number) },
     tog(P.showSend, 'Send button', 'speech', 'A Send button beside Read in the top bar.'),
-    tog(P.showPrep, 'Prep timer', 'speech', 'A prep clock beside the speech timer.'),
+    tog(P.showPrep, 'Prep timer', 'speech', 'Our prep clock in the top bar, beside the speech timer.'),
     pick(P.prepMin, 'Prep time', 'speech', range(1, 15, 1, min)),
     pick(P.wpm1, 'Reader 1: cards', 'speech', speeds(P.wpm1), 'How fast Reader 1 reads highlighted card text.'),
     pick(P.wpm1Tags, 'Reader 1: tags and analytics', 'speech', speeds(P.wpm1Tags, 'Same as cards'), 'How fast Reader 1 reads tags, analytics and cites.'),
