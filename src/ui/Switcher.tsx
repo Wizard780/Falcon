@@ -37,7 +37,7 @@ export function Switcher(props: { docs: SwitchDoc[]; sel: number; onHover: (i: n
       <div className="sw" role="listbox" aria-label="Open documents, most recent first">
         {props.docs.map((d, i) => (
           <div key={d.id} className="sw-it" role="option" aria-selected={i === props.sel} data-on={i === props.sel || undefined}
-            onPointerEnter={() => props.onHover(i)} onPointerDown={(e) => { e.preventDefault(); props.onPick(i); }}>
+            onPointerMove={(e) => { if ((e.movementX || e.movementY) && i !== props.sel) props.onHover(i); }} onPointerDown={(e) => { e.preventDefault(); props.onPick(i); }}>
             <Peek doc={d.doc} top={d.top} />
             <div className="sw-nm"><span>{d.name}</span>{d.dirty && <i aria-label="unsaved" />}</div>
           </div>

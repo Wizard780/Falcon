@@ -501,8 +501,11 @@ export function App() {
     clearTimeout(swTimer.current);
     setSw(null);
     const i = at ?? s.sel;
-    if (go && i !== 0) switchTo(s.ids[i]); else viewRef.current?.focus();
+    if (go && s.ids[i] !== undefined && s.ids[i] !== activeRef.current) switchTo(s.ids[i]); else viewRef.current?.focus();
   }, [switchTo]);
+  // a doc opened, closed or switched to some other way under the switcher: its list is stale, so it closes
+  useEffect(() => { if (swRef.current && swRef.current.ids[0] !== activeId) endSw(false); }, [activeId, endSw]);
+  useEffect(() => { if (swRef.current && swRef.current.ids.length !== docs.length) endSw(false); }, [docs.length, endSw]);
   useEffect(() => {
     const up = (e: KeyboardEvent) => { const s = swRef.current; if (s && !s.mods.some((m) => e[m])) endSw(true); };
     const blur = () => endSw(false);
@@ -706,6 +709,7 @@ export function App() {
   // nothing swaps the document out behind Settings or during a read-mode speech
   const locked = () => compareRef.current !== null || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
+    if (swRef.current) { endSw(false); return; } // a menu key or click while Ctrl-Tab is held: the switcher closes on the current doc
     if (askRef.current || saveAsRef.current || speechAskRef.current) return; // a warning, Save As or New speech doc is up: it gets answered first
     if (paletteRef.current || ccRef.current) return; // file search or the command center is up: it gets closed first
     if (c === 'settings') { setSettingsOpen(true); return; }
@@ -802,7 +806,7 @@ export function App() {
       if (!id) return;
       e.preventDefault();
       if (id === 'nextDoc' || id === 'prevDoc') { e.stopPropagation(); if (locked()) return; }
-      if (id === 'recentDoc' || id === 'recentDocBack') { e.stopPropagation(); if (!locked()) recent(id === 'recentDoc' ? 1 : -1, holdMods(keyOf(id))); return; }
+      if (id === 'recentDoc' || id === 'recentDocBack') { e.stopPropagation(); if (!locked() && !e.repeat) recent(id === 'recentDoc' ? 1 : -1, holdMods(keyOf(id))); return; }
       appCommand(id);
     };
     window.addEventListener('keydown', onKey, true);
@@ -1028,7 +1032,7 @@ export function App() {
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
       <CardSearch open={paletteOpen === 'cards'} onClose={() => setPaletteOpen(false)} onPick={(h, insert) => void pickCard(h, insert)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
-      {sw?.shown && <Switcher sel={sw.sel} onHover={(i) => setSw({ ...sw, sel: i })} onPick={(i) => endSw(true, i)} onCancel={() => endSw(false)}
+      {sw?.shown && <Switcher sel={sw.sel} onHover={(i) => { if (swRef.current) setSw({ ...swRef.current, sel: i }); }} onPick={(i) => endSw(true, i)} onCancel={() => endSw(false)}
         docs={sw.ids.flatMap((id) => {
           const d = docs.find((x) => x.id === id), doc = id === activeId ? viewRef.current?.state.doc : d?.state?.doc;
           return d && doc ? [{ id, name: d.meta.name || 'Untitled', dirty: d.dirty, doc, top: tops.current.get(id) ?? 0 }] : [];

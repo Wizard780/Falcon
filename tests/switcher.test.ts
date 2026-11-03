@@ -93,4 +93,25 @@ describe('Ctrl-Tab', () => {
     await release(app);
     expect(app.text()).toBe('bravo');
   });
+
+  it('a menu command while held closes the switcher, and letting go then switches nothing', async () => {
+    const app = await threeDocs();
+    await ctrlTab(app);
+    await app.act(() => tick(200));
+    await app.menu('close');
+    expect(app.el.querySelector('.sw')).toBeNull();
+    expect(app.tabs()).toHaveLength(3);
+    await release(app);
+    expect(app.text()).toBe('charlie');
+  });
+
+  it('a held Tab’s auto-repeat after Esc does not start the switcher again', async () => {
+    const app = await threeDocs();
+    await ctrlTab(app);
+    await app.press('Escape', { ctrlKey: true }, 0);
+    await app.press('Tab', { ctrlKey: true, repeat: true }, 200);
+    expect(app.el.querySelector('.sw')).toBeNull();
+    await release(app);
+    expect(app.text()).toBe('charlie');
+  });
 });
