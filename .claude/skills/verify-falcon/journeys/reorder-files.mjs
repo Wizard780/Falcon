@@ -47,6 +47,19 @@ f.want(await order('.fs-docs .doc-row') === want2, 'the rail follows the panel')
 f.want(await active() === was, 'the panel drop does not switch files');
 await f.shot('after-panel-drag');
 
+// a drag that drops out over the page still lets the panel shut
+rows = await page.$$('.files-l .files-r');
+const r0 = await rows[0].boundingBox();
+await page.mouse.move(r0.x + 40, r0.y + r0.height / 2);
+await page.mouse.down();
+await page.mouse.move(r0.x + 40, r0.y + r0.height / 2 + 6, { steps: 4 });
+await page.mouse.move(900, r0.y + r0.height / 2, { steps: 6 });
+await page.mouse.up();
+await page.waitForTimeout(500);
+f.want(!(await page.$('.files[data-open]')), 'the panel shuts after a drop outside it');
+f.want(await order('.fs-docs .doc-row') === want2, 'a sideways drag out moves nothing');
+await f.shot('after-drop-outside');
+
 // a plain click still switches
 await page.mouse.move(600, 400);
 await page.waitForTimeout(400);

@@ -1063,16 +1063,23 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
       removeEventListener('pointermove', move);
       removeEventListener('pointerup', up);
       removeEventListener('pointercancel', up);
+      removeEventListener('blur', up);
       if (!moving.current) return;
       setDragId(null);
       // the click that ends a drag isn't a switch; clear the flag after it would have fired
       addEventListener('click', swallow, true);
-      setTimeout(() => { removeEventListener('click', swallow, true); moving.current = false; }, 0);
+      setTimeout(() => {
+        removeEventListener('click', swallow, true);
+        moving.current = false;
+        // dropped outside both lists: the leave that would have shut the panel was skipped mid-drag
+        if (!strip.current?.matches(':hover') && !list.current?.parentElement?.matches(':hover')) hide();
+      }, 0);
     };
     const swallow = (c: MouseEvent) => { c.stopPropagation(); c.preventDefault(); };
     addEventListener('pointermove', move);
     addEventListener('pointerup', up);
     addEventListener('pointercancel', up);
+    addEventListener('blur', up);
   };
   // both lists scroll together, so each row stays level with its icon
   useLayoutEffect(() => { if (open && list.current && strip.current) list.current.scrollTop = strip.current.scrollTop; }, [open, props.docs.length]);
