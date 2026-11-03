@@ -53,9 +53,12 @@ function dragView(view: EditorView) {
     grip.style.display = '';
     const lh = Math.min(dom.offsetHeight, parseFloat(getComputedStyle(dom).lineHeight) || 20);
     grip.style.top = `${dom.offsetTop + lh / 2 - 9}px`;
-    // in the margin, but never past the page's edge: narrow margins put it under the outline's resize edge
+    // in the margin, clear of the text and of the page's edge: narrow margins get a slimmer grip, so a click
+    // at the very start of a line still lands in the text
     const pad = parseFloat(getComputedStyle(host.parentElement ?? host).paddingLeft) || 30;
-    grip.style.left = `${-Math.min(24, Math.max(0, pad - 2))}px`;
+    const w = Math.max(8, Math.min(16, pad - 2));
+    grip.style.width = `${w}px`;
+    grip.style.left = `${-Math.min(24, pad)}px`;
   };
   view.dom.addEventListener('mousemove', onMove);
   // off the text (onto the outline, below the last line) the grip goes, after a beat; the grip is inside host, so reaching it doesn't count as leaving
