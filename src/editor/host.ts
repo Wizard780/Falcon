@@ -47,6 +47,8 @@ type FalconBridge = {
   onUpdate?: (f: (u: UpdateInfo | null) => void) => () => void;
   /** Install the downloaded update and restart (or open its disk image when Falcon can't replace itself). */
   installUpdate?: () => Promise<void>;
+  /** Check for a newer Falcon now: 'ready' once one is downloaded (onUpdate fires too), 'none' when this is the latest, 'failed' offline. */
+  checkUpdate?: () => Promise<'ready' | 'none' | 'failed'>;
   /** Anonymous usage count (electron/telemetry.cjs drops unknown events and any non-word value). */
   track?: (event: string, props?: Record<string, string | number | boolean>) => void;
   platform?: string;

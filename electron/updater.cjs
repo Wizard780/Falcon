@@ -48,7 +48,7 @@ function canSwap() {
 // what the page shows: null, or { version, date, notes, url, state: 'ready' | 'installing' | 'error', manual, error }
 let update = null;
 let file = null; // the downloaded installer
-let busy = false;
+let pending = null; // the check running now: a click during one waits on it
 const dir = () => path.join(app.getPath('userData'), 'updates');
 function publish(next) {
   update = next;
@@ -84,19 +84,22 @@ function sumFor(text, name) {
 // Each version downloads into its own folder, so a later check never touches the installer the
 // button points at; the folder is only swapped in once its download is whole and checked.
 let swept = null; // the startup cleanup: whatever an earlier run downloaded is this version or older
-async function check() {
-  if (busy || update?.state === 'installing') return;
-  busy = true;
+/** 'ready' (an update is downloaded), 'none' (this is the latest), or 'failed' (offline, rate-limited). */
+function check() {
+  return (pending ??= look().finally(() => { pending = null; }));
+}
+async function look() {
+  if (update?.state === 'installing') return 'ready';
   let into = null;
   try {
     await swept;
     const rel = await json(FEED);
     const version = String(rel.tag_name || '').replace(/^v/, '');
-    if (rel.draft || rel.prerelease || !newer(version, app.getVersion())) return;
-    if (update && !newer(version, update.version)) return; // this one (or a later one) is already downloaded
+    if (rel.draft || rel.prerelease || !newer(version, app.getVersion())) return update ? 'ready' : 'none';
+    if (update && !newer(version, update.version)) return 'ready'; // this one (or a later one) is already downloaded
     const asset = assetFor(rel.assets);
     const sums = (rel.assets || []).find((a) => a.name === 'SHA256SUMS.txt');
-    if (!asset || !sums) return; // no installer for this machine, or nothing to check it against
+    if (!asset || !sums) return update ? 'ready' : 'none'; // no installer for this machine, or nothing to check it against
     into = path.join(dir(), version);
     await fsp.rm(into, { recursive: true, force: true });
     await fsp.mkdir(into, { recursive: true });
@@ -108,15 +111,17 @@ async function check() {
     const want = r.ok ? sumFor(await r.text(), asset.name) : null;
     if (want !== got.sha) throw new Error(want ? `checksum mismatch for ${asset.name}` : `no checksum for ${asset.name}`);
     await fsp.rename(to + '.part', to);
-    if (update?.state === 'installing') return; // an older one is going in now; this one waits for next launch
+    if (update?.state === 'installing') return 'ready'; // an older one is going in now; this one waits for next launch
     const prev = file;
     file = to; into = null;
     publish({ version, date: rel.published_at, notes: rel.body || '', url: rel.html_url, state: 'ready', manual: !canSwap() });
     if (prev) fsp.rm(path.dirname(prev), { recursive: true, force: true }).catch(() => {});
+    return 'ready';
   } catch (e) {
     console.error('[falcon] update check failed:', e.message); // offline, rate-limited: try again next time
     if (into) fsp.rm(into, { recursive: true, force: true }).catch(() => {});
-  } finally { busy = false; }
+    return update ? 'ready' : 'failed';
+  }
 }
 
 // Mac: copy the new app out of the disk image next to this one, check its signature, swap the two
@@ -166,6 +171,7 @@ function start() {
   swept = fsp.rm(dir(), { recursive: true, force: true }).catch(() => {});
   ipcMain.handle('falcon:update-get', () => update);
   ipcMain.handle('falcon:update-install', install);
+  ipcMain.handle('falcon:update-check', () => check()); // the button in the rail, when no update waits
   // packaged builds only (dev and test runs never update themselves), unless a test feed is set
   const feed = !!TEST_FEED;
   if (!feed && (!app.isPackaged || process.env.FALCON_HEADLESS === '1')) return;

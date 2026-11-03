@@ -350,6 +350,15 @@ export function App() {
     }))) return;
     void bridge.installUpdate?.();
   }, [confirmAsk, update]);
+  // no update waiting: the same spot in the rail checks now
+  const [checking, setChecking] = useState(false);
+  const checkUpdate = useCallback(async () => {
+    setChecking(true);
+    const r = await bridge.checkUpdate!().catch(() => 'failed' as const);
+    setChecking(false);
+    if (r === 'none') flash('Falcon is up to date');
+    else if (r === 'failed') flash("Couldn't check for updates. Try again when you're online.");
+  }, [flash]);
   useEffect(() => {
     const onUnload = (e: BeforeUnloadEvent) => { if (docsRef.current.some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ''; } };
     addEventListener('beforeunload', onUnload);
@@ -844,7 +853,7 @@ export function App() {
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
-        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} />
+        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
 
       <div className="covered" inert={homeOpen || modal}>
@@ -886,7 +895,7 @@ export function App() {
 
       <footer className="status">
         <span>Σ</span>
-        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {clock((words / pref(P.wpm1)) * 60)} · Reader 2: {clock((words / pref(P.wpm2)) * 60)}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
+        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {clock((words / pref(P.wpm1)) * 60)} · Reader 2: {clock((words / pref(P.wpm2)) * 60)}{sel && sel.selWords ? ` | Sel: ${sel.selWords} · Read: ${sel.selRead} · ${clock((sel.selRead / pref(P.wpm1)) * 60)} / ${clock((sel.selRead / pref(P.wpm2)) * 60)}` : ''}</span>
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
@@ -942,7 +951,7 @@ const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor
 // ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
 type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech: boolean };
-function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void }) {
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -1029,7 +1038,10 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         </div>
       </aside>
       <div className="grow" />
-      {props.update && <UpdateButton u={props.update} onInstall={props.onUpdate} />}
+      {props.update ? <UpdateButton u={props.update} onInstall={props.onUpdate} />
+        : props.onCheck && <button className="fs-b chk" title={props.checking ? 'Checking for updates' : 'Check for updates'} aria-label="Check for updates"
+            aria-busy={props.checking || undefined} data-busy={props.checking || undefined} onClick={() => { if (!props.checking) props.onCheck!(); }}>
+            <SvgIcon name="refresh" /><span className="lbl">{props.checking ? 'Checking' : 'Check for updates'}</span></button>}
       <button className="fs-b gear-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /><span className="lbl">Settings</span></button>
       {resizable && <div className="rail-grip" role="separator" aria-orientation="vertical" aria-label="Rail width" tabIndex={0}
         aria-valuemin={RAIL_MIN} aria-valuemax={RAIL_MAX} aria-valuenow={width}
@@ -1236,7 +1248,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
           {pair('highlight', <SvgIcon name="pen" />, titled('Highlight', 'highlight', 'highlight the selection. With nothing selected, turns on a paintbrush'), () => props.onColor('highlight'), swatch('highlight'), props.brush === 'highlight')}
           {pair('shading', <SvgIcon name="bucket" />, titled('Background color', 'shading', 'shade the selection'), () => props.onColor('shading'), swatch('shading'), props.brush === 'shading')}
           {pair('font', <b className="fa">A</b>, 'Font color: color the selection\'s text', () => applyFont(fontColor), fontColor ?? 'var(--u-tx)')}
-          <button className="b sm" title={titled('Shrink', 'shrink', 'make the text you don\'t read smaller. Press again to shrink more')} onMouseDown={(e) => { e.preventDefault(); run(commandOf('shrink')); }}>Shrink</button>
+          <button className="b sm" title={titled('Shrink', 'shrink', pref(P.smartShrink) ? 'Smart Shrink: unread paragraphs to 5 pt, unread words between read ones to 8 pt' : 'make the text you don\'t read smaller. Press again to shrink more')} onMouseDown={(e) => { e.preventDefault(); run(commandOf('shrink')); }}>Shrink</button>
           <button className="b fsz" data-pop="size" title="Font size: pick a size for the selection" aria-label={`Font size ${fontSize ?? 11} pt`} aria-haspopup="menu" aria-expanded={pop?.kind === 'size'}
             onMouseDown={(e) => { e.preventDefault(); openPop('size', e.currentTarget); }}>{fontSize ?? 11}<SvgIcon name="caret" /></button>
           <button className="b sz" title={`Bigger: one point bigger (now ${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(1); }}>A<SvgIcon name="up" /></button>

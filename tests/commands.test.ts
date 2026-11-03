@@ -8,6 +8,7 @@ import { createState, createView } from '../src/editor/editor';
 import { schema, type ParaStyle } from '../src/editor/schema';
 import { MultiSelection } from '../src/editor/multi';
 import { at, caret, make, map, run, select } from './helpers';
+import { P, resetPrefs, setPref } from '../src/editor/prefs';
 
 const BODY = 'The rapid expansion of AI has pushed utilities to their limits.';
 const card = () => make([['tag', 'Grid tag here'], ['normal', 'Smith 24, Professor at MIT'], ['normal', BODY]]);
@@ -107,6 +108,22 @@ describe('shrink, case, condense', () => {
     expect(body(s)).toBe('normal: [The rapid expansion of AI has ]{size:8pt}[pushed utilities]{underline}[ to their limits.]{size:8pt}');
     s = run(s, K['Mod-8']);
     expect(body(s)).toContain('{size:7pt}');
+  });
+  it('Smart Shrink: unread paragraphs to 5pt, unread words around read ones to 8pt, and no cycling', () => {
+    setPref(P.smartShrink, true);
+    try {
+      const s0 = make([['tag', 'Tag'], ['normal', 'Smith 24'], ['normal', 'skip all of this'], ['normal', BODY], ['normal', 'see [Table Omitted] here']]);
+      let s = run(select(s0, 'pushed utilities'), K.F9);
+      s = run(caret(s, 'skip'), K['Mod-8']);
+      const lines = map(s).split('\n');
+      expect(lines[2]).toBe('normal: [skip all of this]{size:5pt}');
+      expect(lines[3]).toBe('normal: [The rapid expansion of AI has ]{size:8pt}[pushed utilities]{underline}[ to their limits.]{size:8pt}');
+      expect(lines[4]).toBe('normal: [see ]{size:5pt}[Table Omitted][ here]{size:5pt}');
+      expect(map(run(s, K['Mod-8']))).toBe(map(s));
+      expect(map(run(s, K['Mod-Shift-8']))).toBe(map(run(select(s0, 'pushed utilities'), K.F9)));
+      setPref(P.shrinkMin, 6);
+      expect(map(run(caret(run(select(s0, 'pushed utilities'), K.F9), 'skip'), K['Mod-8'])).split('\n')[2]).toBe('normal: [skip all of this]{size:6pt}');
+    } finally { resetPrefs(); }
   });
   it('Shift-F3 cycles lower → UPPER → Title → lower', () => {
     let s = run(select(card(), 'rapid expansion'), K['Shift-F3']);
