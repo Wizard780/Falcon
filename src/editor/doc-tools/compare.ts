@@ -165,21 +165,19 @@ export function compareTexts(a: string, b: string, opts: CompareOpts = {}): Comp
 
   // The selection is usually part of what was copied (a card from its article): clipboard-only text
   // before the first and after the last match isn't a difference.
-  // A match the diff could put in either place goes in the one that leaves that text at the edge.
-  // Clipboard-only text slides toward the ends ("The [plan failed. The] economy" is "[The plan failed.] The
-  // economy"), joining the run it reaches.
+  // Clipboard-only text the diff could put in more than one place goes where it reaches an end
+  // ("The [plan failed. The] economy" is "[The plan failed.] The economy"); otherwise as far right as it goes.
   const touch = (p: Run, q: Run) => p.a1 === q.a0 && p.b1 === q.b0;
   for (let k = 0; k < runs.length; k++) {
-    const r = runs[k], p = runs[k - 1];
+    const r = runs[k], p = runs[k - 1], q = runs[k + 1];
     if (r.a0 !== r.a1) continue;
-    while (r.a0 > (p?.a1 ?? 0) && r.b0 > (p?.b1 ?? 0) && x[r.a0 - 1] === y[r.b1 - 1]) { r.a0--; r.a1--; r.b0--; r.b1--; }
-    if (p && touch(p, r)) { p.b1 = r.b1; runs.splice(k--, 1); }
-  }
-  for (let k = runs.length - 1; k >= 0; k--) {
-    const r = runs[k], q = runs[k + 1];
-    if (r.a0 !== r.a1) continue;
+    const left = { ...r };
+    while (left.a0 > (p?.a1 ?? 0) && left.b0 > (p?.b1 ?? 0) && x[left.a0 - 1] === y[left.b1 - 1]) { left.a0--; left.a1--; left.b0--; left.b1--; }
+    if (!p && left.a0 === 0 && left.b0 === 0) { Object.assign(r, left); continue; }
+    // reaches clipboard-only text that is already at the start: one run
+    if (p && p.a0 === 0 && p.a1 === 0 && p.b0 === 0 && touch(p, left)) { p.b1 = left.b1; runs.splice(k--, 1); continue; }
     while (r.a0 < (q?.a0 ?? ua.length) && r.b1 < (q?.b0 ?? ub.length) && x[r.a0] === y[r.b0]) { r.a0++; r.a1++; r.b0++; r.b1++; }
-    if (q && touch(r, q)) { q.a0 = r.a0; q.b0 = r.b0; runs.splice(k, 1); }
+    if (q && touch(r, q)) { q.a0 = r.a0; q.b0 = r.b0; runs.splice(k--, 1); }
   }
   let moreBefore = false, moreAfter = false;
   if (ua.length && runs.length && runs[0].a0 === 0 && runs[0].b0 === 0 && runs[0].a1 === 0) { moreBefore = true; runs.shift(); }
@@ -231,6 +229,7 @@ export function selectionText(state: EditorState): { text: string; pos: number[]
   for (const r of spansOf(state.selection)) {
     state.doc.nodesBetween(r.from, r.to, (node: PMNode, at: number) => {
       if (node.isTextblock) {
+        if (at + 1 >= r.to) return false; // the selection ends where this paragraph starts
         if (!first) { text += '\n'; pos.push(-1); }
         first = false;
         return true;
@@ -342,6 +341,7 @@ export async function runCompare(view: EditorView): Promise<void> {
   }
   if (!b.trim()) { toast('Copy the text to compare with first: the clipboard is empty'); return; }
   const state = view.state;
+  if (view.isDestroyed || state.selection.empty) return; // clicked away (or closed) while the clipboard was read
   const { text, pos } = selectionText(state);
   const opts = { ignoreCase: readSetting(compareIgnoreCase) as boolean, ignoreSpace: readSetting(compareIgnoreSpacing) as boolean };
   const r = compareTexts(text, b, opts);

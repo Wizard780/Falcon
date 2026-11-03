@@ -47,6 +47,13 @@ describe('compareTexts', () => {
     expect(r.moreBefore && r.moreAfter).toBe(true);
     expect(summary(card, article, r, { ignoreSpace: true })).toBe('Matches the clipboard (ignoring spacing). The clipboard also has text before and after it');
   });
+  it('leaves out copied text before the selection even when the selection’s first word is in it', () => {
+    const r = compareTexts('The economy grows.', 'The plan failed. The economy grows. More.', { ignoreSpace: true });
+    expect(r.edits).toEqual([]);
+    expect(r.moreBefore && r.moreAfter).toBe(true);
+    const r2 = compareTexts('grows fast', 'It grows fast and grows', { ignoreSpace: true });
+    expect(r2.edits).toEqual([]);
+  });
   it('still finds a change inside an excerpt', () => {
     const article = 'Intro text. The economy grows when trade is open. Critics disagree.';
     expect(show('The economy shrinks when trade is open.', article, { ignoreSpace: true })).toEqual(['shrinks>grows']);
@@ -67,6 +74,12 @@ describe('marks on the page', () => {
     expect(pos[0]).toBe(at(s, 'beta'));
     expect(pos[4]).toBe(-1);
     expect(pos[5]).toBe(at(s, 'gamma'));
+  });
+  it('adds no line break when the selection ends at the start of the next paragraph', () => {
+    const s0 = doc();
+    const from = at(s0, 'gamma') - 12, to = at(s0, 'gamma');
+    const s = s0.apply(s0.tr.setSelection(TextSelection.create(s0.doc, from, to)));
+    expect(selectionText(s).text).toBe('alpha beta');
   });
   it('strikes removed words and puts clipboard-only text where it goes', () => {
     const s = select(doc(), 'alpha', 'delta');
