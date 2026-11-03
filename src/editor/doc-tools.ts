@@ -14,7 +14,7 @@ import { insertFootnote } from './footnotes';
 
 const M = schema.marks;
 
-const SHADE_EXCEPTIONS: [string, string][] = [['#FFFF00', 'Yellow'], ['#00FF00', 'Bright green'], ['#00FFFF', 'Cyan'], ...SHADES];
+const SHADE_EXCEPTIONS: [string, string][] = [['#FFFF00', 'Yellow'], ['#00FF00', 'Bright Green'], ['#00FFFF', 'Turquoise'], ...SHADES];
 const highlightException: SettingSpec = {
   section: 'Standardize', key: 'falcon.standardizeHighlightException', kind: 'choice', default: 'yellow',
   // every color the highlighter has

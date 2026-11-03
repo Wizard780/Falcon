@@ -148,7 +148,7 @@ const CM_MAP: [string, string, (get: Get) => string | undefined][] = [
   ['condense', 'paragraphIntegrity,usePilcrows', (g) => (g('paragraphIntegrity') === true ? 'integrity' : g('paragraphIntegrity') === false ? (g('usePilcrows') === true ? 'pilcrows' : 'merge') : undefined)],
   ['pasteCondense', 'condenseOnPaste', (g) => bool(g('condenseOnPaste'))],
   ['read.top', 'jumpToDocTopOnReadModeToggle', (g) => bool(g('jumpToDocTopOnReadModeToggle'))],
-  ['highlight', 'lastHighlightColor', (g) => oneOf(g('lastHighlightColor'), ['yellow', 'green', 'cyan', 'magenta', 'lightGray'])],
+  ['highlight', 'lastHighlightColor', (g) => oneOf(g('lastHighlightColor'), Object.keys(HIGHLIGHTS))],
   ['autoBridge', 'autoBridgeFormattingGaps', (g) => bool(g('autoBridgeFormattingGaps'))],
   ['bridgeGaps', 'formattingGapClass', (g) => oneOf(g('formattingGapClass'), ['both', 'space'])],
   ['extractUndertag.quotes', 'extractUndertagInQuotes', (g) => bool(g('extractUndertagInQuotes'))],

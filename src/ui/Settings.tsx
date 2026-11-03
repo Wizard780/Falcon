@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
-import { HIGHLIGHTS } from '../editor/schema';
+import { HIGHLIGHTS, HIGHLIGHT_NAMES } from '../editor/schema';
 import { SvgIcon } from './icons';
 import { docToolSettings } from '../editor/doc-tools';
 import { cardToolSettings } from '../editor/card-tools';
@@ -19,8 +19,6 @@ import { StarTree } from './StarTree';
 import { downloadSettings, importSettings } from './settings-file';
 import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
 
-const PENS = ['yellow', 'green', 'cyan', 'magenta', 'lightGray'];
-const PEN_NAMES: Record<string, string> = { yellow: 'Yellow', green: 'Green', cyan: 'Cyan', magenta: 'Magenta', lightGray: 'Gray' };
 /** Settings the features declare in their own files (see SettingSpec), shown on the Editor page. */
 const FEATURE_SETTINGS: SettingSpec[] = [...navSettings, ...docToolSettings, ...cardToolSettings];
 export const DEFAULTS = { zoom: 1, speechMin: 8, showOutline: true, depth: 3, highlight: 'yellow' };
@@ -315,7 +313,7 @@ export function Settings(props: Props) {
           seg('Document paper', (['theme', 'white', 'dark'] as const).map((o) => [{ theme: 'Theme', white: 'White', dark: 'Dark' }[o], pref(P.paper) === o, () => setPref(P.paper, o)])) },
         { label: 'Highlighter', hint: 'Your highlight color, also used for the current location in the outline.', control: (
           <span className="st-pens" role="radiogroup" aria-label="Highlighter">
-            {PENS.map((p) => <button key={p} role="radio" aria-checked={props.highlight === p} aria-label={PEN_NAMES[p]} title={PEN_NAMES[p]}
+            {Object.keys(HIGHLIGHTS).map((p) => <button key={p} role="radio" aria-checked={props.highlight === p} aria-label={HIGHLIGHT_NAMES[p]} title={HIGHLIGHT_NAMES[p]}
               style={{ background: HIGHLIGHTS[p] }} onClick={() => props.onHighlight(p)} />)}
           </span>) },
       ]],

@@ -234,17 +234,19 @@ export const schema = new Schema({
   marks,
 });
 
-/** Word's 15 highlight colors (the names .docx uses) and how they render. */
+/** The highlight colors and how they render, in CardMirror's order: Word's 15 (the names .docx uses) plus Falcon's sky blue. */
 export const HIGHLIGHTS: Record<string, string> = {
-  yellow: '#FFFF00', green: '#00FF00', cyan: '#00FFFF', magenta: '#FF00FF', blue: '#0000FF',
-  red: '#FF0000', darkBlue: '#000080', darkCyan: '#008080', darkGreen: '#008000', darkMagenta: '#800080',
-  darkRed: '#800000', darkYellow: '#808000', darkGray: '#808080', lightGray: '#C0C0C0', black: '#000000',
+  yellow: '#FFFF00', green: '#00FF00', cyan: '#00FFFF', magenta: '#FF00FF', blue: '#0000FF', skyBlue: '#00B0F0',
+  red: '#FF0000', darkYellow: '#808000', darkGreen: '#008000', darkCyan: '#008080', darkMagenta: '#800080',
+  darkBlue: '#000080', darkRed: '#800000', lightGray: '#C0C0C0', darkGray: '#808080', black: '#000000',
 };
-/** What Settings and the toolbar call each highlight color. */
+/** Sky blue isn't one of Word's: a .docx gets Turquoise with a sky blue fill under it, and reading that back gives sky blue. */
+export const SKY_BLUE_UNDER = 'cyan';
+/** What each highlight color is called, CardMirror's (and Word's) names. */
 export const HIGHLIGHT_NAMES: Record<string, string> = {
-  yellow: 'Yellow', green: 'Green', cyan: 'Cyan', magenta: 'Magenta', blue: 'Blue', red: 'Red', darkBlue: 'Dark blue',
-  darkCyan: 'Dark cyan', darkGreen: 'Dark green', darkMagenta: 'Dark magenta', darkRed: 'Dark red', darkYellow: 'Dark yellow',
-  darkGray: 'Dark gray', lightGray: 'Gray', black: 'Black',
+  yellow: 'Yellow', green: 'Bright Green', cyan: 'Turquoise', magenta: 'Pink', blue: 'Blue', skyBlue: 'Sky Blue', red: 'Red',
+  darkYellow: 'Dark Yellow', darkGreen: 'Dark Green', darkCyan: 'Teal', darkMagenta: 'Violet', darkBlue: 'Dark Blue',
+  darkRed: 'Dark Red', lightGray: 'Gray 25%', darkGray: 'Gray 50%', black: 'Black',
 };
 /** The toolbar's background colors: [color, name]. */
 export const SHADES: [string, string][] = [

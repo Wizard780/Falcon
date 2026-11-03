@@ -19,6 +19,22 @@ describe('docx round trip', () => {
     const back = await docxToDoc(await docToDocx(s.doc));
     expect(markMap(back)).toBe(markMap(s.doc));
   });
+
+  it('sky blue saves as Turquoise with a sky blue fill (Word has no sky blue) and opens as sky blue', async () => {
+    const { schema } = await import('../src/editor/schema');
+    const { unzipSync, strFromU8 } = await import('fflate');
+    const M = schema.marks;
+    const doc = schema.node('doc', null, [schema.node('paragraph', { style: 'normal' }, [
+      schema.text('sky', [M.highlight.create({ color: 'skyBlue' })]), schema.text(' plain '),
+      schema.text('turq', [M.highlight.create({ color: 'cyan' })]),
+    ])]);
+    const bytes = await docToDocx(doc);
+    const xml = strFromU8(unzipSync(bytes)['word/document.xml']);
+    expect(xml).toContain('<w:highlight w:val="cyan"/><w:shd w:val="clear" w:color="auto" w:fill="00B0F0"/>');
+    expect(xml).not.toContain('skyBlue');
+    const back = await docxToDoc(bytes);
+    expect(markMap(back)).toBe(markMap(doc));
+  });
 });
 
 // Local-only: FALCON_DOCX="a.docx:b.docx" npx vitest run tests/docx.test.ts

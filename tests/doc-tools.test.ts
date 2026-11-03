@@ -144,7 +144,7 @@ describe('Standardize', () => {
     expect(map(s)).toBe('normal: [red]{highlight:cyan} [green]{highlight:cyan} [yellow]{highlight:yellow}');
     expect(DOC_TOOLS[2].items[2].label).toBe('Standardize Highlighting (except Yellow)');
     localStorage.setItem('falcon.standardizeHighlightException', 'green');
-    expect(DOC_TOOLS[2].items[2].label).toBe('Standardize Highlighting (except Green)');
+    expect(DOC_TOOLS[2].items[2].label).toBe('Standardize Highlighting (except Bright Green)');
   });
   it('every highlighter and background pen color can be the exception', async () => {
     const { HIGHLIGHTS, SHADES } = await import('../src/editor/schema');
@@ -153,7 +153,7 @@ describe('Standardize', () => {
     expect(opts('standardizeHighlightException')).toEqual(Object.keys(HIGHLIGHTS));
     expect(opts('standardizeShadingException')).toEqual(expect.arrayContaining(SHADES.map(([c]) => c)));
     localStorage.setItem('falcon.standardizeHighlightException', 'darkBlue');
-    expect(DOC_TOOLS[2].items[2].label).toBe('Standardize Highlighting (except Dark blue)');
+    expect(DOC_TOOLS[2].items[2].label).toBe('Standardize Highlighting (except Dark Blue)');
     localStorage.setItem('falcon.standardizeShadingException', '#DDEBF7');
     expect(DOC_TOOLS[2].items[3].label).toBe('Standardize Background Color (except Light blue)');
   });
