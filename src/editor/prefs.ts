@@ -89,6 +89,9 @@ export const P = {
   beep: def('beep', false),
   wpm1: def('wpm1', 200),
   wpm2: def('wpm2', 300),
+  // tags, analytics and cites; 0 reads them at the card speed
+  wpm1Tags: def('wpm1.tags', 0),
+  wpm2Tags: def('wpm2.tags', 0),
 };
 
 /** What Enter at the end of each style makes. */

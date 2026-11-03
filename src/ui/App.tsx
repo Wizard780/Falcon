@@ -10,7 +10,7 @@ import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedI
 import { activeColors, bridge, setActiveColor, type UpdateInfo } from '../editor/host';
 import { ago, releaseNotes } from './update';
 import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
-import { buildOutline, currentItem, readWords, type OutlineItem } from '../editor/outline';
+import { buildOutline, currentItem, readSeconds, readSplit, type OutlineItem, type ReadSplit } from '../editor/outline';
 import { toggleColorMark } from '../editor/commands';
 import { fontSizeOf, setFontSize } from '../editor/font-size';
 import { FONT_COLORS } from './swatches';
@@ -698,7 +698,10 @@ export function App() {
   const outlineRef = useRef(outline);
   outlineRef.current = outline;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const words = useMemo(() => (view ? readWords(view.state.doc) : 0), [view, docVersion]);
+  const split = useMemo(() => (view ? readSplit(view.state.doc) : { cards: 0, tags: 0 }), [view, docVersion]);
+  const words = split.cards + split.tags;
+  // each reader reads cards at one speed, and tags, analytics and cites at another (Settings, Speech and timers)
+  const r1 = (r: ReadSplit) => clock(readSeconds(r, pref(P.wpm1), pref(P.wpm1Tags))), r2 = (r: ReadSplit) => clock(readSeconds(r, pref(P.wpm2), pref(P.wpm2Tags)));
   const brush = view ? brushKey.getState(view.state)?.kind ?? null : null;
 
   // The outline marks the block holding the cursor while the cursor is on screen (so an outline click
@@ -873,7 +876,8 @@ export function App() {
 
       <footer className="status">
         <span>Σ</span>
-        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {clock((words / pref(P.wpm1)) * 60)} · Reader 2: {clock((words / pref(P.wpm2)) * 60)}{sel && sel.selWords ? ` | Sel: ${sel.selWords} · Read: ${sel.selRead} · ${clock((sel.selRead / pref(P.wpm1)) * 60)} / ${clock((sel.selRead / pref(P.wpm2)) * 60)}` : ''}</span>
+        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {r1(split)} · Reader 2: {r2(split)}</span>
+        {sel && sel.selWords > 0 && <span className="sel" title="Selected words, the words in it you'd read aloud, and how long Reader 1 and Reader 2 take to read them">Sel: {sel.selWords.toLocaleString('en-US')} {sel.selWords === 1 ? 'word' : 'words'} · Read: {sel.selRead.toLocaleString('en-US')} · {r1(sel.selSplit)} / {r2(sel.selSplit)}</span>}
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />

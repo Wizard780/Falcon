@@ -245,8 +245,10 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.showSend, 'Send button', 'speech', 'A Send button beside Read in the top bar.'),
     tog(P.showPrep, 'Prep timer', 'speech', 'A prep clock beside the speech timer.'),
     pick(P.prepMin, 'Prep time', 'speech', range(1, 15, 1, min)),
-    pick(P.wpm1, 'Reader 1', 'speech', range(150, 425, 25, (n) => `${n} wpm`), 'Words per minute for the first read time.'),
-    pick(P.wpm2, 'Reader 2', 'speech', range(150, 425, 25, (n) => `${n} wpm`), 'Words per minute for the second read time.'),
+    pick(P.wpm1, 'Reader 1: cards', 'speech', range(150, 425, 25, (n) => `${n} wpm`), 'How fast Reader 1 reads highlighted card text.'),
+    pick(P.wpm1Tags, 'Reader 1: tags and analytics', 'speech', [[0, 'Same as cards'], ...range(150, 425, 25, (n) => `${n} wpm`)], 'How fast Reader 1 reads tags, analytics and cites.'),
+    pick(P.wpm2, 'Reader 2: cards', 'speech', range(150, 425, 25, (n) => `${n} wpm`), 'How fast Reader 2 reads highlighted card text.'),
+    pick(P.wpm2Tags, 'Reader 2: tags and analytics', 'speech', [[0, 'Same as cards'], ...range(150, 425, 25, (n) => `${n} wpm`)], 'How fast Reader 2 reads tags, analytics and cites.'),
   ];
 }
 

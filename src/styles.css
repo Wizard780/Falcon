@@ -193,11 +193,12 @@ svg { flex: none; }
 .sb-row.ol.l3[data-on], .sb-row.ol.l4[data-on] { color: var(--u-tx); }
 
 /* the top bar: Classic, a two-row grid where each button previews its style */
-.toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: safe center; background: var(--u-deep); user-select: none; min-width: 0;
+.toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: flex-start; background: var(--u-deep); user-select: none; min-width: 0;
   overflow-x: auto; scrollbar-width: none; container-type: inline-size; }
 .toolbar::-webkit-scrollbar { display: none; }
-.bar { position: relative; display: flex; align-items: center; height: 100%; padding: 0 24px; gap: 32px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
-.bar .g, .bar .end { display: grid; grid-template-rows: 32px 32px; grid-auto-flow: column; gap: 4px; }
+/* the groups spread out to fill the space right of the tools row, evenly, up to a point on very wide windows */
+.bar { position: relative; flex: 1 0 auto; max-width: 1360px; display: flex; align-items: center; justify-content: space-between; height: 100%; padding: 0 28px 0 20px; gap: 32px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
+.bar .g, .bar .end { display: grid; grid-template-rows: 32px 32px; grid-auto-flow: column; gap: 6px 4px; }
 .bar .g > .b, .bar .end > .b { width: 100%; }
 .b { position: relative; isolation: isolate; height: 32px; padding: 0 12px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; transition: transform 160ms cubic-bezier(.23, 1, .32, 1); }
 .b::before, .b::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity 150ms ease-out; }
@@ -257,12 +258,15 @@ button.b:active { transform: scale(.97); }
 .f-scroll { grid-column: 3; grid-row: 2; overflow: auto; background: var(--page); min-height: 0; }
 
 /* status bar */
-.status { grid-column: 3; grid-row: 3; display: flex; align-items: center; gap: 16px; padding: 0 12px 0 20px; font-size: 12px; color: var(--u-mut); background: var(--u-deep); white-space: nowrap; overflow: hidden; user-select: none; }
+.status { grid-column: 3; grid-row: 3; display: flex; align-items: center; gap: 16px; padding: 0 14px 0 24px; font-size: 12px; color: var(--u-mut); background: var(--u-deep); white-space: nowrap; overflow: hidden; user-select: none; }
 .status .grow { flex: 1; }
 .status button { color: var(--u-mut); height: 22px; min-width: 22px; border-radius: 6px; margin-left: -8px; }
 .status button:hover { color: var(--u-tx); background: var(--u-hover); }
 .status .zoom { font-family: var(--mono); min-width: 42px; text-align: center; }
 .status .lit { color: var(--u-tx); }
+/* the selection's count, set off from the whole doc's by a thin line */
+.status .sel { display: inline-flex; align-items: center; gap: 16px; color: var(--u-tx2); }
+.status .sel::before { content: ''; width: 1px; height: 12px; background: var(--u-ctl-on); }
 
 /* find, same surface as the popovers */
 .findbar { position: fixed; top: calc(var(--bar-h) + 8px); right: 24px; z-index: 40; display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 12px; border-radius: 12px; background: var(--u-pop); color: var(--u-mut);

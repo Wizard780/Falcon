@@ -122,6 +122,8 @@ const CM_MAP: [string, string, (get: Get) => string | undefined][] = [
   ['prepMin', 'timerPrepMinutes', (g) => num(g('timerPrepMinutes'), 1, 15)],
   ['wpm1', 'readers', (g) => num(g('readers.0.wpm'), 150, 425, 25)],
   ['wpm2', 'readers', (g) => num(g('readers.1.wpm'), 150, 425, 25)],
+  ['wpm1.tags', 'readers', (g) => num(g('readers.0.tagWpm'), 150, 425, 25)],
+  ['wpm2.tags', 'readers', (g) => num(g('readers.1.tagWpm'), 150, 425, 25)],
   ['sz.normal', 'displaySizes', (g) => num(g('displaySizes.normal'), 8, 14)],
   ['sz.pocket', 'displaySizes', (g) => num(g('displaySizes.pocket'), 18, 36, 2)],
   ['sz.hat', 'displaySizes', (g) => num(g('displaySizes.hat'), 14, 28, 2)],
