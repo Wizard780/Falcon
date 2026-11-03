@@ -521,12 +521,15 @@ export function App() {
     const open = openedPath(h.path);
     if (insert) {
       if (viewRef.current && isReading(viewRef.current.state)) return;
+      setHomeOpen(false);
+      const into = activeRef.current;
       let doc: PMNode | undefined;
       try { doc = open ? (open.id === activeRef.current ? viewRef.current!.state.doc : open.state?.doc) ?? undefined : (await openPath(h.path)).doc; }
       catch (e) { flash(`Couldn't open ${h.file}: ${(e as Error).message}`); return; }
-      const pos = doc ? findCard(doc, h.tag, h.ordinal) : null;
+      const pos = doc ? findCard(doc, h.tag, h.ordinal, true) : null; // a copy has to be the right card, not just the right spot
       const content = doc && pos !== null ? cardContent(doc, pos) : null;
       const v = viewRef.current;
+      if (activeRef.current !== into) { flash('Switched documents while the card loaded. Try again.'); return; }
       if (!content || !v) { flash(`Couldn't find “${h.tag}” in ${h.file}. It may have changed since it was indexed.`); return; }
       v.dispatch(insertIntoSpeech(v.state, content).scrollIntoView());
       v.focus();
@@ -838,7 +841,7 @@ export function App() {
     view, zoom, setZoom, depth, setDepth, showOutline, setShowOutline, speechMin, setSpeechMin,
     run: (cmd) => { const v = viewRef.current; if (!v) return false; setHomeOpen(false); return cmd(v.state, v.dispatch, v); },
     app: appCommand,
-    blocked: (id) => (SWAPS.includes(id) || id === 'sendToSpeech') && reading,
+    blocked: (id) => (SWAPS.includes(id) || id === 'sendToSpeech' || id === 'searchCards') && reading,
     highlight: activeColors.highlight, setHighlight: (c) => { setActiveColor('highlight', c); setTick((t) => t + 1); },
     isSpeech: speechId === activeId, toggleSpeech,
     jump: (i) => { const v = viewRef.current; const it = v && buildOutline(v.state.doc)[i]; if (it) { setHomeOpen(false); jump(it, i); } },

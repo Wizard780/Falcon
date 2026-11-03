@@ -81,6 +81,16 @@ function levelOf(styles, id, ol) {
 
 const clean = (s) => s.replace(/\s+/g, ' ').trim();
 
+/** The body without its tables: Falcon's outline (and so its card count) only has the paragraphs outside them. */
+function outsideTables(xml) {
+  let out = '', depth = 0, from = 0;
+  for (const m of xml.matchAll(/<(\/?)w:tbl\b[^>]*>/g)) {
+    if (!m[1]) { if (depth++ === 0) { out += xml.slice(from, m.index); } }
+    else if (depth > 0 && --depth === 0) from = m.index + m[0].length;
+  }
+  return depth ? out : out + xml.slice(from);
+}
+
 /** The cards in one .docx: [tag, cite, headings joined by SEP]. A tag or analytic starts a card; a tag's cite
  *  is the first paragraph with text under it (an analytic has none). */
 function parseDocx(buf) {
@@ -91,12 +101,12 @@ function parseDocx(buf) {
   const heads = ['', '', ''];
   let open = null; // the tag still waiting for its cite
   let under = ''; // the headings, joined once per change so the cards under them share the string
-  for (const m of z['word/document.xml'].matchAll(/<w:p\b[^>]*?(?:\/>|>([\s\S]*?)<\/w:p>)/g)) {
+  for (const m of outsideTables(z['word/document.xml']).matchAll(/<w:p\b[^>]*?(?:\/>|>([\s\S]*?)<\/w:p>)/g)) {
     const body = m[1] ?? '';
     const ppr = /<w:pPr\b[^>]*>([\s\S]*?)<\/w:pPr>/.exec(body)?.[1] ?? '';
     const level = levelOf(styles, valOf(ppr, 'pStyle'), valOf(ppr, 'outlineLvl'));
     let text = '';
-    for (const r of body.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>|<w:(tab|br)\b[^>]*\/>/g)) text += r[1] != null ? decode(r[1]) : ' ';
+    for (const r of body.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>|<w:(tab|br|noBreakHyphen)\b[^>]*\/>/g)) text += r[1] != null ? decode(r[1]) : r[2] === 'noBreakHyphen' ? '\u2011' : ' ';
     text = clean(text);
     if (level >= 1 && level <= 3) { heads[level - 1] = text; heads.fill('', level); under = heads.filter(Boolean).join(SEP); open = null; continue; }
     if (level === 4) {
@@ -122,7 +132,8 @@ const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  *  beat analytics, and the same card saved in several files shows once (the newest copy). */
 function rank(hay, query, limit = 60) {
   const ws = words(query);
-  if (!ws.length) return [];
+  // one letter matches nearly every card: wait for a second
+  if (ws.join('').length < 2) return [];
   const starts = ws.map((w) => new RegExp(`(?:^|[^\\p{L}\\p{N}])${esc(w)}`, 'u'));
   const groups = new Map();
   for (const h of hay) {
@@ -195,8 +206,7 @@ function createCardIndex(storeFile, listFiles) {
       // the first time through, search what's read so far instead of nothing
       if (first && progress.done % 100 === 0) { files = new Map(next); hay = null; }
     }
-    files = next;
-    hay = null;
+    if (changed || first) { files = next; hay = null; } // unchanged: keep the search copies already built
     scannedAt = Date.now();
     if (changed) await save().catch(() => {});
   }

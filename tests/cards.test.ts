@@ -47,6 +47,14 @@ describe('parseDocx', () => {
     expect(parseDocx(buf).map((c: string[]) => c[0])).toEqual(tags);
   });
 
+  it('skips cards inside tables, which Falcon\'s outline doesn\'t count either', async () => {
+    const { schema } = await import('../src/editor/schema');
+    const P = (t: string) => schema.node('paragraph', { style: 'tag' }, [schema.text(t)]);
+    const table = schema.nodes.table.create(null, [schema.nodes.table_row.create(null, [schema.nodes.table_cell.create(null, [P('In a table')])])]);
+    const buf = Buffer.from(await docToDocx(schema.node('doc', null, [P('Before'), table, P('After')])));
+    expect(parseDocx(buf).map((c: string[]) => c[0])).toEqual(['Before', 'After']);
+  });
+
   it('turns a file that isn\'t a .docx down', () => {
     expect(() => parseDocx(Buffer.from('hello'))).toThrow();
   });
@@ -61,6 +69,7 @@ describe('rank', () => {
     expect(rank(hay, 'chen').map((g: { h: { tag: string } }) => g.h.tag)).toEqual(['warming bad', 'chen is wrong', 'kitchen sink']);
     expect(rank(hay, 'chen warming').map((g: { h: { tag: string } }) => g.h.tag)).toEqual(['warming bad']);
     expect(rank(hay, '   ')).toEqual([]);
+    expect(rank(hay, 'c')).toEqual([]); // one letter: nearly everything, so wait for more
   });
 
   it('shows a card saved in several files once, as its newest copy', () => {
@@ -116,6 +125,8 @@ describe('finding the card in the opened file', () => {
     expect(findCard(doc, 'B', 0)).toBe(posOf(1)); // moved since indexing
     expect(findCard(doc, 'Renamed', 1)).toBe(posOf(1));
     expect(findCard(doc, 'Renamed', 9)).toBeNull();
+    expect(findCard(doc, 'Renamed', 1, true)).toBeNull(); // a copy has to be the card itself
+    expect(findCard(doc, 'b', 0, true)).toBe(posOf(1)); // case and punctuation don't matter
   });
 
   it('copies the whole card, tag to the next card', () => {
