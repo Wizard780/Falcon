@@ -96,6 +96,20 @@ describe('SpeechDrop tab', () => {
     expect(document.querySelector('.cf')).toBeNull(); // no "close without saving?" for the doc
   });
 
+  it('File > Close Document closes the SpeechDrop tab while it shows, and Find goes back to the doc', async () => {
+    const { app } = await joined();
+    await app.type('keep me');
+    await app.menu('close');
+    expect(sdTab()).toBeNull();
+    expect(app.tabs()).toEqual(['Untitled']);
+    expect(document.querySelector('.cf')).toBeNull();
+    await app.act(() => window.dispatchEvent(new Event('falcon:sd-show')));
+    expect(panel()?.classList.contains('open')).toBe(true);
+    await app.press('f', { ctrlKey: true });
+    expect(panel()?.classList.contains('open')).toBe(false);
+    expect(document.querySelector('.findbar')).not.toBeNull();
+  });
+
   it('next and previous doc walk through the SpeechDrop tab', async () => {
     const { app } = await joined();
     await app.press('Tab', { ctrlKey: true });

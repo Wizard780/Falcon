@@ -309,7 +309,8 @@ const sdWatcher = speechdrop.createWatcher({
   onFiles: (u) => { if (sdTarget && !sdTarget.isDestroyed()) sdTarget.send('falcon:sd-files', u); },
 });
 // files come from strangers: Falcon opens .docx itself, and hands only plain document types to their app
-const SD_OPENS = new Set(['.doc', '.odt', '.pages', '.pdf', '.txt', '.rtf']);
+// (.doc, .rtf and .docm can carry macros or embedded objects, and Falcon's downloads have no quarantine mark: those only show in the folder)
+const SD_OPENS = new Set(['.pdf', '.txt', '.odt', '.pages']);
 const sdSafe = (f) => async (_e, ...a) => {
   try { return { ok: true, value: await f(_e, ...a) }; } catch (err) { return { ok: false, error: String(err?.message || err) }; }
 };
@@ -373,9 +374,19 @@ ipcMain.handle('falcon:sd-archive', sdSafe(async (_e, room, title) => {
   shell.showItemInFolder(out);
   return { path: out, count: files.length - skipped, skipped };
 }));
+// the page watching the room owns it: a reload, crash or closed window stops it, and another page's stop doesn't
+const sdRelease = (wc) => () => { if (sdTarget === wc) { sdTarget = null; sdWatcher.stop(); } };
 ipcMain.on('falcon:sd-watch', (e, room, files) => {
-  sdTarget = e.sender;
-  try { sdWatcher.watch(typeof room === 'string' && room ? room : null, Array.isArray(files) ? files : null); } catch { sdWatcher.stop(); }
+  const on = typeof room === 'string' && room ? room : null;
+  if (!on) { sdRelease(e.sender)(); return; }
+  if (sdTarget !== e.sender) {
+    sdTarget = e.sender;
+    const release = sdRelease(e.sender);
+    e.sender.once('destroyed', release);
+    e.sender.once('did-start-loading', release);
+    e.sender.once('render-process-gone', release);
+  }
+  try { sdWatcher.watch(on, Array.isArray(files) ? files : null); } catch { sdWatcher.stop(); }
 });
 app.on('will-quit', () => sdWatcher.stop());
 

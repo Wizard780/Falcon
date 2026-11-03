@@ -90,6 +90,11 @@ describe('files on disk', () => {
     expect(await sdm.saveUnique(dir, 'x.docx', Buffer.from('2'))).toBe(join(dir, 'x (2).docx'));
     await expect(sdm.saveUnique(dir, '../x.docx', Buffer.from('1'))).rejects.toThrow('bad_name');
     expect(sdm.safeName('Round 3: A/B?')).toBe('Round 3- A-B-');
+    const long = `${'Aff '.repeat(40)}1AC.docx`;
+    expect(sdm.safeName(long).endsWith('.docx')).toBe(true);
+    expect(sdm.safeName(long).length).toBeLessThanOrEqual(120);
+    expect(sdm.safeName('CON.txt')).toBe('_CON.txt');
+    expect(sdm.safeName('notes. ')).toBe('notes');
   });
 
   it('the zip holds each file once, under unique names', async () => {
@@ -125,6 +130,7 @@ describe('live list', () => {
     expect(JSON.parse(sockets[0].sent[0])).toEqual({ type: 'register', address: 'speechdrop.room.ab1234' });
     sockets[0].onmessage!({ data: JSON.stringify({ type: 'rec', body: JSON.stringify([{ name: 'a.docx', ctime: 1 }, null, { name: 'b.docx', ctime: 2 }]) }) });
     await vi.advanceTimersByTimeAsync(0);
+    expect(updates.length).toBe(1); // going live is one update, with the list: never an empty one first
     expect(updates.at(-1)).toEqual({ room: 'ab1234', files: [{ index: 2, name: 'b.docx', ctime: 2 }, { index: 0, name: 'a.docx', ctime: 1 }], live: true });
     expect(list).not.toHaveBeenCalled(); // live: no polling
     sockets[0].onclose!();

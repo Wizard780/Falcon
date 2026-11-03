@@ -181,12 +181,15 @@ function createWatcher({ wsUrl = 'wss://speechdrop.net/sock/websocket', list, on
     if (r.ws) { const ws = r.ws; r.ws = null; try { ws.close(); } catch { /* already closed */ } }
   }
   const send = (r) => { if (cur === r) onFiles({ room: r.room, files: r.files ?? [], live: r.live }); };
+  /** A new list; true when it went out (an unchanged one doesn't). */
   const setFiles = (r, files) => {
-    if (r.files && JSON.stringify(r.files) === JSON.stringify(files)) return;
+    if (r.files && JSON.stringify(r.files) === JSON.stringify(files)) return false;
     r.files = files;
     send(r);
+    return true;
   };
-  const poll = async (r) => { try { setFiles(r, await list(r.room)); } catch { /* next tick tries again */ } };
+  // a poll that answers after the socket went live is older than what the socket said: drop it
+  const poll = async (r) => { try { const files = await list(r.room); if (!r.live) setFiles(r, files); } catch { /* next tick tries again */ } };
   function connect(r) {
     if (!WebSocketImpl) return;
     let ws;
@@ -203,8 +206,10 @@ function createWatcher({ wsUrl = 'wss://speechdrop.net/sock/websocket', list, on
       try { entries = JSON.parse(msg.body); } catch { return; }
       if (!Array.isArray(entries) || cur !== r) return;
       r.failures = 0;
-      if (!r.live) { r.live = true; clearInterval(r.poll); r.poll = 0; send(r); }
-      setFiles(r, parseIndex(entries));
+      const wasLive = r.live;
+      if (!wasLive) { r.live = true; clearInterval(r.poll); r.poll = 0; }
+      // going live sends once, with the list (never an empty one first, which would make every file look new)
+      if (!setFiles(r, parseIndex(entries)) && !wasLive) send(r);
     };
     ws.onerror = ws.onclose = () => {
       if (r.ws !== ws) return; // already handled, or stopped
@@ -290,7 +295,15 @@ async function createZipWriter(file) {
   };
 }
 
-/** A file or folder name that's safe on Mac and Windows. */
-const safeName = (s) => String(s).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-').replace(/^\.+/, '').trim().slice(0, 80) || 'SpeechDrop';
+/** A file or folder name that's safe on Mac and Windows: no path characters, no CON or NUL, at most 120 characters with its extension kept. */
+function safeName(s) {
+  let n = String(s).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-').replace(/^[.\s]+|[.\s]+$/g, '');
+  const ext = path.extname(n).slice(0, 12);
+  let stem = n.slice(0, n.length - path.extname(n).length);
+  if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(stem.trim())) stem = `_${stem}`;
+  stem = stem.slice(0, 120 - ext.length).trim();
+  n = `${stem}${ext}`;
+  return stem ? n : 'SpeechDrop';
+}
 
 module.exports = { createSpeechDrop, createWatcher, parseIndex, mimeFor, saveUnique, freeName, createZipWriter, safeName, MAX_BYTES, MIME };

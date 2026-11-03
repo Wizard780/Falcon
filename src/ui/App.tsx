@@ -241,6 +241,8 @@ export function App() {
   sdOnRef.current = sdOn;
   useEffect(() => { if (homeOpen) setSdOn(false); }, [homeOpen]);
   const openSd = useCallback(() => { setSdTab(true); setSdOn(true); setHomeOpen(false); }, []);
+  /** Before acting on the open doc: take Home or SpeechDrop off it, so the change is seen. */
+  const showEditor = () => { setHomeOpen(false); setSdOn(false); };
   const closeSd = useCallback(() => { setSdOn(false); setSdTab(false); setSdInfo({ room: null, fresh: 0 }); viewRef.current?.focus(); }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<string | undefined>();
@@ -542,7 +544,7 @@ export function App() {
   }, [opened, fileOpen, switchTo, openFailed]);
   // Cmd-K: an open doc switches to it; anything else opens by path (indexed folders and recents are allowed)
   const openHit = useCallback(async (h: FileHit): Promise<boolean> => {
-    setHomeOpen(false);
+    showEditor();
     if (h.docId !== undefined && docsRef.current.some((d) => d.id === h.docId)) { switchTo(h.docId); return true; }
     const already = openedPath(h.path);
     if (already) { switchTo(already.id); return true; }
@@ -555,7 +557,7 @@ export function App() {
     const open = openedPath(h.path);
     if (insert) {
       if (viewRef.current && isReading(viewRef.current.state)) return;
-      setHomeOpen(false);
+      showEditor();
       const into = activeRef.current;
       let doc: PMNode | undefined;
       try { doc = open ? (open.id === activeRef.current ? viewRef.current!.state.doc : open.state?.doc) ?? undefined : (await openPath(h.path)).doc; }
@@ -626,7 +628,7 @@ export function App() {
     addEventListener(COMPARE_EVENT, on);
     return () => removeEventListener(COMPARE_EVENT, on);
   }, []);
-  const openFind = useCallback(() => { setHomeOpen(false); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
+  const openFind = useCallback(() => { showEditor(); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
   const zoomBy = useCallback((d: number) => setZoom((z) => Math.max(0.5, Math.min(3, +(z + d).toFixed(2)))), []);
 
   /** Send to speech: copy the selection (or the card or section at the caret) into the speech doc without leaving this file. */
@@ -679,7 +681,7 @@ export function App() {
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
     if (c === 'new') fileNew(); else if (c === 'newSpeech') fileNewSpeech(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
-    else if (c === 'saveAs') void fileSave(true); else if (c === 'close') closeDoc(activeRef.current); else if (c === 'settings') setSettingsOpen(true);
+    else if (c === 'saveAs') void fileSave(true); else if (c === 'close') { if (sdOnRef.current) closeSd(); else closeDoc(activeRef.current); } else if (c === 'settings') setSettingsOpen(true);
   };
   useEffect(() => bridge.onMenu?.((c) => menuRef.current(c)), []);
   // the Mac menu shows the keys Settings > Keybindings has for its items
@@ -894,12 +896,12 @@ export function App() {
   const openSettingsAt = useCallback((page: string, query?: string) => { setSettingsPage(page); setSettingsQuery(query); setSettingsOpen(true); }, []);
   const ccCtx: Ctx = {
     view, zoom, setZoom, depth, setDepth, showOutline, setShowOutline, speechMin, setSpeechMin,
-    run: (cmd) => { const v = viewRef.current; if (!v) return false; setHomeOpen(false); return cmd(v.state, v.dispatch, v); },
+    run: (cmd) => { const v = viewRef.current; if (!v) return false; showEditor(); return cmd(v.state, v.dispatch, v); },
     app: appCommand,
     blocked: (id) => (SWAPS.includes(id) || id === 'sendToSpeech' || id === 'searchCards') && reading,
     highlight: activeColors.highlight, setHighlight: (c) => { setActiveColor('highlight', c); setTick((t) => t + 1); },
     isSpeech: speechId === activeId, toggleSpeech,
-    jump: (i) => { const v = viewRef.current; const it = v && buildOutline(v.state.doc)[i]; if (it) { setHomeOpen(false); jump(it, i); } },
+    jump: (i) => { const v = viewRef.current; const it = v && buildOutline(v.state.doc)[i]; if (it) { showEditor(); jump(it, i); } },
     peek: (i) => { const v = viewRef.current, it = outlineRef.current[i]; if (v && it && it.pos < v.state.doc.content.size) scrollToPos(v, it.pos); },
     find: (text, replace) => {
       const v = viewRef.current;
@@ -957,8 +959,8 @@ export function App() {
       <div className="covered" inert={sdOn || modal}>
       <Tools outline={showOutline} reading={reading}
         onNew={(speech) => (speech ? fileNewSpeech() : fileNew())} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
-        onFind={openFind} onOutline={() => { setHomeOpen(false); setShowOutline((s) => !s); }}
-        onRead={() => { setHomeOpen(false); run(toggleRead); }}
+        onFind={openFind} onOutline={() => { showEditor(); setShowOutline((s) => !s); }}
+        onRead={() => { showEditor(); run(toggleRead); }}
         speech={speechId === activeId} onSpeech={toggleSpeech} />
       </div>
 

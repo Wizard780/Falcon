@@ -82,6 +82,7 @@ export function SpeechDrop(props: {
   const [drag, setDrag] = useState(false);
   const [at, setAt] = useState(0);
   const known = useRef<Set<number> | null>(null);
+  const filesRef = useRef<SdFile[]>([]);
   const uploading = useRef(new Set<string>());
   const openRef = useRef(props.open);
   openRef.current = props.open;
@@ -92,19 +93,23 @@ export function SpeechDrop(props: {
   /** A new list: anything not seen before is fresh, unless this Falcon is the one uploading it. */
   const take = useCallback((list: SdFile[], announce: boolean) => {
     setFiles(list);
+    filesRef.current = list;
     const seen = known.current;
-    known.current = new Set(list.map((f) => f.index));
+    // seen only grows: a list older than one already taken (a slow poll) can't make a file new twice
+    known.current = new Set([...(seen ?? []), ...list.map((f) => f.index)]);
     if (!seen) return;
+    const here = new Set(list.map((f) => f.index));
     const added = list.filter((f) => !seen.has(f.index) && !uploading.current.has(f.name));
+    setFresh((s) => (added.length || [...s].some((i) => !here.has(i)) ? new Set([...[...s].filter((i) => here.has(i)), ...added.map((f) => f.index)]) : s));
     if (!added.length) return;
-    setFresh((s) => { const n = new Set([...s].filter((i) => known.current!.has(i))); added.forEach((f) => n.add(f.index)); return n; });
     if (announce && !openRef.current) flash(added.length === 1 ? `New in SpeechDrop: ${added[0].name}` : `${added.length} new files in SpeechDrop`, { label: 'Show', run: () => window.dispatchEvent(new Event(SHOW_EVENT)) });
   }, [flash]);
 
   // the live list, for as long as the tab is open on this room
   useEffect(() => {
     if (!api || !room) return;
-    return api.watch(room.code, null, (u) => { setLive(u.live); take(u.files, true); });
+    // starts from the list the join got, so the first push isn't mistaken for news
+    return api.watch(room.code, filesRef.current, (u) => { setLive(u.live); take(u.files, true); });
   }, [api, room, take]);
 
   const join = useCallback(async (code: string): Promise<boolean> => {
