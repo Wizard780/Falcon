@@ -166,7 +166,7 @@ bind('App', [
   { id: 'zoomIn', label: 'Zoom in', key: 'Mod-=' }, { id: 'zoomOut', label: 'Zoom out', key: 'Mod--' }, { id: 'zoomReset', label: 'Actual size', key: 'Mod-0' },
 ]);
 bind('Files', [
-  { id: 'new', label: 'New document', key: 'Mod-n' }, { id: 'open', label: 'Open', key: 'Mod-o' },
+  { id: 'new', label: 'New document', key: 'Mod-n' }, { id: 'newSpeech', label: 'New speech doc', key: 'Mod-Shift-n' }, { id: 'open', label: 'Open', key: 'Mod-o' },
   { id: 'save', label: 'Save', key: 'Mod-s' }, { id: 'saveAs', label: 'Save As', key: 'Mod-Shift-s' }, { id: 'close', label: 'Close document', key: 'Mod-w' },
   { id: 'nextDoc', label: 'Next open document', key: 'Ctrl-Tab' }, { id: 'prevDoc', label: 'Previous open document', key: 'Ctrl-Shift-Tab' },
 ]);
