@@ -6,7 +6,7 @@ import type { DecorationSet } from 'prosemirror-view';
 import { NodeSelection, TextSelection } from 'prosemirror-state';
 import { docToDocx, imageSize } from '../src/docx/export';
 import { docxToDoc } from '../src/docx/import';
-import { createState, docFromHTML, markMap } from '../src/editor/editor';
+import { createState, createView, docFromHTML, markMap } from '../src/editor/editor';
 import { findKey } from '../src/editor/find';
 import { cleanPastedHTML } from '../src/editor/paste';
 import { readDoc, markedDoc, sendDoc } from '../src/editor/save-modes';
@@ -268,6 +268,25 @@ describe('review fixes', () => {
     expect(open()).toBe(true); // typing in the note keeps it open
     s = s.apply(s.tr.setSelection(TextSelection.create(s.doc, 1)));
     expect(open()).toBe(false);
+  });
+
+  it('the footnote editor\'s text is drawn: the page\'s off-screen skipping (content-visibility: hidden) is for the page only', () => {
+    // a hidden paragraph takes no caret: typing in the note landed at its start, backwards, and the popup showed empty
+    const css = fs.readFileSync('src/styles.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const hiding = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter((m) => /content-visibility:\s*hidden/.test(m[2])).map((m) => m[1].trim());
+    expect(hiding.length).toBeGreaterThan(0);
+    const mount = document.body.appendChild(document.createElement('div'));
+    const doc = schema.node('doc', null, [schema.nodes.paragraph.create(null, [schema.text('ab'), schema.nodes.footnote.create({ content: [{ type: 'text', text: 'note' }] })]), schema.nodes.paragraph.create(null, schema.text('far'))]);
+    const view = createView(mount, () => {}, doc);
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, 3)).setMeta('pointer', true));
+    const note = document.querySelector('.f-note-pop:not([hidden]) .f-note-text p');
+    expect(note?.textContent).toBe('note');
+    const hidden = (el: Element) => hiding.some((sel) => el.matches(sel));
+    expect(hidden(note!)).toBe(false);
+    // and it still covers the page's own paragraphs
+    expect(hidden(view.dom.children[1])).toBe(true);
+    view.destroy();
+    mount.remove();
   });
 
   it('footnote numbers follow edits: typing keeps them, deleting one renumbers the rest', () => {
