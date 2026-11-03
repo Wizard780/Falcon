@@ -349,6 +349,15 @@ export function App() {
     }))) return;
     void bridge.installUpdate?.();
   }, [confirmAsk, update]);
+  // no update waiting: the same spot in the rail checks now
+  const [checking, setChecking] = useState(false);
+  const checkUpdate = useCallback(async () => {
+    setChecking(true);
+    const r = await bridge.checkUpdate!().catch(() => 'failed' as const);
+    setChecking(false);
+    if (r === 'none') flash('Falcon is up to date');
+    else if (r === 'failed') flash("Couldn't check for updates. Try again when you're online.");
+  }, [flash]);
   useEffect(() => {
     const onUnload = (e: BeforeUnloadEvent) => { if (docsRef.current.some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ''; } };
     addEventListener('beforeunload', onUnload);
@@ -822,7 +831,7 @@ export function App() {
     <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
-        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} />
+        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
 
       <div className="covered" inert={homeOpen || modal}>
@@ -919,7 +928,7 @@ const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor
 // ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
 type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech: boolean };
-function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void }) {
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -1006,7 +1015,10 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         </div>
       </aside>
       <div className="grow" />
-      {props.update && <UpdateButton u={props.update} onInstall={props.onUpdate} />}
+      {props.update ? <UpdateButton u={props.update} onInstall={props.onUpdate} />
+        : props.onCheck && <button className="fs-b chk" title={props.checking ? 'Checking for updates' : 'Check for updates'} aria-label="Check for updates"
+            aria-busy={props.checking || undefined} data-busy={props.checking || undefined} onClick={() => { if (!props.checking) props.onCheck!(); }}>
+            <SvgIcon name="refresh" /><span className="lbl">{props.checking ? 'Checking' : 'Check for updates'}</span></button>}
       <button className="fs-b gear-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /><span className="lbl">Settings</span></button>
       {resizable && <div className="rail-grip" role="separator" aria-orientation="vertical" aria-label="Rail width" tabIndex={0}
         aria-valuemin={RAIL_MIN} aria-valuemax={RAIL_MAX} aria-valuenow={width}
