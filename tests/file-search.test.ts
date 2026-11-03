@@ -41,4 +41,23 @@ describe('file search ranking', () => {
     expect(parentName('C:\\Debate\\Neg\\Cap K.docx')).toBe('Neg');
     expect(parentName('/d/Aff/x.docx')).toBe('Aff');
   });
+  it('starred files come first, beat other matches and hide their same-named copies', () => {
+    const dropboxes = [
+      { path: '/Users/a/Dropbox/DA/Impact Defense.docx', root: '/Users/a/Dropbox', mtime: 1 },
+      { path: '/Users/a/Team Dropbox/DA/Impact Defense.docx', root: '/Users/a/Team Dropbox/', mtime: 9 },
+      { path: '/Users/a/Team Dropbox/DA/Impact Turns.docx', root: '/Users/a/Team Dropbox', mtime: 5 },
+    ];
+    const plain = collectHits([], [], dropboxes);
+    expect(plain.map((h) => h.source)).toEqual(['Dropbox', 'Team Dropbox', 'Team Dropbox']);
+    expect(rankHits(plain, 'impact').map((h) => h.source)).toEqual(['Team Dropbox', 'Team Dropbox', 'Dropbox']); // newest first
+
+    const hits = collectHits([], [], dropboxes, ['/Users/a/Dropbox/DA/Impact Defense.docx']);
+    expect(hits[0]).toMatchObject({ name: 'Impact Defense', source: 'Dropbox', starred: true, hidden: 1 });
+    expect(hits.filter((h) => h.name === 'Impact Defense')).toHaveLength(1);
+    expect(rankHits(hits, 'impact').map((h) => `${h.name} ${h.source}`)).toEqual(['Impact Defense Dropbox', 'Impact Turns Team Dropbox']);
+  });
+  it('an open copy of a starred file still shows, and a star on a missing file does nothing', () => {
+    const hits = collectHits([{ id: 1, name: 'Impact Defense', path: '/t/Impact Defense.docx' }], [], [{ path: '/d/Impact Defense.docx', mtime: 1 }], ['/d/Impact Defense.docx', '/gone.docx']);
+    expect(hits.map((h) => `${h.kind}${h.starred ? '*' : ''}`)).toEqual(['file*', 'open']);
+  });
 });

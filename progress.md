@@ -184,3 +184,10 @@ User ask: drag the left rail wider so the open files' names show.
 - [x] the toolbar packs closer by its own width (a container query) instead of the window's, so a wide rail doesn't clip it
 - [x] vitest 313 pass (tests/rail.test.ts), tsc clean; drove it in the web build and in Electron (drag, relaunch on the same profile, double-click)
 - [x] behind a setting, off by default (Settings > Appearance > Resizable rail, `falcon.railResize`, also in the command center): off, no handle and icons only; the dragged width is kept for when it's back on
+
+## Stage: starred files in file search (2026-11-03, branch starred-files)
+User ask: in the library (file search folders, e.g. four Dropboxes), star a file so it shows first and marked as starred, and its same-named copies in the other Dropboxes stop showing.
+- [x] star from Cmd-K with Alt-P (CardMirror's key) or the row's star button; starred rows get a gold star, sit under "Starred" first with no query, and outrank every other match
+- [x] a starred file hides other files with its name (not open docs); its row says "N more hidden" and the tooltip explains
+- [x] rows name the search folder a file came from (`Team Dropbox › DA`), so same-named files can be told apart
+- [x] stored in falcon.starredFiles; vitest file-search covers ranking and hiding; journey starred-files drives it with a stand-in bridge
