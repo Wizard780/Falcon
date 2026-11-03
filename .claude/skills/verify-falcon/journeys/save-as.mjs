@@ -21,13 +21,15 @@ f.want(/Marked/.test(before), 'red marker dropped');
 await f.shot('doc-before');
 
 const dialog = page.locator('.cf.sa');
+// a copy's name carries its kind's default prefix (Settings: Save As prefixes, on by default)
+const PREFIX = { send: 'SEND_', read: 'READ_', marked: 'MARKED_' };
 async function saveAs(mode, file) {
   await page.click('.tools [aria-label="Save As…"]');
   await dialog.waitFor();
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click(`.sa-mode[data-mode="${mode}"]`)]);
   const p = path.join(f.out, file);
   await dl.saveAs(p);
-  f.want(dl.suggestedFilename() === 'seed.docx', `${mode}: downloaded ${dl.suggestedFilename()}`);
+  f.want(dl.suggestedFilename() === `${PREFIX[mode]}seed.docx`, `${mode}: downloaded ${dl.suggestedFilename()}`);
   return p;
 }
 // reopen the copy, read it, then go back to the original so the next Save As starts from it
@@ -79,6 +81,7 @@ const [dl] = await Promise.all([page.waitForEvent('download'), (async () => {
   await page.click('.tools [aria-label="Save As…"]'); await dialog.waitFor(); await page.click('.sa-mode[data-mode="marked"]');
 })()]);
 const mp = path.join(f.out, 'marked-out.docx');
+f.want(dl.suggestedFilename() === 'MARKED_marked.docx', `marked: downloaded ${dl.suggestedFilename()}`);
 await dl.saveAs(mp);
 await f.open(mp);
 const marked = await f.markMap();
