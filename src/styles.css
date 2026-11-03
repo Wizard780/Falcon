@@ -196,8 +196,8 @@ svg { flex: none; }
 .toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: flex-start; background: var(--u-deep); user-select: none; min-width: 0;
   overflow-x: auto; scrollbar-width: none; container-type: inline-size; }
 .toolbar::-webkit-scrollbar { display: none; }
-/* the groups sit together right after the tools row (no centering gap on the left); Read and the timer go to the far right */
-.bar { position: relative; flex: 1 0 auto; display: flex; align-items: center; height: 100%; padding: 0 24px 0 20px; gap: 32px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
+/* every group in one run, spaced like the buttons inside a group, right after the tools row; Read and the timer go to the far right */
+.bar { position: relative; flex: 1 0 auto; display: flex; align-items: center; height: 100%; padding: 0 24px 0 6px; gap: 4px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
 .bar .end { margin-left: auto; }
 .bar .g, .bar .end { display: grid; grid-template-rows: 32px 32px; grid-auto-flow: column; gap: 6px 4px; }
 .bar .g > .b, .bar .end > .b { width: 100%; }
@@ -546,10 +546,9 @@ button.b:active { transform: scale(.97); }
 @keyframes st-bob { 40% { transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .st-keys, .st-keys kbd, .st-keytype i { animation: none !important; } }
 
-/* narrow windows: the tools row takes the toolbar's left 280px, so the groups pack closer, and past that the bar scrolls sideways */
-/* short of room for the bar (954px wide at full spacing), it packs closer and scrolls sideways; a wider rail leaves it less */
+/* short of room for the bar, it trims its edges, and past that it scrolls sideways; a wider rail leaves it less */
 @container (max-width: 960px) {
-  .bar { gap: 12px; padding: 0 12px; }
+  .bar { padding: 0 12px 0 4px; }
 }
 
 /* warnings: Falcon's own confirm dialog, in place of the OS alert */
