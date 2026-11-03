@@ -72,6 +72,14 @@ describe('settings file', () => {
     expect(localStorage.getItem('falcon.wpm1')).toBe('250');
   });
 
+  it("keeps CardMirror's tag speed of 0 as same as cards", async () => {
+    await freshStorage();
+    const { importSettings } = await import('../src/ui/settings-file');
+    const cm = JSON.parse(CM);
+    cm.settings.readers = [{ name: 'Reader 1', wpm: 230, tagWpm: 0 }, { name: 'Reader 2', wpm: 260, tagWpm: 340 }];
+    expect(importSettings(JSON.stringify(cm))).toMatchObject({ ok: true });
+    expect(['wpm1', 'wpm1.tags', 'wpm2', 'wpm2.tags'].map((k) => localStorage.getItem(`falcon.${k}`))).toEqual(['230', '0', '260', '340']);
+  });
   it('carries CardMirror settings over, snapped to the choices Falcon offers', async () => {
     await freshStorage();
     const { importSettings } = await import('../src/ui/settings-file');
@@ -80,7 +88,7 @@ describe('settings file', () => {
     const s = (k: string) => localStorage.getItem(`falcon.${k}`);
     expect([s('prefix.send'), s('prefix.read'), s('prefix.marked'), s('savePrefix')]).toEqual(['[F] ', '[R] ', '[MARKED] ', 'on']);
     expect([s('theme'), s('font'), s('zoom'), s('depth'), s('prepMin')]).toEqual(['light', 'verdana', '1.2', '3', '3']);
-    expect([s('wpm1'), s('wpm2')]).toEqual(['200', '250']); // 260 wpm lands on Falcon's 25 wpm steps
+    expect([s('wpm1'), s('wpm2')]).toEqual(['200', '260']); // any typed speed carries over as is
     expect([s('sz.pocket'), s('sz.hat'), s('sz.tag'), s('sz.undertag')]).toEqual(['26', '22', '14', '12']);
     expect(s('lineHeight')).toBe('1.2'); // CardMirror's 1.3 isn't a Falcon choice: nearest one
     expect([s('condense'), s('emphasisBox'), s('spellcheck'), s('highlight'), s('markerColor')]).toEqual(['integrity', 'on', 'on', 'cyan', '#FF0000']);
