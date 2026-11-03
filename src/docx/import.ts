@@ -1,6 +1,6 @@
 import { strFromU8, unzipSync } from 'fflate';
 import type { Mark, Node as PMNode } from 'prosemirror-model';
-import { HIGHLIGHTS, SKY_BLUE_UNDER, schema, type ParaStyle } from '../editor/schema';
+import { HIGHLIGHTS, DEEP_TURQUOISE_UNDER, schema, type ParaStyle } from '../editor/schema';
 import { parseXml, type XEl } from './xml';
 
 type Element = XEl;
@@ -159,11 +159,11 @@ function runMarks(styles: Map<string, StyleInfo>, rpr: Element | undefined, para
   const hl = val(kid(rpr, 'highlight'));
   const shd = kid(rpr, 'shd');
   const fill = shd?.getAttributeNS(W, 'fill') ?? shd?.getAttribute('w:fill');
-  // turquoise over a sky blue fill is how Falcon saves its sky blue
-  const sky = hl === SKY_BLUE_UNDER && `#${fill ?? ''}`.toUpperCase() === HIGHLIGHTS.skyBlue;
-  if (sky) marks.push(M.highlight.create({ color: 'skyBlue' }));
+  // turquoise over a deep turquoise fill is how Falcon saves its deep turquoise
+  const deep = hl === DEEP_TURQUOISE_UNDER && `#${fill ?? ''}`.toUpperCase() === HIGHLIGHTS.deepTurquoise;
+  if (deep) marks.push(M.highlight.create({ color: 'deepTurquoise' }));
   else if (hl && hl !== 'none' && HL_NAMES.has(hl)) marks.push(M.highlight.create({ color: hl }));
-  if (!sky && fill && /^[0-9a-f]{6}$/i.test(fill) && fill.toUpperCase() !== 'FFFFFF') marks.push(M.shading.create({ color: `#${fill.toUpperCase()}` }));
+  if (!deep && fill && /^[0-9a-f]{6}$/i.test(fill) && fill.toUpperCase() !== 'FFFFFF') marks.push(M.shading.create({ color: `#${fill.toUpperCase()}` }));
   const color = val(kid(rpr, 'color') ?? look.color);
   if (color && /^[0-9a-f]{6}$/i.test(color) && color !== '000000') marks.push(M.color.create({ color: `#${color.toUpperCase()}` }));
   const sz = Number(val(kid(rpr, 'sz') ?? look.sz));

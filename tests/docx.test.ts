@@ -20,18 +20,18 @@ describe('docx round trip', () => {
     expect(markMap(back)).toBe(markMap(s.doc));
   });
 
-  it('sky blue saves as Turquoise with a sky blue fill (Word has no sky blue) and opens as sky blue', async () => {
+  it('deep turquoise saves as Turquoise with a deep turquoise fill (Word has no deep turquoise) and opens as deep turquoise', async () => {
     const { schema } = await import('../src/editor/schema');
     const { unzipSync, strFromU8 } = await import('fflate');
     const M = schema.marks;
     const doc = schema.node('doc', null, [schema.node('paragraph', { style: 'normal' }, [
-      schema.text('sky', [M.highlight.create({ color: 'skyBlue' })]), schema.text(' plain '),
+      schema.text('sky', [M.highlight.create({ color: 'deepTurquoise' })]), schema.text(' plain '),
       schema.text('turq', [M.highlight.create({ color: 'cyan' })]),
     ])]);
     const bytes = await docToDocx(doc);
     const xml = strFromU8(unzipSync(bytes)['word/document.xml']);
-    expect(xml).toContain('<w:highlight w:val="cyan"/><w:shd w:val="clear" w:color="auto" w:fill="00B0F0"/>');
-    expect(xml).not.toContain('skyBlue');
+    expect(xml).toContain('<w:highlight w:val="cyan"/><w:shd w:val="clear" w:color="auto" w:fill="00DAFF"/>');
+    expect(xml).not.toContain('deepTurquoise');
     const back = await docxToDoc(bytes);
     expect(markMap(back)).toBe(markMap(doc));
   });
