@@ -187,7 +187,7 @@ export function createView(mount: HTMLElement, onChange: (view: EditorView) => v
   });
   const w = window as unknown as Record<string, unknown>;
   w.__falconView = view;
-  w.__falconMarkMap = () => markMap(view.state.doc);
+  w.__falconMarkMap = () => markMap((w.__falconView as EditorView).state.doc); // the focused editor, once files are joined
   return view;
 }
 
