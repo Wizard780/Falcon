@@ -34,10 +34,11 @@ export function Home(props: {
 
   // the falcon flies in once per launch, when Falcon starts on Home; after that it just sits on its perch
   const perchRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     const fly = open && !launched && pref(P.launchFalcon) && !reducedMotion();
     launched = true;
-    return launchFalcon(homeRef.current!, perchRef.current!, fly);
+    return launchFalcon(homeRef.current!, perchRef.current!, titleRef.current!, fly);
   }, []);
 
   // the effects run only while home is showing; focus in a layout effect, so keys pressed right after it opens land here
@@ -94,7 +95,7 @@ export function Home(props: {
             <div className="hm-text">
               <div className="hm-brand">
                 <div ref={perchRef} className="hm-perch" aria-hidden="true" />
-                <h1 className="hm-title">Falcon</h1>
+                <h1 ref={titleRef} className="hm-title">{[...'Falcon'].map((ch, i) => <span key={i} className="hm-ch">{ch}</span>)}</h1>
               </div>
               <div className="hm-acts">
                 <button className="hm-act" onClick={props.onNew}><SvgIcon name="plus" /><span>New document</span>{keyOf('new') && <kbd>{keyText(keyOf('new'))}</kbd>}</button>

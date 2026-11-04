@@ -338,6 +338,7 @@ button.b:active { transform: scale(.97); }
 .falcon-flight svg { overflow: visible; }
 .hm-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: 32px; padding-bottom: 36px; }
 .hm-title { margin: 0; font-size: 44px; font-weight: 600; line-height: 1; letter-spacing: -.022em; color: var(--u-tx); } /* same tight setting as the logo lockup */
+.hm-ch { position: relative; top: 0; } /* each letter, so the falcon can drop them in one by one; inline, so the word keeps its kerning */
 .hm-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
 .hm-act { display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px 0 12px; border-radius: 8px; background: color-mix(in srgb, var(--u-card) 75%, transparent);
   box-shadow: inset 0 0 0 1px var(--u-line), var(--u-top); color: var(--u-tx); font-size: 13.5px; cursor: pointer; transition: background 150ms var(--u-ease), box-shadow 150ms var(--u-ease), transform 150ms var(--u-ease); }
