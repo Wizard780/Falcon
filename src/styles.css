@@ -283,7 +283,7 @@ button.b:active { transform: scale(.97); }
 .app[data-split] .f-main { display: none; }
 .app[data-split] .split { grid-column: 3; grid-row: 2; min-height: 0; display: flex; gap: 6px; background: var(--u-deep); }
 .split .pane { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
-.split .pane-h { flex: none; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 14px; font: 12px var(--ui-font); color: var(--u-mut); user-select: none; cursor: default; transition: color 150ms ease-out; }
+.split .pane-h { flex: none; touch-action: none; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 14px; font: 12px var(--ui-font); color: var(--u-mut); user-select: none; cursor: default; transition: color 150ms ease-out; }
 .split .pane[data-on] .pane-h { color: var(--u-tx); }
 .split .pane-h .nm { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .split .pane-h .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--u-tx2); }

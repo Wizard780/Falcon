@@ -785,6 +785,7 @@ export function App() {
       for (const p of panes.current.values()) { p.el.removeAttribute('data-drag'); p.el.removeAttribute('data-drop'); }
       const g = groupRef.current;
       if (!ok || to === null || !g?.includes(id) || !g.includes(to)) return;
+      if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to move files.'); return; }
       const a = g.indexOf(id), b = g.indexOf(to), n = [...g];
       [n[a], n[b]] = [n[b], n[a]];
       // the rail keeps the group's slots, filled in the new order
