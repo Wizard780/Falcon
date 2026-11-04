@@ -1,5 +1,4 @@
 // model calls stay in the main process so the key never reaches the page
-const fs = require('node:fs');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const DEFAULT_MODEL = 'claude-opus-5-5';
@@ -24,20 +23,9 @@ function failure(e, model) {
   return { error: 'The AI request failed.' };
 }
 
-function createAi({ safeStorage, file, Client = Anthropic }) {
-  const key = () => {
-    try { return safeStorage.decryptString(fs.readFileSync(file)); } catch { return ''; }
-  };
+/** `key()` reads the key from the secrets store (electron/secrets.cjs); it never comes from the page. */
+function createAi({ key, Client = Anthropic }) {
   return {
-    hasKey: () => !!key(),
-    /** An empty key removes it. False when this machine can't encrypt it: we don't keep it in the clear. */
-    setKey(k) {
-      const v = typeof k === 'string' ? k.trim() : '';
-      if (!v) { fs.rmSync(file, { force: true }); return true; }
-      if (!safeStorage.isEncryptionAvailable()) return false;
-      fs.writeFileSync(file, safeStorage.encryptString(v), { mode: 0o600 });
-      return true;
-    },
     /** `system` is the prompt, `text` what the user picked. Answers { text } or { error, stop }. */
     async ask({ system, text, model, maxTokens }) {
       const apiKey = key();

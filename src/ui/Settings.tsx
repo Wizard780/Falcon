@@ -129,10 +129,9 @@ export function Settings(props: Props) {
   const [linked, setLinked] = useState<LinkedApp[]>([]);
   useEffect(() => { if (props.open && bridge.linkedApps) bridge.linkedApps().then(setLinked, () => {}); }, [props.open]);
   const [aiKey, setAiKey] = useState(false);
-  const [aiKeyBad, setAiKeyBad] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [delArmed, setDelArmed] = useState(false); // Delete takes two clicks
-  useEffect(() => { if (props.open && bridge.aiHasKey) bridge.aiHasKey().then(setAiKey, () => {}); }, [props.open]);
+  useEffect(() => { if (props.open && bridge.secretList) bridge.secretList().then((l) => setAiKey(l.includes('anthropic')), () => {}); }, [props.open]);
   // starred and pinned files get picked here, from what the search folders hold
   const [starred, setStarred] = useState<string[]>(loadStarred);
   const [pinned, setPinned] = useState<string[]>(loadPinned);
@@ -341,11 +340,9 @@ export function Settings(props: Props) {
         ? [{ label: 'AI features', hint: 'AI needs the desktop app.', control: null }]
         : [
           tog(P.aiOn, 'AI features', `${keyLabel('aiCite')} turns a selected citation or URL into a styled cite. The text you format goes to Anthropic. Nothing is sent until you run it.`),
-          { label: 'Anthropic API key', search: 'key claude console', hint: aiKey ? 'Saved on this computer, encrypted. Settings files never include it.' : aiKeyBad ? 'This computer can\'t encrypt the key, so it wasn\'t saved.' : 'Make one at console.anthropic.com. It\'s separate from a Claude subscription and needs a little credit.', control: aiKey
-            ? <button className="st-btn" onClick={() => void bridge.aiSetKey!('').then(() => setAiKey(false))}>Remove key</button>
-            : <input className="st-text st-wide" type="password" aria-label="Anthropic API key" placeholder="Paste your key" spellCheck={false} autoComplete="off"
-                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                onBlur={(e) => { const k = e.target.value.trim(); if (k) void bridge.aiSetKey!(k).then((ok) => { setAiKey(ok); setAiKeyBad(!ok); }); e.target.value = ''; }} /> },
+          { label: 'Anthropic API key', search: 'key claude console', hint: aiKey ? 'Saved on this computer, encrypted. Falcon\'s pages and settings files never see it.' : 'Make one at console.anthropic.com. It\'s separate from a Claude subscription and needs a little credit. It\'s typed into its own window, and isn\'t saved if this computer can\'t encrypt it.', control: aiKey
+            ? <button className="st-btn" onClick={() => void bridge.secretRemove!('anthropic').then((l) => setAiKey(l.includes('anthropic')))}>Remove key</button>
+            : <button className="st-btn" onClick={() => void bridge.secretPrompt!('anthropic').then(setAiKey)}>Add key…</button> },
           { label: 'AI model', search: 'claude opus sonnet haiku', hint: 'Paste any model id your key can use and it goes to Anthropic as is. Leave blank for Claude Opus 5.5.', control: (
             <input className="st-text st-wide" aria-label="AI model" spellCheck={false} placeholder="claude-opus-5-5" maxLength={200} value={pref(P.aiModel)} onChange={(e) => setPref(P.aiModel, e.target.value)} />) },
           { label: 'Max output tokens', search: 'budget thinking', hint: 'Thinking spends from this too, so too low a number can cut the cite off. Minimum 1024.', control: (

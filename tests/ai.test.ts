@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const { createAi } = require('../electron/ai.cjs');
+const { createSecrets } = require('../electron/secrets.cjs');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const safeStorage = {
@@ -13,7 +14,7 @@ const safeStorage = {
   encryptString: (s: string) => Buffer.from(`enc:${s}`),
   decryptString: (b: Buffer) => b.toString().slice(4),
 };
-const file = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-ai-')), 'key.bin');
+const dir = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-ai-')), 'secrets');
 function clientWith(...answers: unknown[]) {
   const create = vi.fn(async () => { const a = answers.shift(); if (a instanceof Error) throw a; return a; });
   return { create, Client: class { beta = { messages: { create } }; } };
@@ -21,31 +22,37 @@ function clientWith(...answers: unknown[]) {
 const done = (text: string) => ({ stop_reason: 'end_turn', content: [{ type: 'text', text }] });
 const req = { system: 's', text: 't', model: '', maxTokens: 8192 };
 
-describe('the API key', () => {
-  it('is kept encrypted and can be removed', () => {
-    const f = file();
-    const ai = createAi({ safeStorage, file: f });
-    expect(ai.hasKey()).toBe(false);
-    expect(ai.setKey(' abc ')).toBe(true);
-    expect(fs.readFileSync(f, 'utf8')).toBe('enc:abc');
-    expect(ai.hasKey()).toBe(true);
-    ai.setKey('');
-    expect(ai.hasKey()).toBe(false);
+describe('secrets', () => {
+  it('are kept encrypted, listed by name only, and can be removed', () => {
+    const d = dir();
+    const s = createSecrets({ safeStorage, dir: d });
+    expect(s.list()).toEqual([]);
+    expect(s.set('anthropic', ' abc ')).toBe(true);
+    expect(fs.readFileSync(path.join(d, 'anthropic.bin'), 'utf8')).toBe('enc:abc');
+    expect(s.list()).toEqual(['anthropic']);
+    expect(s.get('anthropic')).toBe('abc');
+    s.remove('anthropic');
+    expect(s.list()).toEqual([]);
   });
-  it('is never stored in the clear', () => {
-    const f = file();
-    expect(createAi({ safeStorage: { ...safeStorage, isEncryptionAvailable: () => false }, file: f }).setKey('abc')).toBe(false);
-    expect(fs.existsSync(f)).toBe(false);
+  it('are never stored in the clear', () => {
+    const d = dir();
+    expect(createSecrets({ safeStorage: { ...safeStorage, isEncryptionAvailable: () => false }, dir: d }).set('anthropic', 'abc')).toBe(false);
+    expect(fs.existsSync(d)).toBe(false);
   });
-  it('without one, nothing is sent', async () => {
+  it('only take known names, so a name cannot walk out of the folder', () => {
+    const s = createSecrets({ safeStorage, dir: dir() });
+    expect(s.set('../x', 'abc')).toBe(false);
+    expect(s.get('__proto__')).toBe('');
+  });
+  it('without a key, nothing is sent', async () => {
     const { create, Client } = clientWith();
-    expect((await createAi({ safeStorage, file: file(), Client }).ask(req)).stop).toBe(true);
+    expect((await createAi({ key: () => '', Client }).ask(req)).stop).toBe(true);
     expect(create).not.toHaveBeenCalled();
   });
 });
 
 describe('asking', () => {
-  const ready = (Client: unknown) => { const ai = createAi({ safeStorage, file: file(), Client }); ai.setKey('k'); return ai; };
+  const ready = (Client: unknown) => createAi({ key: () => 'k', Client });
   it('defaults to Opus 5.5 with refusal fallbacks and a cached prompt', async () => {
     const { create, Client } = clientWith(done('hi'));
     expect(await ready(Client).ask(req)).toEqual({ text: 'hi' });
