@@ -31,7 +31,8 @@ import { readSetting } from '../editor/tools';
 import { findOrderSetting } from '../editor/nav-keys';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
-import { SHOW_EVENT, SpeechDrop, type SdTab } from './SpeechDrop';
+import { RoomAsk, SHOW_EVENT, SpeechDrop, type SdTab } from './SpeechDrop';
+import { Caselist } from './Caselist';
 import './display'; // the display settings (fonts, sizes, root classes) apply at startup
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
 import { formatCite, reformatCites, reformatCount, usePreset } from '../editor/ai-cite';
@@ -279,7 +280,7 @@ export function App() {
   const [homeOpen, setHomeOpen] = useState(() => pref(P.openHome));
   // the SpeechDrop tabs, one per room (or the lobby), each a row in the rail after the docs; `sdLit` is the one
   // covering the page, as Home does. Home and it never both show.
-  const [sdTabs, setSdTabs] = useState<{ key: number; info: SdTab }[]>([]);
+  const [sdTabs, setSdTabs] = useState<{ key: number; info: SdTab; sendTo?: string }[]>([]);
   const [sdLit, setSdLit] = useState<number | null>(null);
   const sdOn = sdLit !== null;
   const sdTabsRef = useRef(sdTabs), sdLitRef = useRef(sdLit), sdOnRef = useRef(sdOn), sdLast = useRef<number | null>(null), sdNext = useRef(0);
@@ -315,6 +316,33 @@ export function App() {
     showSd(o.key);
     return true;
   }, [showSd]);
+  // the speech doc's buttons in the top bar: each tab's upload, and the two dialogs they can open
+  const sdUploads = useRef(new Map<number, () => Promise<void>>());
+  const sdSending = useRef(false);
+  const [roomAsk, setRoomAsk] = useState(false);
+  const [caselistOpen, setCaselistOpen] = useState(false);
+  const closeRoomAsk = useCallback(() => setRoomAsk(false), []);
+  const closeCaselist = useCallback(() => setCaselistOpen(false), []);
+  /** The tab whose room the speech doc goes to: the one last shown, else the last one in a room. */
+  const sdRoomTab = () => {
+    const t = sdTabs.filter((x) => x.info.room);
+    return t.find((x) => x.key === sdLast.current) ?? t.at(-1) ?? null;
+  };
+  /** One click: up to the room you're in. With no room, ask for the code once; the tab it joins stays behind the doc. */
+  const speechDrop = async () => {
+    if (sdSending.current) return;
+    const tab = sdRoomTab();
+    if (!tab) { setRoomAsk(true); return; }
+    sdSending.current = true;
+    try { await sdUploads.current.get(tab.key)?.(); } finally { sdSending.current = false; }
+  };
+  const joinAndSend = useCallback((code: string) => {
+    setRoomAsk(false);
+    const lobby = sdTabsRef.current.find((x) => !x.info.room);
+    const key = lobby?.key ?? sdNext.current++;
+    sdLast.current = key;
+    setSdTabs((t) => (lobby ? t.map((x) => (x.key === key ? { ...x, sendTo: code } : x)) : [...t, { key, info: { room: null, fresh: 0 }, sendTo: code }]));
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<string | undefined>();
   // Search files (Cmd-K) or Search cards: one box at a time
@@ -1095,7 +1123,7 @@ export function App() {
   const locked = () => compareRef.current !== null || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
     if (swRef.current) { endSw(false); return; } // a menu key or click while Ctrl-Tab is held: the switcher closes on the current doc
-    if (askRef.current || saveAsRef.current || speechAskRef.current) return; // a warning, Save As or New speech doc is up: it gets answered first
+    if (askRef.current || saveAsRef.current || speechAskRef.current) return; // a warning, Save As or a speech doc dialog is up: it gets answered first
     if (paletteRef.current || ccRef.current) return; // file search or the command center is up: it gets closed first
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
@@ -1177,7 +1205,7 @@ export function App() {
       // Compare Text is up: text editing keys and its own (Mod-Enter), nothing else
       // (inside the panel its text boxes keep every editing key: word jumps, AltGr characters)
       if (compareRef.current !== null) { if ((e.ctrlKey || e.metaKey) && !(e.target as Element | null)?.closest?.('.cmp') && !/^([acvxz]|Enter)$/i.test(e.key)) e.preventDefault(); return; }
-      // so is New speech doc (its own Esc and Enter included)
+      // so are New speech doc, the room code and Caselist (their own Esc and Enter included)
       if (speechAskRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // Send to speech (` unless changed in Settings), so the page can't type that key (AltGr layouts too: their character arrives with Ctrl+Alt held). Boxes with their own text field keep it.
       if (sendPressed(e) && !settingsRef.current && !e.isComposing && !homeRef.current && !sdOnRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
@@ -1230,14 +1258,15 @@ export function App() {
   const compareRef = useRef(compareWith);
   compareRef.current = compareWith;
   saveAsRef.current = saveAsName;
-  const speechAskRef = useRef(speechAsk);
-  speechAskRef.current = speechAsk;
+  const speechDialog = speechAsk || roomAsk || caselistOpen;
+  const speechAskRef = useRef(speechDialog);
+  speechAskRef.current = speechDialog;
   settingsRef.current = settingsOpen;
   const paletteRef = useRef(paletteOpen);
   paletteRef.current = paletteOpen;
   const ccRef = useRef(ccOpen);
   ccRef.current = ccOpen;
-  useLayoutEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !speechAsk && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, speechAsk, paletteOpen, ccOpen]);
+  useLayoutEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !speechDialog && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, speechDialog, paletteOpen, ccOpen]);
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1386,6 +1415,7 @@ export function App() {
 
   // SpeechDrop's Upload sends the doc you came from, as it is now; a .docx from the room opens as a tab
   const exportActive = useCallback(async () => (await import('../docx/export')).docToDocx(viewRef.current!.state.doc), []);
+  const activeDoc = useCallback(() => viewRef.current?.state.doc ?? null, []);
   const openFromSd = useCallback(async (p: string) => {
     try { opened(await openPath(p), 'speechdrop'); }
     catch (e) { flash(`Couldn't open it: ${(e as Error).message}`); }
@@ -1395,7 +1425,8 @@ export function App() {
     return () => removeEventListener(SHOW_EVENT, openSd);
   }, [openSd]);
 
-  const modal = settingsOpen || !!paletteOpen || ccOpen || !!ask || saveAsName !== null || speechAsk;
+  const modal = settingsOpen || !!paletteOpen || ccOpen || !!ask || saveAsName !== null || speechDialog;
+  const speechShown = speechId === activeId && !homeOpen && !sdOn;
   return (
     <div ref={appRef} className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
@@ -1417,16 +1448,18 @@ export function App() {
         reading={reading}
         onRead={() => run(toggleRead)}
         speechSeconds={speechMin * 60}
+        speech={speechShown ? { words, time: (pref(P.speechReader) === 1 ? r1 : r2)(split), detail: `Reader 1: ${r1(split)}, Reader 2: ${r2(split)}`, room: sdRoomTab()?.info.room?.name ?? null } : null}
+        onSpeechDrop={() => void speechDrop()}
+        onCaselist={() => setCaselistOpen(true)}
       />
       </div>
 
       {/* After the toolbar on purpose: Electron applies drag regions in document order, so the toolbar's
           drag area (which runs under these buttons) would swallow their clicks if they came first. */}
       <div className="covered" inert={sdOn || modal}>
-      <Tools outline={showOutline} reading={reading}
+      <Tools outline={showOutline}
         onNew={(speech) => (speech ? fileNewSpeech() : fileNew())} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
         onFind={openFind} onOutline={() => { showEditor(); setShowOutline((s) => !s); }}
-        onRead={() => { showEditor(); run(toggleRead); }}
         speech={speechId === activeId} onSpeech={toggleSpeech} />
       </div>
 
@@ -1466,6 +1499,7 @@ export function App() {
       <div className="covered" inert={modal}>
       {sdTabs.map((x) => (
         <SpeechDrop key={x.key} open={sdLit === x.key} docName={name} exportDoc={exportActive} onOpenDocx={openFromSd} onTab={(t) => sdInfo(x.key, t)} flash={flash} confirm={confirmAsk}
+          onUploader={(f) => sdUploads.current.set(x.key, f)} sendTo={x.sendTo}
           onShow={() => showSd(x.key)} onAnother={newSd} openElsewhere={(code) => sdElsewhere(x.key, code)} />
       ))}
       </div>
@@ -1492,6 +1526,8 @@ export function App() {
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
       <ComparePanel open={compareWith} onClose={closeCompare} readSelection={readSelection} />
       <NewSpeech open={speechAsk} onMake={makeSpeech} onClose={closeNewSpeech} />
+      <RoomAsk open={roomAsk} onJoin={joinAndSend} onClose={closeRoomAsk} />
+      <Caselist open={caselistOpen} docName={name} getDoc={activeDoc} exportDoc={exportActive} flash={flash} onClose={closeCaselist} />
       <div className={`toast${toast ? ' show' : ''}${toast?.action ? ' has-action' : ''}`} role="status">
         {toast?.msg}
         {toast?.action && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const a = toast.action!; setToast(null); a.run(); }}>{toast.action.label}</button>}
@@ -1807,7 +1843,7 @@ function UpdateButton({ u, onInstall }: { u: UpdateInfo; onInstall: () => void }
 
 // ---------- the tools: file and view buttons in a row above the outline ----------
 
-function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onNew: (speech: boolean) => void; onOpen: () => void; onSave: (as: boolean) => void; onFind: () => void; onOutline: () => void; onRead: () => void; onSpeech: () => void }) {
+function Tools(props: { outline: boolean; speech: boolean; onNew: (speech: boolean) => void; onOpen: () => void; onSave: (as: boolean) => void; onFind: () => void; onOutline: () => void; onSpeech: () => void }) {
   const b = (icon: string, title: string, onClick: (e: React.MouseEvent) => void, on = false) => (
     <button className="fs-b" title={title} aria-label={parseTip(title).label} data-on={on || undefined} aria-pressed={on || undefined} onClick={onClick}><SvgIcon name={icon} /></button>
   );
@@ -1820,7 +1856,6 @@ function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onN
       <span className="sep" />
       {b('search', titled('Find', 'find', 'search this file'), props.onFind)}
       {b('list', titled('Outline', 'outline', 'show or hide the list of pockets, hats, blocks and tags'), props.onOutline, props.outline)}
-      {b('eye', titled('Read mode', 'read', 'show only what\'s read aloud'), props.onRead, props.reading)}
       {b('mic', `Speech doc: make this file the speech doc, where ${keyOf('sendToSpeech') ? keyText(keyOf('sendToSpeech')) : 'Send'} sends the selection. Click again to unmark it`, props.onSpeech, props.speech)}
     </div>
   );
@@ -1832,8 +1867,8 @@ type SelState = ReturnType<typeof selectionState>;
 type PopKind = 'highlight' | 'shading' | 'font' | 'size' | 'doc' | 'card';
 const SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48];
 
-function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; reading: boolean; onRead: () => void; onSend: () => void; speechSeconds: number }) {
-  const { sel, run } = props;
+function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; reading: boolean; onRead: () => void; onSend: () => void; speechSeconds: number; speech: { words: number; time: string; detail: string; room: string | null } | null; onSpeechDrop: () => void; onCaselist: () => void }) {
+  const { sel, run, speech } = props;
   const SPEECH_SECONDS = props.speechSeconds;
   const [pop, setPop] = useState<{ kind: PopKind; x: number; y: number; origin: number } | null>(null);
   const [fontColor, setFontColor] = useState<string | null>(() => localStorage.getItem('falcon.fontColor'));
@@ -1968,6 +2003,13 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
           {menuBtn('doc', 'Doc', 'Doc tools: cleanup for the whole document')}
           {menuBtn('card', 'Card', 'Card tools: condense, extract and convert the card at the cursor')}
         </div>
+        {speech && (
+          <div className="g sp" role="group" aria-label="Speech doc">
+            {bridge.speechdrop && <button className="b" title={speech.room ? `SpeechDrop: upload this speech doc to ${speech.room}, as it is now` : 'SpeechDrop: upload this speech doc. Asks for the room code first'} onMouseDown={(e) => { e.preventDefault(); props.onSpeechDrop(); }}>SpeechDrop</button>}
+            {bridge.caselist && <button className="b" title="Caselist: disclose this round on openCaselist, with this speech doc attached. Shows you everything before it posts" aria-haspopup="dialog" onMouseDown={(e) => { e.preventDefault(); props.onCaselist(); }}>Caselist</button>}
+            <span className="rc" title={`Words you'd read aloud: highlighted text, tags, analytics and cites. ${speech.detail}`}><b>{speech.words.toLocaleString('en-US')}<span> {speech.words === 1 ? 'word' : 'words'}</span></b><i>{speech.time}</i></span>
+          </div>
+        )}
         <div className="end">
           <button className="b" data-on={props.reading || undefined} title={titled('Read mode', 'read', 'show only what\'s read aloud. Typing is locked and Space drops a marker')} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
           <button className={`b timer${low('speech')}`} data-on={clocks.on === 'speech' || undefined} aria-haspopup="dialog" aria-expanded={timerOpen}

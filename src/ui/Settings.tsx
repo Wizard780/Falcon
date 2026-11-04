@@ -523,6 +523,7 @@ export function Settings(props: Props) {
         wpm(P.wpm1Tags, 'Reader 1: tags and analytics', 'How fast Reader 1 reads tags, analytics and cites, usually faster than cards.', true),
         wpm(P.wpm2, 'Reader 2: cards', 'How fast Reader 2 reads highlighted card text. The second read time.'),
         wpm(P.wpm2Tags, 'Reader 2: tags and analytics', 'How fast Reader 2 reads tags, analytics and cites.', true),
+        pickNum(P.speechReader, 'Speech doc read time', 'Whose speed sets the time beside the word count in the top bar, on a speech doc.', [[1, 'Reader 1'], [2, 'Reader 2']]),
       ]],
     ] },
   ];

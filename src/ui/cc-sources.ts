@@ -274,6 +274,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     pick(P.wpm1Tags, 'Reader 1: tags and analytics', 'speech', speeds(P.wpm1Tags, 'Same as cards'), 'How fast Reader 1 reads tags, analytics and cites.'),
     pick(P.wpm2, 'Reader 2: cards', 'speech', speeds(P.wpm2), 'How fast Reader 2 reads highlighted card text.'),
     pick(P.wpm2Tags, 'Reader 2: tags and analytics', 'speech', speeds(P.wpm2Tags, 'Same as cards'), 'How fast Reader 2 reads tags, analytics and cites.'),
+    pick(P.speechReader, 'Speech doc read time', 'speech', [[1, 'Reader 1'], [2, 'Reader 2']], 'Whose speed sets the time beside the word count in the top bar, on a speech doc.'),
   ];
 }
 

@@ -81,6 +81,17 @@ contextBridge.exposeInMainWorld('falcon', {
       return () => { ipcRenderer.removeListener('falcon:sd-files', on); ipcRenderer.send('falcon:sd-unwatch', room); };
     },
   },
+  caselist: {
+    status: () => ipcRenderer.invoke('falcon:cl-status'),
+    login: (username, password) => ipcRenderer.invoke('falcon:cl-login', username, password),
+    logout: () => ipcRenderer.invoke('falcon:cl-logout'),
+    rounds: () => ipcRenderer.invoke('falcon:cl-rounds'),
+    caselists: () => ipcRenderer.invoke('falcon:cl-caselists'),
+    schools: (caselist) => ipcRenderer.invoke('falcon:cl-schools', caselist),
+    teams: (caselist, school) => ipcRenderer.invoke('falcon:cl-teams', caselist, school),
+    posted: (target) => ipcRenderer.invoke('falcon:cl-posted', target),
+    post: (target, round, filename, data) => ipcRenderer.invoke('falcon:cl-post', { target, round, filename, data }),
+  },
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
   // crash recovery for docs too big for localStorage: read once as the page starts, written on every backup
   recovery: { read: () => ipcRenderer.sendSync('falcon:recovery-read'), write: (text) => ipcRenderer.send('falcon:recovery-write', String(text)) },

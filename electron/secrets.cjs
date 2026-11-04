@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const NAMES = { anthropic: 'Anthropic API key' }; // add a provider here
+const NAMES = { anthropic: 'Anthropic API key', caselist: 'openCaselist sign-in' }; // add a provider here
 const ok = (id) => typeof id === 'string' && Object.hasOwn(NAMES, id);
 
 function createSecrets({ safeStorage, dir }) {

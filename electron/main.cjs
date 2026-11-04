@@ -8,6 +8,7 @@ const { createIndex } = require('./indexer.cjs');
 const { createCardIndex } = require('./cards.cjs');
 const updater = require('./updater.cjs');
 const speechdrop = require('./speechdrop.cjs');
+const caselist = require('./caselist.cjs');
 const telemetry = require('./telemetry.cjs');
 const { createEditorBridge, bridgeDir } = require('./editor-bridge.cjs');
 const { createAi } = require('./ai.cjs');
@@ -441,6 +442,34 @@ ipcMain.handle('falcon:sd-archive', sdSafe(async (_e, room, title) => {
   } catch (err) { await zip.abort(); await fs.rm(out, { force: true }); throw err; }
   shell.showItemInFolder(out);
   return { path: out, count: files.length - skipped, skipped };
+}));
+
+// openCaselist: the Caselist button on a speech doc (electron/caselist.cjs). The password stops at the login
+// request. The session it gets back is a secret (electron/secrets.cjs); on a machine that can't encrypt it, it
+// stays in memory until Falcon quits. The URL can point at a local stand-in for tests.
+let clHeld = null;
+const cl = caselist.createCaselist({
+  base: process.env.FALCON_CASELIST_BASE || undefined,
+  store: {
+    read() {
+      if (clHeld) return clHeld;
+      try { return JSON.parse(secrets().get('caselist')); } catch { return null; }
+    },
+    write(session) { if (!secrets().set('caselist', JSON.stringify(session))) clHeld = session; },
+    clear() { clHeld = null; secrets().remove('caselist'); },
+  },
+});
+ipcMain.handle('falcon:cl-status', sdSafe(() => cl.signedIn()));
+ipcMain.handle('falcon:cl-login', sdSafe((_e, username, password) => cl.login({ username: String(username ?? ''), password: String(password ?? '') })));
+ipcMain.handle('falcon:cl-logout', sdSafe(() => cl.logout()));
+ipcMain.handle('falcon:cl-rounds', sdSafe(() => cl.rounds()));
+ipcMain.handle('falcon:cl-caselists', sdSafe(() => cl.caselists()));
+ipcMain.handle('falcon:cl-schools', sdSafe((_e, c) => cl.schools(String(c))));
+ipcMain.handle('falcon:cl-teams', sdSafe((_e, c, s) => cl.teams(String(c), String(s))));
+ipcMain.handle('falcon:cl-posted', sdSafe((_e, target) => cl.posted(target ?? {})));
+ipcMain.handle('falcon:cl-post', sdSafe((_e, o) => {
+  if (!o || typeof o.filename !== 'string' || !(o.data instanceof Uint8Array)) throw new Error('bad_request');
+  return cl.post(o.target ?? {}, o.round ?? {}, path.basename(o.filename), o.data);
 }));
 // the page watching a room owns it: a reload, crash or closed window stops its rooms, and another page's stop doesn't
 const sdPages = new WeakSet();

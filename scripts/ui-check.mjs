@@ -163,11 +163,11 @@ await page.keyboard.press('Escape');
 await page.waitForTimeout(150);
 r = await rows();
 want(r.length === 2 && r[1].startsWith('*'), `Settings blocks ${mod}+W and Ctrl-Tab: ${JSON.stringify(r)}`);
-await page.click('.tools [aria-label="Read mode"]');
+await page.click('.bar .end .b:text-is("Read")');
 await page.keyboard.press('Control+Tab');
 await page.waitForTimeout(150);
 want((await rows())[1].startsWith('*'), 'read mode blocks Ctrl-Tab');
-await page.click('.tools [aria-label="Read mode"]');
+await page.click('.bar .end .b:text-is("Read")');
 await page.keyboard.press(`${mod}+w`);
 await page.waitForTimeout(150);
 

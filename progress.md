@@ -234,3 +234,12 @@ Bug hunt: opening either NATO block file said "too big for crash recovery, so sa
 - [x] vitest tests/big-recovery.test.ts (3 of 4 fail on main); scripts/electron-recovery.mjs kills the real app mid-edit and relaunches: the edit is back, unsaved, on a generated file and on a copy of NATO AT Neg; electron-smoke passes with `recovery` added to the bridge
 - Note: in the app tests, a backup taken inside the same `act` as the typing records the doc as saved, because the render that marks it unsaved waits for the act to end. Not an app bug; wait in a second act (`typeAndBackUp`)
 
+## Speech doc top bar: SpeechDrop, Caselist, read counter (2026-11-04, branch speech-toolbar)
+Aarav: "there is two read mode buttons just get rid of the one on the left", and the empty gap in the top bar gets the speech doc's buttons.
+- [x] Read mode: the eye in the tools row is gone; the Read button, its key and the command stay
+- [x] on a speech doc only (the mic), the gap holds SpeechDrop, Caselist and the read count; Home and the SpeechDrop tab cover them
+- [x] SpeechDrop: one click uploads to the room last shown. No room: asks for the code once and joins in a tab behind the doc
+- [x] Caselist: the plugin's flow (electron/caselist.cjs from lib/caselist.mjs). Tabroom pairing prefilled, tournament numbered in the team page's own style, report drafted from the headings ("1NC---Offshoring DA, Econ DA"), the doc attached, nothing posts until Disclose. The password stops at the login request; the session is a secret (electron/secrets.cjs), in memory if the machine can't encrypt it
+- [x] read count: the status bar's own rule (highlights, tags, analytics, cites); time at Reader 2 unless Settings > Speech doc read time says Reader 1. Short of room the word "words" goes, then the count, so the timers stay on screen
+- [x] vitest tests/caselist.test.ts, caselist-main.test.ts, speech-toolbar.test.ts; scripts/electron-speech-toolbar.mjs runs the whole thing in the real app against the stand-ins
+- Note: nothing here has posted to the real openCaselist; tests/caselist-mock.mjs stands in for it.

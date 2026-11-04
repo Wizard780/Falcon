@@ -64,6 +64,8 @@ type FalconBridge = {
   track?: (event: string, props?: Record<string, string | number | boolean>) => void;
   /** SpeechDrop (electron/speechdrop.cjs): rooms, live file lists, uploads and downloads. */
   speechdrop?: SpeechDropBridge;
+  /** openCaselist (electron/caselist.cjs): sign in, Tabroom rounds, the team lists, post a round. */
+  caselist?: CaselistBridge;
   /** Other debate apps (electron/editor-bridge.cjs): kind is ping, docs, insert, jump or consent. Returns an unsubscribe. */
   onBridge?: (f: (kind: string, payload: Record<string, unknown>) => Promise<unknown>) => () => void;
   /** The apps that asked to send cards in, and whether they're allowed. */
@@ -96,6 +98,27 @@ export type SpeechDropBridge = {
   archive: (room: string, title: string) => Promise<SdResult<{ path: string; count: number; skipped: number }>>;
   /** The room's list, pushed on every change. Returns an unsubscribe (which stops watching). */
   watch: (room: string, files: SdFile[] | null, f: (u: { room: string; files: SdFile[]; live: boolean }) => void) => () => void;
+};
+/** A round Tabroom has for you. */
+export type TabroomRound = { id?: number; tournament: string; round: string; side: string; opponent: string; judge: string; start_time: string | null };
+/** A caselist, school or team: `name` goes in URLs, `label` is what people read. */
+export type ClChoice = { name: string; label: string; event?: string };
+/** The team page a round goes on. */
+export type ClTarget = { caselist: string; caselistLabel: string; event: string; school: string; schoolLabel: string; team: string; teamLabel: string };
+export type ClRound = { tournament: string; round: string; side: string; opponent: string; judge: string; report: string };
+/** A round already on the team's page. */
+export type ClPosted = { tournament: string; round: string; side: string };
+export type CaselistBridge = {
+  status: () => Promise<SdResult<boolean>>;
+  login: (username: string, password: string) => Promise<SdResult<boolean>>;
+  logout: () => Promise<SdResult<void>>;
+  rounds: () => Promise<SdResult<{ current: boolean; rounds: TabroomRound[] }>>;
+  caselists: () => Promise<SdResult<ClChoice[]>>;
+  schools: (caselist: string) => Promise<SdResult<ClChoice[]>>;
+  teams: (caselist: string, school: string) => Promise<SdResult<ClChoice[]>>;
+  posted: (target: ClTarget) => Promise<SdResult<ClPosted[]>>;
+  /** Public and permanent. */
+  post: (target: ClTarget, round: ClRound, filename: string, data: Uint8Array) => Promise<SdResult<{ filename: string }>>;
 };
 export type UpdateInfo = { version: string; date: string; notes: string; url: string; state: 'ready' | 'installing' | 'error'; manual: boolean; error?: string };
 export const bridge: FalconBridge = (globalThis as unknown as { falcon?: FalconBridge }).falcon ?? {};

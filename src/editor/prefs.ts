@@ -103,6 +103,7 @@ export const P = {
   // tags, analytics and cites; 0 reads them at the card speed
   wpm1Tags: def('wpm1.tags', 0),
   wpm2Tags: def('wpm2.tags', 0),
+  speechReader: def('speechReader', 2), // whose speed the top bar's read time uses on a speech doc
 };
 
 /** What Enter at the end of each style makes. */

@@ -77,6 +77,10 @@ export function SpeechDrop(props: {
   onAnother: () => void;
   /** a room already open in another tab: shows that tab and answers true, so it isn't joined twice */
   openElsewhere: (code: string) => boolean;
+  /** the speech doc's SpeechDrop button: this tab's upload, for one click from the toolbar */
+  onUploader: (upload: () => Promise<void>) => void;
+  /** a room code to join, from behind the doc, and send the doc to */
+  sendTo?: string;
 }) {
   const api = bridge.speechdrop;
   const [room, setRoom] = useState<Room | null>(null);
@@ -89,6 +93,7 @@ export function SpeechDrop(props: {
   const [drag, setDrag] = useState(false);
   const [at, setAt] = useState(0);
   const known = useRef<Set<number> | null>(null);
+  const roomRef = useRef<Room | null>(null); // the room right away, for a send straight after a join
   const filesRef = useRef<SdFile[]>([]);
   const uploading = useRef(new Set<string>());
   const openRef = useRef(props.open);
@@ -134,14 +139,16 @@ export function SpeechDrop(props: {
     setAt(0);
     setLive(false);
     const got = { code, name: r.value.name };
+    roomRef.current = got;
     setRoom(got);
     safeSet(ROOMS_KEY, JSON.stringify([{ ...got, when: Date.now() }, ...recentRooms().filter((x) => x.code !== code)].slice(0, 6)));
     return true;
   }, [api, take, flash]);
 
-  const leave = () => { setRoom(null); setFiles([]); setFresh(new Set()); known.current = null; };
+  const leave = () => { roomRef.current = null; setRoom(null); setFiles([]); setFresh(new Set()); known.current = null; };
 
   const send = useCallback(async (name: string, data: Uint8Array) => {
+    const room = roomRef.current;
     if (!api || !room) return;
     uploading.current.add(name);
     setBusy(`Uploading ${name}…`);
@@ -153,13 +160,23 @@ export function SpeechDrop(props: {
     take(r.value.files, false);
     uploading.current.delete(name);
     flash(`Uploaded ${name} to ${room.name}`);
-  }, [api, room, take, flash]);
+  }, [api, take, flash]);
 
   const uploadDoc = async () => {
     let data: Uint8Array;
     try { data = await props.exportDoc(); } catch (e) { flash(`Couldn't make the .docx: ${(e as Error).message}`); return; }
     await send(`${props.docName || 'Untitled'}.docx`, data);
   };
+  const uploadLatest = useRef(uploadDoc);
+  uploadLatest.current = uploadDoc;
+  useEffect(() => { cb.current.onUploader(() => uploadLatest.current()); }, []);
+  const sentTo = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const code = props.sendTo;
+    if (!code || sentTo.current === code) return;
+    sentTo.current = code;
+    void join(code).then((ok) => (ok ? uploadLatest.current() : undefined));
+  }, [props.sendTo, join]);
   const uploadPicked = async () => {
     if (!api) return;
     const r = await api.pick();
@@ -291,6 +308,47 @@ export function SpeechDrop(props: {
 
 /** Opens the SpeechDrop tab: the last one shown, or a new one. */
 export const SHOW_EVENT = 'falcon:sd-show';
+
+/** The speech doc's SpeechDrop button with no room joined: the code, once. Typing the 6th character joins, as in the lobby. */
+export function RoomAsk({ open, onJoin, onClose }: { open: boolean; onJoin: (code: string) => void; onClose: () => void }) {
+  const [code, setCode] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [bad, setBad] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    setCode(''); setBad(false);
+    inputRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); } };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  const check = async (c: string) => {
+    if (!c || !bridge.speechdrop) return;
+    setChecking(true);
+    const r = await bridge.speechdrop.room(c);
+    setChecking(false);
+    if (r.ok) onJoin(c); else setBad(true);
+  };
+  const type = (v: string) => {
+    const c = v.replace(/[^A-Za-z0-9]/g, '').slice(0, CODE_LEN);
+    setCode(c);
+    setBad(false);
+    if (c.length === CODE_LEN) void check(c);
+  };
+  return (
+    <div className="cf-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="cf sa" role="dialog" aria-modal="true" aria-labelledby="ra-t">
+        <h2 id="ra-t">SpeechDrop room</h2>
+        <input ref={inputRef} className="sa-name" aria-label="Room code" placeholder="Room code" maxLength={CODE_LEN} spellCheck={false} value={code}
+          onChange={(e) => type(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void check(code); } }} />
+        <p className="ns-file">{checking ? 'Checking…' : bad ? 'No room has that code' : 'The speech doc goes up as soon as you\'re in the room.'}</p>
+        <div className="cf-btns"><button onClick={onClose}>Cancel</button></div>
+      </div>
+    </div>
+  );
+}
 
 /** Join by code (typing the 6th character joins, as on SpeechDrop's site), a room joined before, or make a new one. */
 function Lobby(props: { join: (code: string) => Promise<boolean>; make: (name: string) => Promise<boolean> }) {

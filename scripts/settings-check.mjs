@@ -337,7 +337,7 @@ if (part('read')) {
     }
     return false;
   }, t);
-  const readBtn = () => p.click('.tools [aria-label="Read mode"]');
+  const readBtn = () => p.click('.bar .end .b:text-is("Read")');
   const flows = () => p.$$eval('.f-read-flow', (x) => x.length);
   want(!(await vis('Undertag note')) && !(await vis('qualifications')) && !(await vis('shaded')) && (await flows()) === 2, 'read mode by default hides undertags, the rest of the cite and background color, and runs paragraphs together');
   // changed while reading: redraws at once

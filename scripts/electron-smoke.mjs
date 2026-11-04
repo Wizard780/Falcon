@@ -137,11 +137,11 @@ const before = await docText();
 await cutLast();
 const cutWorks = (await docText()) !== before;
 await win.keyboard.press(`${mod}+z`); await win.waitForTimeout(200);
-await win.click('.tools [aria-label="Read mode"]'); await win.waitForTimeout(300);
+await win.click('.bar .end .b:text-is("Read")'); await win.waitForTimeout(300);
 const readSpell = await spellAttr();
 await cutLast();
 const readCutKept = (await docText()) === before;
-await win.click('.tools [aria-label="Read mode"]'); await win.waitForTimeout(300);
+await win.click('.bar .end .b:text-is("Read")'); await win.waitForTimeout(300);
 const bridge = await win.evaluate(() => Object.keys(window.falcon || {}).sort().join(','));
 const platform = await win.evaluate(() => window.falcon?.platform);
 const visible = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.isVisible()));
@@ -185,7 +185,7 @@ console.log(map, '\nplatform:', platform, '| bridge:', bridge, '| visible:', vis
 const want = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.exitCode = 1; } };
 // emphasis replaced the underline on "app"; highlight stays on "app"
 want(map === 'tag: Electron tag\nnormal: Body text in the [desktop ]{emphasis}[app]{emphasis+highlight:yellow}', `marks: ${JSON.stringify(map)}`);
-want(bridge === 'addIndexFolder,aiAsk,allowLinkedApp,checkUpdate,dictionaryWords,forceClose,importIndexFolders,indexFolders,indexedFiles,installUpdate,linkedApps,onBridge,onConfirmClose,onMenu,onOpenPaths,onUpdate,openFile,openPath,platform,readClipboardText,recovery,removeDictionaryWord,removeIndexFolder,saveFile,searchCards,secretList,secretPrompt,secretRemove,setMenuKeys,setTheme,speechdrop,track', `preload bridge: ${bridge}`);
+want(bridge === 'addIndexFolder,aiAsk,allowLinkedApp,caselist,checkUpdate,dictionaryWords,forceClose,importIndexFolders,indexFolders,indexedFiles,installUpdate,linkedApps,onBridge,onConfirmClose,onMenu,onOpenPaths,onUpdate,openFile,openPath,platform,readClipboardText,recovery,removeDictionaryWord,removeIndexFolder,saveFile,searchCards,secretList,secretPrompt,secretRemove,setMenuKeys,setTheme,speechdrop,track', `preload bridge: ${bridge}`);
 want(spellOn === 'true' && spellOff === 'false', `the page is spellchecked, and Check spelling turns it off: ${spellOn} ${spellOff}`);
 want(cutWorks && readSpell === 'false' && readCutKept, `read mode: no spellcheck, and the menu's Cut leaves the doc alone (control cut worked: ${cutWorks}): ${readSpell} ${readCutKept}`);
 want(spellMenu === 'Nystrom,Nyström,-,Add to Dictionary,-,cut,copy,paste', `a misspelled word's right-click menu: ${spellMenu}`);
