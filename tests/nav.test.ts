@@ -220,3 +220,18 @@ describe('outline search', () => {
     expect(searchOutline(rows(s), s.doc, 'winter', 3, true)).toEqual([2]);
   });
 });
+
+describe('outline keys', () => {
+  it('same-named headings under different parents get different keys, and keys survive edits above', () => {
+    const S: [ParaStyle, string][] = [['hat', 'Uniqueness'], ['block', 'Main'], ['tag', 'U1'], ['normal', 'body'], ['block', 'Answers'], ['tag', 'U2'], ['hat', 'Link'], ['block', 'Main'], ['tag', 'L1'], ['block', 'Main'], ['tag', 'L2']];
+    const s = make(S);
+    const keys = buildOutline(s.doc).map((i) => i.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    // two "Main" blocks under Link are told apart by order; the one under Uniqueness is a different heading
+    expect(keys[1]).not.toBe(keys[7]);
+    expect(keys[7]).not.toBe(keys[9]);
+    // typing a card above a heading doesn't change its key
+    const t = s.apply(s.tr.insertText('more words', pos(s, 'body') + 1));
+    expect(buildOutline(t.doc).map((i) => i.key)).toEqual(keys);
+  });
+});

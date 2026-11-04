@@ -136,8 +136,8 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
   const actRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
-  // folds follow the heading (level + text), so typing above it doesn't move them to another heading
-  const keyOf = (item: OutlineItem) => `${item.level}:${item.text}`;
+  // folds follow the heading's key (its text under its parents), so typing above it doesn't move them
+  const keyOf = (item: OutlineItem) => item.key;
   useEffect(() => { setFolded(new Set()); setOpened(new Set()); }, [depth]);
   // the doc changed: row numbers point elsewhere now
   useEffect(() => { setSel(new Set()); setMenu(null); }, [items]);
@@ -429,7 +429,7 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
           style={{ paddingLeft: 6 + (item.level - 1) * 14 }}
           onMouseDown={(e) => click(e, item, i, open)}
           onContextMenu={(e) => openMenu(e, i)}
-          onDoubleClick={() => item.hasKids && !(keep && hide) && toggle(item, open)}>
+          onDoubleClick={(e) => item.hasKids && !(keep && hide) && !(e.target as HTMLElement).closest('[data-tw]') && toggle(item, open)}>
           {item.hasKids ? <span className="ic tw" data-tw><SvgIcon name="chev" /></span> : <span className="ic sp" />}
           {numbers[i] && <span className="num">{numbers[i]}</span>}
           <span className={`nm${item.text ? '' : ' empty'}`}>{tidy(item.text) || 'Untitled'}</span>
