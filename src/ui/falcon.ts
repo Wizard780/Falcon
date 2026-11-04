@@ -1,4 +1,4 @@
-// The falcon on Home: a flat silhouette in the app icon's style (the icon's head on a body with two swept wings)
+// The falcon on Home: a flat peregrine in the app icon's style (the icon's head, hooded, on a body with two pointed wings)
 // sweeps in over Home when Falcon starts: up from the bottom left, round the top, then back across the title
 // dropping the letters of "Falcon" into place before it settles left of them as the logo. Home itself doesn't
 // move. Any key or click lands it at once. Landed, it holds still, so Home costs no CPU while it sits open.
@@ -10,9 +10,18 @@ const f1 = (n: number) => Math.round(n * 10) / 10;
 const HEAD = 'M12 57V36A24 24 0 0 1 36 12H42C50.5 12 56 18 56 26C56 30.5 54 33.5 50.5 35.5C51 31.5 49 29 45.5 29H41C37 29 34.5 32 34.5 36V57ZM39 17.5A3.5 3.5 0 1 0 39 24.5A3.5 3.5 0 1 0 39 17.5Z';
 const EYE = { x: 39, y: 21 }; // in the logo's own units (viewBox 10 9 48 50)
 // the body runs back from the neck's base (x 12, y 40 to 57) into a tail; the wings hang off the shoulder
-const BODY = 'M36 57C24 63,4 64,-18 60C-44 56,-66 58,-88 68L-82 57L-88 46C-66 48,-48 42,-28 37C-14 34,0 33,12 36Z';
-const WING = 'M0 0C6 -8,10 -30,4 -64C0 -86,-8 -104,-24 -116C-30 -100,-32 -74,-28 -48C-26 -28,-20 -12,-12 2Z';
-const SHOULDER = { x: -14, y: 44 };
+const BODY = 'M14 35C-8 31,-36 37,-56 46L-94 46L-100 57L-95 68L-56 64C-30 76,4 79,24 73C37 68,39 61,34.5 54Z';
+// a peregrine's marks, flat: barred tail, chest chevrons, dark wingtips, and on the head the hood, mustache, eye ring and beak tip
+const BARS = 'M-66 49L-68 66M-78 48L-80 67M-90 48L-92 68';
+const CHEST = 'M2 58l4 4l4-4M12 62l4 4l4-4M-8 62l4 4l4-4M2 68l4 4l4-4M-10 69l4 4l4-4';
+const TIP = 'M-12 -88C-26 -106,-48 -122,-80 -134C-64 -114,-52 -96,-46 -80C-36 -84,-22 -86,-12 -88Z';
+const DARK = '#4a4a52';
+const MARKS = `<path d="M12 44V36A24 24 0 0 1 27.8 13.45C30.5 15.6,32.4 18.6,33.6 22.2C32.4 26.2,29.6 29.4,26.6 31.4C22 34.6,18.8 39.4,17.8 45.6C15.6 44.4,13.6 44,12 44Z" fill="${DARK}"/>`
+  + `<path d="M37.6 24C35.6 28,35.2 32.4,35 37.4C32.8 33.8,32.6 28.4,34.4 23.4C35.6 23.2,36.8 23.4,37.6 24Z" fill="${DARK}"/>`
+  + `<path d="M45.6 12.5C51.6 12.9,56 18,56 26C56 30.5,54 33.5,50.5 35.5C51 31.5,49 29,45.5 29H44.8C47.6 25.6,48 18.4,45.6 12.5Z" fill="${DARK}"/>`
+  + `<circle cx="39" cy="21" r="4.6" fill="none" stroke="var(--ink, #f5e400)" stroke-width="1.6"/>`;
+const WING = 'M8 2C18 -22,12 -56,-12 -88C-26 -106,-48 -122,-80 -134C-62 -112,-48 -90,-40 -64C-34 -42,-28 -18,-14 6Z';
+const SHOULDER = { x: -12, y: 44 };
 // the bird's box in icon units, so the eye can be the point the flight moves
 const BOX = { x: -170, y: -140, w: 240, h: 200 };
 
@@ -20,17 +29,17 @@ const BOX = { x: -170, y: -140, w: 240, h: 200 };
 export function falconSvg(): string {
   return `<svg class="falcon-bird" viewBox="${BOX.x} ${BOX.y} ${BOX.w} ${BOX.h}" xmlns="${NS}" aria-hidden="true" focusable="false">
 <g transform="translate(${-EYE.x} ${-EYE.y})">
-  <g data-wing="far"><path d="${WING}" fill="var(--u-mut)"/></g>
-  <path data-body d="${BODY}" fill="currentColor"/>
-  <path data-head d="${HEAD}" fill="currentColor" fill-rule="evenodd"/>
-  <g data-wing="near"><path d="${WING}" fill="currentColor"/></g>
+  <g data-wing="far"><path d="${WING}" fill="var(--u-mut)"/><path d="${TIP}" fill="${DARK}"/></g>
+  <g data-body><path d="${BODY}" fill="currentColor"/><path d="${BARS}" stroke="${DARK}" stroke-width="5"/><path d="${CHEST}" stroke="var(--u-mut)" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
+  <g data-head><path d="${HEAD}" fill="currentColor" fill-rule="evenodd"/>${MARKS}</g>
+  <g data-wing="near"><path d="${WING}" fill="currentColor"/><path d="${TIP}" fill="${DARK}"/></g>
 </g>
 </svg>`;
 }
 
-/** The logo on its perch: the icon's head, flat, as the rail draws it. */
+/** The logo on its perch: the icon's head with the falcon's hood, mustache, eye ring and beak tip. */
 export function logoSvg(): string {
-  return `<svg class="falcon-logo" viewBox="10 9 48 50" xmlns="${NS}" aria-hidden="true" focusable="false"><path d="${HEAD}" fill="currentColor" fill-rule="evenodd"/></svg>`;
+  return `<svg class="falcon-logo" viewBox="10 9 48 50" xmlns="${NS}" aria-hidden="true" focusable="false"><path d="${HEAD}" fill="currentColor" fill-rule="evenodd"/>${MARKS}</svg>`;
 }
 
 type Pt = { x: number; y: number; s: number };
@@ -96,10 +105,10 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
   host.innerHTML = falconSvg();
   const svg = host.firstElementChild as SVGSVGElement;
   const near = svg.querySelector<SVGGElement>('[data-wing="near"]')!, far = svg.querySelector<SVGGElement>('[data-wing="far"]')!;
-  const body = svg.querySelector<SVGPathElement>('[data-body]')!;
+  const body = svg.querySelector<SVGGElement>('[data-body]')!;
   const wings = (deg: number, lag: number) => {
     near.setAttribute('transform', `translate(${SHOULDER.x} ${SHOULDER.y}) rotate(${f1(deg)})`);
-    far.setAttribute('transform', `translate(${SHOULDER.x + 4} ${SHOULDER.y - 4}) rotate(${f1(lag)})`);
+    far.setAttribute('transform', `translate(${SHOULDER.x + 4} ${SHOULDER.y - 4}) rotate(${f1(lag - 10)})`);
   };
 
   // in flight the bird rides an overlay over all of Home, so nothing under it moves
