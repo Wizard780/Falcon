@@ -17,8 +17,8 @@ want((await line('Temperatures')).includes('[rose]{highlight:yellow+underline}')
 await f.select('needle'); await page.keyboard.press('F10');
 want((await line('Temperatures')).includes('[needle]{emphasis}'), 'F10 applies emphasis');
 await page.keyboard.press('F11');
-const box = await page.evaluate(() => { const e = [...document.querySelectorAll('.f-emphasis')].find((x) => x.textContent === 'needle'); const s = getComputedStyle(e); return [s.backgroundColor, s.position]; });
-want(box[0] === 'rgb(255, 255, 0)' && box[1] === 'relative', `a highlighted box fills to its border and paints over the next line (${box})`);
+const box = await page.evaluate(() => { const e = [...document.querySelectorAll('.f-emphasis')].find((x) => x.textContent === 'needle'); return [getComputedStyle(e.parentElement).backgroundColor, getComputedStyle(e).position]; });
+want(box[0] === 'rgb(255, 255, 0)' && box[1] === 'relative', `a highlighted box sits inside the highlight and paints over the next line (${box})`);
 await page.keyboard.press('F11');
 await f.select('this line'); await page.click('.toolbar button[title^="Cite (F8)"]');
 want((await line('Temperatures')).includes('[this line]{cite}'), 'the Cite button in the grid applies cite');
