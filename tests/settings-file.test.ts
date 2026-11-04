@@ -98,6 +98,40 @@ describe('settings file', () => {
     if (r.ok) expect(r.applied + r.skipped).toBeGreaterThan(100);
   });
 
+  it("brings CardMirror's shortcuts over: the imported key wins, [] clears, system keys stay out", async () => {
+    await freshStorage({});
+    const { importSettings } = await import('../src/ui/settings-file');
+    const { keyOf } = await import('../src/editor/keybinds');
+    const r = importSettings(JSON.stringify({ version: 1, settings: { sendDocPrefix: 'x', ribbonKeyOverrides: {
+      applyHighlight: 'Mod-ArrowRight', applyUnderline: 'Mod-7', clearToNormal: 'Mod-ArrowLeft', setTag: 'Mod-4',
+      pasteAsText: 'Mod-0', toggleReadMode: 'Mod-Shift-r', openFindReplace: [], condenseNoIntegrity: ['Alt-3'],
+      standardizeHighlight: 'Mod-c', reformatAllCites: 'Mod-x', toggleBold: 'Mod-b',
+    } } }));
+    expect(r.ok && r.keys).toBe(8);
+    expect([keyOf('highlight'), keyOf('underline'), keyOf('clear'), keyOf('tag')]).toEqual(['Mod-ArrowRight', 'Mod-7', 'Mod-ArrowLeft', 'Mod-4']);
+    expect(keyOf('pastePlain')).toBe('Mod-0');
+    expect(keyOf('zoomReset')).toBe(''); // Mod-0 went to paste plain, as in the CardMirror layout
+    expect(keyOf('replace')).toBe('');
+    expect(keyOf('condenseMerge')).toBe('Alt-3');
+    expect(keyOf('standardizeHighlighting')).toBe(''); // Mod-c is Copy: kept out, and said so
+    expect(r.ok && r.keysKept?.length).toBe(1);
+  });
+
+  it('carries the settings Falcon has a match for, and the search folders', async () => {
+    await freshStorage({});
+    const { importSettings } = await import('../src/ui/settings-file');
+    const r = importSettings(JSON.stringify({ version: 1, settings: {
+      sendDocPrefix: 'x', themeAppliesToDocument: false, unboldCites: true, smartPasteConversion: false, speechDocFilenameTemplate: 'Rd {speech}',
+      timerFlashEnabled: true, timerFlashSeconds: [5, 3, 1], timerSoundEnabled: true, timerSpeechPresets: [6, 7], lastShadingColor: 'C0C0C0', lastFontColor: 'ff0000',
+      navWidth: 318, navSearchLevel: 0, readModeParagraphIntegrity: true, clearFormattingOnNamedStyleToggleOff: false, fileSearchRoots: ['/a', 3, '/b'],
+    } }));
+    const s = (k: string) => localStorage.getItem(`falcon.${k}`);
+    expect([s('paper'), s('citeBold'), s('smartPaste'), s('speechName')]).toEqual(['white', 'off', 'off', 'Rd {speech}']);
+    expect([s('lowTime'), s('beep'), s('speech'), s('shading'), s('fontColor')]).toEqual(['10', 'on', '6', '#C0C0C0', '#FF0000']);
+    expect([s('outlineWidth'), s('outline.searchLevel'), s('read.paras'), s('styleOffClears')]).toEqual(['318', 'all', 'on', 'off']);
+    expect(r.ok && r.folders).toEqual(['/a', '/b']);
+  });
+
   it('imports from Settings and the open app follows: zoom, outline depth, sizes and the note', async () => {
     await freshStorage();
     const app = await mountApp();
@@ -108,7 +142,7 @@ describe('settings file', () => {
     await app.act(() => input.dispatchEvent(new Event('change', { bubbles: true })), 100);
     expect(document.documentElement.style.getPropertyValue('--zoom')).toBe('1.2');
     expect(document.documentElement.style.getPropertyValue('--sz-tag')).toBe('14pt');
-    expect(document.querySelector('.st')!.textContent).toMatch(/Brought over \d+ settings from CardMirror\. \d+ settings have no Falcon match yet\./);
+    expect(document.querySelector('.st')!.textContent).toMatch(/Brought over \d+ settings( and \d+ shortcuts?)? from CardMirror\.( Not brought over: [^.]+\.)? \d+ settings have no Falcon match yet\./);
     // a bad file says so and changes nothing
     Object.defineProperty(input, 'files', { value: [new File(['hello'], 'x.json')], configurable: true });
     await app.act(() => input.dispatchEvent(new Event('change', { bubbles: true })), 100);

@@ -410,9 +410,11 @@ export function Settings(props: Props) {
         tog(P.smartShrink, 'Smart Shrink', 'Mod-8 shrinks in one pass: paragraphs you don\'t read drop to 5 pt, the words between read ones to 8 pt.'),
       ]],
       ['Pasting', [
+        tog(P.smartQuotes, 'Smart quotes', 'Typed \' and " curl the right way. Backspace right after one puts the straight quote back, and a space curls it again.'),
         tog(P.smartPaste, 'Smart paste', 'Word and Verbatim formatting pastes as cites, underlining and highlights. F2 always pastes plain.'),
         tog(P.citeNearest, 'Copy previous cite: first line only', 'Off, Alt-F8 also copies the cite lines right after it.'),
         tog(P.hlUnderlined, 'Highlight underlined text only', 'Highlighting skips text that isn\'t underlined, emphasized or cited.'),
+        tog(P.styleOffClears, 'Clear formatting when underline comes off', 'Taking underline off also clears size, bold, italic, highlight and background color, so the text goes back to plain.'),
       ]],
       ['Enter at the end of a heading', (['pocket', 'hat', 'block', 'tag', 'analytic', 'undertag'] as const).map((st) => {
         const n = STYLE_OPTS.find(([o]) => o === st)![1];
@@ -500,8 +502,11 @@ export function Settings(props: Props) {
     setActiveColor('shading', get('shading') ?? '#D9D9D9');
     setSpecTick((t) => t + 1);
     const n = (x: number) => `${x} setting${x === 1 ? '' : 's'}`;
+    if (r.folders?.length && bridge.importIndexFolders) void bridge.importIndexFolders(r.folders).then(setFolders, () => {});
+    const shortcuts = r.keys ? ` and ${r.keys} ${r.keys === 1 ? 'shortcut' : 'shortcuts'}` : '';
+    const kept = r.keysKept?.length ? ` Not brought over: ${r.keysKept.join(', ')}.` : '';
     setImportNote({ text: r.from === 'CardMirror'
-      ? `Brought over ${n(r.applied)} from CardMirror. ${r.skipped ? `${n(r.skipped)} ${r.skipped === 1 ? "has" : "have"} no Falcon match yet.` : ''}`.trim()
+      ? `Brought over ${n(r.applied)}${shortcuts} from CardMirror.${kept} ${r.skipped ? `${n(r.skipped)} ${r.skipped === 1 ? "has" : "have"} no Falcon match yet.` : ''}`.trim()
       : `Loaded ${n(r.applied)}.` });
   };
 

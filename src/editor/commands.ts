@@ -107,6 +107,12 @@ function finish(state: EditorState, tr: Transaction, dispatch?: (tr: Transaction
   return true;
 }
 
+/** A style's own look wins, like CardMirror: applying cite, underline or emphasis drops hand formatting. Highlight stays. */
+const STYLE_CLEARS = [M.size, M.color, M.bold, M.italic, M.strike, M.shading];
+const clearUnderStyle = (tr: Transaction, from: number, to: number) => { for (const m of STYLE_CLEARS) tr.removeMark(from, to, m); };
+/** Taking underline back off leaves plain text, highlight included (Settings can turn this off). */
+const OFF_CLEARS = [...STYLE_CLEARS, M.unbold, M.highlight];
+
 /**
  * Verbatim-style toggle: if every character in scope already carries the mark, remove it;
  * otherwise apply it to all of it. With nothing selected, acts on the word at the cursor.
@@ -117,11 +123,17 @@ export function toggleCharMark(type: MarkType, opts: { fallback?: 'word' | 'none
     if (!ranges.length) return false;
     if (opts.skipHeadings) ranges = withoutHeadings(state.doc, ranges);
     const has = allHave(state.doc, ranges, (ms) => !!type.isInSet(ms));
+    const named = type === M.underline || type === M.cite;
     const tr = state.tr;
     for (let r of ranges) {
-      if (has) { tr.removeMark(r.from, r.to, type); continue; }
+      if (has) {
+        tr.removeMark(r.from, r.to, type);
+        if (type === M.underline && pref(P.styleOffClears)) for (const m of OFF_CLEARS) tr.removeMark(r.from, r.to, m);
+        continue;
+      }
       if (type === M.underline) r = growOverEmphasizedSpace(state.doc, r);
       tr.addMark(r.from, r.to, type.create());
+      if (named) clearUnderStyle(tr, r.from, r.to);
     }
     return finish(state, tr, dispatch);
   };
@@ -137,14 +149,14 @@ export function toggleTypingMark(type: MarkType): Command {
   };
 }
 
-/** F10: apply-only. Emphasis replaces underline (schema `excludes`) and removes background color. */
+/** F10: apply-only. Emphasis replaces underline (schema `excludes`) and takes the style's own look, so size and background color go. */
 export const applyEmphasis: Command = (state, dispatch) => {
   const ranges = trimRanges(state.doc, targetRanges(state, 'word'));
   if (!ranges.length) return false;
   const tr = state.tr;
   for (const r of ranges) {
-    tr.removeMark(r.from, r.to, M.shading);
     tr.addMark(r.from, r.to, M.emphasis.create());
+    clearUnderStyle(tr, r.from, r.to);
   }
   return finish(state, tr, dispatch);
 };

@@ -29,6 +29,8 @@ type FalconBridge = {
   /** Pick folders in the native dialog and allow them. Returns the new list. */
   addIndexFolder?: () => Promise<IndexFolder[]>;
   removeIndexFolder?: (path: string) => Promise<IndexFolder[]>;
+  /** A settings import's folders: the real ones are allowed, no dialog. Returns the new list. */
+  importIndexFolders?: (paths: string[]) => Promise<IndexFolder[]>;
   /** Every .docx in the allowed folders (openPath opens any of them). */
   indexedFiles?: () => Promise<IndexedFile[]>;
   /** Search cards: the cards in those folders whose tag, cite, headings or file name hold every word. */
