@@ -39,8 +39,11 @@ const KEY = 'falcon.recents.v1';
 export function loadRecents(): Recent[] {
   return readJson<Recent[]>(KEY, []);
 }
+// previews are a page of HTML each, so only the first few recents keep theirs in storage; the rest are read
+// again the first time Home shows them (App peekRecent)
+const KEEP_PREVIEWS = 24;
 export function saveRecents(list: Recent[]) {
-  safeSet(KEY, JSON.stringify(list.slice(0, MAX)));
+  safeSet(KEY, JSON.stringify(list.slice(0, MAX).map((r, i) => (i < KEEP_PREVIEWS || r.preview === undefined ? r : { ...r, preview: undefined }))));
 }
 
 const same = (a: Recent, b: { name: string; path?: string }) => (a.path && b.path ? a.path === b.path : !a.path && !b.path && a.name === b.name);

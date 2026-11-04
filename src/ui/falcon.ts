@@ -71,19 +71,26 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
   logo.style.opacity = '0';
   const letters = Array.from(title.querySelectorAll<HTMLElement>('.hm-ch'));
   for (const l of letters) l.style.opacity = '0';
-  const shown = new Set<HTMLElement>();
+  const shown = new Set<HTMLElement>(), drops = new Set<number>();
   const settle = (l: HTMLElement, fromY: number) => {
     shown.add(l);
     const dy = fromY - l.getBoundingClientRect().top;
     l.style.transition = 'none';
     l.style.top = `${f1(Math.min(0, dy))}px`;
     l.style.opacity = '1';
-    requestAnimationFrame(() => {
+    const id = requestAnimationFrame(() => {
+      drops.delete(id);
       l.style.transition = 'top 560ms cubic-bezier(.3,1.5,.5,1)';
       l.style.top = '0px';
     });
+    drops.add(id);
   };
-  const show = () => { for (const l of letters) l.style.transition = l.style.top = l.style.opacity = ''; };
+  // every letter in place, with nothing left on it (a drop still pending would otherwise restyle it afterwards)
+  const show = () => {
+    for (const id of drops) cancelAnimationFrame(id);
+    drops.clear();
+    for (const l of letters) l.style.transition = l.style.top = l.style.opacity = '';
+  };
 
   const host = document.createElement('div');
   host.innerHTML = falconSvg();
@@ -101,10 +108,15 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
   const trail = document.createElement('canvas');
   layer.append(trail, svg);
   home.appendChild(layer);
-  const W = home.clientWidth, H = home.clientHeight, dpr = Math.min(devicePixelRatio || 1, 2);
-  trail.width = W * dpr; trail.height = H * dpr;
+  let W = 0, H = 0;
+  const dpr = Math.min(devicePixelRatio || 1, 2);
   const tc = trail.getContext('2d');
-  tc?.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const size = () => {
+    W = home.clientWidth; H = home.clientHeight;
+    trail.width = W * dpr; trail.height = H * dpr;
+    tc?.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  size();
   const ink = getComputedStyle(home).getPropertyValue('--ink').trim() || '#00e5ff';
   svg.style.cssText = `position:absolute;left:0;top:0;width:${BOX.w}px;height:${BOX.h}px;transform-origin:${-BOX.x}px ${-BOX.y}px;will-change:transform`;
 
@@ -131,6 +143,9 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
     ]);
   };
   let path = route();
+  // a resize mid-flight: the route is in Home fractions and ends on the perch, so lay it out again
+  const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { size(); path = route(); });
+  ro?.observe(home);
   // fast as it comes in, easing all the way down to a soft landing
   const travel = (t: number) => 1 - Math.pow(1 - t, 1.7);
   let t0 = 0, last = 0, phase = 0, bank = 0, face = 1, skip = false, px = 0;
@@ -140,7 +155,6 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
     const t = skip ? END : Math.min(END, now - t0), dt = Math.min(50, now - last) / 1000;
     last = now;
     const k = Math.min(1, t / DUR), e = travel(k);
-    if (t === 0 || (k < 1 && dt > 0.04)) path = route(); // a resize mid-flight: keep aiming at the perch
     const { x, y, s } = path(e);
     const ahead = path(travel(Math.min(1, k + 0.015)));
     const dx = ahead.x - x || px, dy = ahead.y - y;
@@ -164,7 +178,7 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
     svg.style.transform = `translate(${f1(x + BOX.x)}px,${f1(y + BOX.y)}px) scale(${(s * facing).toFixed(4)},${s.toFixed(4)}) rotate(${f1(bank * facing)}deg)`;
     // flying left over the title, each letter drops out behind it as it clears the letter's middle
     const tailX = x + 110 * s, tailY = y + 34 * s;
-    if (dx < 0 && k > 0.6) {
+    if (dx < 0 && k > 0.6 && !skip) {
       const h = home0(), vent = x + 36 * s;
       for (const l of letters) {
         if (shown.has(l)) continue;
@@ -186,6 +200,7 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
     }
     if (t < END) { raf = requestAnimationFrame(step); return; }
     off();
+    ro?.disconnect();
     layer.remove();
     logo.style.opacity = '';
     show();
@@ -195,5 +210,5 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
   const off = () => { removeEventListener('keydown', land, true); removeEventListener('pointerdown', land, true); };
   addEventListener('keydown', land, true);
   addEventListener('pointerdown', land, true);
-  return () => { cancelAnimationFrame(raf); off(); layer.remove(); logo.remove(); show(); };
+  return () => { cancelAnimationFrame(raf); off(); ro?.disconnect(); layer.remove(); logo.remove(); show(); };
 }
