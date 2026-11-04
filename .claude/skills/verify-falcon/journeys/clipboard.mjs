@@ -35,7 +35,8 @@ const look = await other.evaluate(() => {
     cite: cs('Smith 24')?.fontWeight, citeSize: cs('Smith 24')?.fontSize,
     emph: cs('next year') && [cs('next year').fontWeight, cs('next year').textDecorationLine, cs('next year').borderTopStyle].join(' '),
     under: cs('growth will fall to ')?.textDecorationLine,
-    hl: cs('two percent')?.backgroundColor,
+    // the highlight can wrap the underline, so take the nearest element around the text that paints a background
+    hl: (() => { let el = [...document.querySelectorAll('#ed *')].filter((e) => e.textContent.includes('two percent')).pop(); while (el && el.id !== 'ed' && getComputedStyle(el).backgroundColor === 'rgba(0, 0, 0, 0)') el = el.parentElement; return el && el.id !== 'ed' ? getComputedStyle(el).backgroundColor : 'none'; })(),
   };
 });
 console.log('in a page without Falcon CSS:', look);
