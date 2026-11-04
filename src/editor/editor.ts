@@ -25,6 +25,7 @@ import { tablePlugins } from './tables';
 import { imagePlugin } from './images';
 import { footnotePlugin } from './footnotes';
 import { WINDOW_META, windowPlugin } from './window';
+import { smartQuotesPlugin } from './quotes';
 
 /** Paintbrush: while armed, every mouse selection gets painted with the active color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -135,6 +136,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       ...tablePlugins, // before the keymap (Tab moves between cells) and mouse selection (column edges, cell drags)
       falconKeymap(),
       keymap(baseKeymap),
+      smartQuotesPlugin,
       history({ newGroupDelay: 500 }),
       dropCursor({ color: '#3b82f6', width: 2 }),
       brush,
@@ -161,9 +163,10 @@ export function docFromHTML(html: string): PMNode {
   return PMDOMParser.fromSchema(schema).parse(body);
 }
 
-export function createView(mount: HTMLElement, onChange: (view: EditorView) => void, doc?: PMNode) {
+/** An editor in `mount`, on a new state for `doc`, or on `state` as it is (a split pane keeps its undo history). */
+export function createView(mount: HTMLElement, onChange: (view: EditorView) => void, doc?: PMNode | EditorState) {
   const view: EditorView = new EditorView(mount, {
-    state: createState(doc),
+    state: doc instanceof EditorState ? doc : createState(doc),
     dispatchTransaction(tr) {
       const next = view.state.apply(tr);
       view.updateState(next);
@@ -184,7 +187,7 @@ export function createView(mount: HTMLElement, onChange: (view: EditorView) => v
   });
   const w = window as unknown as Record<string, unknown>;
   w.__falconView = view;
-  w.__falconMarkMap = () => markMap(view.state.doc);
+  w.__falconMarkMap = () => markMap((w.__falconView as EditorView).state.doc); // the focused editor, once files are joined
   return view;
 }
 

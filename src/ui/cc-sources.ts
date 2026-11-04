@@ -15,7 +15,7 @@ import { readSetting, type SettingSpec } from '../editor/tools';
 import { DOC_TOOLS, docToolSettings } from '../editor/doc-tools';
 import { CARD_TOOLS, cardToolSettings } from '../editor/card-tools';
 import { navSettings } from '../editor/nav-keys';
-import { LEVEL, schema, type ParaStyle } from '../editor/schema';
+import { HIGHLIGHTS, HIGHLIGHT_NAMES, LEVEL, schema, type ParaStyle } from '../editor/schema';
 import { brushKey } from '../editor/editor';
 import { toggleColorMark } from '../editor/commands';
 import { fontSizeAt, setFontSize } from '../editor/font-size';
@@ -54,6 +54,7 @@ export type Ctx = {
 
 /** The clocks live in the toolbar; the command center asks them through an event. */
 import { TIMER_EVENT, type TimerRequest } from './timer-event';
+import { FORMAT_NAME, FORMAT_PREP, type RoundFormat } from './round-clock';
 export { TIMER_EVENT, type TimerRequest };
 const timer = (r: TimerRequest) => dispatchEvent(new CustomEvent(TIMER_EVENT, { detail: r }));
 
@@ -70,7 +71,7 @@ const NOT_COMMANDS = new Set(['New line', 'Delete back', 'Delete forward']);
 const SYN: Record<string, string> = {
   home: 'start recent', settings: 'preferences options config', outline: 'nav pane navigation sidebar', find: 'search text look for',
   zoomIn: 'bigger magnify', zoomOut: 'smaller', zoomReset: '100% reset zoom', new: 'blank file create', open: 'docx file',
-  save: 'write disk', saveAs: 'copy rename export', close: 'tab', nextDoc: 'switch tab', prevDoc: 'switch tab',
+  save: 'write disk', saveAs: 'copy rename export', close: 'tab', nextDoc: 'switch tab', prevDoc: 'switch tab', recentDoc: 'switch tab last previous mru ctrl tab', recentDocBack: 'switch tab mru',
   pastePlain: 'plain text unformatted', condense: 'paragraph integrity spaces', changeCase: 'uppercase lowercase title caps',
   pocket: 'heading style h1', hat: 'heading style h2', block: 'heading style h3', tag: 'heading style card h4', analytic: 'analysis arg',
   undertag: 'annotation note', cite: 'citation author date', copyCite: 'citation duplicate', emphasis: 'box bold',
@@ -78,10 +79,13 @@ const SYN: Record<string, string> = {
   regrow: 'unshrink grow undo shrink', read: 'reading present speech', marker: 'mark place stop', number: 'numbering count',
   sub: 'numbering letter', restart: 'numbering', replace: 'substitute', selectSection: 'card', copySection: 'card', deleteSection: 'card remove',
   cardUp: 'reorder', cardDown: 'reorder', sendToSpeech: 'speech doc copy tilde backtick',
+  searchCards: 'library evidence find card tag cite author backfile index files',
+  compareText: 'diff difference check source match changes side by side',
 };
 const TOOL_HINTS = new Map([
   ...[...DOC_TOOLS, ...CARD_TOOLS].flatMap((s) => s.items.map((it) => [it.id, it.hint] as const)),
   ['sendToSpeech', 'Copy the selection, or the card or section at the caret, into the speech doc'],
+  ['compareText', 'Two texts side by side with the differences marked. The selection becomes Text 1'],
 ]);
 const keyWords = (k: string) => (k ? `${k} ${keyText(k)}` : '');
 type Extra = Omit<Entry, 'source'>;
@@ -119,10 +123,12 @@ export function commandEntries(ctx: Ctx): Entry[] {
     { key: 'x:speechDoc', label: ctx.isSpeech ? 'Stop using this file as the speech doc' : 'Make this file the speech doc', group: 'Speech', keywords: 'speech doc mark', run: () => { ctx.toggleSpeech(); return true; } },
     { key: 'x:timer', label: 'Start or pause the speech timer', group: 'Speech', keywords: 'clock countdown stopwatch', run: () => { timer({ which: 'speech', op: 'toggle' }); return true; } },
     { key: 'x:timerReset', label: 'Reset the speech timer', group: 'Speech', keywords: 'clock countdown', run: () => { timer({ which: 'speech', op: 'reset' }); return true; } },
-    ...(pref(P.showPrep) ? [
-      { key: 'x:prep', label: 'Start or pause the prep timer', group: 'Speech', keywords: 'clock countdown', run: () => { timer({ which: 'prep', op: 'toggle' }); return true; } },
-      { key: 'x:prepReset', label: 'Reset the prep timer', group: 'Speech', keywords: 'clock countdown', run: () => { timer({ which: 'prep', op: 'reset' }); return true; } },
-    ] : [{ key: 'x:prepOn', label: 'Show the prep timer', group: 'Speech', keywords: 'clock prep time', run: () => { setPref(P.showPrep, true); return true; } }]),
+    { key: 'x:timerWindow', label: 'Open the timer window', group: 'Speech', keywords: 'clock countdown stopwatch prep round speeches', run: () => { timer({ which: 'speech', op: 'open' }); return true; } },
+    { key: 'x:prep', label: 'Start or pause our prep', group: 'Speech', keywords: 'clock countdown prep timer', run: () => { timer({ which: 'prep', op: 'toggle' }); return true; } },
+    { key: 'x:prepReset', label: 'Reset our prep', group: 'Speech', keywords: 'clock countdown prep timer', run: () => { timer({ which: 'prep', op: 'reset' }); return true; } },
+    { key: 'x:theirPrep', label: 'Start or pause their prep', group: 'Speech', keywords: 'clock countdown prep timer opponent other team', run: () => { timer({ which: 'their', op: 'toggle' }); return true; } },
+    { key: 'x:theirPrepReset', label: 'Reset their prep', group: 'Speech', keywords: 'clock countdown prep timer opponent other team', run: () => { timer({ which: 'their', op: 'reset' }); return true; } },
+    ...(pref(P.showPrep) ? [] : [{ key: 'x:prepOn', label: 'Show the prep timer in the top bar', group: 'Speech', keywords: 'clock prep time', run: () => { setPref(P.showPrep, true); return true; } }]),
     ...['pockets only', 'down to hats', 'down to blocks', 'down to tags'].map((what, i): Extra => ({
       key: `x:depth${i + 1}`, label: `Outline: ${what}`, group: 'Outline', keywords: `depth level ${i + 1}`, state: ctx.showOutline && ctx.depth === i + 1 ? 'Now' : undefined,
       run: () => { ctx.setDepth(i + 1); ctx.setShowOutline(true); return true; },
@@ -144,13 +150,19 @@ type Value = string | number | boolean;
 /** One setting: its Settings row (page and label) and how to read and change it. No options = on/off. */
 export type SettingDef = { id: string; label: string; page: string; hint?: string; query?: string; get: () => Value; set: (v: Value) => void; options?: [Value, string][]; link?: boolean };
 
-const PENS: [string, string][] = [['yellow', 'Yellow'], ['green', 'Green'], ['cyan', 'Cyan'], ['magenta', 'Magenta'], ['lightGray', 'Gray']];
+const PENS: [string, string][] = Object.keys(HIGHLIGHTS).map((k) => [k, HIGHLIGHT_NAMES[k]]);
 const FONTS: [string, string][] = [['calibri', 'Calibri'], ['arial', 'Arial'], ['verdana', 'Verdana'], ['georgia', 'Georgia'], ['times', 'Times New Roman'], ['comic', 'Comic Sans']];
 const UI_FONTS: [string, string][] = [['system', 'System'], ['geist', 'Geist'], ['inter', 'Inter'], ['switzer', 'Switzer'], ['figtree', 'Figtree'], ['halden', 'Halden']]; // Settings.tsx UI_FONTS
 const STYLES: [string, string][] = [['normal', 'Normal text'], ['pocket', 'Pocket'], ['hat', 'Hat'], ['block', 'Block'], ['tag', 'Tag'], ['analytic', 'Analytic'], ['undertag', 'Undertag']];
 const range = (from: number, to: number, step: number, unit: (n: number) => string): [number, string][] =>
   Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => [from + i * step, unit(from + i * step)]);
 const pt = (n: number) => `${n} pt`, min = (n: number) => `${n}:00`;
+/** Reading speeds in 25 wpm steps, plus the saved one when it was typed in Settings (237), so it shows and cycles from there. */
+const speeds = (p: Pref<number>, same?: string): [number, string][] => {
+  const v = pref(p), out = range(150, 425, 25, (n) => `${n} wpm`);
+  if (v && !out.some(([n]) => n === v)) out.push([v, `${v} wpm`]), out.sort((a, b) => a[0] - b[0]);
+  return same ? [[0, same], ...out] : out;
+};
 
 /** Every setting the Settings panel has, labeled the way its row is, so Tab can find the row there. */
 export function settingDefs(ctx: Ctx): SettingDef[] {
@@ -178,8 +190,9 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.beep, 'Timer sound', 'general', 'Two short tones when a timer reaches zero.'),
     tog(P.confirmClose, 'Unsaved changes confirmation', 'general', 'Ask before closing a file or quitting with unsaved changes.'),
     tog(P.crashRecovery, 'Crash recovery', 'general', 'Keep a copy of open files, brought back if Falcon closes unexpectedly.'),
-    pick(P.recentCount, 'Recent files', 'general', [[6, '6'], [12, '12'], [24, '24']], 'How many files Home lists.'),
+    { id: P.recentCount.key, label: 'Recent files', page: 'general', query: 'Recent files count Home list', hint: 'Type it in Settings.', link: true, get: () => String(pref(P.recentCount)), set: () => {} },
     pick(P.newName, 'Name new files', 'general', (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), 'What an Untitled document is called when you first save it.'),
+    { id: P.speechName.key, label: 'Speech doc name', page: 'general', query: 'Speech doc name filename', hint: 'Type it in Settings.', link: true, get: () => pref(P.speechName), set: () => {} },
     tog(P.savePrefix, 'Prefix Save As copies', 'general', 'Send, Read and Marked Doc copies start with a prefix.'),
     { id: P.prefixSend.key, label: 'Send Doc filename prefix', page: 'general', query: 'Send Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixSend), set: () => {} },
     { id: P.prefixRead.key, label: 'Read Doc filename prefix', page: 'general', query: 'Read Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixRead), set: () => {} },
@@ -196,10 +209,12 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     pick(P.textWidth, 'Text width', 'appearance', [['full', 'Full'], ['wide', 'Wide'], ['narrow', 'Narrow']]),
     pick(P.margins, 'Margins', 'appearance', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']]),
     tog(P.railResize, 'Resizable rail', 'appearance', 'Drag the rail\'s right edge to show the names of open files.'),
+    pick(P.joinMax, 'Files side by side', 'appearance', [[2, '2'], [3, '3'], [4, '4'], [5, '5']], 'The most files Join shows at once.'),
     pick(P.caret, 'Cursor color', 'appearance', [['auto', 'Text'], ['blue', 'Blue'], ['red', 'Red'], ['ink', 'Highlighter']]),
     pick(P.selection, 'Selection color', 'appearance', [['blue', 'Blue'], ['gray', 'Gray'], ['ink', 'Highlighter']]),
     tog(P.cardBar, 'Mark the current card', 'appearance', 'A thin line beside the card the cursor is in.'),
     tog(P.reduceMotion, 'Reduce motion', 'appearance', 'Turn off animations.'),
+    tog(P.launchFalcon, 'Falcon on launch', 'appearance', 'The falcon sweeps in over Home when Falcon starts.'),
     // Editor
     tog(P.spellcheck, 'Check spelling', 'editor', 'Misspelled words get a red underline.'),
     { id: 'app.outline', label: 'Show outline pane', page: 'editor', get: () => ctx.showOutline, set: (v) => ctx.setShowOutline(v as boolean) },
@@ -216,9 +231,12 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.smallPilcrows, 'Small ¶ marks', 'editor'),
     tog(P.pasteCondense, 'Condense after Paste Text', 'editor'),
     tog(P.shrinkProtect, 'Keep omission notes full size', 'editor'),
+    tog(P.smartShrink, 'Smart Shrink', 'editor', 'Mod-8 shrinks in one pass instead of cycling sizes.'),
+    tog(P.smartQuotes, 'Smart quotes', 'editor'),
     tog(P.smartPaste, 'Smart paste', 'editor', 'Word and Verbatim formatting pastes as cites, underlining and highlights.'),
     tog(P.citeNearest, 'Copy previous cite: first line only', 'editor'),
     tog(P.hlUnderlined, 'Highlight underlined text only', 'editor'),
+    tog(P.styleOffClears, 'Clear formatting when underline comes off', 'editor'),
     enterAfter('pocket', P.enterPocket), enterAfter('hat', P.enterHat), enterAfter('block', P.enterBlock),
     enterAfter('tag', P.enterTag), enterAfter('analytic', P.enterAnalytic), enterAfter('undertag', P.enterUndertag),
     ...[...navSettings, ...docToolSettings, ...cardToolSettings].map(spec),
@@ -237,15 +255,19 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: P.colorUndertag.key, label: 'Undertag color', page: 'formatting', hint: 'Pick it in Settings.', link: true, get: () => pref(P.colorUndertag), set: () => {} },
     tog(P.shadingDots, 'Dots on background color', 'formatting'),
     // Speech and timers
+    { id: P.round.key, label: 'Round', page: 'speech', hint: 'The speeches the timer window steps through.', options: (['policy', 'ld', 'pf'] as const).map((f) => [f, FORMAT_NAME[f]]),
+      get: () => pref(P.round), set: (v) => { const f = v as RoundFormat; setPref(P.round, f); setPref(P.prepMin, f === 'policy' && ctx.speechMin === 9 ? 10 : FORMAT_PREP[f]); } },
     { id: 'app.event', label: 'Event', page: 'speech', hint: 'High school: 8 minute speeches, 8 of prep. College: 9 and 10.', options: [['hs', 'High school'], ['college', 'College']],
       get: () => (ctx.speechMin === 8 && prep === 8 ? 'hs' : ctx.speechMin === 9 && prep === 10 ? 'college' : ''),
       set: (v) => { ctx.setSpeechMin(v === 'hs' ? 8 : 9); setPref(P.prepMin, v === 'hs' ? 8 : 10); } },
     { id: 'app.speech', label: 'Speech length', page: 'speech', options: range(1, 30, 1, min), get: () => ctx.speechMin, set: (v) => ctx.setSpeechMin(v as number) },
     tog(P.showSend, 'Send button', 'speech', 'A Send button beside Read in the top bar.'),
-    tog(P.showPrep, 'Prep timer', 'speech', 'A prep clock beside the speech timer.'),
+    tog(P.showPrep, 'Prep timer', 'speech', 'Our prep clock in the top bar, beside the speech timer.'),
     pick(P.prepMin, 'Prep time', 'speech', range(1, 15, 1, min)),
-    pick(P.wpm1, 'Reader 1', 'speech', range(150, 425, 25, (n) => `${n} wpm`), 'Words per minute for the first read time.'),
-    pick(P.wpm2, 'Reader 2', 'speech', range(150, 425, 25, (n) => `${n} wpm`), 'Words per minute for the second read time.'),
+    pick(P.wpm1, 'Reader 1: cards', 'speech', speeds(P.wpm1), 'How fast Reader 1 reads highlighted card text.'),
+    pick(P.wpm1Tags, 'Reader 1: tags and analytics', 'speech', speeds(P.wpm1Tags, 'Same as cards'), 'How fast Reader 1 reads tags, analytics and cites.'),
+    pick(P.wpm2, 'Reader 2: cards', 'speech', speeds(P.wpm2), 'How fast Reader 2 reads highlighted card text.'),
+    pick(P.wpm2Tags, 'Reader 2: tags and analytics', 'speech', speeds(P.wpm2Tags, 'Same as cards'), 'How fast Reader 2 reads tags, analytics and cites.'),
   ];
 }
 

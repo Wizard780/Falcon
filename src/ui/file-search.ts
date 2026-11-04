@@ -11,6 +11,14 @@ export type FileHit = {
   docId?: number;
   kind: 'open' | 'recent' | 'file';
   when: number;
+  /** the search folder it came from ("Dropbox", "Team Dropbox"), so same-named files can be told apart */
+  source?: string;
+  /** starred: first among what matches a search, and its copies in other search folders are hidden */
+  starred?: boolean;
+  /** pinned: like starred, and it also always shows, first, with the box empty */
+  pinned?: boolean;
+  /** how many copies this starred or pinned one hides */
+  hidden?: number;
 };
 
 const SEP = /[\\/]/;
@@ -19,11 +27,17 @@ export const stripDocx = (n: string) => n.replace(/\.docx$/i, '');
 /** The folder a file sits in, as one name ("Aff"), not a path. */
 export const parentName = (p: string) => { const parts = p.split(SEP); return parts.length > 1 ? parts[parts.length - 2] : ''; };
 
-/** Open docs first, then recents, then indexed files; each path appears once, as its first source. */
+/**
+ * Pinned files first, then open docs, recents and indexed files; each path appears once, as its first source.
+ * Starred files keep their place (a search puts them on top). A starred or pinned file hides its copies: the same
+ * path inside another search folder (an open one stays: it's open).
+ */
 export function collectHits(
   open: { id: number; name: string; path?: string }[],
   recents: { name: string; path?: string; folder: string; when: number }[],
-  files: { path: string; mtime: number }[],
+  files: { path: string; mtime: number; root?: string }[],
+  starred: readonly string[] = [],
+  pinned: readonly string[] = [],
 ): FileHit[] {
   const seen = new Set<string>();
   const out: FileHit[] = [];
@@ -35,8 +49,27 @@ export function collectHits(
   };
   for (const d of open) add({ key: `o${d.id}`, name: d.name, folder: d.path ? parentName(d.path) : '', path: d.path, docId: d.id, kind: 'open', when: Infinity });
   for (const r of recents) add({ key: `r:${r.path ?? r.name}`, name: r.name, folder: r.folder, path: r.path, kind: 'recent', when: r.when });
-  for (const f of files) add({ key: `f:${f.path}`, name: stripDocx(base(f.path)), folder: parentName(f.path), path: f.path, kind: 'file', when: f.mtime });
-  return out;
+  for (const f of files) add({ key: `f:${f.path}`, name: stripDocx(base(f.path)), folder: parentName(f.path), path: f.path, kind: 'file', when: f.mtime, source: f.root ? base(f.root.replace(/[\\/]+$/, '')) : undefined });
+  if (!starred.length && !pinned.length) return out;
+  const stars = new Set(starred), pins = new Set(pinned);
+  const marked = (h: FileHit) => !!h.path && (stars.has(h.path) || pins.has(h.path));
+  // a copy is the same path inside another search folder (Dropbox/DA/x and Team Dropbox/DA/x), not just the same name
+  const roots = [...new Set(files.map((f) => f.root?.replace(/[\\/]+$/, '')).filter((r): r is string => !!r))].sort((a, b) => b.length - a.length);
+  const rel = (p?: string) => {
+    const r = p && roots.find((r) => p.startsWith(r) && SEP.test(p[r.length] ?? ''));
+    return r ? p.slice(r.length + 1).replace(/\\/g, '/').toLowerCase() : undefined;
+  };
+  const mark = new Map(out.filter(marked).map((h) => [h, { ...h, starred: stars.has(h.path!) || undefined, pinned: pins.has(h.path!) || undefined, hidden: 0 }]));
+  const byRel = new Map([...mark.values()].flatMap((h) => { const k = rel(h.path); return k ? [[k, h] as const] : []; }));
+  const top: FileHit[] = [], rest: FileHit[] = [];
+  for (const h of out) {
+    const m = mark.get(h);
+    if (m) { (m.pinned ? top : rest).push(m); continue; }
+    const k = h.kind !== 'open' ? rel(h.path) : undefined;
+    const twin = k ? byRel.get(k) : undefined;
+    if (twin) twin.hidden! += 1; else rest.push(h);
+  }
+  return [...top, ...rest];
 }
 
 const words = (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean);
@@ -89,6 +122,7 @@ export function rankHits(hits: FileHit[], query: string, limit = 50): FileHit[] 
     if (name === ws.join(' ')) total += 50;
     total -= Math.min(20, name.length / 4);
     if (h.kind === 'open') total += 8;
+    if (h.starred || h.pinned) total += 120; // starred and pinned files go to the very top of what matches
     scored.push([h, total]);
   }
   scored.sort((a, b) => b[1] - a[1] || b[0].when - a[0].when);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import { createPortal } from 'react-dom';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
@@ -6,19 +7,23 @@ import { Node as PMNode } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
 import { commandOf } from '../editor/keymap';
+import { useSmoothZoom } from './smooth-zoom';
 import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
-import { activeColors, bridge, setActiveColor, type UpdateInfo } from '../editor/host';
+import { activeColors, bridge, setActiveColor, type CardHit, type UpdateInfo } from '../editor/host';
+import { cardContent, findCard } from './card-search';
 import { ago, releaseNotes } from './update';
-import { HIGHLIGHTS, schema, type ParaStyle } from '../editor/schema';
-import { buildOutline, currentItem, readWords, type OutlineItem } from '../editor/outline';
+import { HIGHLIGHTS, HIGHLIGHT_NAMES, SHADES, schema, type ParaStyle } from '../editor/schema';
+import { buildOutline, currentItem, readSeconds, readSplit, type OutlineItem, type ReadSplit } from '../editor/outline';
 import { toggleColorMark } from '../editor/commands';
 import { fontSizeOf, setFontSize } from '../editor/font-size';
 import { FONT_COLORS } from './swatches';
 import { TIMER_EVENT, type TimerRequest } from './timer-event';
+import { TimerWindow, useRoundClocks } from './TimerWindow';
 import { insertIntoSpeech, sendContent } from '../editor/speech';
+import { insertContent, insertLabel } from '../editor/linked-insert';
 import { selectionState } from './selection-state';
 import { SvgIcon } from './icons';
-import { newFileName, openDocument, openPath, saveDocument, type DocMeta } from './files';
+import { newFileName, openDocument, speechFileName, openPath, saveDocument, type DocMeta } from './files';
 import type { Ctx } from './cc-sources';
 import type { FileHit } from './file-search';
 import { clearFind, findInfo, requestFind, setQuery as setFindQuery } from '../editor/find';
@@ -26,10 +31,13 @@ import { readSetting } from '../editor/tools';
 import { findOrderSetting } from '../editor/nav-keys';
 import { isReading, toggleRead } from '../editor/read';
 import { Home } from './Home';
+import { SHOW_EVENT, SpeechDrop, type SdTab } from './SpeechDrop';
 import './display'; // the display settings (fonts, sizes, root classes) apply at startup
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
 import { Confirm, nameList, type Ask } from './Confirm';
-import { SaveAs } from './SaveAs';
+import { ComparePanel } from './ComparePanel';
+import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
+import { NewSpeech, SaveAs } from './SaveAs';
 import { copyName, docForMode, type SaveMode } from '../editor/save-modes';
 import { Tips, parseTip } from './Tips';
 import { OutlinePane } from './Outline';
@@ -38,12 +46,13 @@ import { outlineNumbers } from '../editor/nav/numbering';
 import { DOC_TOOLS } from '../editor/doc-tools';
 import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
-import { loadRecents, noteRecent, saveRecents, tidy, type Recent } from './recents';
+import { loadRecents, noteRecent, peekHtml, saveRecents, tidy, type Recent } from './recents';
 import { P, onPrefs, pref } from '../editor/prefs';
 import { track, type DocSource } from './analytics';
 import { readJson, safeSet } from './storage';
 import { RAIL_MAX, RAIL_MIN, RAIL_NAMES, loadRail, railMax, railWidth, saveRail } from './rail';
 import { reducedMotion } from './motion';
+import { Switcher, holdMods, recentOrder, type Mod } from './Switcher';
 
 // Settings, the command center and file search load the first time they open (and in the background once the
 // app is up), so the first screen downloads and starts less code; so does the .docx code (files.ts)
@@ -63,7 +72,8 @@ function later<T extends { open: boolean }>(load: () => Promise<ComponentType<T>
 const Settings = later(() => import('./Settings').then((m) => m.Settings));
 const CommandCenter = later(() => import('./CommandCenter').then((m) => m.CommandCenter));
 const Palette = later(() => import('./Palette').then((m) => m.Palette));
-export const prefetch = () => Promise.all([Settings.preload(), CommandCenter.preload(), Palette.preload(), import('../docx/import'), import('../docx/export')]).catch(() => {}); // a miss loads again when used
+const CardSearch = later(() => import('./CardSearch').then((m) => m.CardSearch));
+export const prefetch = () => Promise.all([Settings.preload(), CommandCenter.preload(), Palette.preload(), CardSearch.preload(), import('../docx/import'), import('../docx/export')]).catch(() => {}); // a miss loads again when used
 
 const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
 const MODE_PREFIX = { send: P.prefixSend, read: P.prefixRead, marked: P.prefixMarked };
@@ -72,7 +82,7 @@ const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could 
 /** A command's key as text, for messages: ⌘S. */
 const keyLabel = (id: string) => keyText(keyOf(id));
 /** The keys that swap the document out, which read mode and Settings hold back. */
-const SWAPS = ['home', 'new', 'open', 'close', 'nextDoc', 'prevDoc'];
+const SWAPS = ['home', 'new', 'newSpeech', 'open', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop'];
 /** The commands the app runs itself (the editor's keymap runs the rest). */
 /** Does this keydown send to speech? A changed key matches the way Settings recorded it (Shift-` is ~), an AltGr-typed character counts,
  *  and ` still counts on layouts where it's a dead accent key (US International). */
@@ -82,7 +92,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['search', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'close', 'nextDoc', 'prevDoc', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -90,7 +100,11 @@ const AUTOSAVE_MAX = 400_000;
 // Pictures (data URLs) are counted in characters; browser storage holds about 5M of them in all.
 const AUTOSAVE_MEDIA_MAX = 3_000_000;
 
-type Backup = { meta: DocMeta; doc: PMNode; active: boolean; dirty?: boolean; speech?: boolean };
+// The desktop app keeps the docs browser storage can't hold in a file instead (bridge.recovery), up to this
+// size: a 30 MB backfile with pictures is about 6.5M and takes ~60 ms to copy; a block file is under 1M (~7 ms).
+const DISK_MAX = 10_000_000;
+
+type Backup = { meta: DocMeta; doc: PMNode; active: boolean; dirty?: boolean; speech?: boolean; at?: number };
 type Json = { type?: string; attrs?: Record<string, unknown>; content?: Json[] };
 const MEDIA_REF = 'falcon-media:';
 /** A doc's JSON with each picture's data kept once in `media` (a file can use one logo hundreds of times). */
@@ -127,42 +141,58 @@ function mediaSize(doc: PMNode): number {
   });
   return n;
 }
-/** Crash-recovery copy of the open doc and every unsaved one. Docs too big to keep are left out;
- *  returns false when the active doc was one of them. */
+/** Backups as JSON, each picture's data kept once (on the first entry), each with its place in the rail. */
+function packList(list: Backup[], all: Backup[]): string {
+  const media: string[] = [], index = new Map<string, number>();
+  const docs = list.map((b) => ({ meta: b.meta, active: b.active, dirty: b.dirty, speech: b.speech, at: all.indexOf(b), doc: packDoc(b.doc, media, index) }));
+  return JSON.stringify(media.length ? docs.map((d, i) => (i === 0 ? { ...d, media } : d)) : docs);
+}
+function unpackList(text: string): Backup[] {
+  const list = JSON.parse(text) as { meta: DocMeta; doc: Json; active: boolean; dirty?: boolean; speech?: boolean; at?: number; media?: string[] }[];
+  const media = list[0]?.media;
+  return list.map(({ media: _m, ...b }) => ({ ...b, doc: PMNode.fromJSON(schema, unpackDoc(b.doc, media)) }));
+}
+let diskHeld = true; // the desktop recovery file may hold docs (from the last run, until the first backup)
+/** Crash-recovery copy of the open doc and every unsaved one. Docs too big for browser storage go to the
+ *  desktop app's recovery file, or are left out on the web; returns false when the active doc was left out. */
 function autosave(list: Backup[]): boolean {
-  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return true; } // turned off in Settings
+  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); clearDisk(); return true; } // turned off in Settings
   // a doc whose pictures don't fit is left out whole: a copy without its pictures, saved, would lose them
   const keep = list.filter((b) => b.doc.content.size <= AUTOSAVE_MAX && mediaSize(b.doc) <= AUTOSAVE_MEDIA_MAX);
-  const write = (l: Backup[]) => {
-    const media: string[] = [], index = new Map<string, number>();
-    const docs = l.map((b) => ({ meta: b.meta, active: b.active, dirty: b.dirty, speech: b.speech, doc: packDoc(b.doc, media, index) }));
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(media.length ? docs.map((d, i) => (i === 0 ? { ...d, media } : d)) : docs));
-  };
   const kept = [...keep];
   for (;;) {
-    try { write(kept); break; }
+    try { localStorage.setItem(AUTOSAVE_KEY, packList(kept, list)); break; }
     catch { // storage full: let go of the biggest copy that isn't the open doc, the open doc last
-      if (!kept.length) { localStorage.removeItem(AUTOSAVE_KEY); return false; }
+      if (!kept.length) { localStorage.removeItem(AUTOSAVE_KEY); break; }
       const drop = kept.filter((b) => !b.active).sort((a, b) => b.doc.content.size - a.doc.content.size)[0] ?? kept[0];
       kept.splice(kept.indexOf(drop), 1);
     }
   }
   localStorage.removeItem(OLD_AUTOSAVE_KEY);
-  return kept.some((b) => b.active);
+  const disk = bridge.recovery ? list.filter((b) => !kept.includes(b) && b.doc.content.size <= DISK_MAX) : [];
+  if (disk.length) { bridge.recovery!.write(packList(disk, list)); diskHeld = true; } else clearDisk();
+  return kept.some((b) => b.active) || disk.some((b) => b.active);
+}
+function clearDisk() {
+  if (diskHeld && bridge.recovery) bridge.recovery.write('');
+  diskHeld = false;
 }
 function loadBackups(): Backup[] {
-  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); return []; } // turned off in Settings
+  diskHeld = true; // a new page: the file may hold the last run's docs
+  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); clearDisk(); return []; } // turned off in Settings
+  const out: Backup[] = [];
   try {
     const v2 = localStorage.getItem(AUTOSAVE_KEY);
-    if (v2) {
-      const list = JSON.parse(v2) as { meta: DocMeta; doc: Json; active: boolean; dirty?: boolean; speech?: boolean; media?: string[] }[];
-      const media = list[0]?.media;
-      return list.map(({ media: _m, ...b }) => ({ ...b, doc: PMNode.fromJSON(schema, unpackDoc(b.doc, media)) }));
-    }
-    const v1 = localStorage.getItem(OLD_AUTOSAVE_KEY);
-    if (v1) return [{ meta: readJson<DocMeta>('falcon.meta', { name: 'Untitled' }), doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true }];
+    const v1 = v2 ? null : localStorage.getItem(OLD_AUTOSAVE_KEY);
+    if (v2) out.push(...unpackList(v2));
+    else if (v1) out.push({ meta: readJson<DocMeta>('falcon.meta', { name: 'Untitled' }), doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true });
   } catch { /* corrupt autosave: start blank */ }
-  return [];
+  try {
+    const disk = bridge.recovery?.read();
+    if (disk) out.push(...unpackList(disk));
+  } catch { /* corrupt recovery file: skip it */ }
+  // the two stores split one rail: put it back in order
+  return out.some((b) => b.at != null) ? out.sort((a, b) => (a.at ?? 0) - (b.at ?? 0)) : out;
 }
 const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 0));
 
@@ -202,11 +232,30 @@ type Toast = { msg: string; action?: { label: string; run: () => void } };
 /** One open document. The active one lives in the editor view; the others keep their state (undo history included) here. */
 type OpenDoc = { id: number; meta: DocMeta; dirty: boolean; state: EditorState | null; scroll: number };
 let nextDocId = 2;
+/** A joined file's editor, side by side with the others (Join in the rail). */
+type Pane = { view: EditorView; el: HTMLElement; scroll: HTMLDivElement; head: HTMLElement };
+type Held = { state: EditorState; scroll: number };
+const setTestView = (v: EditorView | null) => { (window as unknown as Record<string, unknown>).__falconView = v; };
 
 export function App() {
+  const appRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // the main editor, which docs swap in and out of; joined files each get their own (panes). viewRef and
+  // scrollRef are whichever one has focus: the toolbar, outline, find and keys act on it
+  const mainView = useRef<EditorView | null>(null);
+  const mainScroll = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const panes = useRef(new Map<number, Pane>());
+  const splitBox = useRef<HTMLDivElement>(null);
+  // the joined files, in rail order (one group at a time); shown side by side while one of them is the open doc
+  const [group, setGroupState] = useState<number[] | null>(null);
+  const groupRef = useRef(group);
+  const setGroup = (g: number[] | null) => { groupRef.current = g; setGroupState(g); };
+  const [splitOn, setSplitOn] = useState(false);
+  /** The editor holding doc `id` right now (the focused one or another pane), or null when it's put away. */
+  const liveView = (id: number) => (id === activeRef.current ? viewRef.current : panes.current.get(id)?.view ?? null);
+  const liveState = (id: number) => liveView(id)?.state ?? docsRef.current.find((d) => d.id === id)?.state ?? null;
   const [tick, setTick] = useState(0);
   const [docVersion, setDocVersion] = useState(0);
   const [showOutline, setShowOutline] = useState(() => localStorage.getItem('falcon.outline') !== 'off');
@@ -227,13 +276,54 @@ export function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [homeOpen, setHomeOpen] = useState(() => pref(P.openHome));
+  // the SpeechDrop tabs, one per room (or the lobby), each a row in the rail after the docs; `sdLit` is the one
+  // covering the page, as Home does. Home and it never both show.
+  const [sdTabs, setSdTabs] = useState<{ key: number; info: SdTab }[]>([]);
+  const [sdLit, setSdLit] = useState<number | null>(null);
+  const sdOn = sdLit !== null;
+  const sdTabsRef = useRef(sdTabs), sdLitRef = useRef(sdLit), sdOnRef = useRef(sdOn), sdLast = useRef<number | null>(null), sdNext = useRef(0);
+  sdTabsRef.current = sdTabs;
+  sdLitRef.current = sdLit;
+  sdOnRef.current = sdOn;
+  useEffect(() => { if (homeOpen) setSdLit(null); }, [homeOpen]);
+  const showSd = useCallback((key: number) => { sdLast.current = key; setSdLit(key); setHomeOpen(false); }, []);
+  const newSd = useCallback(() => {
+    const key = sdNext.current++;
+    setSdTabs((t) => [...t, { key, info: { room: null, fresh: 0 } }]);
+    showSd(key);
+  }, [showSd]);
+  /** The SpeechDrop tab last shown, else the last one, else a new one. */
+  const openSd = useCallback(() => {
+    const t = sdTabsRef.current;
+    const key = t.some((x) => x.key === sdLast.current) ? sdLast.current : t.at(-1)?.key;
+    if (key === undefined || key === null) newSd(); else showSd(key);
+  }, [newSd, showSd]);
+  /** Before acting on the open doc: take Home or SpeechDrop off it, so the change is seen. */
+  const showEditor = () => { setHomeOpen(false); setSdLit(null); };
+  const closeSd = useCallback((key = sdLitRef.current) => {
+    if (key === null) return;
+    setSdTabs((t) => t.filter((x) => x.key !== key));
+    if (sdLitRef.current === key) { setSdLit(null); viewRef.current?.focus(); }
+  }, []);
+  const sdInfo = useCallback((key: number, info: SdTab) => setSdTabs((t) => t.map((x) => (x.key === key ? { ...x, info } : x))), []);
+  /** A room open in another SpeechDrop tab: that tab shows instead, and the lobby that asked closes. */
+  const sdElsewhere = useCallback((key: number, code: string) => {
+    const o = sdTabsRef.current.find((x) => x.key !== key && x.info.room?.code === code);
+    if (!o) return false;
+    setSdTabs((t) => t.filter((x) => x.key !== key));
+    showSd(o.key);
+    return true;
+  }, [showSd]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<string | undefined>();
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Search files (Cmd-K) or Search cards: one box at a time
+  const [paletteOpen, setPaletteOpen] = useState<false | 'files' | 'cards'>(false);
   const [ccOpen, setCcOpen] = useState(false);
   const [settingsQuery, setSettingsQuery] = useState<string | undefined>();
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
+  const [compareWith, setCompareWith] = useState<string | null>(null); // Compare Text is open, Text 1 from this selection
+  const [speechAsk, setSpeechAsk] = useState(false); // the New speech doc dialog is up
   const [saveAsName, setSaveAsName] = useState<string | null>(null); // the Save As dialog is up, offering this name
   const askRef = useRef(ask);
   askRef.current = ask;
@@ -244,7 +334,7 @@ export function App() {
   const [recents, setRecents] = useState<Recent[]>(loadRecents);
   const [curItem, setCurItem] = useState(-1); // the outline row to light (see measureRead)
   const findRef = useRef<HTMLInputElement>(null);
-  const lastDoc = useRef<PMNode | null>(null);
+  const lastDocs = useRef(new WeakMap<EditorView, PMNode>()); // each editor's doc at its last change
   // each doc as it was last opened or saved: an edit that puts it back the same makes it clean again
   const savedDocs = useRef(new Map<number, PMNode>());
   const isDirty = (id: number, doc: PMNode) => {
@@ -272,12 +362,14 @@ export function App() {
   const mounted = useRef(true);
   const backup = useCallback(() => !mounted.current || autosave(docsRef.current.flatMap((d) => {
     const isActive = d.id === activeRef.current;
-    const doc = isActive ? viewRef.current?.state.doc : d.state?.doc;
+    const doc = liveState(d.id)?.doc;
     const speech = d.id === speechRef.current;
     // the speech doc is kept even when saved, so its marker comes back after a crash
     return doc && (isActive || d.dirty || speech) ? [{ meta: d.meta, doc, active: isActive, dirty: d.dirty, speech: speech || undefined }] : [];
   })), []);
   const backupSoon = useRef(() => {});
+  const viewChanged = useRef<(v: EditorView, id: number) => void>(() => {});
+  const measureRef = useRef(() => {}); // measureRead, for the panes' scroll listeners
   useEffect(() => {
     const backups = loadBackups();
     const first = backups.find((b) => b.active) ?? backups[0];
@@ -293,29 +385,38 @@ export function App() {
     }
     let saveTimer = 0, outlineTimer = 0;
     backupSoon.current = () => { window.clearTimeout(saveTimer); saveTimer = window.setTimeout(() => whenIdle(() => { if (!backup()) warnBig(); }), 800); };
-    const view = createView(mountRef.current!, (v) => {
-      setTick((t) => t + 1);
-      if (v.state.doc !== lastDoc.current) {
-        lastDoc.current = v.state.doc;
-        const id = activeRef.current;
-        const dirty = isDirty(id, v.state.doc);
-        setDocs((ds) => (ds.some((d) => d.id === id && d.dirty !== dirty) ? ds.map((d) => (d.id === id ? { ...d, dirty } : d)) : ds));
+    // an editor changed: `id` is the doc it holds. Only the focused one redraws the toolbar and outline
+    viewChanged.current = (v, id) => {
+      const focused = v === viewRef.current;
+      if (focused) setTick((t) => t + 1);
+      if (v.state.doc === lastDocs.current.get(v)) return;
+      lastDocs.current.set(v, v.state.doc);
+      const dirty = isDirty(id, v.state.doc);
+      setDocs((ds) => (ds.some((d) => d.id === id && d.dirty !== dirty) ? ds.map((d) => (d.id === id ? { ...d, dirty } : d)) : ds));
+      if (focused) {
         // the outline and word count walk the whole doc: refresh them when typing pauses, not per keystroke
         window.clearTimeout(outlineTimer);
         outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
-        backupSoon.current();
       }
-    }, doc);
-    lastDoc.current = view.state.doc;
+      backupSoon.current();
+    };
+    // the main editor sits empty and hidden while joined files show: a settings redraw there isn't an edit
+    const view = createView(mountRef.current!, (v) => { if (v === viewRef.current) viewChanged.current(v, activeRef.current); }, doc);
+    lastDocs.current.set(view, view.state.doc);
     if (!restored.length) savedDocs.current.set(1, view.state.doc);
-    viewRef.current = view;
+    mainView.current = viewRef.current = view;
+    scrollRef.current = mainScroll.current;
     setTick(1);
     mounted.current = true;
     // leaving the page (reload, window closed) with a backup still waiting: write it now, or the last edits are lost
     const flush = () => { window.clearTimeout(saveTimer); backup(); };
     addEventListener('pagehide', flush);
     // a backup still waiting for idle time must not write over storage the next page (or test) starts from
-    return () => { mounted.current = false; removeEventListener('pagehide', flush); window.clearTimeout(saveTimer); window.clearTimeout(outlineTimer); view.destroy(); };
+    return () => {
+      mounted.current = false; removeEventListener('pagehide', flush); window.clearTimeout(saveTimer); window.clearTimeout(outlineTimer); view.destroy();
+      for (const p of panes.current.values()) p.view.destroy();
+      panes.current.clear();
+    };
   }, []);
 
   useEffect(() => { document.documentElement.style.setProperty('--zoom', String(zoom)); safeSet('falcon.zoom', String(zoom)); }, [zoom]);
@@ -349,6 +450,15 @@ export function App() {
     }))) return;
     void bridge.installUpdate?.();
   }, [confirmAsk, update]);
+  // no update waiting: the same spot in the rail checks now
+  const [checking, setChecking] = useState(false);
+  const checkUpdate = useCallback(async () => {
+    setChecking(true);
+    const r = await bridge.checkUpdate!().catch(() => 'failed' as const);
+    setChecking(false);
+    if (r === 'none') flash('Falcon is up to date');
+    else if (r === 'failed') flash("Couldn't check for updates. Try again when you're online.");
+  }, [flash]);
   useEffect(() => {
     const onUnload = (e: BeforeUnloadEvent) => { if (docsRef.current.some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ''; } };
     addEventListener('beforeunload', onUnload);
@@ -360,8 +470,8 @@ export function App() {
   useLayoutEffect(() => {
     const v = viewRef.current;
     if (!v) return;
-    if (homeOpen) (v.dom as HTMLElement).blur(); else v.focus();
-  }, [homeOpen, hasView]);
+    if (homeOpen || sdOn) (v.dom as HTMLElement).blur(); else v.focus();
+  }, [homeOpen, sdOn, hasView]);
 
   const run = useCallback((cmd: Command) => {
     const v = viewRef.current;
@@ -370,20 +480,29 @@ export function App() {
     v.focus();
   }, []);
 
+  /** Where the page on screen starts: the doc position at the top of the view, for the switcher's previews. */
+  const topPos = () => {
+    const v = viewRef.current, sc = scrollRef.current;
+    if (!v || !sc) return 0;
+    const box = sc.getBoundingClientRect(), pm = v.dom.getBoundingClientRect();
+    try { return v.posAtCoords({ left: pm.left + 4, top: Math.min(Math.max(box.top + 4, pm.top + 2), pm.bottom - 2) })?.pos ?? 0; } catch { return 0; }
+  };
+  const tops = useRef(new Map<number, number>());
   /** Put `state` in the editor as document `id`. The caller has already stashed the outgoing doc. */
   const show = useCallback((id: number, state: EditorState, scroll: number) => {
     const v = viewRef.current!;
     stopScroll();
     v.updateState(state);
-    lastDoc.current = v.state.doc;
+    lastDocs.current.set(v, v.state.doc);
     activeRef.current = id;
     setActiveId(id);
     setDocVersion((n) => n + 1);
     if (scrollRef.current) scrollRef.current.scrollTop = scroll;
     setFindOpen(false); // find state belongs to the outgoing doc
-    const backedUp = v.state.doc.content.size <= AUTOSAVE_MAX;
+    const backedUp = v.state.doc.content.size <= (bridge.recovery ? DISK_MAX : AUTOSAVE_MAX);
     warnedBig.current = !backedUp; // the open message carries the warning
     setHomeOpen(false);
+    setSdLit(null);
     v.focus();
     setTick((t) => t + 1);
     return backedUp;
@@ -391,29 +510,153 @@ export function App() {
   /** The outgoing doc, ready to stash: its state and where it was scrolled to. */
   const stash = () => {
     const v = viewRef.current!;
+    tops.current.set(activeRef.current, topPos());
     if (findInfo(v.state)) clearFind(v);
     setFindOpen(false);
     return { state: v.state, scroll: scrollRef.current?.scrollTop ?? 0 };
   };
 
+  // ---- joined files: one editor per file, side by side ----
+  /** Make pane `id` the one the toolbar, outline, find and keys act on; `take` moves the keyboard into it too. */
+  const focusPane = useCallback((id: number, take = true) => {
+    const p = panes.current.get(id);
+    if (!p) return;
+    if (viewRef.current !== p.view) {
+      const old = viewRef.current;
+      if (old && !old.isDestroyed && findInfo(old.state)) clearFind(old); // find belongs to the file it searched
+      setFindOpen(false);
+      stopScroll();
+      viewRef.current = p.view;
+      scrollRef.current = p.scroll;
+      activeRef.current = id;
+      setTestView(p.view);
+      for (const [k, q] of panes.current) q.el.toggleAttribute('data-on', k === id);
+      setActiveId(id);
+      setDocVersion((n) => n + 1);
+      setTick((t) => t + 1);
+    }
+    setHomeOpen(false);
+    setSdLit(null);
+    if (take) p.view.focus();
+  }, []);
+  /** Take pane `id` down; returns its doc as it was, to keep. */
+  const dropPane = (id: number): Held | null => {
+    const p = panes.current.get(id);
+    if (!p) return null;
+    if (findInfo(p.view.state)) clearFind(p.view);
+    const held = { state: p.view.state, scroll: p.scroll.scrollTop };
+    p.view.destroy();
+    p.el.remove();
+    panes.current.delete(id);
+    return held;
+  };
+  /** Take every pane down and hand the keyboard back to the main editor; returns each doc as it was. */
+  const releasePanes = () => {
+    const held = new Map<number, Held>();
+    for (const id of [...panes.current.keys()]) held.set(id, dropPane(id)!);
+    delete appRef.current?.dataset.split;
+    viewRef.current = mainView.current;
+    scrollRef.current = mainScroll.current;
+    setTestView(mainView.current);
+    setSplitOn(false);
+    setFindOpen(false);
+    return held;
+  };
+  /**
+   * Show `ids` side by side with `focus` focused, or with `ids` null, `focus` alone in the main editor.
+   * Docs leaving an editor keep their state (undo history and scroll) in the tab list. `keepMain` false:
+   * the doc in the main editor is being closed, so it isn't kept.
+   */
+  const arrange = useCallback((ids: number[] | null, focus: number, keepMain = true) => {
+    const held = new Map<number, Held>();
+    const fromMain = !panes.current.size;
+    if (fromMain && keepMain) held.set(activeRef.current, stash());
+    const want = new Set(ids ?? []);
+    if (!ids) for (const [id, h] of releasePanes()) held.set(id, h);
+    else for (const id of [...panes.current.keys()]) if (!want.has(id)) held.set(id, dropPane(id)!);
+    const stateOf = (id: number): Held | null => {
+      const d = docsRef.current.find((x) => x.id === id);
+      return held.get(id) ?? (d?.state ? { state: d.state, scroll: d.scroll } : null);
+    };
+    const keep = (ds: OpenDoc[], live: Set<number>) => ds.map((d) => (live.has(d.id) ? { ...d, state: null } : held.has(d.id) ? { ...d, ...held.get(d.id)! } : d));
+    if (!ids) {
+      const s = stateOf(focus)!;
+      setDocs((ds) => keep(ds, new Set([focus])));
+      show(focus, s.state, s.scroll);
+      return;
+    }
+    const box = splitBox.current!;
+    if (fromMain) {
+      // the main editor lets go of its doc (it would hold a second, stale copy) and hides
+      const m = mainView.current!;
+      m.updateState(createState(emptyDoc()));
+      lastDocs.current.set(m, m.state.doc);
+      appRef.current!.dataset.split = '';
+    }
+    ids.forEach((id, i) => {
+      let p = panes.current.get(id);
+      const s = p ? null : stateOf(id);
+      if (!p && s) {
+        const el = document.createElement('section'), head = document.createElement('div'), scroll = document.createElement('div'), page = document.createElement('div'), mount = document.createElement('div');
+        el.className = 'pane';
+        head.className = 'pane-h';
+        scroll.className = 'f-scroll';
+        page.className = 'page';
+        page.append(mount);
+        scroll.append(page);
+        el.append(head, scroll);
+        box.append(el);
+        const view = createView(mount, (v) => viewChanged.current(v, id), s.state);
+        lastDocs.current.set(view, view.state.doc);
+        // clicking into a pane focuses it; a click in its margin puts the caret in it, as the main page does
+        el.addEventListener('focusin', () => { if (activeRef.current !== id) focusPane(id, false); });
+        el.addEventListener('mousedown', (e) => { if (e.target === scroll || head.contains(e.target as Node)) { e.preventDefault(); focusPane(id); } });
+        scroll.addEventListener('scroll', () => { if (scrollRef.current === scroll) measureRef.current(); }, { passive: true });
+        p = { view, el, scroll, head };
+        panes.current.set(id, p);
+        scroll.scrollTop = s.scroll;
+      }
+      // in group order; a pane already in place isn't moved (taking it out of the page would lose its scroll)
+      if (p && box.children[i] !== p.el) { const top = p.scroll.scrollTop; box.insertBefore(p.el, box.children[i] ?? null); p.scroll.scrollTop = top; }
+    });
+    setDocs((ds) => keep(ds, new Set(panes.current.keys())));
+    setSplitOn(true);
+    focusPane(panes.current.has(focus) ? focus : panes.current.keys().next().value!);
+    setTestView(viewRef.current); // createView points it at the newest pane
+  }, [focusPane]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const switchTo = useCallback((id: number) => {
-    if (id === activeRef.current) { setHomeOpen(false); viewRef.current?.focus(); return; }
+    if (id === activeRef.current) { setHomeOpen(false); setSdLit(null); viewRef.current?.focus(); return; }
+    if (panes.current.has(id)) { focusPane(id); return; }
     const target = docsRef.current.find((d) => d.id === id);
     if (!target?.state) return;
+    // a joined file shows its group side by side; any other file shows alone (the group stays joined)
+    if (groupRef.current?.includes(id)) { arrange(groupRef.current, id); return; }
+    if (panes.current.size) { arrange(null, id); return; }
     const out = stash(), cur = activeRef.current;
     setDocs((ds) => ds.map((d) => (d.id === cur ? { ...d, ...out } : d.id === id ? { ...d, state: null } : d)));
     show(id, target.state, target.scroll);
-  }, [show]);
+  }, [show, arrange, focusPane]);
 
   /** A new tab for `doc`, after the current one. An untouched blank Untitled is replaced instead. */
   const addDoc = useCallback((doc: PMNode, m: DocMeta) => {
     const v = viewRef.current!;
     const cur = docsRef.current.find((d) => d.id === activeRef.current)!;
-    const blank = !cur.dirty && !cur.meta.path && !v.state.doc.textContent.trim() && v.state.doc.childCount <= 1 && cur.id !== speechRef.current;
+    // joined files showing: the new one opens alone in the main editor, after the group, which stays joined
+    const split = panes.current.size > 0;
+    const blank = !split && !cur.dirty && !cur.meta.path && !v.state.doc.textContent.trim() && v.state.doc.childCount <= 1 && cur.id !== speechRef.current;
     const id = blank ? cur.id : nextDocId++;
     const fresh: OpenDoc = { id, meta: m, dirty: false, state: null, scroll: 0 };
     savedDocs.current.set(id, doc);
     if (blank) setDocs((ds) => ds.map((d) => (d.id === id ? fresh : d)));
+    else if (split) {
+      const held = releasePanes(), g = groupRef.current ?? [];
+      setDocs((ds) => {
+        const n = ds.map((d) => (held.has(d.id) ? { ...d, ...held.get(d.id)! } : d));
+        n.splice(Math.max(...n.map((d, i) => (g.includes(d.id) ? i : -1))) + 1, 0, fresh);
+        return n;
+      });
+    }
     else {
       const out = stash();
       setDocs((ds) => { const i = ds.findIndex((d) => d.id === cur.id); const n = ds.map((d) => (d.id === cur.id ? { ...d, ...out } : d)); n.splice(i + 1, 0, fresh); return n; });
@@ -427,6 +670,23 @@ export function App() {
     setSpeechId((s) => (s === id ? null : s));
     savedDocs.current.delete(id);
     const rest = list.filter((x) => x.id !== id);
+    // a joined file closing: the group shrinks, and comes apart below two
+    const g = groupRef.current, left = g?.filter((x) => x !== id) ?? null;
+    if (g?.includes(id)) setGroup(left!.length >= 2 ? left : null);
+    if (panes.current.has(id)) {
+      dropPane(id);
+      if (left!.length >= 2) {
+        setDocs(rest);
+        if (id === activeRef.current) focusPane(left![Math.min(g!.indexOf(id), left!.length - 1)]);
+        return;
+      }
+      // one file left: it goes back to the main editor on its own
+      const held = releasePanes(), [only] = left!;
+      const h = held.get(only)!;
+      setDocs(rest.map((x) => (x.id === only ? { ...x, state: null } : held.has(x.id) ? { ...x, ...held.get(x.id)! } : x)));
+      show(only, h.state, h.scroll);
+      return;
+    }
     if (id !== activeRef.current) { setDocs(rest); return; }
     if (!rest.length) {
       const nid = nextDocId++, blankDoc = emptyDoc();
@@ -437,9 +697,23 @@ export function App() {
       return;
     }
     const next = rest[Math.min(i, rest.length - 1)];
+    // the next file is joined: its group shows, side by side (the closed file's doc isn't kept)
+    const ng = groupRef.current;
+    if (ng?.includes(next.id)) { setDocs(rest); arrange(ng, next.id, false); return; }
     setDocs(rest.map((x) => (x.id === next.id ? { ...x, state: null } : x)));
     show(next.id, next.state!, next.scroll);
-  }, [show]);
+  }, [show, arrange, focusPane]);
+  // dragging a file in the rail or the files panel moves it to slot `to`
+  const moveDoc = useCallback((id: number, to: number) => {
+    setDocs((ds) => {
+      const i = ds.findIndex((d) => d.id === id);
+      if (i < 0 || i === to) return ds;
+      const n = [...ds];
+      n.splice(to, 0, ...n.splice(i, 1));
+      return n;
+    });
+    backupSoon.current();
+  }, []);
   const closeDoc = useCallback((id: number) => {
     const d = docsRef.current.find((x) => x.id === id);
     if (!d) return;
@@ -449,12 +723,78 @@ export function App() {
       .then((yes) => { if (yes) dropDoc(id); });
   }, [dropDoc, confirmAsk]);
 
-  const cycle = useCallback((dir: 1 | -1) => {
-    const list = docsRef.current;
-    if (list.length < 2) return;
-    const i = list.findIndex((d) => d.id === activeRef.current);
-    switchTo(list[(i + dir + list.length) % list.length].id);
+  /** Join: show these files side by side (in rail order, gathered where the first one sits in the rail). */
+  const join = useCallback((ids: number[]) => {
+    const order = docsRef.current.map((d) => d.id).filter((x) => ids.includes(x));
+    if (order.length < 2) return;
+    const max = pref(P.joinMax);
+    if (order.length > max) { flash(`You can join up to ${max} files. Change it in Settings > Appearance.`); return; }
+    if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to join files.'); return; }
+    setDocs((ds) => {
+      const at = ds.findIndex((d) => order.includes(d.id));
+      const n = ds.filter((d) => !order.includes(d.id));
+      n.splice(at, 0, ...order.map((x) => ds.find((d) => d.id === x)!));
+      return n;
+    });
+    setGroup(order);
+    arrange(order, order.includes(activeRef.current) ? activeRef.current : order[0]);
+  }, [arrange, flash]);
+  /** Unjoin: the files go back to one at a time, the focused one staying on screen. */
+  const unjoin = useCallback(() => {
+    if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to unjoin files.'); return; }
+    setGroup(null);
+    if (panes.current.size) arrange(null, activeRef.current);
+  }, [arrange, flash]);
+
+  // Ctrl-Tab's order: docs by when you were last on them
+  const mru = useRef<number[]>([]);
+  useEffect(() => { mru.current = [activeId, ...mru.current.filter((x) => x !== activeId)]; }, [activeId]);
+  // the switcher: up while its keys are held (it draws after a moment, so a quick tap just flips to the last doc)
+  type Sw = { ids: number[]; sel: number; shown: boolean; mods: Mod[] };
+  const [sw, setSwState] = useState<Sw | null>(null);
+  const swRef = useRef<Sw | null>(null);
+  const swTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const setSw = (s: Sw | null) => { swRef.current = s; setSwState(s); };
+  /** Recent docs, one step `dir` from this one; with `mods` held, the switcher stays up until they're let go. */
+  const recent = useCallback((dir: 1 | -1, mods: Mod[] = []) => {
+    if (sdOnRef.current) { switchTo(activeRef.current); return; } // from the SpeechDrop tab: back to the doc you were in
+    const ids = recentOrder(docsRef.current.map((d) => d.id), mru.current, activeRef.current);
+    if (ids.length < 2) return;
+    const sel = dir > 0 ? 1 : ids.length - 1;
+    if (!mods.length) { switchTo(ids[sel]); return; }
+    tops.current.set(activeRef.current, topPos());
+    setSw({ ids, sel, shown: false, mods });
+    clearTimeout(swTimer.current);
+    swTimer.current = setTimeout(() => { if (swRef.current) setSw({ ...swRef.current, shown: true }); }, 150);
   }, [switchTo]);
+  const endSw = useCallback((go: boolean, at?: number) => {
+    const s = swRef.current;
+    if (!s) return;
+    clearTimeout(swTimer.current);
+    setSw(null);
+    const i = at ?? s.sel;
+    if (go && s.ids[i] !== undefined && s.ids[i] !== activeRef.current) switchTo(s.ids[i]); else viewRef.current?.focus();
+  }, [switchTo]);
+  // a doc opened, closed or switched to some other way under the switcher: its list is stale, so it closes
+  useEffect(() => { if (swRef.current && swRef.current.ids[0] !== activeId) endSw(false); }, [activeId, endSw]);
+  useEffect(() => { if (swRef.current && swRef.current.ids.length !== docs.length) endSw(false); }, [docs.length, endSw]);
+  useEffect(() => {
+    const up = (e: KeyboardEvent) => { const s = swRef.current; if (s && !s.mods.some((m) => e[m])) endSw(true); };
+    const blur = () => endSw(false);
+    addEventListener('keyup', up, true);
+    addEventListener('blur', blur);
+    return () => { removeEventListener('keyup', up, true); removeEventListener('blur', blur); };
+  }, [endSw]);
+
+  // the SpeechDrop tabs (-1 - key; doc ids are positive) come after the docs, as their rows do in the rail
+  const cycle = useCallback((dir: 1 | -1) => {
+    const ring = [...docsRef.current.map((d) => d.id), ...sdTabsRef.current.map((x) => -1 - x.key)];
+    if (ring.length < 2) return;
+    const lit = sdLitRef.current;
+    const i = ring.indexOf(lit !== null ? -1 - lit : activeRef.current);
+    const next = ring[(i + dir + ring.length) % ring.length];
+    if (next < 0) showSd(-1 - next); else switchTo(next);
+  }, [switchTo, showSd]);
 
   const openedPath = (p?: string) => (p ? docsRef.current.find((d) => d.meta.path === p) : undefined);
   const opened = useCallback((r: { doc: PMNode; meta: DocMeta }, source: DocSource) => {
@@ -466,6 +806,22 @@ export function App() {
     flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${keyLabel('save')}).`);
   }, [addDoc, switchTo, flash]);
   const fileNew = useCallback(() => { track('doc_new'); addDoc(emptyDoc(), { name: 'Untitled' }); }, [addDoc]);
+  /** New speech doc: a file that opens on a pocket with the speech's name, already marked as the speech doc. */
+  const fileNewSpeech = useCallback(() => {
+    if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to make a new speech doc.'); return; }
+    setSpeechAsk(true);
+  }, [flash]);
+  const closeNewSpeech = useCallback(() => setSpeechAsk(false), []);
+  const makeSpeech = useCallback((speech: string) => {
+    setSpeechAsk(false);
+    track('doc_new', { speech: true });
+    const p = (style: string, text = '') => schema.node('paragraph', { style }, text ? schema.text(text) : undefined);
+    addDoc(schema.node('doc', null, speech ? [p('pocket', speech), p('normal')] : [p('normal')]), { name: speechFileName(speech) });
+    const v = viewRef.current!;
+    v.dispatch(v.state.tr.setSelection(TextSelection.atEnd(v.state.doc))); // typing starts under the pocket
+    speechRef.current = activeRef.current;
+    setSpeechId(activeRef.current);
+  }, [addDoc]);
   const fileOpen = useCallback(async () => {
     try {
       const r = await openDocument();
@@ -477,6 +833,16 @@ export function App() {
     setRecents((list) => list.filter((r) => r.path !== path));
     flash(`Couldn't open ${name}: ${(e as Error).message}`);
   }, [flash]);
+  // recents saved before they kept a preview: read each once, the first time Home shows it
+  const peeked = useRef(new Set<string>());
+  const peekRecent = useCallback(async (r: Recent) => {
+    if (!r.path || !bridge.openPath || peeked.current.has(r.path)) return;
+    peeked.current.add(r.path);
+    try {
+      const preview = peekHtml((await openPath(r.path)).doc);
+      setRecents((list) => list.map((x) => (x.path === r.path ? { ...x, preview } : x)));
+    } catch { /* moved or deleted: the page shows its name, and opening it says why */ }
+  }, []);
   const openRecent = useCallback(async (r: Recent) => {
     const already = openedPath(r.path) ?? (!r.path ? docsRef.current.find((d) => !d.meta.path && d.meta.name === r.name) : undefined);
     if (already) { switchTo(already.id); return; }
@@ -485,15 +851,42 @@ export function App() {
     catch (e) { openFailed(r.name, r.path, e); }
   }, [opened, fileOpen, switchTo, openFailed]);
   // Cmd-K: an open doc switches to it; anything else opens by path (indexed folders and recents are allowed)
-  const openHit = useCallback(async (h: FileHit) => {
-    setHomeOpen(false);
-    if (h.docId !== undefined && docsRef.current.some((d) => d.id === h.docId)) { switchTo(h.docId); return; }
+  const openHit = useCallback(async (h: FileHit): Promise<boolean> => {
+    showEditor();
+    if (h.docId !== undefined && docsRef.current.some((d) => d.id === h.docId)) { switchTo(h.docId); return true; }
     const already = openedPath(h.path);
-    if (already) { switchTo(already.id); return; }
-    if (!h.path || !bridge.openPath) { void fileOpen(); return; }
-    try { opened(await openPath(h.path), 'search'); }
-    catch (e) { openFailed(h.name, h.path, e); }
+    if (already) { switchTo(already.id); return true; }
+    if (!h.path || !bridge.openPath) { void fileOpen(); return false; }
+    try { opened(await openPath(h.path), 'search'); return true; }
+    catch (e) { openFailed(h.name, h.path, e); return false; }
   }, [opened, fileOpen, switchTo, openFailed]);
+  // Search cards: Enter opens the card's file at the card; Mod-Enter puts a copy of the card into the open document
+  const pickCard = useCallback(async (h: CardHit, insert: boolean) => {
+    const open = openedPath(h.path);
+    if (insert) {
+      if (viewRef.current && isReading(viewRef.current.state)) return;
+      showEditor();
+      const into = activeRef.current;
+      let doc: PMNode | undefined;
+      try { doc = open ? liveState(open.id)?.doc : (await openPath(h.path)).doc; }
+      catch (e) { flash(`Couldn't open ${h.file}: ${(e as Error).message}`); return; }
+      const pos = doc ? findCard(doc, h.tag, h.ordinal, true) : null; // a copy has to be the right card, not just the right spot
+      const content = doc && pos !== null ? cardContent(doc, pos) : null;
+      const v = viewRef.current;
+      if (activeRef.current !== into) { flash('Switched documents while the card loaded. Try again.'); return; }
+      if (!content || !v) { flash(`Couldn't find “${h.tag}” in ${h.file}. It may have changed since it was indexed.`); return; }
+      v.dispatch(insertIntoSpeech(v.state, content).scrollIntoView());
+      v.focus();
+      return;
+    }
+    if (!(await openHit({ key: `c:${h.path}`, name: h.file, folder: '', path: h.path, kind: 'file', when: 0 }))) return; // openHit said why
+    const v = viewRef.current!; // it shows the file now
+    const pos = findCard(v.state.doc, h.tag, h.ordinal);
+    if (pos === null) { flash(`Couldn't find “${h.tag}” in ${h.file}. It may have changed since it was indexed.`); return; }
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, pos + 1)));
+    (v.dom as HTMLElement).focus({ preventScroll: true });
+    requestAnimationFrame(() => scrollToPos(v, pos)); // once the page has laid the new file out
+  }, [openHit, flash]);
   /**
    * Write the active doc. As-Is is the document itself, so the open file takes its new name and path;
    * Send, Read and Marked docs are copies and the open file stays as it was.
@@ -516,7 +909,7 @@ export function App() {
       }
       if (mode !== 'asis') { flash(`Saved ${MODE_NAME[mode]} ${m.name}`); return; }
       // typing during the save keeps the doc marked unsaved
-      const now = activeRef.current === id ? viewRef.current!.state.doc : docsRef.current.find((x) => x.id === id)?.state?.doc;
+      const now = liveState(id)?.doc;
       savedDocs.current.set(id, saved);
       patch(id, { meta: m, dirty: !!now && isDirty(id, now) });
       setRecents((list) => noteRecent(list, saved, m));
@@ -536,8 +929,16 @@ export function App() {
   };
   const closeSaveAs = useCallback(() => setSaveAsName(null), []);
 
-  const openFind = useCallback(() => { setHomeOpen(false); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
-  const zoomBy = useCallback((d: number) => setZoom((z) => Math.max(0.5, Math.min(3, +(z + d).toFixed(2)))), []);
+  const closeCompare = useCallback(() => { setCompareWith(null); viewRef.current?.focus(); }, []);
+  const readSelection = useCallback(() => (viewRef.current ? selectionText(viewRef.current.state) : ''), []);
+  useEffect(() => {
+    const on = (e: Event) => setCompareWith((e as CustomEvent<string>).detail);
+    addEventListener(COMPARE_EVENT, on);
+    return () => removeEventListener(COMPARE_EVENT, on);
+  }, []);
+  const openFind = useCallback(() => { showEditor(); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }, []);
+  const getScroller = useCallback(() => scrollRef.current, []);
+  const { zoomTo, zoomBy, zoomWheel } = useSmoothZoom(zoom, setZoom, getScroller);
 
   /** Send to speech: copy the selection (or the card or section at the caret) into the speech doc without leaving this file. */
   const sendToSpeech = useCallback(() => {
@@ -547,7 +948,7 @@ export function App() {
     const sent = sendContent(v.state);
     if (!sent) { flash('Nothing to send. Put the caret in a card or select some text.'); return; }
     let target = docsRef.current.find((d) => d.id === speechRef.current);
-    let base = target?.state;
+    let base = target ? liveState(target.id) : null; // it may be showing beside this file, joined
     if (!target || !base) {
       // the speech doc is made on the first send, beside this file, and stays in the background
       const names = new Set(docsRef.current.map((d) => d.meta.name));
@@ -556,23 +957,69 @@ export function App() {
       target = { id: nextDocId++, meta: { name }, dirty: false, state: null, scroll: 0 };
       base = createState(emptyDoc());
       const made = target;
-      setDocs((ds) => { const i = ds.findIndex((d) => d.id === activeRef.current); const n = [...ds]; n.splice(i + 1, 0, made); return n; });
+      // after this file, or after its group when files are joined, so the group stays together in the rail
+      const g = panes.current.size ? groupRef.current ?? [] : [];
+      setDocs((ds) => { const i = Math.max(ds.findIndex((d) => d.id === activeRef.current), ...ds.map((d, j) => (g.includes(d.id) ? j : -1))); const n = [...ds]; n.splice(i + 1, 0, made); return n; });
       speechRef.current = made.id;
       setSpeechId(made.id);
     }
     const { id } = target, speechName = target.meta.name || 'Speech';
-    const next = base.apply(insertIntoSpeech(base, sent.content));
-    patch(id, { state: next, dirty: true });
+    const tr = insertIntoSpeech(base, sent.content), shown = liveView(id);
+    let next: EditorState;
+    if (shown) { shown.dispatch(tr.scrollIntoView()); next = shown.state; } // joined: you see the card land
+    else { next = base.apply(tr); patch(id, { state: next, dirty: true }); }
     // Undo only while the speech doc is still exactly as the send left it, so it can't undo later typing
     const takeBack = () => {
-      const isView = id === activeRef.current;
-      const now = isView ? viewRef.current?.state : docsRef.current.find((d) => d.id === id)?.state;
+      const on = liveView(id);
+      const now = on?.state ?? docsRef.current.find((d) => d.id === id)?.state;
       if (!now) return;
       if (now.doc !== next.doc) { flash(`${speechName} has changed since. Undo it there with ${keyText('Mod-z')}.`); return; }
-      undo(now, (tr) => { if (isView) viewRef.current!.dispatch(tr); else patch(id, { state: now.apply(tr), dirty: true }); });
+      undo(now, (t) => { if (on) on.dispatch(t); else patch(id, { state: now.apply(t), dirty: true }); });
     };
     flash(`Sent “${sent.label}” to ${speechName}`, { label: 'Undo', run: takeBack });
   }, [flash, patch]);
+  // Nimbus and other debate apps send cards in over the bridge (electron/editor-bridge.cjs), the way they do
+  // into CardMirror: they list the open docs, then insert into one (usually the speech doc) without taking focus
+  useEffect(() => bridge.onBridge?.(async (kind, p) => {
+    const target = (d: OpenDoc) => `falcon-${d.id}`;
+    const name = typeof p.name === 'string' && p.name ? p.name[0].toUpperCase() + p.name.slice(1) : 'An app';
+    if (kind === 'ping') return { hasActiveDoc: !!viewRef.current };
+    if (kind === 'docs') return { docs: docsRef.current.map((d) => ({ target: target(d), title: d.meta.name || 'Untitled', focusedWindow: d.id === activeRef.current, isSpeech: d.id === speechRef.current })) };
+    if (kind === 'consent') {
+      if (askRef.current) return { answer: null }; // another question is up: it asks again next time
+      return new Promise((resolve) => setAsk({
+        title: `Let ${name} send cards to Falcon?`,
+        body: `${name} wants to put cards into your open docs, the way it does with CardMirror. You can change this in Settings > General > Linked apps.`,
+        ok: 'Allow', done: (yes) => { setAsk(null); resolve({ answer: yes ? 'allow' : null }); },
+      }));
+    }
+    if (kind === 'jump') return { ok: false, error: 'not-found' }; // nothing hands out source tokens yet
+    if (kind !== 'insert') return { ok: false, error: 'bad-request' };
+    const want = typeof p.target === 'string' ? p.target : null;
+    // no target: the speech doc, else the doc on screen (CardMirror's fallback is the focused doc)
+    const doc = want ? docsRef.current.find((d) => target(d) === want) : docsRef.current.find((d) => d.id === speechRef.current) ?? docsRef.current.find((d) => d.id === activeRef.current);
+    if (!doc) return { ok: false, error: 'target-not-found' };
+    const shown = liveView(doc.id);
+    const base = shown?.state ?? doc.state;
+    if (!base) return { ok: false, error: 'no-target-doc' };
+    if (isReading(base)) return { ok: false, error: 'doc-readonly', docTitle: doc.meta.name };
+    const content = insertContent(p.html, p.text);
+    if (!content) return { ok: false, error: 'bad-request' };
+    const tr = insertIntoSpeech(base, content);
+    let next = base.apply(tr);
+    if (shown) { shown.dispatch(tr); next = shown.state; } else patch(doc.id, { state: next, dirty: true });
+    const docName = doc.meta.name || 'Untitled';
+    // same undo as Send to speech: only while the doc is still as the insert left it
+    const takeBack = () => {
+      const on = liveView(doc.id);
+      const now = on?.state ?? docsRef.current.find((d) => d.id === doc.id)?.state;
+      if (!now) return;
+      if (now.doc !== next.doc) { flash(`${docName} has changed since. Undo it there with ${keyText('Mod-z')}.`); return; }
+      undo(now, (t) => { if (on) on.dispatch(t); else patch(doc.id, { state: now.apply(t), dirty: true }); });
+    };
+    flash(`${name} sent “${insertLabel(content)}” to ${docName}`, { label: 'Undo', run: takeBack });
+    return { ok: true, docTitle: docName };
+  }), [flash, patch]);
   const toggleSpeech = useCallback(() => {
     const here = activeRef.current;
     speechRef.current = speechRef.current === here ? null : here;
@@ -582,19 +1029,20 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => compareRef.current !== null || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
-    if (askRef.current || saveAsRef.current) return; // a warning or Save As is up: it gets answered first
+    if (swRef.current) { endSw(false); return; } // a menu key or click while Ctrl-Tab is held: the switcher closes on the current doc
+    if (askRef.current || saveAsRef.current || speechAskRef.current) return; // a warning, Save As or New speech doc is up: it gets answered first
     if (paletteRef.current || ccRef.current) return; // file search or the command center is up: it gets closed first
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
-    if (c === 'new') fileNew(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
-    else if (c === 'saveAs') void fileSave(true); else if (c === 'close') closeDoc(activeRef.current); else if (c === 'settings') setSettingsOpen(true);
+    if (c === 'new') fileNew(); else if (c === 'newSpeech') fileNewSpeech(); else if (c === 'open') void fileOpen(); else if (c === 'save') void fileSave(false);
+    else if (c === 'saveAs') void fileSave(true); else if (c === 'close') { if (sdOnRef.current) closeSd(); else closeDoc(activeRef.current); } else if (c === 'settings') setSettingsOpen(true);
   };
   useEffect(() => bridge.onMenu?.((c) => menuRef.current(c)), []);
   // the Mac menu shows the keys Settings > Keybindings has for its items
   useEffect(() => {
-    const send = () => bridge.setMenuKeys?.(Object.fromEntries(['settings', 'new', 'open', 'save', 'saveAs', 'close'].map((id) => [id, keyOf(id)])));
+    const send = () => bridge.setMenuKeys?.(Object.fromEntries(['settings', 'new', 'newSpeech', 'open', 'save', 'saveAs', 'close'].map((id) => [id, keyOf(id)])));
     send();
     return onPrefs(send);
   }, []);
@@ -602,32 +1050,52 @@ export function App() {
   /** The app's own commands, by binding id: its keys and the command center both run them here. */
   const appCommand = useCallback((id: string) => {
     if (id === 'nextDoc' || id === 'prevDoc') cycle(id === 'nextDoc' ? 1 : -1);
+    else if (id === 'recentDoc' || id === 'recentDocBack') recent(id === 'recentDoc' ? 1 : -1);
     else if (id === 'save' || id === 'saveAs') void fileSave(id === 'saveAs');
     else if (id === 'find') openFind();
     else if (id === 'open') void fileOpen();
     else if (id === 'new') fileNew();
-    else if (id === 'close') closeDoc(activeRef.current);
+    else if (id === 'newSpeech') fileNewSpeech();
+    else if (id === 'close') { if (sdOnRef.current) closeSd(); else closeDoc(activeRef.current); }
+    else if (id === 'speechdrop') openSd();
     else if (id === 'home') setHomeOpen((h) => !h);
     else if (id === 'settings') setSettingsOpen((o) => !o);
     else if (id === 'outline') setShowOutline((o) => !o);
     else if (id === 'zoomIn') zoomBy(0.1);
     else if (id === 'zoomOut') zoomBy(-0.1);
-    else if (id === 'zoomReset') setZoom(1);
+    else if (id === 'zoomReset') zoomTo(1);
     else if (id === 'commands') setCcOpen((o) => !o);
+    else if (id === 'searchCards') setPaletteOpen('cards');
     else if (id === 'sendToSpeech') sendToSpeech();
-  }, [fileSave, fileOpen, fileNew, openFind, closeDoc, cycle, zoomBy, sendToSpeech]);
+  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, zoomTo, sendToSpeech, openSd, closeSd]);
 
   // app-level shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Settings is listening for a new shortcut: every key goes to it
       if (isRecording()) return;
+      // the switcher is up: Tab (its keys) and the arrows move, Enter opens, Esc stays put; nothing reaches the page
+      const s = swRef.current;
+      if (s) {
+        e.preventDefault(); e.stopPropagation();
+        const hit = pressedId(e, ['recentDoc', 'recentDocBack']), n = s.ids.length;
+        const step = hit ? (hit === 'recentDoc' ? 1 : -1) : /^Arrow(Right|Down)$/.test(e.key) ? 1 : /^Arrow(Left|Up)$/.test(e.key) ? -1 : 0;
+        if (step) setSw({ ...s, sel: (s.sel + step + n) % n });
+        else if (e.key === 'Escape') endSw(false);
+        else if (e.key === 'Enter') endSw(true);
+        return;
+      }
       // a warning is up: its own keys (Tab, Enter, Esc) and nothing else
       if (askRef.current) { if (e.ctrlKey || e.metaKey) e.preventDefault(); return; }
       // Save As is up: its name field keeps text editing keys, nothing else
       if (saveAsRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
+      // Compare Text is up: text editing keys and its own (Mod-Enter), nothing else
+      // (inside the panel its text boxes keep every editing key: word jumps, AltGr characters)
+      if (compareRef.current !== null) { if ((e.ctrlKey || e.metaKey) && !(e.target as Element | null)?.closest?.('.cmp') && !/^([acvxz]|Enter)$/i.test(e.key)) e.preventDefault(); return; }
+      // so is New speech doc (its own Esc and Enter included)
+      if (speechAskRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // Send to speech (` unless changed in Settings), so the page can't type that key (AltGr layouts too: their character arrives with Ctrl+Alt held). Boxes with their own text field keep it.
-      if (sendPressed(e) && !settingsRef.current && !e.isComposing && !homeRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
+      if (sendPressed(e) && !settingsRef.current && !e.isComposing && !homeRef.current && !sdOnRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
         e.preventDefault(); e.stopPropagation();
         if (!e.repeat) sendToSpeech();
         return;
@@ -637,41 +1105,53 @@ export function App() {
       const mod = IS_MAC ? e.metaKey : e.ctrlKey;
       // Mod-Shift-] and [ also switch documents
       const bracket = mod && e.shiftKey && !e.altKey && (e.code === 'BracketRight' || e.code === 'BracketLeft');
-      const id = bracket ? (e.code === 'BracketRight' ? 'nextDoc' : 'prevDoc') : pressedId(e, APP_IDS);
+      // Mod-+ (Shift-=) zooms in too, the way every other app does it
+      const plus = mod && e.key === '+' && !e.altKey && keyOf('zoomIn') === 'Mod-=';
+      const id = bracket ? (e.code === 'BracketRight' ? 'nextDoc' : 'prevDoc') : plus ? 'zoomIn' : pressedId(e, APP_IDS);
       const v = viewRef.current;
       // read mode locks the keyboard: nothing that swaps the document out
       if (id && SWAPS.includes(id) && v && isReading(v.state)) return;
       // Search files opens the palette (or closes it); while it's up, only its own keys get through
-      if (id === 'search') { e.preventDefault(); e.stopPropagation(); if (paletteRef.current) setPaletteOpen(false); else if (!locked()) setPaletteOpen(true); return; }
+      if (id === 'search' || id === 'searchCards') {
+        e.preventDefault(); e.stopPropagation();
+        const want = id === 'search' ? 'files' : 'cards';
+        if (paletteRef.current) setPaletteOpen(paletteRef.current === want ? false : want); else if (!locked()) setPaletteOpen(want);
+        return;
+      }
       if (paletteRef.current) { if (mod && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // the command center opens over anything but Settings (or closes); while it's up, its box gets the keys
       if (id === 'commands') { e.preventDefault(); e.stopPropagation(); if (ccRef.current) setCcOpen(false); else if (!settingsRef.current) { setHomeOpen(false); setCcOpen(true); } return; }
       if (ccRef.current) { if (mod && !/^[acvxyz]$/i.test(e.key)) e.preventDefault(); return; }
       // Settings is modal: only its own keys (Esc, its shortcut) get through
       if (settingsRef.current && !(e.key === 'Escape' || id === 'settings')) { if (mod) e.preventDefault(); return; }
-      // Esc in a filled Settings search clears the search before it closes Settings
-      if (e.key === 'Escape' && settingsRef.current && e.target instanceof HTMLInputElement && e.target.closest('.st-search') && e.target.value) return;
+      // Esc in a filled Settings search clears the search before it closes Settings, and in a half-typed number puts it back
+      if (e.key === 'Escape' && settingsRef.current && e.target instanceof HTMLInputElement && ((e.target.closest('.st-search') || e.target.classList.contains('st-find')) && e.target.value || 'draft' in e.target.dataset)) return;
       if (e.key === 'Escape' && settingsRef.current) { e.preventDefault(); e.stopPropagation(); setSettingsOpen(false); return; }
       if (e.key === 'Escape' && homeRef.current) { e.preventDefault(); e.stopPropagation(); setHomeOpen(false); return; }
       if (!id) return;
       e.preventDefault();
       if (id === 'nextDoc' || id === 'prevDoc') { e.stopPropagation(); if (locked()) return; }
+      if (id === 'recentDoc' || id === 'recentDocBack') { e.stopPropagation(); if (!locked() && !e.repeat) recent(id === 'recentDoc' ? 1 : -1, holdMods(keyOf(id))); return; }
       appCommand(id);
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [appCommand, sendToSpeech]);
+  }, [appCommand, sendToSpeech, recent, endSw]);
   const homeRef = useRef(homeOpen);
   homeRef.current = homeOpen;
   const settingsRef = useRef(settingsOpen);
   const saveAsRef = useRef(saveAsName);
+  const compareRef = useRef(compareWith);
+  compareRef.current = compareWith;
   saveAsRef.current = saveAsName;
+  const speechAskRef = useRef(speechAsk);
+  speechAskRef.current = speechAsk;
   settingsRef.current = settingsOpen;
   const paletteRef = useRef(paletteOpen);
   paletteRef.current = paletteOpen;
   const ccRef = useRef(ccOpen);
   ccRef.current = ccOpen;
-  useLayoutEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, paletteOpen, ccOpen]);
+  useLayoutEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !speechAsk && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, speechAsk, paletteOpen, ccOpen]);
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -679,7 +1159,10 @@ export function App() {
   const outlineRef = useRef(outline);
   outlineRef.current = outline;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const words = useMemo(() => (view ? readWords(view.state.doc) : 0), [view, docVersion]);
+  const split = useMemo(() => (view ? readSplit(view.state.doc) : { cards: 0, tags: 0 }), [view, docVersion]);
+  const words = split.cards + split.tags;
+  // each reader reads cards at one speed, and tags, analytics and cites at another (Settings, Speech and timers)
+  const r1 = (r: ReadSplit) => clock(readSeconds(r, pref(P.wpm1), pref(P.wpm1Tags))), r2 = (r: ReadSplit) => clock(readSeconds(r, pref(P.wpm2), pref(P.wpm2Tags)));
   const brush = view ? brushKey.getState(view.state)?.kind ?? null : null;
 
   // The outline marks the block holding the cursor while the cursor is on screen (so an outline click
@@ -687,7 +1170,7 @@ export function App() {
   // scroll: the last heading above the reading line.
   const measureRead = useCallback(() => {
     const v = viewRef.current, sc = scrollRef.current;
-    if (!v || !sc) return;
+    if (!v || !sc || v.isDestroyed) return; // a frame queued before its pane closed
     const box = sc.getBoundingClientRect(), head = v.state.selection.head;
     const caret = v.coordsAtPos(head);
     // stores the row index, not the position, so typing within a block doesn't re-render the app
@@ -698,10 +1181,11 @@ export function App() {
     const hit = v.posAtCoords({ left: pm.left + 4, top: Math.min(top, pm.bottom - 2) });
     mark(hit ? hit.pos : v.state.doc.content.size);
   }, []);
+  measureRef.current = measureRead;
   useEffect(() => {
-    const sc = scrollRef.current!;
+    const sc = mainScroll.current!;
     let raf = 0;
-    const on = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(measureRead); };
+    const on = () => { if (scrollRef.current !== sc) return; cancelAnimationFrame(raf); raf = requestAnimationFrame(measureRead); };
     sc.addEventListener('scroll', on, { passive: true });
     return () => { sc.removeEventListener('scroll', on); cancelAnimationFrame(raf); };
   }, [measureRead]);
@@ -765,31 +1249,38 @@ export function App() {
   // files double-clicked in Finder/Explorer (or Open With): open each, or switch to it if it's already open
   useEffect(() => (hasView ? bridge.onOpenPaths?.((ps) => queueRef.current(ps, false)) : undefined), [hasView]);
   useEffect(() => { safeSet('falcon.session', JSON.stringify(docs.flatMap((d) => (d.meta.path ? [d.meta.path] : [])))); }, [docs]);
-  // Ctrl/Cmd + scroll wheel or trackpad pinch zooms, in the same 10% steps
+  // a trackpad pinch zooms smoothly, always. it shows up as a wheel event with ctrlKey set while Ctrl isn't
+  // actually down, so a held Ctrl (or Cmd) plus a real wheel only zooms with the setting on
   useEffect(() => {
-    let acc = 0;
+    let ctrlDown = false;
+    const onKey = (e: KeyboardEvent) => { ctrlDown = e.ctrlKey; };
+    const onBlur = () => { ctrlDown = false; };
     const onWheel = (e: WheelEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || !pref(P.wheelZoom) || settingsRef.current) return;
+      const pinch = e.ctrlKey && !ctrlDown && !e.metaKey;
+      if (!pinch && !((e.ctrlKey || e.metaKey) && pref(P.wheelZoom))) return;
       e.preventDefault();
-      acc += e.deltaY;
-      if (Math.abs(acc) < 40) return;
-      zoomBy(acc < 0 ? 0.1 : -0.1);
-      acc = 0;
+      if (settingsRef.current || !(e.target as Element | null)?.closest?.('.f-scroll')) return;
+      // a mouse wheel notch is ~100, way more than a pinch frame
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      zoomWheel(pinch ? dy : Math.max(-12, Math.min(12, dy)), e.clientX, e.clientY);
     };
+    addEventListener('keydown', onKey, true);
+    addEventListener('keyup', onKey, true);
+    addEventListener('blur', onBlur);
     addEventListener('wheel', onWheel, { passive: false });
-    return () => removeEventListener('wheel', onWheel);
-  }, [zoomBy]);
+    return () => { removeEventListener('keydown', onKey, true); removeEventListener('keyup', onKey, true); removeEventListener('blur', onBlur); removeEventListener('wheel', onWheel); };
+  }, [zoomWheel]);
 
   // what the command center can reach: every app action, the editor, and the state Settings shows
   const openSettingsAt = useCallback((page: string, query?: string) => { setSettingsPage(page); setSettingsQuery(query); setSettingsOpen(true); }, []);
   const ccCtx: Ctx = {
     view, zoom, setZoom, depth, setDepth, showOutline, setShowOutline, speechMin, setSpeechMin,
-    run: (cmd) => { const v = viewRef.current; if (!v) return false; setHomeOpen(false); return cmd(v.state, v.dispatch, v); },
+    run: (cmd) => { const v = viewRef.current; if (!v) return false; showEditor(); return cmd(v.state, v.dispatch, v); },
     app: appCommand,
-    blocked: (id) => (SWAPS.includes(id) || id === 'sendToSpeech') && reading,
+    blocked: (id) => (SWAPS.includes(id) || id === 'sendToSpeech' || id === 'searchCards') && reading,
     highlight: activeColors.highlight, setHighlight: (c) => { setActiveColor('highlight', c); setTick((t) => t + 1); },
     isSpeech: speechId === activeId, toggleSpeech,
-    jump: (i) => { const v = viewRef.current; const it = v && buildOutline(v.state.doc)[i]; if (it) { setHomeOpen(false); jump(it, i); } },
+    jump: (i) => { const v = viewRef.current; const it = v && buildOutline(v.state.doc)[i]; if (it) { showEditor(); jump(it, i); } },
     peek: (i) => { const v = viewRef.current, it = outlineRef.current[i]; if (v && it && it.pos < v.state.doc.content.size) scrollToPos(v, it.pos); },
     find: (text, replace) => {
       const v = viewRef.current;
@@ -807,15 +1298,28 @@ export function App() {
     return () => { stopScroll(); if (sc) sc.scrollTop = top; };
   }, []);
 
-  const modal = settingsOpen || paletteOpen || ccOpen || !!ask || saveAsName !== null;
+  // SpeechDrop's Upload sends the doc you came from, as it is now; a .docx from the room opens as a tab
+  const exportActive = useCallback(async () => (await import('../docx/export')).docToDocx(viewRef.current!.state.doc), []);
+  const openFromSd = useCallback(async (p: string) => {
+    try { opened(await openPath(p), 'speechdrop'); }
+    catch (e) { flash(`Couldn't open it: ${(e as Error).message}`); }
+  }, [opened, flash]);
+  useEffect(() => {
+    addEventListener(SHOW_EVENT, openSd);
+    return () => removeEventListener(SHOW_EVENT, openSd);
+  }, [openSd]);
+
+  const modal = settingsOpen || !!paletteOpen || ccOpen || !!ask || saveAsName !== null || speechAsk;
   return (
-    <div className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
+    <div ref={appRef} className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
-      <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc}
-        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} />
+      <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc} onMove={moveDoc}
+        group={group} onJoin={join} onUnjoin={unjoin} flash={flash}
+        sd={sdTabs.map((x) => ({ key: x.key, on: sdLit === x.key, name: x.info.room?.name ?? 'SpeechDrop', fresh: x.info.fresh }))} onSd={showSd} onSdClose={closeSd}
+        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
 
-      <div className="covered" inert={homeOpen || modal}>
+      <div className="covered" inert={homeOpen || sdOn || modal}>
       <Toolbar
         sel={sel}
         run={run}
@@ -832,44 +1336,65 @@ export function App() {
 
       {/* After the toolbar on purpose: Electron applies drag regions in document order, so the toolbar's
           drag area (which runs under these buttons) would swallow their clicks if they came first. */}
-      <div className="covered" inert={modal}>
+      <div className="covered" inert={sdOn || modal}>
       <Tools outline={showOutline} reading={reading}
-        onNew={fileNew} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
-        onFind={openFind} onOutline={() => { setHomeOpen(false); setShowOutline((s) => !s); }}
-        onRead={() => { setHomeOpen(false); run(toggleRead); }}
+        onNew={(speech) => (speech ? fileNewSpeech() : fileNew())} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
+        onFind={openFind} onOutline={() => { showEditor(); setShowOutline((s) => !s); }}
+        onRead={() => { showEditor(); run(toggleRead); }}
         speech={speechId === activeId} onSpeech={toggleSpeech} />
       </div>
 
-      <div className="covered" inert={homeOpen || modal}>
+      <div className="covered" inert={homeOpen || sdOn || modal}>
 
       <OutlinePane active={activeId}
         shown={showOutline} items={outline} depth={depth} cur={cur}
         numbers={view ? outlineNumbers(view.state) : []} getView={getView} onPeek={peek} flash={flash}
         onDepth={setDepth} onJump={jump} />
 
-      <div ref={scrollRef} className="f-scroll" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); viewRef.current?.focus(); } }}>
+      <div ref={mainScroll} className="f-scroll f-main" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); viewRef.current?.focus(); } }}>
         <div className="page"><div ref={mountRef} /></div>
       </div>
+      {/* joined files: arrange() builds a pane per file in here, each with its own editor; React draws their names */}
+      <div ref={splitBox} className="split" />
+      {splitOn && [...panes.current].map(([id, p]) => {
+        const d = docs.find((x) => x.id === id);
+        return d && createPortal(<><span className="nm">{tidy(d.meta.name || 'Untitled')}</span>{d.dirty && <i className="dot" aria-label="unsaved" />}{id === speechId && <i className="spk" aria-hidden="true">S</i>}</>, p.head, String(id));
+      })}
       {findOpen && view && <FindBar view={view} inputRef={findRef} flash={flash} onClose={() => setFindOpen(false)} />}
 
       <footer className="status">
         <span>Σ</span>
-        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {clock((words / pref(P.wpm1)) * 60)} · Reader 2: {clock((words / pref(P.wpm2)) * 60)}{sel && sel.selWords ? ` | Sel: ${sel.selWords}` : ''}</span>
+        <span>Doc: {words.toLocaleString('en-US')} · Reader 1: {r1(split)} · Reader 2: {r2(split)}</span>
+        {/* only what's read aloud counts, the same rule as Doc: highlighted text, tags, analytics and cites */}
+        {sel && sel.selRead > 0 && <span className="sel" title="Words you'd read aloud in the selection (highlighted text, tags, analytics and cites), and how long Reader 1 and Reader 2 take">Sel: {sel.selRead.toLocaleString('en-US')} {sel.selRead === 1 ? 'word' : 'words'} · {r1(sel.selSplit)} / {r2(sel.selSplit)}</span>}
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         <span className="grow" />
         <button title={titled('Zoom out', 'zoomOut', 'make the page smaller')} onClick={() => zoomBy(-0.1)}>−</button>
-        <button className="zoom" title={titled('Actual size', 'zoomReset', 'back to 100%')} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+        <button className="zoom" title={titled('Actual size', 'zoomReset', 'back to 100%')} onClick={() => zoomTo(1)}>{Math.round(zoom * 100)}%</button>
         <button title={titled('Zoom in', 'zoomIn', 'make the page bigger')} onClick={() => zoomBy(0.1)}>+</button>
       </footer>
       </div>
 
+      <div className="covered" inert={modal}>
+      {sdTabs.map((x) => (
+        <SpeechDrop key={x.key} open={sdLit === x.key} docName={name} exportDoc={exportActive} onOpenDocx={openFromSd} onTab={(t) => sdInfo(x.key, t)} flash={flash} confirm={confirmAsk}
+          onShow={() => showSd(x.key)} onAnother={newSd} openElsewhere={(code) => sdElsewhere(x.key, code)} />
+      ))}
+      </div>
       <div className="covered" inert={!!ask}>
-      <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents.slice(0, pref(P.recentCount))}
-        onNew={fileNew} onOpen={() => void fileOpen()} onRecent={(r) => void openRecent(r)}
+      <Home open={homeOpen} recents={recents.slice(0, pref(P.recentCount))}
+        onNew={fileNew} onNewSpeech={fileNewSpeech} onOpen={() => void fileOpen()} onSpeechDrop={openSd} onRecent={(r) => void openRecent(r)} onPeek={peekRecent}
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
-      <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
+      <Palette open={paletteOpen === 'files'} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
+      <CardSearch open={paletteOpen === 'cards'} onClose={() => setPaletteOpen(false)} onPick={(h, insert) => void pickCard(h, insert)}
+        onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
+      {sw?.shown && <Switcher sel={sw.sel} onHover={(i) => { if (swRef.current) setSw({ ...swRef.current, sel: i }); }} onPick={(i) => endSw(true, i)} onCancel={() => endSw(false)}
+        docs={sw.ids.flatMap((id) => {
+          const d = docs.find((x) => x.id === id), doc = liveState(id)?.doc;
+          return d && doc ? [{ id, name: d.meta.name || 'Untitled', dirty: d.dirty, doc, top: tops.current.get(id) ?? 0 }] : [];
+        })} />}
       <CommandCenter open={ccOpen} onClose={() => setCcOpen(false)} ctx={ccCtx} flash={flash} saveScroll={saveScroll} />
       <Settings open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsPage(undefined); setSettingsQuery(undefined); }} startPage={settingsPage} startQuery={settingsQuery}
         zoom={zoom} onZoom={setZoom} speechMin={speechMin} onSpeechMin={setSpeechMin}
@@ -878,6 +1403,8 @@ export function App() {
       </div>
       <Confirm ask={ask} />
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
+      <ComparePanel open={compareWith} onClose={closeCompare} readSelection={readSelection} />
+      <NewSpeech open={speechAsk} onMake={makeSpeech} onClose={closeNewSpeech} />
       <div className={`toast${toast ? ' show' : ''}${toast?.action ? ' has-action' : ''}`} role="status">
         {toast?.msg}
         {toast?.action && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const a = toast.action!; setToast(null); a.run(); }}>{toast.action.label}</button>}
@@ -909,7 +1436,10 @@ const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor
 // ---------- the rail: Home, one button per open document, and Settings, down the far left ----------
 
 type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech: boolean };
-function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void }) {
+/** A SpeechDrop tab's row: lit or not, the room's name, and how many files came that you haven't seen. */
+type SdRow = { key: number; on: boolean; name: string; fresh: number };
+function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void;
+  group: number[] | null; onJoin: (ids: number[]) => void; onUnjoin: () => void; flash: (m: string) => void; sd: SdRow[]; onSd: (key: number) => void; onSdClose: (key: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -923,8 +1453,78 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
     setAt({ head: logo.current!.getBoundingClientRect().top - 8, list: strip.current!.getBoundingClientRect().top - 8 });
     setOpen(true);
   };
-  const hide = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(false), 180); };
+  const hide = () => { clearTimeout(timer.current); if (!moving.current) timer.current = window.setTimeout(() => setOpen(false), 180); };
   useEffect(() => () => clearTimeout(timer.current), []);
+
+  // press a file and drag it up or down to reorder, the way the outline's rows go: a line marks the gap it
+  // will land in, letting go moves it there, Escape puts it back. A press that doesn't move 5px stays a
+  // click, and the click after a real drag is swallowed
+  const moving = useRef(false);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [gap, setGap] = useState<number | null>(null); // the gap the line sits in: before row `gap`, or after the last
+  const reorder = (id: number) => (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('.doc-x, .files-x')) return;
+    const box = e.currentTarget.parentElement!, x0 = e.clientX, y0 = e.clientY;
+    let y = y0, at: number | null = null, raf = 0;
+    const rows = () => ([...box.children] as HTMLElement[]).filter((r) => r.dataset.id); // docs only: the SpeechDrop row stays last
+    // the gap nearest the pointer; the two beside the file itself change nothing
+    const aim = () => {
+      const rs = rows(), from = rs.findIndex((r) => r.dataset.id === String(id));
+      let g = rs.findIndex((r) => { const b = r.getBoundingClientRect(); return y < b.top + b.height / 2; });
+      if (g < 0) g = rs.length;
+      at = g === from || g === from + 1 ? null : g;
+      setGap(at);
+    };
+    // near the top or bottom of a scrolling list, it scrolls on
+    const tick = () => {
+      const r = box.getBoundingClientRect();
+      const dy = y < r.top + 24 ? y - (r.top + 24) : y > r.bottom - 24 ? y - (r.bottom - 24) : 0;
+      if (dy) { box.scrollTop += Math.max(-12, Math.min(12, dy / 2)); aim(); }
+      raf = requestAnimationFrame(tick);
+    };
+    const move = (m: PointerEvent) => {
+      y = m.clientY;
+      if (!moving.current) {
+        if (Math.hypot(m.clientX - x0, y - y0) < 5) return;
+        moving.current = true;
+        setDragId(id);
+        raf = requestAnimationFrame(tick);
+      }
+      m.preventDefault();
+      aim();
+    };
+    const end = (ok: boolean) => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', cancel);
+      removeEventListener('blur', cancel);
+      removeEventListener('keydown', key, true);
+      cancelAnimationFrame(raf);
+      if (!moving.current) return;
+      setDragId(null);
+      setGap(null);
+      if (ok && at !== null) {
+        const from = rows().findIndex((r) => r.dataset.id === String(id));
+        props.onMove(id, at > from ? at - 1 : at);
+      }
+      // the click that ends a drag isn't a switch; clear the flag after it would have fired
+      addEventListener('click', swallow, true);
+      setTimeout(() => {
+        removeEventListener('click', swallow, true);
+        moving.current = false;
+        // dropped outside both lists: the leave that would have shut the panel was skipped mid-drag
+        if (!strip.current?.matches(':hover') && !list.current?.parentElement?.matches(':hover')) hide();
+      }, 0);
+    };
+    const up = () => end(true), cancel = () => end(false);
+    const key = (k: KeyboardEvent) => { if (k.key === 'Escape') { k.preventDefault(); k.stopPropagation(); end(false); } };
+    const swallow = (c: MouseEvent) => { c.stopPropagation(); c.preventDefault(); };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', cancel);
+    addEventListener('blur', cancel);
+    addEventListener('keydown', key, true);
+  };
   // both lists scroll together, so each row stays level with its icon
   useLayoutEffect(() => { if (open && list.current && strip.current) list.current.scrollTop = strip.current.scrollTop; }, [open, props.docs.length]);
 
@@ -963,19 +1563,75 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
     resize(railWidth(to, railMax()));
   };
 
-  const isOn = (d: DocRow) => d.id === props.active && !props.home;
+  // Shift-click picks files without opening them; right-click a picked one to Join them side by side
+  const [sel, setSel] = useState<number[]>([]);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { setSel((s) => (s.every((id) => props.docs.some((d) => d.id === id)) ? s : s.filter((id) => props.docs.some((d) => d.id === id)))); }, [props.docs]);
+  const pick = (id: number) => (e: React.MouseEvent) => {
+    if (!e.shiftKey) { setSel([]); props.onSwitch(id); return; }
+    e.preventDefault();
+    if (sel.includes(id)) { setSel(sel.filter((x) => x !== id)); return; }
+    const max = pref(P.joinMax);
+    if (sel.length >= max) { props.flash(`You can join up to ${max} files. Change it in Settings > Appearance.`); return; }
+    setSel([...sel, id]);
+  };
+  // right-clicking a file while others are picked counts it in, so pick two and right-click either
+  const joining = menu ? (sel.length ? [...new Set([...sel, menu.id])] : []) : [];
+  const member = !!menu && !!props.group?.includes(menu.id);
+  const openMenu = (id: number) => (e: React.MouseEvent) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, id }); };
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el || !menu) return;
+    el.style.left = `${Math.max(8, Math.min(menu.x, innerWidth - el.offsetWidth - 8))}px`;
+    el.style.top = `${Math.max(8, Math.min(menu.y, innerHeight - el.offsetHeight - 8))}px`;
+    requestAnimationFrame(() => el.classList.add('in'));
+  }, [menu]);
+  useEffect(() => {
+    if (!menu && !sel.length) return;
+    const down = (e: PointerEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(null); };
+    // Esc shuts the menu, then lets go of the picked files
+    const key = (e: KeyboardEvent) => { if (e.key !== 'Escape') return; if (menu) setMenu(null); else setSel([]); };
+    const close = () => setMenu(null);
+    document.addEventListener('pointerdown', down, true);
+    addEventListener('keydown', key);
+    addEventListener('resize', close);
+    addEventListener('blur', close);
+    return () => { document.removeEventListener('pointerdown', down, true); removeEventListener('keydown', key); removeEventListener('resize', close); removeEventListener('blur', close); };
+  }, [menu, sel.length]);
+  // joined files read as one capsule in both lists, where they sit together
+  const joinAt = (i: number) => {
+    const g = props.group, d = props.docs;
+    if (!g?.includes(d[i].id)) return undefined;
+    const up = i > 0 && g.includes(d[i - 1].id), down = i < d.length - 1 && g.includes(d[i + 1].id);
+    return up && down ? 'mid' : up ? 'last' : down ? 'first' : 'solo';
+  };
+
+  const isOn = (d: DocRow) => d.id === props.active && !props.home && !props.sd.some((s) => s.on);
+  const sdLabel = (sd: SdRow) => `SpeechDrop${sd.name !== 'SpeechDrop' ? `: ${sd.name}` : ''}${sd.fresh ? ` (${sd.fresh} new)` : ''}`;
+  const sdTip = titled('SpeechDrop', 'speechdrop', 'the room\'s files, live. Middle-click to close');
   return (
     <nav className="fstrip" aria-label="Open documents" data-wide={wide || undefined}>
       <button ref={logo} className="sb-logo" title={titled('Home', 'home', 'recent files and new documents')} aria-label="Home" data-on={props.home || undefined} onClick={props.onHome}><SvgIcon name="logo" /><span className="lbl">Falcon</span></button>
       <div ref={strip} className="fs-docs" role="tablist" aria-label="Open documents" onPointerEnter={wide ? undefined : show} onPointerLeave={wide ? undefined : hide}
         onScroll={(e) => { if (list.current) list.current.scrollTop = e.currentTarget.scrollTop; }}>
-        {props.docs.map((d) => (
-          <div key={d.id} className="doc-row" data-on={isOn(d) || undefined}>
+        {props.docs.map((d, i) => (
+          <div key={d.id} className="doc-row" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-drop={gap === i ? 'before' : gap === props.docs.length && i === props.docs.length - 1 ? 'after' : undefined} data-sel={sel.includes(d.id) || undefined} data-join={joinAt(i)}
+            onPointerDown={reorder(d.id)} onContextMenu={openMenu(d.id)}>
             <button className="fs-b doc-nm" role="tab" aria-selected={isOn(d)} aria-label={d.speech ? `${d.name} (speech doc)` : d.name} data-on={isOn(d) || undefined}
-              onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
+              onClick={pick(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
               <SvgIcon name="doc" />{wide && <span className="lbl">{tidy(d.name)}</span>}{d.dirty && <i className="dot" aria-label="unsaved" />}{d.speech && <i className="spk" aria-hidden="true">S</i>}
             </button>
             {wide && <button tabIndex={-1} className="doc-x" title={titled('Close', 'close', 'close this file')} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>}
+          </div>
+        ))}
+        {props.sd.map((sd) => (
+          <div key={`sd${sd.key}`} className="doc-row sd-tab" data-on={sd.on || undefined}>
+            <button className="fs-b doc-nm" role="tab" aria-selected={sd.on} aria-label={sdLabel(sd)} title={sdTip} data-on={sd.on || undefined}
+              onClick={() => props.onSd(sd.key)} onAuxClick={(e) => { if (e.button === 1) props.onSdClose(sd.key); }}>
+              <SvgIcon name="inbox" />{wide && <span className="lbl">{sd.name}</span>}{sd.fresh > 0 && <i className="dot new" aria-hidden="true" />}
+            </button>
+            {wide && <button tabIndex={-1} className="doc-x" title="Close SpeechDrop" onClick={() => props.onSdClose(sd.key)}><SvgIcon name="x" /></button>}
           </div>
         ))}
       </div>
@@ -985,18 +1641,39 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         <div className="files-h" style={{ top: at.head }}><b>Falcon</b><span>{props.docs.length} open</span></div>
         <div ref={list} className="files-l" style={{ top: at.list }}
           onScroll={(e) => { if (strip.current) strip.current.scrollTop = e.currentTarget.scrollTop; }}>
-          {props.docs.map((d) => (
-            <div key={d.id} className="files-r" data-on={isOn(d) || undefined}>
-              <button tabIndex={-1} className="files-b" onClick={() => props.onSwitch(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
+          {props.docs.map((d, i) => (
+            <div key={d.id} className="files-r" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-drop={gap === i ? 'before' : gap === props.docs.length && i === props.docs.length - 1 ? 'after' : undefined} data-sel={sel.includes(d.id) || undefined} data-join={joinAt(i)}
+              onPointerDown={reorder(d.id)} onContextMenu={openMenu(d.id)}>
+              <button tabIndex={-1} className="files-b" onClick={pick(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
                 <SvgIcon name="doc" /><span className="nm">{tidy(d.name)}</span>{d.speech && <i className="spk" aria-hidden="true">S</i>}{d.dirty && <i className="dot" />}
               </button>
               <button tabIndex={-1} className="files-x" title={titled('Close', 'close', 'close this file')} onClick={() => props.onClose(d.id)}><SvgIcon name="x" /></button>
             </div>
           ))}
+          {props.sd.map((sd) => (
+            <div key={`sd${sd.key}`} className="files-r" data-on={sd.on || undefined}>
+              <button tabIndex={-1} className="files-b" onClick={() => props.onSd(sd.key)} onAuxClick={(e) => { if (e.button === 1) props.onSdClose(sd.key); }}>
+                <SvgIcon name="inbox" /><span className="nm">{sd.name}</span>{sd.fresh > 0 && <i className="dot new" />}
+              </button>
+              <button tabIndex={-1} className="files-x" title="Close SpeechDrop" onClick={() => props.onSdClose(sd.key)}><SvgIcon name="x" /></button>
+            </div>
+          ))}
         </div>
       </aside>
+      {menu && (joining.length >= 2 || member) && (
+        <div ref={menuRef} className="pop menu rail-menu" role="menu" aria-label="File">
+          {joining.length >= 2 && <>
+            <div className="mn-h">{joining.length} files selected</div>
+            <button className="mn-i" role="menuitem" onClick={() => { setMenu(null); setSel([]); props.onJoin(joining); }}><span>Join</span></button>
+          </>}
+          {member && <button className="mn-i" role="menuitem" onClick={() => { setMenu(null); props.onUnjoin(); }}><span>Unjoin</span></button>}
+        </div>
+      )}
       <div className="grow" />
-      {props.update && <UpdateButton u={props.update} onInstall={props.onUpdate} />}
+      {props.update ? <UpdateButton u={props.update} onInstall={props.onUpdate} />
+        : props.onCheck && <button className="fs-b chk" title={props.checking ? 'Checking for updates' : 'Check for updates'} aria-label="Check for updates"
+            aria-busy={props.checking || undefined} data-busy={props.checking || undefined} onClick={() => { if (!props.checking) props.onCheck!(); }}>
+            <SvgIcon name="refresh" /><span className="lbl">{props.checking ? 'Checking' : 'Check for updates'}</span></button>}
       <button className="fs-b gear-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /><span className="lbl">Settings</span></button>
       {resizable && <div className="rail-grip" role="separator" aria-orientation="vertical" aria-label="Rail width" tabIndex={0}
         aria-valuemin={RAIL_MIN} aria-valuemax={RAIL_MAX} aria-valuenow={width}
@@ -1041,13 +1718,13 @@ function UpdateButton({ u, onInstall }: { u: UpdateInfo; onInstall: () => void }
 
 // ---------- the tools: file and view buttons in a row above the outline ----------
 
-function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onNew: () => void; onOpen: () => void; onSave: (as: boolean) => void; onFind: () => void; onOutline: () => void; onRead: () => void; onSpeech: () => void }) {
+function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onNew: (speech: boolean) => void; onOpen: () => void; onSave: (as: boolean) => void; onFind: () => void; onOutline: () => void; onRead: () => void; onSpeech: () => void }) {
   const b = (icon: string, title: string, onClick: (e: React.MouseEvent) => void, on = false) => (
     <button className="fs-b" title={title} aria-label={parseTip(title).label} data-on={on || undefined} aria-pressed={on || undefined} onClick={onClick}><SvgIcon name={icon} /></button>
   );
   return (
     <div className="tools" role="toolbar" aria-label="File and view">
-      {b('plus', titled('New document', 'new', 'start a blank file'), props.onNew)}
+      {b('plus', titled('New document', 'new', 'start a blank file. Shift-click for a speech doc'), (e) => props.onNew(e.shiftKey))}
       {b('open', titled('Open…', 'open', 'open a .docx file'), props.onOpen)}
       {b('save', titled('Save', 'save', 'save this file. Shift-click for Save As'), (e) => props.onSave(e.shiftKey))}
       {b('saveAs', titled('Save As…', 'saveAs', 'save a copy, as-is or as a send, read or marked doc'), () => props.onSave(true))}
@@ -1065,7 +1742,6 @@ function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onN
 type SelState = ReturnType<typeof selectionState>;
 type PopKind = 'highlight' | 'shading' | 'font' | 'size' | 'doc' | 'card';
 const SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48];
-const SHADES = ['#D9D9D9', '#BFBFBF', '#F2F2F2', '#FFF2CC', '#FCE4D6', '#E2EFDA', '#DDEBF7', '#EDE7F6', '#FDE2E4', '#C6E0B4', '#BDD7EE', '#F8CBAD', '#FFE699', '#A9D08E', '#9BC2E6'];
 
 function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; reading: boolean; onRead: () => void; onSend: () => void; speechSeconds: number }) {
   const { sel, run } = props;
@@ -1150,41 +1826,31 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   const setSize = (pt: number) => run(setFontSize(pt));
   const bump = (d: number) => setSize((fontSize ?? 11) + d);
 
-  // the speech timer (and the prep timer, when Settings shows it): click to start or pause, right-click to reset
-  const [left, setLeft] = useState(SPEECH_SECONDS);
-  const [running, setRunning] = useState(false);
-  const PREP_SECONDS = pref(P.prepMin) * 60;
-  const [prepLeft, setPrepLeft] = useState(PREP_SECONDS);
-  const [prepRunning, setPrepRunning] = useState(false);
-  // a new length from Settings resets an idle timer
-  useEffect(() => { if (!running) setLeft(SPEECH_SECONDS); }, [SPEECH_SECONDS]);
-  useEffect(() => { if (!prepRunning) setPrepLeft(PREP_SECONDS); }, [PREP_SECONDS]);
+  // the round's clocks: the speech timer opens the timer window (speech, our prep, their prep); right-click resets it.
+  // The prep button, when Settings shows it, is our prep: click to start or pause, right-click to reset
   const showPrep = pref(P.showPrep);
-  // hiding the prep timer stops and resets it
-  useEffect(() => { if (!showPrep) { setPrepRunning(false); setPrepLeft(PREP_SECONDS); } }, [showPrep]);
-  const countdown = (on: boolean, setOn: (b: boolean) => void, setLeftOf: (f: (s: number) => number) => void, what: string) => {
-    if (!on) return;
-    const t = window.setInterval(() => setLeftOf((s) => {
-      if (s <= 1) { setOn(false); props.flash(what); if (pref(P.beep)) beep(); return 0; }
-      return s - 1;
-    }), 1000);
-    return () => clearInterval(t);
-  };
-  useEffect(() => countdown(running, setRunning, setLeft, 'Time is up'), [running]);
-  useEffect(() => countdown(prepRunning, setPrepRunning, setPrepLeft, 'Prep is up'), [prepRunning]);
-  // the command center starts, pauses and resets the clocks the same way a click does
+  const lowSec = pref(P.lowTime);
+  const rc = useRoundClocks(pref(P.round), SPEECH_SECONDS / 60, pref(P.prepMin), (id) => {
+    props.flash(id === 'speech' ? 'Time is up' : id === 'our' ? 'Prep is up' : 'Their prep is up');
+    if (pref(P.beep)) beep();
+  });
+  const [timerReq, setTimerReq] = useState(0); // each click asks the window to open, or come forward
+  const [timerOpen, setTimerOpen] = useState(false);
+  // the command center starts, pauses and resets the clocks the same way a click does, and opens the window
+  const rcRef = useRef(rc);
+  rcRef.current = rc;
   useEffect(() => {
     const on = (e: Event) => {
       const { which, op } = (e as CustomEvent<TimerRequest>).detail;
-      const [full, setL, setR] = which === 'prep' ? [PREP_SECONDS, setPrepLeft, setPrepRunning] : [SPEECH_SECONDS, setLeft, setRunning];
-      if (op === 'reset') { setR(false); setL(full); return; }
-      setL((s) => (s === 0 ? full : s));
-      setR((r) => !r);
+      if (op === 'open') { setTimerReq((n) => n + 1); return; }
+      const id = which === 'prep' ? 'our' : which;
+      if (op === 'reset') rcRef.current.reset(id); else rcRef.current.toggle(id);
     };
     addEventListener(TIMER_EVENT, on);
     return () => removeEventListener(TIMER_EVENT, on);
-  }, [SPEECH_SECONDS, PREP_SECONDS]);
-  const low = (on: boolean, s: number) => (on && s <= pref(P.lowTime) ? ' low' : '');
+  }, []);
+  const { clocks } = rc;
+  const low = (id: 'speech' | 'our') => (clocks.on === id && lowSec > 0 && clocks[id] <= lowSec ? ' low' : '');
 
   return (
     <header className="toolbar">
@@ -1203,7 +1869,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
           {pair('highlight', <SvgIcon name="pen" />, titled('Highlight', 'highlight', 'highlight the selection. With nothing selected, turns on a paintbrush'), () => props.onColor('highlight'), swatch('highlight'), props.brush === 'highlight')}
           {pair('shading', <SvgIcon name="bucket" />, titled('Background color', 'shading', 'shade the selection'), () => props.onColor('shading'), swatch('shading'), props.brush === 'shading')}
           {pair('font', <b className="fa">A</b>, 'Font color: color the selection\'s text', () => applyFont(fontColor), fontColor ?? 'var(--u-tx)')}
-          <button className="b sm" title={titled('Shrink', 'shrink', 'make the text you don\'t read smaller. Press again to shrink more')} onMouseDown={(e) => { e.preventDefault(); run(commandOf('shrink')); }}>Shrink</button>
+          <button className="b sm" title={titled('Shrink', 'shrink', pref(P.smartShrink) ? 'Smart Shrink: unread paragraphs to 5 pt, unread words between read ones to 8 pt' : 'make the text you don\'t read smaller. Press again to shrink more')} onMouseDown={(e) => { e.preventDefault(); run(commandOf('shrink')); }}>Shrink</button>
           <button className="b fsz" data-pop="size" title="Font size: pick a size for the selection" aria-label={`Font size ${fontSize ?? 11} pt`} aria-haspopup="menu" aria-expanded={pop?.kind === 'size'}
             onMouseDown={(e) => { e.preventDefault(); openPop('size', e.currentTarget); }}>{fontSize ?? 11}<SvgIcon name="caret" /></button>
           <button className="b sz" title={`Bigger: one point bigger (now ${fontSize ?? 11} pt)`} onMouseDown={(e) => { e.preventDefault(); bump(1); }}>A<SvgIcon name="up" /></button>
@@ -1215,19 +1881,21 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
         </div>
         <div className="end">
           <button className="b" data-on={props.reading || undefined} title={titled('Read mode', 'read', 'show only what\'s read aloud. Typing is locked and Space drops a marker')} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
-          <button className={`b timer${low(running, left)}`} data-on={running || undefined} title="Speech timer: click to start or pause. Right-click to reset"
-            onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (left === 0) setLeft(SPEECH_SECONDS); setRunning((r) => !r); } }}
-            onContextMenu={(e) => { e.preventDefault(); setRunning(false); setLeft(SPEECH_SECONDS); }}>
-            {clock(left)}
+          <button className={`b timer${low('speech')}`} data-on={clocks.on === 'speech' || undefined} aria-haspopup="dialog" aria-expanded={timerOpen}
+            title={`Timer: ${rc.speeches[clocks.idx].name}. Click to open the timer window, with both sides' prep. Right-click to reset`}
+            onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) setTimerReq((n) => n + 1); }}
+            onContextMenu={(e) => { e.preventDefault(); rc.reset('speech'); }}>
+            {clock(clocks.speech)}
           </button>
+          <TimerWindow req={timerReq} onOpen={setTimerOpen} rc={rc} low={lowSec} />
           {pref(P.showSend) && (
             <button className="b" title={titled('Send to speech', 'sendToSpeech', 'copy the selection, or the card or section at the caret, into the speech doc. The file isn\'t changed. Change the key in Settings > Keybindings')} onMouseDown={(e) => { e.preventDefault(); props.onSend(); }}>Send</button>
           )}
           {showPrep && (
-            <button className={`b timer prep${low(prepRunning, prepLeft)}`} data-on={prepRunning || undefined} title="Prep timer: click to start or pause. Right-click to reset"
-              onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) { if (prepLeft === 0) setPrepLeft(PREP_SECONDS); setPrepRunning((r) => !r); } }}
-              onContextMenu={(e) => { e.preventDefault(); setPrepRunning(false); setPrepLeft(PREP_SECONDS); }}>
-              Prep {clock(prepLeft)}
+            <button className={`b timer prep${low('our')}`} data-on={clocks.on === 'our' || undefined} title="Our prep: click to start or pause. Right-click to reset"
+              onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) rc.toggle('our'); }}
+              onContextMenu={(e) => { e.preventDefault(); rc.reset('our'); }}>
+              Prep {clock(clocks.our)}
             </button>
           )}
         </div>
@@ -1249,8 +1917,8 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
             : <>
               <button className="sw none" role="menuitem" aria-label={pop.kind === 'highlight' ? 'No highlight' : 'No background'} title={pop.kind === 'highlight' ? 'No highlight' : 'No background'}
                 aria-current={activeColors[pop.kind] === null || undefined} onMouseDown={(e) => { e.preventDefault(); props.onPick(pop.kind as 'highlight', null); setPop(null); }} />
-              {(pop.kind === 'highlight' ? Object.entries(HIGHLIGHTS) : SHADES.map((s) => [s, s])).map(([n, css]) => (
-                <button key={n} className="sw" role="menuitem" aria-label={n} title={n} aria-current={activeColors[pop.kind as 'highlight'] === n || undefined} style={{ background: css }}
+              {(pop.kind === 'highlight' ? Object.entries(HIGHLIGHTS).map(([n, css]) => [n, css, HIGHLIGHT_NAMES[n]]) : SHADES.map(([c, name]) => [c, c, name])).map(([n, css, name]) => (
+                <button key={n} className="sw" role="menuitem" aria-label={name} title={name} aria-current={activeColors[pop.kind as 'highlight'] === n || undefined} style={{ background: css }}
                   onMouseDown={(e) => { e.preventDefault(); props.onPick(pop.kind as 'highlight', n); setPop(null); }} />
               ))}
             </>}

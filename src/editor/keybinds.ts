@@ -35,10 +35,13 @@ export function reserve(list: [key: string, label: string][]) {
   for (const [k, what] of list) RESERVED.set(norm(k), what);
 }
 reserve([
-  ['Mod-c', 'Copy'], ['Mod-x', 'Cut'], ['Mod-v', 'Paste'], ['Mod-q', 'Quit'], ['Escape', 'Close'],
-  ...(IS_MAC ? [['Mod-h', 'Hide Falcon'], ['Mod-Alt-h', 'Hide others'], ['Mod-m', 'Minimize']] as [string, string][] : []),
+  ['Mod-c', 'Copy'], ['Mod-x', 'Cut'], ['Mod-v', 'Paste'], ['Escape', 'Close'],
+  // Windows has no menu bar (electron/main.cjs), so nothing there quits on Ctrl+Q and it stays free to bind
+  ...(IS_MAC ? [['Mod-q', 'Quit'], ['Mod-h', 'Hide Falcon'], ['Mod-Alt-h', 'Hide others'], ['Mod-m', 'Minimize']] as [string, string][] : []),
 ]);
 
+/** What keeps `key` for itself (Copy, Hide Falcon...), if anything. */
+export const reservedFor = (key: string) => RESERVED.get(norm(key));
 export const keyOf = (id: string): string => { const b = byId.get(id); return b ? pref(b.pref) : ''; };
 export const bindingOf = (id: string) => byId.get(id);
 export const setKey = (id: string, key: string) => { const b = byId.get(id); if (b) setPref(b.pref, key); };
@@ -162,14 +165,19 @@ export const setRecording = (on: boolean) => { recording = on; };
 bind('App', [
   { id: 'home', label: 'Home', key: 'Mod-t' }, { id: 'search', label: 'Search files', key: 'Mod-k' }, { id: 'settings', label: 'Settings', key: 'Mod-,' },
   { id: 'commands', label: 'Search everything (command center)', key: 'Mod-Shift-Space' },
+  { id: 'searchCards', label: 'Search cards', key: 'Mod-Shift-k' },
   { id: 'outline', label: 'Show or hide the outline', key: 'Mod-\\' }, { id: 'find', label: 'Find', key: 'Mod-f' },
   { id: 'zoomIn', label: 'Zoom in', key: 'Mod-=' }, { id: 'zoomOut', label: 'Zoom out', key: 'Mod--' }, { id: 'zoomReset', label: 'Actual size', key: 'Mod-0' },
 ]);
 bind('Files', [
-  { id: 'new', label: 'New document', key: 'Mod-n' }, { id: 'open', label: 'Open', key: 'Mod-o' },
+  { id: 'new', label: 'New document', key: 'Mod-n' }, { id: 'newSpeech', label: 'New speech doc', key: 'Mod-Shift-n' }, { id: 'open', label: 'Open', key: 'Mod-o' },
   { id: 'save', label: 'Save', key: 'Mod-s' }, { id: 'saveAs', label: 'Save As', key: 'Mod-Shift-s' }, { id: 'close', label: 'Close document', key: 'Mod-w' },
-  { id: 'nextDoc', label: 'Next open document', key: 'Ctrl-Tab' }, { id: 'prevDoc', label: 'Previous open document', key: 'Ctrl-Shift-Tab' },
+  // hold Ctrl and tap Tab to walk the switcher; let go to open the lit doc. A quick tap flips between the last two
+  { id: 'recentDoc', label: 'Switch to recent document', key: 'Ctrl-Tab' }, { id: 'recentDocBack', label: 'Switch to recent document, backward', key: 'Ctrl-Shift-Tab' },
+  { id: 'nextDoc', label: 'Next open document' }, { id: 'prevDoc', label: 'Previous open document' },
 ]);
+// the SpeechDrop tab (no key until you give it one)
+bind('SpeechDrop', [{ id: 'speechdrop', label: 'SpeechDrop: join a room, upload and open its files' }]);
 // a plain key on purpose: the page can't type it while it's bound (text boxes still can)
 bind('Speech', [{ id: 'sendToSpeech', label: 'Send to speech', key: '`' }]);
 // second keys that always work: Mod-Shift-] / [ also switch documents

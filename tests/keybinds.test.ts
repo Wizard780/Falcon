@@ -55,6 +55,8 @@ describe('keybindings', () => {
     expect(refusal('tag', 'F9')).toBe('F9 is already Underline');
     expect(refusal('tag', 'Mod-z')).toBe('Ctrl+Z is kept for Undo');
     expect(refusal('tag', 'Mod-c')).toBe('Ctrl+C is kept for Copy');
+    if (IS_MAC) expect(refusal('tag', 'Mod-q')).toMatch(/kept for Quit/);
+    else expect(refusal('tag', 'Mod-q')).toBe(null); // Windows: nothing quits on Ctrl+Q
     expect(refusal('tag', 'Meta-t')).toMatch(/Windows key/);
     expect(refusal('tag', 'F7')).toBe(null); // its own key
     expect(refusal('tag', 'Mod-Shift-t')).toBe(null);

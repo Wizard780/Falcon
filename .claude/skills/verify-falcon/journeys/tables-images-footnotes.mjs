@@ -30,21 +30,21 @@ const caretAfter = (text) => page.evaluate((text) => {
   if (at < 0) throw new Error(`text not in doc: ${text}`);
   const S = v.state.selection.constructor.near(v.state.doc.resolve(at)).constructor; v.dispatch(v.state.tr.setSelection(S.create(v.state.doc, at))); v.focus();
 }, text);
-const cellBox = (text) => page.locator('.ProseMirror td, .ProseMirror th', { hasText: text }).first().boundingBox();
+const cellBox = (text) => page.locator('.ProseMirror:not(.hm-doc) td, .ProseMirror:not(.hm-doc) th', { hasText: text }).first().boundingBox();
 
 // ---- open: nothing flattened ----
 await f.open(MEDIA);
-await page.waitForFunction(() => document.querySelector('.ProseMirror .f-img img')?.naturalWidth > 0);
+await page.waitForFunction(() => document.querySelector('.ProseMirror:not(.hm-doc) .f-img img')?.naturalWidth > 0);
 const opened = await f.markMap();
 fs.writeFileSync(`${f.out}/opened.markmap.txt`, opened + '\n');
-want(await page.locator('.ProseMirror table').count() === 1, 'the Word table opens as a table');
-want(await page.locator('.ProseMirror td[colspan="2"]').count() === 1 && await page.locator('.ProseMirror td[rowspan="2"]').count() === 1, 'its column span and row merge survive');
-want(await page.locator('.ProseMirror th').count() === 3, 'its header row opens as header cells');
-want(await page.locator('.ProseMirror .f-img img').evaluate((i) => Math.round(i.getBoundingClientRect().width)) === 360, 'the picture opens at its Word size (360px)');
-want(JSON.stringify(await page.locator('.ProseMirror .f-footnote').evaluateAll((els) => els.map((e) => e.dataset.n))) === '["1","2"]', 'both footnotes show their numbers, 1 and 2');
+want(await page.locator('.ProseMirror:not(.hm-doc) table').count() === 1, 'the Word table opens as a table');
+want(await page.locator('.ProseMirror:not(.hm-doc) td[colspan="2"]').count() === 1 && await page.locator('.ProseMirror:not(.hm-doc) td[rowspan="2"]').count() === 1, 'its column span and row merge survive');
+want(await page.locator('.ProseMirror:not(.hm-doc) th').count() === 3, 'its header row opens as header cells');
+want(await page.locator('.ProseMirror:not(.hm-doc) .f-img img').evaluate((i) => Math.round(i.getBoundingClientRect().width)) === 360, 'the picture opens at its Word size (360px)');
+want(JSON.stringify(await page.locator('.ProseMirror:not(.hm-doc) .f-footnote').evaluateAll((els) => els.map((e) => e.dataset.n))) === '["1","2"]', 'both footnotes show their numbers, 1 and 2');
 want(await page.locator('.f-notes li').count() === 2 && (await page.locator('.f-notes li').first().textContent()).startsWith('Smith, J. (2024)'), 'the notes are listed under the document');
 await f.shot('opened');
-await page.locator('.ProseMirror table').scrollIntoViewIfNeeded();
+await page.locator('.ProseMirror:not(.hm-doc) table').scrollIntoViewIfNeeded();
 await f.shot('opened-table-and-picture');
 
 // ---- table: click into a cell, the bar appears ----
@@ -61,12 +61,12 @@ const edge = { x: year.x + year.width - 1, y: year.y + year.height / 2 };
 await page.mouse.move(edge.x - 6, edge.y);
 await page.mouse.move(edge.x, edge.y, { steps: 3 });
 await page.waitForTimeout(100);
-want(await page.locator('.ProseMirror .column-resize-handle').count() > 0, 'hovering a column edge shows the resize line');
+want(await page.locator('.ProseMirror:not(.hm-doc) .column-resize-handle').count() > 0, 'hovering a column edge shows the resize line');
 await page.mouse.down();
 await page.mouse.move(edge.x + 45, edge.y, { steps: 5 });
 await page.mouse.move(edge.x + 90, edge.y, { steps: 5 });
 await page.waitForTimeout(50);
-const mid = await page.locator('.ProseMirror table').first().evaluate((t) => [...t.querySelectorAll('col')].map((c) => parseFloat(c.style.width)));
+const mid = await page.locator('.ProseMirror:not(.hm-doc) table').first().evaluate((t) => [...t.querySelectorAll('col')].map((c) => parseFloat(c.style.width)));
 want(mid[0] - before[0] >= 80 && mid[0] + mid[1] === before[0] + before[1], `while dragging, column 2 already gives way on screen (${mid.join('+')})`);
 await f.shot('column-resize-drag');
 await page.mouse.up();
@@ -104,19 +104,19 @@ await page.mouse.move(a.x + 8, a.y + a.height / 2);
 await page.mouse.down();
 await page.mouse.move(b.x + 8, b.y + b.height / 2, { steps: 6 });
 await page.mouse.up();
-want(await page.locator('.ProseMirror .selectedCell').count() === 2, 'dragging from one cell into the next selects both cells');
+want(await page.locator('.ProseMirror:not(.hm-doc) .selectedCell').count() === 2, 'dragging from one cell into the next selects both cells');
 await f.shot('cells-selected');
 await page.click('.f-tbar button:text-is("Merge")');
 want((await f.markMap()).includes('cell r5c0 2x1 normal: [2070]{underline}\ncell r5c0 2x1 normal: 3.0'), 'Merge joins them into one cell spanning two columns, keeping both texts');
 await f.shot('cells-merged');
 
 // ---- picture: click to select, drag the corner handle ----
-const img = page.locator('.ProseMirror .f-img img');
+const img = page.locator('.ProseMirror:not(.hm-doc) .f-img img');
 await img.scrollIntoViewIfNeeded();
 const ib = await img.boundingBox();
 await page.mouse.click(ib.x + ib.width / 2, ib.y + ib.height / 2);
 await page.waitForTimeout(100);
-want(await page.locator('.ProseMirror .f-img.ProseMirror-selectednode').count() === 1 && await page.locator('.f-img-handle').isVisible(), 'clicking the picture selects it and shows its resize handle');
+want(await page.locator('.ProseMirror:not(.hm-doc) .f-img.ProseMirror-selectednode').count() === 1 && await page.locator('.f-img-handle').isVisible(), 'clicking the picture selects it and shows its resize handle');
 await f.shot('picture-selected');
 const hb = await page.locator('.f-img-handle').boundingBox();
 await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
@@ -151,8 +151,8 @@ await page.keyboard.press(`${MOD}+z`);
 await page.keyboard.press(`${MOD}+0`);
 
 // ---- footnotes: click a number, edit the note ----
-await page.locator('.ProseMirror .f-footnote').nth(1).scrollIntoViewIfNeeded();
-await page.locator('.ProseMirror .f-footnote').nth(1).click();
+await page.locator('.ProseMirror:not(.hm-doc) .f-footnote').nth(1).scrollIntoViewIfNeeded();
+await page.locator('.ProseMirror:not(.hm-doc) .f-footnote').nth(1).click();
 await page.waitForTimeout(150);
 want(await page.locator('.f-note-pop').isVisible() && (await page.locator('.f-note-pop .f-note-num').textContent()) === 'Footnote 2', 'clicking footnote 2 opens its editor');
 want((await page.locator('.f-note-pop .f-note-text').textContent()).startsWith('Lenton et al. 2019'), 'the editor holds the note text');
@@ -196,7 +196,7 @@ await page.waitForTimeout(200);
 const pasted = await f.markMap();
 want(pasted.includes('cell r0c0 bg#D9EAD3 normal: Country') && pasted.includes('cell r2c1 normal: 5.9'), 'a table pasted from a spreadsheet is a real table, shading kept');
 want((await facts()).widths.some((w) => JSON.stringify(w) === '[140,90]'), 'and keeps its column widths');
-await page.locator('.ProseMirror table').last().scrollIntoViewIfNeeded();
+await page.locator('.ProseMirror:not(.hm-doc) table').last().scrollIntoViewIfNeeded();
 await f.shot('pasted-table');
 // a pasted table is as editable as any: click a cell, drag its edge
 const china = await cellBox('Country');
@@ -220,7 +220,7 @@ await page.evaluate((b64) => {
 await page.waitForFunction(() => window.__falconMarkMap().split('[image').length > 2);
 const shots = (await facts()).images;
 want(shots.length === 2 && shots[1][0] === 624 && shots[1][1] === 312, `a pasted screenshot comes in at page width, same shape (${shots[1]})`);
-await page.locator('.ProseMirror .f-img').nth(1).scrollIntoViewIfNeeded();
+await page.locator('.ProseMirror:not(.hm-doc) .f-img').nth(1).scrollIntoViewIfNeeded();
 await f.shot('pasted-screenshot');
 
 // ---- Doc menu: Insert Table ----
@@ -236,7 +236,7 @@ await page.keyboard.type('Claim');
 await page.keyboard.press('Tab');
 await page.keyboard.type('Warrant');
 want((await f.markMap()).includes('cell r0c0 normal: Claim') && (await f.markMap()).includes('cell r0c1 normal: Warrant'), 'the new table takes typing, Tab moves on');
-await page.locator('.ProseMirror table').last().scrollIntoViewIfNeeded();
+await page.locator('.ProseMirror:not(.hm-doc) table').last().scrollIntoViewIfNeeded();
 await f.shot('inserted-table');
 
 // ---- find reaches table cells ----
@@ -259,7 +259,7 @@ await f.done();
 
 const g = await openFalcon('tables-images-footnotes/reopen');
 await g.open(saved);
-await g.page.waitForFunction(() => [...document.querySelectorAll('.ProseMirror .f-img img')].every((i) => i.naturalWidth > 0));
+await g.page.waitForFunction(() => [...document.querySelectorAll('.ProseMirror:not(.hm-doc) .f-img img')].every((i) => i.naturalWidth > 0));
 const reopened = await g.markMap();
 fs.writeFileSync(`${g.out}/reopened.markmap.txt`, reopened + '\n');
 g.want(reopened === edited, 'the reopened file matches the edited document: tables, spans, shading, pictures, footnotes');
@@ -274,10 +274,10 @@ await g.page.waitForFunction(() => (localStorage.getItem('falcon.autosave.v2') ?
 const stored = await g.page.evaluate(() => localStorage.getItem('falcon.autosave.v2').length);
 g.want(stored < 600_000, `the crash-recovery copy keeps each picture once (${stored} chars)`);
 await g.page.reload();
-await g.page.waitForSelector('.ProseMirror');
+await g.page.waitForSelector('.ProseMirror:not(.hm-doc)');
 await g.page.keyboard.press('Escape');
-await g.page.waitForFunction(() => [...document.querySelectorAll('.ProseMirror .f-img img')].length === 2 && [...document.querySelectorAll('.ProseMirror .f-img img')].every((i) => i.naturalWidth > 0), null, { timeout: 8000 });
+await g.page.waitForFunction(() => [...document.querySelectorAll('.ProseMirror:not(.hm-doc) .f-img img')].length === 2 && [...document.querySelectorAll('.ProseMirror:not(.hm-doc) .f-img img')].every((i) => i.naturalWidth > 0), null, { timeout: 8000 });
 g.want(await g.markMap() === unsaved, 'after a reload, crash recovery brings back the unsaved doc whole: pictures, tables, footnotes');
-await g.page.locator('.ProseMirror table').first().scrollIntoViewIfNeeded();
+await g.page.locator('.ProseMirror:not(.hm-doc) table').first().scrollIntoViewIfNeeded();
 await g.shot('reopened-table');
 await g.done();

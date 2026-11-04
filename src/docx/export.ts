@@ -1,7 +1,7 @@
 import { strToU8, zip, zipSync, type Zippable } from 'fflate';
 import type { Mark, Node as PMNode } from 'prosemirror-model';
 import { TableMap } from 'prosemirror-tables';
-import { colWidths, schema } from '../editor/schema';
+import { HIGHLIGHTS, DEEP_TURQUOISE_UNDER, colWidths, schema } from '../editor/schema';
 import { STYLES_XML } from './styles';
 
 /** Paragraph style → Word style id (Verbatim uses the built-in headings for Pocket/Hat/Block/Tag). */
@@ -37,11 +37,13 @@ function rPr(marks: readonly Mark[]): string {
   const pt = size ? size.attrs.pt : null;
   if (pt) parts.push(`<w:sz w:val="${Math.round(pt * 2)}"/><w:szCs w:val="${Math.round(pt * 2)}"/>`);
   const hl = has('highlight');
-  if (hl) parts.push(`<w:highlight w:val="${esc(hl.attrs.color)}"/>`);
+  const shd = has('shading');
+  const deep = hl?.attrs.color === 'deepTurquoise';
+  if (hl) parts.push(`<w:highlight w:val="${esc(deep ? DEEP_TURQUOISE_UNDER : hl.attrs.color)}"/>`);
   if (cite && (has('underline') || has('emphasis'))) parts.push('<w:u w:val="single"/>');
   if (cite && has('emphasis')) parts.push('<w:bdr w:val="single" w:sz="8" w:space="0" w:color="auto"/>');
-  const shd = has('shading');
-  if (shd) parts.push(`<w:shd w:val="clear" w:color="auto" w:fill="${hex(shd.attrs.color)}"/>`);
+  // a real background color wins the one fill slot; deep turquoise then comes back as turquoise
+  if (shd || deep) parts.push(`<w:shd w:val="clear" w:color="auto" w:fill="${shd ? hex(shd.attrs.color) : hex(HIGHLIGHTS.deepTurquoise)}"/>`);
   if (has('sup')) parts.push('<w:vertAlign w:val="superscript"/>');
   else if (has('sub')) parts.push('<w:vertAlign w:val="subscript"/>');
   return parts.length ? `<w:rPr>${parts.join('')}</w:rPr>` : '';

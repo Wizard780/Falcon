@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
-import { HIGHLIGHTS } from '../editor/schema';
+import { HIGHLIGHTS, HIGHLIGHT_NAMES } from '../editor/schema';
 import { SvgIcon } from './icons';
 import { docToolSettings } from '../editor/doc-tools';
 import { cardToolSettings } from '../editor/card-tools';
@@ -11,21 +11,23 @@ import { KeyField, type KeyNote } from './KeyField';
 import { safeSet } from './storage';
 import { readSetting, type SettingSpec } from '../editor/tools';
 import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
-import { newFileName } from './files';
-import { bridge, setActiveColor, type IndexFolder } from '../editor/host';
+import { newFileName, speechFileName } from './files';
+import { bridge, setActiveColor, type IndexFolder, type IndexedFile, type LinkedApp } from '../editor/host';
+import { collectHits, rankHits, type FileHit } from './file-search';
+import { PinIcon, StarIcon, loadPinned, loadStarred, togglePinned, toggleStarred } from './starred';
+import { StarTree } from './StarTree';
 import { downloadSettings, importSettings } from './settings-file';
+import { FORMAT_NAME, FORMAT_PREP } from './round-clock';
 import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
 
-const PENS = ['yellow', 'green', 'cyan', 'magenta', 'lightGray'];
-const PEN_NAMES: Record<string, string> = { yellow: 'Yellow', green: 'Green', cyan: 'Cyan', magenta: 'Magenta', lightGray: 'Gray' };
 /** Settings the features declare in their own files (see SettingSpec), shown on the Editor page. */
 const FEATURE_SETTINGS: SettingSpec[] = [...navSettings, ...docToolSettings, ...cardToolSettings];
 export const DEFAULTS = { zoom: 1, speechMin: 8, showOutline: true, depth: 3, highlight: 'yellow' };
 
 import { FONTS, SIZE_PREFS, UI_FONTS } from './display';
+import { MAX as MAX_RECENTS } from './recents';
 
 const STYLE_OPTS: [string, string][] = [['normal', 'Normal text'], ['pocket', 'Pocket'], ['hat', 'Hat'], ['block', 'Block'], ['tag', 'Tag'], ['analytic', 'Analytic'], ['undertag', 'Undertag']];
-const WPM: [number, string][] = Array.from({ length: 12 }, (_, i) => [150 + i * 25, `${150 + i * 25} wpm`]);
 const MARKERS: [string, string][] = [['#FF0000', 'Red'], ['#0070C0', 'Blue'], ['#00B050', 'Green'], ['#7030A0', 'Purple']];
 
 type Props = {
@@ -40,7 +42,7 @@ type Props = {
   depth: number; onDepth: (d: number) => void;
   highlight: string | null; onHighlight: (c: string) => void;
 };
-type Row = { label: string; hint?: string; bad?: boolean; search?: string; preview?: ReactNode; control: ReactNode; path?: boolean; wide?: boolean };
+type Row = { id?: string; lead?: ReactNode; label: string; hint?: string; bad?: boolean; search?: string; preview?: ReactNode; control: ReactNode; path?: boolean; wide?: boolean };
 type Page = { id: string; title: string; icon: string; group?: string; sections: [string, Row[]][] };
 
 /** A theme in miniature: its chrome around a strip of its paper, with a few lines of each one's text. */
@@ -49,6 +51,52 @@ function ThemeLook({ t }: { t: Theme }) {
     <span className="st-look" style={{ background: t.bg }}>
       <i style={{ background: t.text }} /><i style={{ background: t.text }} />
       <b style={{ background: t.paper }}><i style={{ background: t.paperInk }} /><i style={{ background: t.paperInk }} /><i style={{ background: t.paperInk }} /></b>
+    </span>
+  );
+}
+
+/** A whole number typed in a box, clamped to min..max and saved on Enter or leaving the box. Escape puts the saved one back. */
+function CountField({ p, label, min, max, unit }: { p: Pref<number>; label: string; min: number; max: number; unit: string }) {
+  const saved = String(pref(p));
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    const n = parseInt(draft, 10);
+    if (Number.isFinite(n)) setPref(p, Math.min(max, Math.max(min, n)));
+  };
+  return (
+    <span className="st-num">
+      <input className="st-text" aria-label={label} inputMode="numeric" maxLength={String(max).length} spellCheck={false}
+        value={draft ?? saved} onChange={(e) => setDraft(e.target.value.replace(/\D/g, ''))} data-draft={draft === null ? undefined : ''} onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') setDraft(null); }} />
+      <span className="st-unit">{unit}</span>
+    </span>
+  );
+}
+
+/**
+ * A reading speed typed as a number, saved on Enter or leaving the box. Escape while typing puts the saved one
+ * back (App lets that Escape through instead of closing Settings: `data-draft`).
+ * With `blank`, an empty box saves 0, which the read time takes as "same as cards".
+ */
+function WpmField({ p, label, blank }: { p: Pref<number>; label: string; blank?: string }) {
+  const saved = pref(p);
+  const shown = saved || blank === undefined ? String(saved) : '';
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    const n = parseInt(draft, 10);
+    if (Number.isFinite(n) && n > 0) setPref(p, Math.min(1000, Math.max(50, n)));
+    else if (blank !== undefined && !draft.trim()) setPref(p, 0);
+  };
+  return (
+    <span className="st-num">
+      <input className="st-text" aria-label={label} inputMode="numeric" maxLength={4} spellCheck={false} placeholder={blank}
+        value={draft ?? shown} onChange={(e) => setDraft(e.target.value.replace(/\D/g, ''))} data-draft={draft === null ? undefined : ''} onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') setDraft(null); }} />
+      {(draft ?? shown) && <span className="st-unit">wpm</span>}
     </span>
   );
 }
@@ -76,6 +124,28 @@ export function Settings(props: Props) {
   const [words, setWords] = useState<string[]>([]);
   useEffect(() => { if (props.open && bridge.dictionaryWords) bridge.dictionaryWords().then(setWords, () => {}); }, [props.open]);
   useEffect(() => onPrefs(() => setSpecTick((t) => t + 1)), []);
+  // apps that asked to send cards in (Nimbus...), kept by the main process
+  const [linked, setLinked] = useState<LinkedApp[]>([]);
+  useEffect(() => { if (props.open && bridge.linkedApps) bridge.linkedApps().then(setLinked, () => {}); }, [props.open]);
+  // starred and pinned files get picked here, from what the search folders hold
+  const [starred, setStarred] = useState<string[]>(loadStarred);
+  const [pinned, setPinned] = useState<string[]>(loadPinned);
+  const [files, setFiles] = useState<IndexedFile[]>([]);
+  const [starQuery, setStarQuery] = useState('');
+  const [openFolders, setOpenFolders] = useState<string[]>([]); // search folders opened to star inside them
+  useEffect(() => {
+    if (!props.open) return;
+    setStarred(loadStarred());
+    setPinned(loadPinned());
+    setStarQuery('');
+    let live = true;
+    void bridge.indexedFiles?.().then((f) => live && setFiles(f), () => {});
+    return () => { live = false; };
+  }, [props.open]);
+  // every file, copies included, to find one to mark; and the marked ones, with the copies each hides
+  const plainHits = useMemo(() => collectHits([], [], files), [files]);
+  const markedHits = useMemo(() => collectHits([], [], files, starred, pinned).filter((h) => h.starred || h.pinned), [files, starred, pinned]);
+  const markedPaths = useMemo(() => [...new Set([...pinned, ...starred])], [pinned, starred]);
   if (!props.open) return null;
 
   const zoomTo = (z: number) => props.onZoom(Math.max(0.5, Math.min(3, +z.toFixed(2))));
@@ -85,6 +155,12 @@ export function Settings(props: Props) {
   const seg = (label: string, opts: [string, boolean, () => void][]) => (
     <span className="st-seg" role="group" aria-label={label}>
       {opts.map(([n, on, pick]) => <button key={n} data-on={on || undefined} aria-pressed={on} onClick={pick}>{n}</button>)}
+    </span>
+  );
+  // a color choice: one dot per color, like the toolbar's pickers
+  const swatches = (label: string, opts: [string, string, boolean, () => void][]) => (
+    <span className="st-sws" role="radiogroup" aria-label={label}>
+      {opts.map(([n, css, on, pick]) => <button key={n} className="st-sw" role="radio" aria-checked={on} aria-label={n} title={n} style={{ background: css }} onClick={pick} />)}
     </span>
   );
   const select = (label: string, value: string | number, opts: [string | number, string][], set: (v: string) => void) => (
@@ -118,6 +194,8 @@ export function Settings(props: Props) {
       ? select(label, pref(p), opts, (o) => setPref(p, Number(o)))
       : seg(label, opts.map(([o, n]) => [n, pref(p) === o, () => setPref(p, o)])),
   });
+  const wpm = (p: Pref<number>, label: string, hint: string, tags = false): Row =>
+    ({ label, hint, control: <WpmField key={p.key} p={p} label={label} blank={tags ? 'Same as cards' : undefined} /> });
   const sizes = (p: Pref<number>, label: string, from: number, to: number, step = 1) =>
     select(label, pref(p), Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => [from + i * step, `${from + i * step} pt`]), (o) => setPref(p, Number(o)));
   /** A style shown in its own look, beside the control that changes it. */
@@ -140,6 +218,7 @@ export function Settings(props: Props) {
     const v = readSetting(spec);
     return { label: spec.label, hint: spec.hint, control: spec.kind === 'toggle'
       ? toggle(spec.label, v as boolean, (on) => setSpec(spec, on))
+      : spec.colors ? swatches(spec.label, spec.options.map(([o, n]) => [n, spec.colors![o], v === o, () => setSpec(spec, o)]))
       : seg(spec.label, spec.options.map(([o, n]) => [n, v === o, () => setSpec(spec, o)])) };
   };
   const specSections = [...new Set(FEATURE_SETTINGS.map((x) => x.section))]
@@ -150,7 +229,39 @@ export function Settings(props: Props) {
       control: <KeyField id={b.id} label={b.label} onNote={setKeyNote} /> };
   });
   const keyLabel = (id: string) => keyText(keyOf(id)) || 'no shortcut';
+
+  // Starred and pinned files: typing finds files to mark, otherwise the marked ones, sorted by search folder
+  const where = (h: FileHit) => (h.source && h.source !== h.folder ? `${h.source} › ${h.folder}` : h.folder);
+  const markBtns = (path: string, name: string) => {
+    const pin = pinned.includes(path), star = starred.includes(path);
+    return (<>
+      <button className="st-star st-pin" aria-pressed={pin} aria-label={`${pin ? 'Unpin' : 'Pin'} ${name}`}
+        title={pin ? 'Unpin' : `Pin: always list it first in ${keyLabel('search')}`} onClick={() => setPinned(togglePinned(path))}><PinIcon /></button>
+      <button className="st-star" aria-pressed={star} aria-label={`${star ? 'Unstar' : 'Star'} ${name}`}
+        title={star ? 'Unstar' : `Star: put it first in ${keyLabel('search')} when it matches`} onClick={() => setStarred(toggleStarred(path))}><StarIcon /></button>
+    </>);
+  };
+  const fileRow = (h: FileHit, note: string): Row => ({ label: h.name, hint: h.path, path: true, search: 'starred star pinned pin', control: (
+    <span className="st-fold"><output>{note}</output>{markBtns(h.path!, h.name)}</span>) });
+  const sq = starQuery.trim();
+  const byPath = new Map(markedHits.map((h) => [h.path!, h]));
+  const starRows: Row[] = sq
+    ? rankHits(plainHits, sq, 8).map((h) => fileRow(h, where(h)))
+    : markedPaths
+      .map((p): FileHit => byPath.get(p) ?? { key: p, name: p.split(/[\\/]/).pop()!.replace(/\.docx$/i, ''), folder: '', path: p, kind: 'file' as const, when: 0 })
+      .sort((a, b) => (a.source ?? '~').localeCompare(b.source ?? '~') || a.name.localeCompare(b.name))
+      .map((h) => fileRow(h, !byPath.has(h.path!) ? 'Not found' : h.hidden ? `${where(h)} · hides ${h.hidden} ${h.hidden === 1 ? 'copy' : 'copies'}` : where(h)));
+  const starFind: Row = { label: 'Star or pin a file', search: 'starred star pinned pin', hint: `A starred file goes first in ${keyLabel('search')} when it matches what you type. A pinned one always shows there, first, before you type. Both hide their copies in your other search folders.`, control: (
+    <input className="st-text st-find" aria-label="Find a file to star or pin" placeholder="Find a file…" spellCheck={false} value={starQuery}
+      onChange={(e) => setStarQuery(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && starQuery) { e.preventDefault(); e.stopPropagation(); setStarQuery(''); }
+        // Enter stars the top match (and leaves it starred if it already is)
+        else if (e.key === 'Enter' && sq) { const h = rankHits(plainHits, sq, 1)[0]; if (h && !starred.includes(h.path!)) setStarred(toggleStarred(h.path!)); }
+      }} />) };
+  const starNone: Row = { label: sq ? `No files match “${sq}”` : 'No starred or pinned files yet', hint: sq ? 'Only .docx files in your search folders can be starred or pinned.' : 'Find a file above and click its star or pin.', control: null };
   const prep = pref(P.prepMin);
+  const round = pref(P.round);
 
   // themes: a tile per theme, each a small picture of it; a custom theme's colors and name edit in place
   const themeId = pref(P.theme);
@@ -191,9 +302,13 @@ export function Settings(props: Props) {
       ['Files', [
         tog(P.confirmClose, 'Unsaved changes confirmation', 'Ask before closing a file or quitting with unsaved changes.'),
         tog(P.crashRecovery, 'Crash recovery', 'Keep a copy of open files, brought back if Falcon closes unexpectedly.'),
-        pickNum(P.recentCount, 'Recent files', 'How many files Home lists.', [[6, '6'], [12, '12'], [24, '24']]),
+        { label: 'Recent files', hint: `How many files Home lists, up to ${MAX_RECENTS}.`, control: <CountField key={P.recentCount.key} p={P.recentCount} label="Recent files" min={1} max={MAX_RECENTS} unit="files" /> },
         { label: 'Name new files', hint: 'What an Untitled document is called when you first save it.', control:
           select('Name new files', pref(P.newName), (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), (h) => setPref(P.newName, h as 'untitled')) },
+        { label: 'Speech doc name', wide: true, search: 'speech filename template date',
+          hint: `What New speech doc names the file. {speech} is the name you type at the prompt. {date:…} is the date and time: YYYY YY, M MM MMM MMMM, D DD ddd dddd, h hh (12-hour), H HH (24-hour), m mm, s ss, and A or a for AM/PM. Anything else stays as typed; inside {date:…} put a word in [brackets]. Example: ${speechFileName('1NC')}.docx`,
+          control: <input className="st-text st-wide" aria-label="Speech doc name" spellCheck={false} maxLength={120} value={pref(P.speechName)}
+            onChange={(e) => setPref(P.speechName, e.target.value)} /> },
         tog(P.savePrefix, 'Prefix Save As copies', 'Send, Read and Marked Doc copies start with a prefix, so you can tell them apart from the file.'),
         prefixRow(P.prefixSend, 'Send Doc'), prefixRow(P.prefixRead, 'Read Doc'), prefixRow(P.prefixMarked, 'Marked Doc'),
       ]],
@@ -203,6 +318,13 @@ export function Settings(props: Props) {
         { label: 'Import settings', hint: importNote?.text ?? 'Load a settings file from Falcon, or one exported from CardMirror.', bad: importNote?.bad, control: (
           <button className="st-btn" onClick={() => fileInput.current?.click()}>Import</button>) },
       ]],
+      ...(bridge.linkedApps ? [['Linked apps', linked.length
+        ? linked.map((a): Row => ({ label: a.name[0].toUpperCase() + a.name.slice(1), search: 'linked apps nimbus bridge cards send', hint: a.allowed ? 'Can send cards into your open docs.' : 'Blocked from sending cards in.', control: (
+          <span className="st-fold">
+            {toggle(`Let ${a.name} send cards`, a.allowed, (on) => void bridge.allowLinkedApp!(a.id, on).then(setLinked))}
+            <button className="sb-ico" aria-label={`Forget ${a.name}`} title="Forget it: it asks again next time" onClick={() => void bridge.allowLinkedApp!(a.id, null).then(setLinked)}><SvgIcon name="x" /></button>
+          </span>) }))
+        : [{ label: 'No linked apps yet', search: 'linked apps nimbus bridge cards send', hint: 'Debate apps like Nimbus can send cards into your open docs, the way they do with CardMirror. The first time one tries, Falcon asks you.', control: null }]] as [string, Row[]]] : []),
       ['Privacy', [
         tog(P.usageStats, 'Share usage statistics', 'Send anonymous counts of which features get used, like opening and saving files. Never file names or anything you type. Desktop app only.'),
       ]],
@@ -211,15 +333,25 @@ export function Settings(props: Props) {
       ['Folders', !bridge.indexFolders
         ? [{ label: 'Search folders', hint: `File search reaches into your folders in the desktop app. Here, ${keyLabel('search')} searches open and recent files.`, control: null }]
         : [
-          ...(folders ?? []).map((f): Row => ({ label: f.path.split(/[\\/]/).filter(Boolean).pop() ?? f.path, hint: f.path, path: true, control: (
-            <span className="st-fold">
-              <output>{f.missing ? 'Not found' : f.count === null ? 'Indexing…' : `${f.count.toLocaleString('en-US')} ${f.count === 1 ? 'file' : 'files'}`}</output>
-              <button className="sb-ico" aria-label={`Remove ${f.path}`} title="Remove from file search"
-                onClick={() => void bridge.removeIndexFolder!(f.path).then(setFolders)}><SvgIcon name="x" /></button>
-            </span>) })),
-          { label: folders?.length ? 'Add another folder' : 'No folders yet', hint: `Files in these folders, and the folders inside them, show up in ${keyLabel('search')}. Only .docx files are listed.`, control: (
+          ...(folders ?? []).flatMap((f): Row[] => {
+            const name = f.path.split(/[\\/]/).filter(Boolean).pop() ?? f.path;
+            const isOpen = openFolders.includes(f.path);
+            const canOpen = !!bridge.indexedFiles && !f.missing && !!f.count;
+            return [{ label: name, hint: f.path, path: true, lead: canOpen && (
+              <button className="sb-ico st-chev" aria-expanded={isOpen} aria-label={`${isOpen ? 'Close' : 'Open'} ${name}`} title={isOpen ? 'Close' : 'Show its files, to star them'}
+                onClick={() => setOpenFolders((o) => (isOpen ? o.filter((x) => x !== f.path) : [...o, f.path]))}><SvgIcon name="chev" /></button>), control: (
+              <span className="st-fold">
+                <output>{f.missing ? 'Not found' : f.count === null ? 'Indexing…' : `${f.count.toLocaleString('en-US')} ${f.count === 1 ? 'file' : 'files'}`}</output>
+                <button className="sb-ico" aria-label={`Remove ${f.path}`} title="Remove from file search"
+                  onClick={() => void bridge.removeIndexFolder!(f.path).then(setFolders)}><SvgIcon name="x" /></button>
+              </span>) },
+            ...(canOpen && isOpen ? [{ id: `tree:${f.path}`, label: '', wide: true, control: (
+              <StarTree root={f.path} files={files} starred={markedPaths} star={markBtns} />) }] : [])];
+          }),
+          { label: folders?.length ? 'Add another folder' : 'No folders yet', hint: `Files in these folders, and the folders inside them, show up in ${keyLabel('search')}, and their cards in Search cards (${keyLabel('searchCards')}). Only .docx files are listed.`, control: (
             <button className="st-btn" onClick={() => void bridge.addIndexFolder!().then(setFolders)}><SvgIcon name="plus" />Add folder…</button>) },
         ]],
+      ...(bridge.indexedFiles ? [['Starred and pinned files', [starFind, ...(starRows.length ? starRows : [starNone])]] as [string, Row[]]] : []),
     ] },
     { id: 'appearance', title: 'Appearance', icon: 'contrast', sections: [
       ['Theme', [
@@ -240,7 +372,7 @@ export function Settings(props: Props) {
           seg('Document paper', (['theme', 'white', 'dark'] as const).map((o) => [{ theme: 'Theme', white: 'White', dark: 'Dark' }[o], pref(P.paper) === o, () => setPref(P.paper, o)])) },
         { label: 'Highlighter', hint: 'Your highlight color, also used for the current location in the outline.', control: (
           <span className="st-pens" role="radiogroup" aria-label="Highlighter">
-            {PENS.map((p) => <button key={p} role="radio" aria-checked={props.highlight === p} aria-label={PEN_NAMES[p]} title={PEN_NAMES[p]}
+            {Object.keys(HIGHLIGHTS).map((p) => <button key={p} role="radio" aria-checked={props.highlight === p} aria-label={HIGHLIGHT_NAMES[p]} title={HIGHLIGHT_NAMES[p]}
               style={{ background: HIGHLIGHTS[p] }} onClick={() => props.onHighlight(p)} />)}
           </span>) },
       ]],
@@ -254,16 +386,18 @@ export function Settings(props: Props) {
             <output>{Math.round(props.zoom * 100)}%</output>
             <button aria-label="More zoom" onClick={() => zoomTo(props.zoom + 0.1)}>+</button>
           </span>) },
-        tog(P.wheelZoom, 'Zoom with the scroll wheel', `${IS_MAC ? '⌘' : 'Ctrl'} and scroll, or pinch the trackpad.`),
+        tog(P.wheelZoom, 'Zoom with the scroll wheel', `${IS_MAC ? '⌘' : 'Ctrl'} and scroll. Pinching the trackpad always zooms.`),
         pick(P.textWidth, 'Text width', 'Narrower lines are easier to follow.', [['full', 'Full'], ['wide', 'Wide'], ['narrow', 'Narrow']]),
         pick(P.margins, 'Margins', 'Space at the left and right of the text.', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']]),
         tog(P.railResize, 'Resizable rail', 'Drag the rail\'s right edge to show the names of open files. Double-click the edge to go back to icons.'),
+        pickNum(P.joinMax, 'Files side by side', 'The most files Join shows at once. Shift-click files in the rail, then right-click and pick Join.', [[2, '2'], [3, '3'], [4, '4'], [5, '5']]),
       ]],
       ['Cursor and motion', [
         pick(P.caret, 'Cursor color', 'Highlighter matches your highlight color.', [['auto', 'Text'], ['blue', 'Blue'], ['red', 'Red'], ['ink', 'Highlighter']]),
         pick(P.selection, 'Selection color', 'The color behind selected text.', [['blue', 'Blue'], ['gray', 'Gray'], ['ink', 'Highlighter']]),
         tog(P.cardBar, 'Mark the current card', 'A thin line beside the card the cursor is in.'),
         tog(P.reduceMotion, 'Reduce motion', 'Turn off animations. Also on when your system asks for less motion.'),
+        tog(P.launchFalcon, 'Falcon on launch', 'The falcon sweeps in over Home when Falcon starts. Any key or click lands it.'),
       ]],
     ] },
     { id: 'editor', title: 'Editor', icon: 'doc', sections: [
@@ -294,11 +428,14 @@ export function Settings(props: Props) {
         tog(P.smallPilcrows, 'Small ¶ marks', 'Set the ¶ marks at 6 pt so they take less room.'),
         tog(P.pasteCondense, 'Condense after Paste Text', 'F2 condenses what it pastes, the way F3 does.'),
         tog(P.shrinkProtect, 'Keep omission notes full size', 'Shrink leaves notes like [Table Omitted] alone.'),
+        tog(P.smartShrink, 'Smart Shrink', 'Mod-8 shrinks in one pass: paragraphs you don\'t read drop to 5 pt, the words between read ones to 8 pt.'),
       ]],
       ['Pasting', [
+        tog(P.smartQuotes, 'Smart quotes', 'Typed \' and " curl the right way. Backspace right after one puts the straight quote back, and a space curls it again.'),
         tog(P.smartPaste, 'Smart paste', 'Word and Verbatim formatting pastes as cites, underlining and highlights. F2 always pastes plain.'),
         tog(P.citeNearest, 'Copy previous cite: first line only', 'Off, Alt-F8 also copies the cite lines right after it.'),
         tog(P.hlUnderlined, 'Highlight underlined text only', 'Highlighting skips text that isn\'t underlined, emphasized or cited.'),
+        tog(P.styleOffClears, 'Clear formatting when underline comes off', 'Taking underline off also clears size, bold, italic, highlight and background color, so the text goes back to plain.'),
       ]],
       ['Enter at the end of a heading', (['pocket', 'hat', 'block', 'tag', 'analytic', 'undertag'] as const).map((st) => {
         const n = STYLE_OPTS.find(([o]) => o === st)![1];
@@ -310,15 +447,15 @@ export function Settings(props: Props) {
     ] },
     { id: 'formatting', title: 'Formatting', icon: 'format', sections: [
       ['Styles', [
-        styled('Pocket', `pocket${pref(P.pocketBox) ? ' box' : ''}`, 'Moratorium Aff', sizes(P.szPocket, 'Pocket size', 18, 36, 2)),
-        styled('Hat', `hat${pref(P.hatLine) === 'single' ? ' single' : ''}`, 'DIB Advantage', sizes(P.szHat, 'Hat size', 14, 28, 2)),
-        styled('Block', 'block', 'AT Offshoring DA', sizes(P.szBlock, 'Block size', 12, 22)),
-        styled('Tag', 'tag', 'Power is the binding constraint', sizes(P.szTag, 'Tag size', 10, 16)),
-        styled('Analytic', 'analytic', 'Their ev assumes no stockpiles', sizes(P.szAnalytic, 'Analytic size', 10, 16)),
-        styled('Undertag', 'undertag', 'Read with the DIB link', sizes(P.szUndertag, 'Undertag size', 8, 14)),
-        styled('Cite', `cite${pref(P.citeBold) ? '' : ' plain'}`, <><b>Nystuen 25</b> Senior fellow</>, sizes(P.szCite, 'Cite size', 10, 16)),
-        styled('Body text', 'und', 'data centers outbid factories', sizes(P.szNormal, 'Body text size', 8, 14)),
-        styled('Emphasis', `emph${pref(P.emphasisBox) ? '' : ' nobox'}`, <>hollow <span>DIB</span> can’t deter</>,
+        styled('Pocket', `pocket${pref(P.pocketBox) ? ' box' : ''}`, '1AC', sizes(P.szPocket, 'Pocket size', 18, 36, 2)),
+        styled('Hat', `hat${pref(P.hatLine) === 'single' ? ' single' : ''}`, 'Advantage 1', sizes(P.szHat, 'Hat size', 14, 28, 2)),
+        styled('Block', 'block', 'AT: Politics DA', sizes(P.szBlock, 'Block size', 12, 22)),
+        styled('Tag', 'tag', 'Tag 1.', sizes(P.szTag, 'Tag size', 10, 16)),
+        styled('Analytic', 'analytic', 'Analytic', sizes(P.szAnalytic, 'Analytic size', 10, 16)),
+        styled('Undertag', 'undertag', 'Undertag', sizes(P.szUndertag, 'Undertag size', 8, 14)),
+        styled('Cite', `cite${pref(P.citeBold) ? '' : ' plain'}`, <b>Clare ’23</b>, sizes(P.szCite, 'Cite size', 10, 16)),
+        styled('Body text', 'und', 'Body text', sizes(P.szNormal, 'Body text size', 8, 14)),
+        styled('Emphasis', `emph${pref(P.emphasisBox) ? '' : ' nobox'}`, <>only the <span>plan</span> solves</>,
           select('Emphasis', pref(P.emphasisBox) ? 'box' : 'bold', [['box', 'Bold and box'], ['bold', 'Bold only']], (o) => setPref(P.emphasisBox, o === 'box'))),
         styled('Unread text', 'small', 'the rest of the paragraph, shrunk so the card stays short',
           select('Shrink down to', pref(P.shrinkMin), [[4, '4 pt'], [6, '6 pt'], [8, '8 pt']], (o) => setPref(P.shrinkMin, Number(o))), 'The smallest size Shrink steps down to.'),
@@ -337,18 +474,22 @@ export function Settings(props: Props) {
     { id: 'keys', title: 'Keybindings', icon: 'keyboard', sections: [...new Set(BINDINGS.map((b) => b.group))].map((g) => [g, keyRows(g)]) },
     { id: 'speech', title: 'Speech and timers', icon: 'timer', group: 'Debate', sections: [
       ['Format', [
-        { label: 'Event', hint: 'High school: 8 minute speeches, 8 of prep. College: 9 and 10.', control:
+        { label: 'Round', hint: 'The speeches the timer window steps through. Choosing one sets Prep time to its usual length: Policy 8, LD 4, PF 3.', control:
+          seg('Round', (['policy', 'ld', 'pf'] as const).map((f) => [FORMAT_NAME[f], round === f, () => { setPref(P.round, f); setPref(P.prepMin, f === 'policy' && props.speechMin === 9 ? 10 : FORMAT_PREP[f]); }])) },
+        { label: 'Event', hint: 'Policy. High school: 8 minute speeches, 8 of prep. College: 9 and 10.', control:
           seg('Event', [['High school', props.speechMin === 8 && prep === 8, profile(8, 8)], ['College', props.speechMin === 9 && prep === 10, profile(9, 10)]]) },
-        { label: 'Speech length', hint: 'Where the speech timer in the top bar starts.', control:
+        { label: 'Speech length', hint: 'Policy: how long constructives run. Rebuttals are 3 minutes shorter, and cross-ex is 3 minutes. LD and PF use their usual times.', control:
           select('Speech length', props.speechMin, Array.from({ length: 30 }, (_, i) => [i + 1, `${i + 1}:00`]), (m) => props.onSpeechMin(Number(m))) },
         tog(P.showSend, 'Send button', `A Send button beside Read in the top bar. ${keyLabel('sendToSpeech')} sends either way.`),
-        tog(P.showPrep, 'Prep timer', 'A prep clock beside the speech timer. Click to start or pause, right-click to reset.'),
-        { label: 'Prep time', hint: 'Where the prep timer starts.', control:
+        tog(P.showPrep, 'Prep timer', 'Our prep clock in the top bar, beside the speech timer. Click to start or pause, right-click to reset. Both sides\' prep is always in the timer window.'),
+        { label: 'Prep time', hint: 'Each side\'s prep for the round.', control:
           select('Prep time', prep, Array.from({ length: 15 }, (_, i) => [i + 1, `${i + 1}:00`]), (m) => setPref(P.prepMin, Number(m))) },
       ]],
       ['Reading speed', [
-        pickNum(P.wpm1, 'Reader 1', 'Words per minute for the first read time in the status bar.', WPM),
-        pickNum(P.wpm2, 'Reader 2', 'Words per minute for the second read time.', WPM),
+        wpm(P.wpm1, 'Reader 1: cards', 'How fast Reader 1 reads highlighted card text. The first read time in the status bar.'),
+        wpm(P.wpm1Tags, 'Reader 1: tags and analytics', 'How fast Reader 1 reads tags, analytics and cites, usually faster than cards.', true),
+        wpm(P.wpm2, 'Reader 2: cards', 'How fast Reader 2 reads highlighted card text. The second read time.'),
+        wpm(P.wpm2Tags, 'Reader 2: tags and analytics', 'How fast Reader 2 reads tags, analytics and cites.', true),
       ]],
     ] },
   ];
@@ -382,8 +523,11 @@ export function Settings(props: Props) {
     setActiveColor('shading', get('shading') ?? '#D9D9D9');
     setSpecTick((t) => t + 1);
     const n = (x: number) => `${x} setting${x === 1 ? '' : 's'}`;
+    if (r.folders?.length && bridge.importIndexFolders) void bridge.importIndexFolders(r.folders).then(setFolders, () => {});
+    const shortcuts = r.keys ? ` and ${r.keys} ${r.keys === 1 ? 'shortcut' : 'shortcuts'}` : '';
+    const kept = r.keysKept?.length ? ` Not brought over: ${r.keysKept.join(', ')}.` : '';
     setImportNote({ text: r.from === 'CardMirror'
-      ? `Brought over ${n(r.applied)} from CardMirror. ${r.skipped ? `${n(r.skipped)} ${r.skipped === 1 ? "has" : "have"} no Falcon match yet.` : ''}`.trim()
+      ? `Brought over ${n(r.applied)}${shortcuts} from CardMirror.${kept} ${r.skipped ? `${n(r.skipped)} ${r.skipped === 1 ? "has" : "have"} no Falcon match yet.` : ''}`.trim()
       : `Loaded ${n(r.applied)}.` });
   };
 
@@ -434,8 +578,9 @@ export function Settings(props: Props) {
                 <h3>{title}</h3>
                 <div className="st-card">
                   {rows.map((r) => (
-                    <div key={r.path ? r.hint : r.label} className={`st-row${r.wide ? ' wide' : ''}`}>
-                      <div className="st-txt"><span>{r.label}</span>{r.hint && (r.path ? <small className="path"><span dir="ltr">{r.hint}</span></small> : <small data-bad={r.bad || undefined}>{r.hint}</small>)}</div>
+                    <div key={r.id ?? (r.path ? r.hint : r.label)} className={`st-row${r.wide ? ' wide' : ''}${r.id ? ' st-tree' : ''}`}>
+                      {r.lead}
+                      {r.label && <div className="st-txt"><span>{r.label}</span>{r.hint && (r.path ? <small className="path"><span dir="ltr">{r.hint}</span></small> : <small data-bad={r.bad || undefined}>{r.hint}</small>)}</div>}
                       {r.preview}
                       {r.control}
                     </div>

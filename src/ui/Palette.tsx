@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { bridge, type IndexedFile } from '../editor/host';
 import { collectHits, rankHits, type FileHit } from './file-search';
 import type { Recent } from './recents';
+import { PinIcon, StarIcon, loadPinned, loadStarred } from './starred';
 import { SvgIcon } from './icons';
 import './palette.css';
 
@@ -19,6 +20,8 @@ export function Palette(props: {
   const [at, setAt] = useState(0);
   const [files, setFiles] = useState<IndexedFile[]>([]);
   const [folders, setFolders] = useState<number | null>(null); // how many folders are allowed (null: not asked yet)
+  const [starred, setStarred] = useState<string[]>(loadStarred);
+  const [pinned, setPinned] = useState<string[]>(loadPinned);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -26,6 +29,8 @@ export function Palette(props: {
     if (!open) return;
     setQuery('');
     setAt(0);
+    setStarred(loadStarred());
+    setPinned(loadPinned());
     inputRef.current?.focus();
     let live = true;
     void bridge.indexFolders?.().then((f) => live && setFolders(f.length), () => {});
@@ -34,8 +39,11 @@ export function Palette(props: {
   }, [open]);
 
   // hooks run before the `if (!open)` below, and App renders on every transaction: closed, rank nothing
-  const all = useMemo(() => (open ? collectHits(props.docs, props.recents, files) : []), [open, props.docs, props.recents, files]);
-  const hits = useMemo(() => (open ? rankHits(query ? all : all.filter((h) => h.kind !== 'file'), query) : []), [open, all, query]);
+  // stars only count in a search: with the box empty they'd hide a recent copy without showing themselves
+  const typing = !!query.trim();
+  const all = useMemo(() => (open ? collectHits(props.docs, props.recents, files, typing ? starred : [], pinned) : []), [open, props.docs, props.recents, files, typing, starred, pinned]);
+  // with no query: pinned files, then what's open, then recent files (starred ones only jump ahead in a search)
+  const hits = useMemo(() => (open ? rankHits(typing ? all : all.filter((h) => h.kind !== 'file' || h.pinned), query) : []), [open, all, typing, query]);
   const cur = Math.min(at, hits.length - 1);
   useEffect(() => { listRef.current?.querySelector('[data-on]')?.scrollIntoView({ block: 'nearest' }); }, [cur, hits]);
   if (!open) return null;
@@ -49,9 +57,14 @@ export function Palette(props: {
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (query) { setQuery(''); setAt(0); } else props.onClose(); }
   };
 
-  // with no query: what's open, then recent files, under their own labels
-  let lastKind: FileHit['kind'] | null = null;
+  // with no query: pinned, what's open, then recent files, under their own labels
+  let lastHead: string | null = null;
   const label = { open: 'Open', recent: 'Recent', file: 'Files' };
+  const where = (h: FileHit) => {
+    const at = h.source && h.source !== h.folder ? `${h.source} › ${h.folder}` : h.folder;
+    const shown = typing && h.kind === 'open' ? 'Open' : at;
+    return h.hidden ? `${shown} · ${h.hidden} more hidden` : shown;
+  };
   return (
     <div className="pk-back" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
       <div className="pk" role="dialog" aria-modal="true" aria-label="Search files" onKeyDown={onKey}>
@@ -63,21 +76,27 @@ export function Palette(props: {
         </label>
         <div ref={listRef} id="pk-list" className="pk-list" role="listbox" aria-label="Files">
           {hits.map((h, i) => {
-            const head = !query && h.kind !== lastKind ? label[h.kind] : null;
-            lastKind = h.kind;
+            const section = h.pinned ? 'Pinned' : label[h.kind];
+            const head = !typing && section !== lastHead ? section : null;
+            lastHead = section;
             return (
               <div key={h.key} role="presentation">
                 {head && <div className="pk-head">{head}</div>}
                 <div id={`pk-${i}`} className="pk-row" role="option" aria-selected={i === cur} data-on={i === cur || undefined}
-                  title={h.path} onMouseMove={() => { if (i !== cur) setAt(i); }} onClick={() => pick(h)}>
+                  data-star={h.starred || h.pinned || undefined}
+                  title={h.hidden ? `${h.path}\n${h.hidden} ${h.hidden === 1 ? 'copy' : 'copies'} in other search folders hidden while this one is ${h.pinned ? 'pinned' : 'starred'}` : h.path}
+                  onMouseMove={() => { if (i !== cur) setAt(i); }} onClick={() => pick(h)}>
                   <SvgIcon name="doc" />
                   <span className="pk-nm">{h.name}</span>
-                  <span className="pk-in">{query && h.kind === 'open' ? 'Open' : h.folder}</span>
+                  <span className="pk-in">{where(h)}</span>
+                  {/* stars and pins are set in Settings > File search, here they only mark */}
+                  {h.pinned ? <span className="pk-star" aria-label="Pinned" title="Pinned in Settings > File search"><PinIcon /></span>
+                    : h.starred && <span className="pk-star" aria-label="Starred" title="Starred in Settings > File search"><StarIcon /></span>}
                 </div>
               </div>
             );
           })}
-          {!hits.length && <p className="pk-none">{query ? `No files match “${query.trim()}”.` : 'No recent files yet.'}</p>}
+          {!hits.length && <p className="pk-none">{query ? `No files match “${query.trim()}”.` : 'No recent files yet. Pin files in Settings > File search to keep them here.'}</p>}
         </div>
         {bridge.indexedFiles && folders === 0 && (
           <button className="pk-foot" onClick={() => { props.onClose(); props.onSettings(); }}>

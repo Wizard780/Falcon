@@ -14,7 +14,7 @@
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --doc-font: Calibri, Carlito, Arial, sans-serif;
   --zoom: 1;
-  --bar-h: 88px; --status-h: 28px; --nav-w: 280px; --tools-w: 280px;
+  --bar-h: 88px; --status-h: 28px; --ol-w: 280px; --nav-w: var(--ol-w); --tools-w: 280px; /* --ol-w: the outline's dragged width; the toolbar stays put beside the tools row either way */
   /* the rail's dragged width (--rail-w, set by the rail), held to 30% of a narrow window */
   --strip-w: min(var(--rail-w, 56px), max(140px, 30vw));
 }
@@ -85,6 +85,13 @@ svg { flex: none; }
 .files-l { position: absolute; left: 0; right: 0; bottom: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 12px 12px 4px; }
 .files-l::-webkit-scrollbar { width: 0; }
 .files-r { position: relative; flex: none; }
+/* a file being dragged to a new slot (both lists): lifted, and the grab cursor everywhere till it drops */
+.doc-row[data-drag] .doc-nm, .files-r[data-drag] .files-b { background: var(--u-raised); box-shadow: var(--u-top), 0 4px 12px rgba(0, 0, 0, calc(.3 * var(--u-sh))); }
+:root:has([data-drag]), :root:has([data-drag]) * { cursor: grabbing !important; user-select: none !important; }
+/* the line a dragged file will land on: in the 4px gap before this row, or after the last one */
+.doc-row[data-drop]::before, .files-r[data-drop]::before { content: ''; position: absolute; z-index: 2; left: 2px; right: 2px; height: 2px; border-radius: 1px; background: var(--ink); pointer-events: none; }
+.doc-row[data-drop="before"]::before, .files-r[data-drop="before"]::before { top: -3px; }
+.doc-row[data-drop="after"]::before, .files-r[data-drop="after"]::before { bottom: -3px; }
 .files-b { width: 100%; height: 36px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 8px; color: var(--u-tx); text-align: left; cursor: pointer; transition: background 150ms ease-out; }
 .files-b svg { color: var(--u-mut); }
 .files-b:hover { background: var(--u-hover); }
@@ -98,6 +105,14 @@ svg { flex: none; }
 .files-r:hover .files-x { opacity: 1; }
 .files-r:hover .dot { opacity: 0; }
 .files-x:hover { color: var(--u-tx); background: var(--u-ctl-on); }
+/* shift-clicked files, waiting for Join (right-click) */
+.doc-row[data-sel] .doc-nm, .files-r[data-sel] .files-b { background: var(--u-ctl-on); color: var(--u-tx); }
+/* joined files sit together in one capsule */
+.doc-row[data-join]::after, .files-r[data-join]::after { content: ''; position: absolute; z-index: -1; inset: -2px -4px; background: var(--u-hover); pointer-events: none; }
+.doc-row[data-join="first"]::after, .files-r[data-join="first"]::after { top: -4px; border-radius: 12px 12px 0 0; }
+.doc-row[data-join="last"]::after, .files-r[data-join="last"]::after { bottom: -4px; border-radius: 0 0 12px 12px; }
+.doc-row[data-join="solo"]::after, .files-r[data-join="solo"]::after { inset: -4px; border-radius: 12px; }
+.rail-menu { min-width: 180px; }
 /* the tooltip every button shares: name, key, and what it does */
 /* the update button and its card: the card opens beside the rail like the files panel */
 .fs-b.upd { border-radius: 50%; color: var(--u-tx); background: var(--u-raised); box-shadow: var(--u-top), 0 0 16px color-mix(in srgb, var(--ink-ui) 40%, transparent); }
@@ -142,6 +157,11 @@ svg { flex: none; }
 .gear-b svg { transition: transform 600ms cubic-bezier(.34, 1.45, .5, 1); }
 .gear-b:hover svg { transform: rotate(120deg); }
 @media (prefers-reduced-motion: reduce) { .gear-b svg { transition: none; } .gear-b:hover svg { transform: none; } }
+/* check for updates: the arrows turn while it looks */
+.chk[data-busy] { cursor: progress; }
+.chk[data-busy] svg { animation: chk-spin 900ms linear infinite; }
+@keyframes chk-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .chk[data-busy] svg { animation: none; } }
 .fs-b[data-on] { color: var(--u-tx); background: var(--u-raised); box-shadow: var(--u-top); }
 .fs-b[data-on]::before { content: ''; position: absolute; left: -10px; top: 10px; bottom: 10px; width: 2px; border-radius: 1px; background: var(--ink-ui); }
 .sb-ico { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--u-mut); cursor: pointer; transition: background 150ms ease-out, color 150ms ease-out; }
@@ -161,9 +181,15 @@ svg { flex: none; }
 .sb-row .ct { font: 12px var(--mono); color: var(--u-mut); font-variant-numeric: tabular-nums; }
 
 /* the outline: attached to the document, docked on the page's left edge */
-.olp { position: absolute; top: var(--bar-h); bottom: var(--status-h); left: var(--strip-w); width: 280px; z-index: 240; display: flex; flex-direction: column; background: var(--u-deep); color: var(--u-tx); user-select: none;
+.olp { position: absolute; top: var(--bar-h); bottom: var(--status-h); left: var(--strip-w); width: var(--ol-w); z-index: 240; display: flex; flex-direction: column; background: var(--u-deep); color: var(--u-tx); user-select: none;
   transform: translateX(-100%); opacity: 0; pointer-events: none; transition: transform 220ms var(--u-ease), opacity 150ms var(--u-ease); }
 .olp.shown { transform: none; opacity: 1; pointer-events: auto; }
+/* the outline's right edge drags it wider or narrower, like the rail's */
+.ol-grip { position: absolute; z-index: 2; top: 0; bottom: 0; right: 0; width: 6px; /* inside the pane: the page's edge stays the page's */ cursor: col-resize; touch-action: none; outline: none; }
+.ol-grip::after { content: ''; position: absolute; top: 0; bottom: 0; right: 0; width: 2px; background: transparent; transition: background 150ms ease-out; }
+.ol-grip:hover::after { background: var(--u-ctl-on); transition-delay: 150ms; }
+.ol-grip:focus-visible::after, :root[data-ol-drag] .ol-grip::after { background: var(--ink-ui); transition-delay: 0s; }
+:root[data-ol-drag], :root[data-ol-drag] * { cursor: col-resize !important; user-select: none !important; }
 .ol-head { display: flex; align-items: center; gap: 6px; padding: 4px 0 8px; }
 .ol-head .sb-label { flex: 1; padding: 0 0 0 10px; }
 .ol-head .sb-ico { width: 26px; height: 26px; }
@@ -188,11 +214,13 @@ svg { flex: none; }
 .sb-row.ol.l3[data-on], .sb-row.ol.l4[data-on] { color: var(--u-tx); }
 
 /* the top bar: Classic, a two-row grid where each button previews its style */
-.toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: safe center; background: var(--u-deep); user-select: none; min-width: 0;
+.toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: flex-start; background: var(--u-deep); user-select: none; min-width: 0;
   overflow-x: auto; scrollbar-width: none; container-type: inline-size; }
 .toolbar::-webkit-scrollbar { display: none; }
-.bar { position: relative; display: flex; align-items: center; height: 100%; padding: 0 24px; gap: 32px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
-.bar .g, .bar .end { display: grid; grid-template-rows: 32px 32px; grid-auto-flow: column; gap: 4px; }
+/* every group in one run, spaced like the buttons inside a group, right after the tools row; Read and the timer go to the far right */
+.bar { position: relative; flex: 1 0 auto; display: flex; align-items: center; height: 100%; padding: 0 24px 0 6px; gap: 4px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
+.bar .end { margin-left: auto; }
+.bar .g, .bar .end { display: grid; grid-template-rows: 32px 32px; grid-auto-flow: column; gap: 6px 4px; }
 .bar .g > .b, .bar .end > .b { width: 100%; }
 .b { position: relative; isolation: isolate; height: 32px; padding: 0 12px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; transition: transform 160ms cubic-bezier(.23, 1, .32, 1); }
 .b::before, .b::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity 150ms ease-out; }
@@ -250,14 +278,27 @@ button.b:active { transform: scale(.97); }
 
 /* page */
 .f-scroll { grid-column: 3; grid-row: 2; overflow: auto; background: var(--page); min-height: 0; }
+/* joined files: one page per file side by side, set apart by the chrome around them, each with its name on top */
+.split { display: none; }
+.app[data-split] .f-main { display: none; }
+.app[data-split] .split { grid-column: 3; grid-row: 2; min-height: 0; display: flex; gap: 6px; background: var(--u-deep); }
+.split .pane { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.split .pane-h { flex: none; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 14px; font: 12px var(--ui-font); color: var(--u-mut); user-select: none; cursor: default; transition: color 150ms ease-out; }
+.split .pane[data-on] .pane-h { color: var(--u-tx); }
+.split .pane-h .nm { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.split .pane-h .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--u-tx2); }
+.split .f-scroll { flex: 1; grid-column: auto; grid-row: auto; border-radius: 8px 8px 0 0; }
 
 /* status bar */
-.status { grid-column: 3; grid-row: 3; display: flex; align-items: center; gap: 16px; padding: 0 12px 0 20px; font-size: 12px; color: var(--u-mut); background: var(--u-deep); white-space: nowrap; overflow: hidden; user-select: none; }
+.status { grid-column: 3; grid-row: 3; display: flex; align-items: center; gap: 16px; padding: 0 14px 0 24px; font-size: 12px; color: var(--u-mut); background: var(--u-deep); white-space: nowrap; overflow: hidden; user-select: none; }
 .status .grow { flex: 1; }
 .status button { color: var(--u-mut); height: 22px; min-width: 22px; border-radius: 6px; margin-left: -8px; }
 .status button:hover { color: var(--u-tx); background: var(--u-hover); }
 .status .zoom { font-family: var(--mono); min-width: 42px; text-align: center; }
 .status .lit { color: var(--u-tx); }
+/* the selection's count, set off from the whole doc's by a thin line */
+.status .sel { display: inline-flex; align-items: center; gap: 16px; color: var(--u-tx2); }
+.status .sel::before { content: ''; width: 1px; height: 12px; background: var(--u-ctl-on); }
 
 /* find, same surface as the popovers */
 .findbar { position: fixed; top: calc(var(--bar-h) + 8px); right: 24px; z-index: 40; display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 12px; border-radius: 12px; background: var(--u-pop); color: var(--u-mut);
@@ -289,10 +330,15 @@ button.b:active { transform: scale(.97); }
     linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, calc(.3 * var(--u-sh)))); }
 .hm-sc { position: absolute; inset: 0; overflow: auto; z-index: 1; container-type: inline-size; }
 .hm-in { position: relative; max-width: 1160px; margin: 0 auto; padding: 72px 48px 56px; }
+.hm-brand { display: flex; align-items: center; gap: 18px; }
+.hm-perch { flex: none; width: 62px; height: 65px; pointer-events: none; color: var(--u-tx); } /* the falcon logo, left of the name, in the text color like the rail's */
+.hm-perch svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.falcon-flight { position: absolute; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; color: var(--u-tx); }
+.falcon-flight canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.falcon-flight svg { overflow: visible; }
 .hm-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: 32px; padding-bottom: 36px; }
-.hm-date { margin: 0 0 10px; font-size: 13px; color: var(--u-mut); }
-.hm-hi { margin: 0; font-size: 32px; line-height: 1.15; font-weight: 500; letter-spacing: -.01em; color: var(--u-tx); }
-.hm-sub { margin: 8px 0 0; font-size: 14px; color: var(--u-tx2); }
+.hm-title { margin: 0; font-size: 44px; font-weight: 600; line-height: 1; letter-spacing: -.022em; color: var(--u-tx); } /* same tight setting as the logo lockup */
+.hm-ch { position: relative; top: 0; } /* each letter, so the falcon can drop them in one by one; inline, so the word keeps its kerning */
 .hm-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
 .hm-act { display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px 0 12px; border-radius: 8px; background: color-mix(in srgb, var(--u-card) 75%, transparent);
   box-shadow: inset 0 0 0 1px var(--u-line), var(--u-top); color: var(--u-tx); font-size: 13.5px; cursor: pointer; transition: background 150ms var(--u-ease), box-shadow 150ms var(--u-ease), transform 150ms var(--u-ease); }
@@ -300,6 +346,8 @@ button.b:active { transform: scale(.97); }
 .hm-act:hover { background: var(--u-raised); box-shadow: inset 0 0 0 1px var(--u-ctl-on), var(--u-top); }
 .hm-act:active { transform: scale(.98); }
 .hm-clock { padding-bottom: 6px; text-align: right; }
+.hm-greet { margin: 0; font-size: 15px; font-weight: 500; color: var(--u-tx); }
+.hm-date { margin: 4px 0 14px; font-size: 13px; color: var(--u-mut); }
 .mx { display: inline-flex; gap: 4px; color: var(--u-tx); }
 .mx-c { position: relative; display: inline-block; width: 20px; height: 28px; overflow: hidden; }
 .mx-c svg { position: absolute; inset: 0; width: 20px !important; height: 28px !important; overflow: visible; }
@@ -351,6 +399,9 @@ button.b:active { transform: scale(.97); }
 .hm-page .sh-hat { margin: 16px 0 10px; font-size: 16px; font-weight: 700; text-decoration: underline double; text-underline-offset: 3px; }
 .hm-page .sh-block { margin: 16px 0 10px; font-size: 13.5px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .hm-page[data-blank] > *:not(.sh-pocket) { opacity: .45; }
+/* a real first page: the editor's own styles at the scale that fits a Word page's 6.5in (624px) of text in the sheet's 404px */
+.hm-page .hm-doc { zoom: .65; width: 624px; min-height: 0; white-space: pre-wrap; pointer-events: none; user-select: none; }
+.hm-page .hm-doc p { white-space: inherit; overflow: visible; }
 /* stand-in cards: a tag, a cite, then body text with the read parts underlined and highlighted in the pen */
 .sh-card { margin-bottom: 14px; }
 .sh-card i { display: block; border-radius: 1px; background: var(--doc-ink); }
@@ -381,7 +432,7 @@ button.b:active { transform: scale(.97); }
 .hm-undo button:hover { background: var(--u-hover); }
 .hm-undo i { position: absolute; left: 0; bottom: 0; height: 100%; width: 100%; background: color-mix(in srgb, var(--u-tx) 4%, transparent); transform-origin: 0 50%; pointer-events: none; }
 @container (max-width: 960px) { .hm-main { grid-template-columns: minmax(0, 1fr); } .hm-desk { display: none; } }
-@container (max-width: 640px) { .hm-head { grid-template-columns: 1fr; } .hm-clock { display: none; } .hm-hi { font-size: 34px; } .hm-in { padding: 48px 24px; } }
+@container (max-width: 640px) { .hm-perch { width: 50px; height: 52px; } .hm-head { grid-template-columns: 1fr; } .hm-clock { display: none; } .hm-in { padding: 48px 24px; } }
 
 @media (prefers-reduced-motion: reduce) {
   .olp, .lv-hl, .sb-list[data-ready] .sb-act, .sb-row.ol .tw svg, .b, .b::before, .b::after, .pop, .pop *, .toast, .home, .home.open, .hm-act, .hm-row, .hm-row .ic, .cap-go, .hm-undo { transition: none !important; }
@@ -393,7 +444,8 @@ button.b:active { transform: scale(.97); }
 
 /* desktop: the window drags by the chrome; on macOS the strip and panel start below the traffic lights */
 .desktop .toolbar, .desktop .fstrip, .desktop .tools, .desktop .status { -webkit-app-region: drag; }
-.desktop button, .desktop .pop, .desktop input, .desktop .files[data-open], .desktop .rail-grip { -webkit-app-region: no-drag; }
+.desktop button, .desktop .pop, .desktop input, .desktop .files, .desktop .rail-grip, .desktop .ol-grip { -webkit-app-region: no-drag; }
+/* the closed files panel still has a box under the page, and Electron drags by box not by what's on top, so as drag it ate clicks on line starts */
 /* Electron cuts drag areas in page order, so the toolbar (later in the page) would turn the open files
    panel's rows over it back into window drags; it gives up dragging while the panel is open */
 .desktop .app:has(.files[data-open]) .toolbar { -webkit-app-region: no-drag; }
@@ -411,7 +463,7 @@ button.b:active { transform: scale(.97); }
 .ProseMirror > :first-child { margin-top: 0 !important; }
 .f-cite { font-size: 13pt; font-weight: 700; }
 .f-underline { text-decoration: underline; }
-.f-emphasis { font-weight: 700; text-decoration: underline; border: 1px solid #222; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.f-emphasis { font-weight: 700; text-decoration: underline; border: 1px solid #222; -webkit-box-decoration-break: clone; box-decoration-break: clone; position: relative; } /* positioned so its border paints over the next line's highlight; it sits inside highlight and shading, which fill it */
 .f-unbold { font-weight: 400 !important; }
 .ProseMirror .f-size .f-underline, .ProseMirror .f-underline .f-size { text-decoration: underline; }
 .f-highlight { color: inherit; }
@@ -502,7 +554,7 @@ button.b:active { transform: scale(.97); }
 .st-seg button { min-width: 34px; height: 28px; padding: 0 10px; border-radius: 6px; color: var(--u-mut); font-size: 13px; cursor: pointer; }
 .st-seg button:hover { color: var(--u-tx); }
 .st-seg button[data-on] { background: var(--u-ctl-on); box-shadow: var(--u-top); color: var(--u-tx); }
-.st-pens { display: flex; gap: 10px; }
+.st-pens { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; max-width: 250px; }
 .st-pens button { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, calc(.25 * var(--u-sh))); transition: transform 120ms ease-out; }
 .st-pens button:hover { transform: scale(1.1); }
 .st-pens button[aria-checked="true"] { box-shadow: 0 0 0 2px var(--u-panel), 0 0 0 4px var(--u-tx); }
@@ -533,10 +585,9 @@ button.b:active { transform: scale(.97); }
 @keyframes st-bob { 40% { transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .st-keys, .st-keys kbd, .st-keytype i { animation: none !important; } }
 
-/* narrow windows: the tools row takes the toolbar's left 280px, so the groups pack closer, and past that the bar scrolls sideways */
-/* short of room for the bar (954px wide at full spacing), it packs closer and scrolls sideways; a wider rail leaves it less */
+/* short of room for the bar, it trims its edges, and past that it scrolls sideways; a wider rail leaves it less */
 @container (max-width: 960px) {
-  .bar { gap: 12px; padding: 0 12px; }
+  .bar { padding: 0 12px 0 4px; }
 }
 
 /* warnings: Falcon's own confirm dialog, in place of the OS alert */
@@ -564,3 +615,42 @@ button.b:active { transform: scale(.97); }
 .sa-mode b { font-size: 13px; font-weight: 600; line-height: 18px; }
 .sa-mode span { font-size: 12px; line-height: 17px; color: var(--u-tx2); }
 .cf.sa .cf-btns { margin-top: 16px; }
+/* Compare Text: two texts side by side, red only in Text 1, green only in Text 2 */
+.cf.cmp { width: min(1040px, calc(100vw - 48px)); height: min(86vh, 760px); display: flex; flex-direction: column; gap: 12px; user-select: text; }
+.cf.cmp h2 { margin: 0; }
+.cmp-bar, .cmp-head, .cmp-foot { display: flex; align-items: center; gap: 8px; }
+.cmp-bar { flex-wrap: wrap; gap: 8px 12px; }
+.cmp-nav { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--u-mut); font-variant-numeric: tabular-nums; }
+.cmp-cols { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.cmp-col { display: flex; flex-direction: column; gap: 6px; min-height: 0; min-width: 0; }
+.cmp-head span { flex: 1; font-size: 12px; color: var(--u-tx2); }
+.cf.cmp button { height: 28px; padding: 0 12px; border-radius: 8px; background: var(--u-ctl2); color: var(--u-tx); font-size: 12px; box-shadow: var(--u-top); cursor: pointer; transition: background 150ms ease-out; }
+.cf.cmp button:hover:not(:disabled) { background: var(--u-ctl-on); }
+.cf.cmp button:disabled { opacity: .4; cursor: default; }
+.cf.cmp button:focus-visible, .cmp-out:focus-visible, .cmp-text:focus-visible { outline: 2px solid var(--u-tx2); outline-offset: 2px; }
+.cf.cmp .st-seg { background: var(--u-ctl); box-shadow: none; }
+.cf.cmp .st-seg button { height: 24px; background: transparent; box-shadow: none; color: var(--u-mut); }
+.cf.cmp .st-seg button[data-on] { background: var(--u-ctl-on); box-shadow: var(--u-top); color: var(--u-tx); }
+.cmp-text, .cmp-out { flex: 1 1 auto; min-height: 0; box-sizing: border-box; padding: 8px 10px; border: 0; border-radius: 8px; background: var(--u-well);
+  color: var(--u-tx); font: inherit; font-size: 13px; line-height: 1.55; outline: none; }
+.cmp-text { resize: none; }
+.cmp-out { position: relative; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cmp-out [data-g] { border-radius: 2px; cursor: pointer; }
+.cmp-k1.cmp-a { background: rgba(230, 70, 70, .14); }
+.cmp-k2.cmp-a { background: rgba(230, 70, 70, .38); }
+.cmp-k1.cmp-b { background: rgba(50, 180, 90, .14); }
+.cmp-k2.cmp-b { background: rgba(50, 180, 90, .38); }
+.cmp-k3 { display: inline-block; width: 3px; height: 1.15em; margin: 0 1px; vertical-align: text-bottom; }
+.cmp-k3.cmp-a { background: #e64646; }
+.cmp-k3.cmp-b { background: #32b45a; }
+.cmp-out .cmp-cur { text-decoration: underline 2px var(--u-tx); text-underline-offset: 4px; text-decoration-skip-ink: none; }
+.cmp-out .cmp-k3.cmp-cur { box-shadow: 0 0 0 2px var(--u-tx); }
+.cmp-note { flex: 1; min-width: 0; font-size: 12px; color: var(--u-tx2); }
+.cf.cmp .cmp-main, .cmp-pick .cmp-main { background: var(--u-ctl-on); }
+/* Use selection: the panel steps aside for a bar at the bottom */
+.cmp-pick { position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); z-index: 3100; display: flex; align-items: center; gap: 10px;
+  padding: 8px 8px 8px 16px; border-radius: 12px; background: var(--u-card); color: var(--u-tx); font-size: 13px;
+  box-shadow: inset 0 0 0 1px var(--u-line), 0 12px 40px rgba(0, 0, 0, calc(.4 * var(--u-sh))); animation: st-in 200ms var(--u-ease); }
+.cmp-pick button { height: 28px; padding: 0 12px; border-radius: 8px; background: var(--u-ctl2); color: var(--u-tx); font-size: 12px; box-shadow: var(--u-top); cursor: pointer; }
+.ns-file { margin: 10px 2px 0; font-size: 12px; color: var(--u-tx2); overflow-wrap: anywhere; }
+.ns-file b { color: var(--u-tx); font-weight: 500; }

@@ -27,6 +27,7 @@ export const MSO_HIGHLIGHT: Record<string, string> = {
   yellow: 'yellow', green: 'lime', cyan: 'aqua', magenta: 'fuchsia', blue: 'blue', red: 'red',
   darkBlue: 'navy', darkCyan: 'teal', darkGreen: 'green', darkMagenta: 'purple', darkRed: 'maroon',
   darkYellow: 'olive', darkGray: 'gray', lightGray: 'silver', black: 'black',
+  // deep turquoise isn't a Word highlight: it goes as its background color, which Word pastes as shading
 };
 
 /** Write the inline look onto every f-* element under root, in place. */

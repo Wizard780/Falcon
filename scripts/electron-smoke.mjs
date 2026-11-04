@@ -85,6 +85,26 @@ await win.screenshot({ path: `shots/electron-file-search-${process.platform}.png
 await win.keyboard.press('Enter');
 const openedByPalette = await win.waitForSelector('.doc-nm[aria-label="Zebra Counterplan"]', { timeout: 8000 }).then(() => true, () => false);
 const paletteGone = !(await win.$('.pk'));
+// Search cards: the same folder's cards. Enter opens the file at the card (from a blank doc), Mod-Enter puts a copy of it in the open doc
+const caretPara = () => win.evaluate(() => window.__falconView.state.selection.$head.parent.textContent);
+await win.keyboard.press(`${mod}+n`); await win.waitForTimeout(300);
+await win.keyboard.press(`${mod}+Shift+k`);
+await win.waitForSelector('.pk input[aria-label="Search cards"]', { timeout: 5000 });
+await win.keyboard.type('warming real');
+const cardRow = await win.waitForSelector('.pk-card[data-on]:has-text("Warming is real")', { timeout: 15000 }).then(() => true, () => false);
+await win.screenshot({ path: `shots/electron-card-search-${process.platform}.png`, timeout: 15000 }).catch(() => {});
+await win.keyboard.press('Enter');
+const cardOpened = await win.waitForSelector('.doc-nm[aria-label="Zebra Counterplan"]', { timeout: 8000 }).then(() => true, () => false);
+await win.waitForTimeout(300);
+const cardCaret = await caretPara();
+await win.keyboard.press(`${mod}+n`); await win.waitForTimeout(300);
+await win.keyboard.press(`${mod}+Shift+k`);
+await win.waitForSelector('.pk input[aria-label="Search cards"]', { timeout: 5000 });
+await win.keyboard.type('smith growth');
+await win.waitForSelector('.pk-card[data-on]:has-text("Growth is slowing")', { timeout: 5000 }).catch(() => {});
+await win.keyboard.press(`${mod}+Enter`);
+await win.waitForTimeout(800);
+const cardInserted = await win.evaluate(() => window.__falconView.state.doc.textContent);
 // Spelling: the page is checked, a misspelled word's right-click menu has the guesses and Add to Dictionary
 // (a hidden window never runs the checker, so the menu is built from the params a misspelled word sends),
 // an added word lists in Settings and can be removed there, and the setting turns the checking off
@@ -165,7 +185,7 @@ console.log(map, '\nplatform:', platform, '| bridge:', bridge, '| visible:', vis
 const want = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.exitCode = 1; } };
 // emphasis replaced the underline on "app"; highlight stays on "app"
 want(map === 'tag: Electron tag\nnormal: Body text in the [desktop ]{emphasis}[app]{emphasis+highlight:yellow}', `marks: ${JSON.stringify(map)}`);
-want(bridge === 'addIndexFolder,dictionaryWords,forceClose,indexFolders,indexedFiles,installUpdate,onConfirmClose,onMenu,onOpenPaths,onUpdate,openFile,openPath,platform,readClipboardText,removeDictionaryWord,removeIndexFolder,saveFile,setMenuKeys,setTheme,track', `preload bridge: ${bridge}`);
+want(bridge === 'addIndexFolder,allowLinkedApp,checkUpdate,dictionaryWords,forceClose,importIndexFolders,indexFolders,indexedFiles,installUpdate,linkedApps,onBridge,onConfirmClose,onMenu,onOpenPaths,onUpdate,openFile,openPath,platform,readClipboardText,recovery,removeDictionaryWord,removeIndexFolder,saveFile,searchCards,setMenuKeys,setTheme,speechdrop,track', `preload bridge: ${bridge}`);
 want(spellOn === 'true' && spellOff === 'false', `the page is spellchecked, and Check spelling turns it off: ${spellOn} ${spellOff}`);
 want(cutWorks && readSpell === 'false' && readCutKept, `read mode: no spellcheck, and the menu's Cut leaves the doc alone (control cut worked: ${cutWorks}): ${readSpell} ${readCutKept}`);
 want(spellMenu === 'Nystrom,Nyström,-,Add to Dictionary,-,cut,copy,paste', `a misspelled word's right-click menu: ${spellMenu}`);
@@ -174,6 +194,8 @@ want(folderRow, 'Settings > File search > Add folder lists the folder with its f
 want(indexed.join() === 'Zebra Counterplan.docx', `indexed files are the allowed folder's .docx files: ${indexed}`);
 want(outsideOpen.startsWith('refused'), `openPath refuses a .docx outside the allowed folders: ${outsideOpen}`);
 want(openedByPalette && paletteGone, 'Cmd-K, typing and Enter opens the indexed file and closes the palette');
+want(cardRow && cardOpened && cardCaret === 'Warming is real', `Search cards finds a card by its tag and Enter opens its file at it: ${cardRow} ${cardOpened} ${JSON.stringify(cardCaret)}`);
+want(cardInserted.startsWith('Growth is slowingSmith 24'), `Mod-Enter in Search cards puts the card into the open doc: ${JSON.stringify(cardInserted.slice(0, 80))}`);
 want(winBg[0].toLowerCase() === '#f4f4f5' && winBg[1] === 'light', `the Light theme sets the window background and native theme: ${winBg}`);
 want(systemSource === 'system', `System leaves the native theme on the OS setting, so the page can follow it: ${systemSource}`);
 want(themeFile?.bg === '#f4f4f5' && themeFile?.dark === false, `and is kept for the next launch: ${JSON.stringify(themeFile)}`);

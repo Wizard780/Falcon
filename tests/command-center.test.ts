@@ -4,7 +4,7 @@ import type { EditorView } from 'prosemirror-view';
 import { schema } from '../src/editor/schema';
 import { createState } from '../src/editor/editor';
 import { BINDINGS } from '../src/editor/keybinds';
-import { P, pref, resetPrefs } from '../src/editor/prefs';
+import { P, pref, resetPrefs, setPref } from '../src/editor/prefs';
 import { docToolSettings } from '../src/editor/doc-tools';
 import { cardToolSettings } from '../src/editor/card-tools';
 import { navSettings } from '../src/editor/nav-keys';
@@ -116,6 +116,13 @@ describe('everything is reachable', () => {
     for (const p of Object.values(P)) expect(ids.has(p.key), p.key).toBe(true);
     for (const s of [...navSettings, ...docToolSettings, ...cardToolSettings]) expect(ids.has(s.key), s.key).toBe(true);
   });
+  it('a reading speed typed in Settings is one of its choices, in order', () => {
+    const { ctx } = fake(sample());
+    setPref(P.wpm1, 237);
+    const opts = settingDefs(ctx).find((d) => d.id === P.wpm1.key)!.options!.map(([v]) => v);
+    expect(opts.slice(3, 6)).toEqual([225, 237, 250]);
+    resetPrefs();
+  });
 });
 
 describe('doing things', () => {
@@ -159,7 +166,7 @@ describe('doing things', () => {
   });
   it('settings that live in the app go through it', () => {
     const f = fake(sample());
-    settingEntries(f.ctx).find((e) => e.label === 'Highlighter: Green')!.run!();
+    settingEntries(f.ctx).find((e) => e.label === 'Highlighter: Bright Green')!.run!();
     settingEntries(f.ctx).find((e) => e.label === 'Zoom: 150%')!.run!();
     expect(f.calls).toEqual(['pen:green', 'zoom:1.5']);
   });

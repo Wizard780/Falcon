@@ -19,9 +19,10 @@ export const P = {
   reopen: def('reopen', false),
   confirmClose: def('confirmClose', true),
   crashRecovery: def('crashRecovery', true),
-  recentCount: def('recentCount', 12),
+  recentCount: def('recentCount', 7), // how many files Home lists (1 to recents.ts MAX)
   usageStats: def('usageStats', true), // anonymous feature counts to PostHog (src/ui/analytics.ts)
   newName: def<'untitled' | 'speech' | 'date'>('newName', 'untitled'),
+  speechName: def('speechName', 'Speech {speech} {date:M-D h-mmA}'), // New speech doc's file name (files.ts speechFileName)
   savePrefix: def('savePrefix', true), // Save As puts the prefixes below on Send, Read and Marked Doc names
   prefixSend: def('prefix.send', 'SEND_'),
   prefixRead: def('prefix.read', 'READ_'),
@@ -29,6 +30,7 @@ export const P = {
   openDepth: def('openDepth', 0), // 0: opening a file keeps the current depth
   // Appearance
   railResize: def('railResize', false), // the rail's right edge drags it wider to show file names
+  joinMax: def('joinMax', 3), // how many files Join puts side by side
   wheelZoom: def('wheelZoom', false),
   theme: def('theme', 'dark'), // a preset id, 'system', or a custom theme's id (src/ui/theme.ts)
   paper: def<'theme' | 'white' | 'dark'>('paper', 'theme'),
@@ -56,6 +58,7 @@ export const P = {
   selection: def<'blue' | 'gray' | 'ink'>('selection', 'blue'),
   cardBar: def('cardBar', true),
   reduceMotion: def('reduceMotion', false),
+  launchFalcon: def('launchFalcon', true), // the falcon sweeps in over Home when Falcon starts
   // Editor
   spellcheck: def('spellcheck', true),
   condense: def<CondenseMode>('condense', 'integrity'),
@@ -63,9 +66,12 @@ export const P = {
   pasteCondense: def('pasteCondense', false),
   shrinkMin: def('shrinkMin', 4),
   shrinkProtect: def('shrinkProtect', true),
+  smartShrink: def('smartShrink', false),
   smartPaste: def('smartPaste', true),
+  smartQuotes: def('smartQuotes', true), // typed ' and " curl (quotes.ts)
   citeNearest: def('citeNearest', true),
   hlUnderlined: def('hlUnderlined', false),
+  styleOffClears: def('styleOffClears', true), // taking underline off also clears size, bold, highlight... (CardMirror's default)
   enterPocket: def<Style>('enter.pocket', 'normal'),
   enterHat: def<Style>('enter.hat', 'normal'),
   enterBlock: def<Style>('enter.block', 'normal'),
@@ -84,10 +90,14 @@ export const P = {
   showPrep: def('showPrep', false),
   showSend: def('showSend', false), // the Send button beside Read; the send key works either way
   prepMin: def('prepMin', 8),
+  round: def<'policy' | 'ld' | 'pf'>('round', 'policy'), // which speeches the timer window steps through (src/ui/round-clock.ts)
   lowTime: def('lowTime', 0), // seconds left when the timer starts flashing; 0 = never
   beep: def('beep', false),
   wpm1: def('wpm1', 200),
   wpm2: def('wpm2', 300),
+  // tags, analytics and cites; 0 reads them at the card speed
+  wpm1Tags: def('wpm1.tags', 0),
+  wpm2Tags: def('wpm2.tags', 0),
 };
 
 /** What Enter at the end of each style makes. */

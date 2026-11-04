@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { Fragment, Slice } from 'prosemirror-model';
+import { afterEach, describe, expect, it } from 'vitest';
+import { Fragment, Slice, type Node as PMNode } from 'prosemirror-model';
 import { GapCursor } from 'prosemirror-gapcursor';
 import { Selection, type EditorState } from 'prosemirror-state';
 import { falconKeys as K } from '../src/editor/keymap';
@@ -8,6 +8,7 @@ import { createState, createView } from '../src/editor/editor';
 import { schema, type ParaStyle } from '../src/editor/schema';
 import { MultiSelection } from '../src/editor/multi';
 import { at, caret, make, map, run, select } from './helpers';
+import { P, resetPrefs, setPref } from '../src/editor/prefs';
 
 const BODY = 'The rapid expansion of AI has pushed utilities to their limits.';
 const card = () => make([['tag', 'Grid tag here'], ['normal', 'Smith 24, Professor at MIT'], ['normal', BODY]]);
@@ -107,6 +108,22 @@ describe('shrink, case, condense', () => {
     expect(body(s)).toBe('normal: [The rapid expansion of AI has ]{size:8pt}[pushed utilities]{underline}[ to their limits.]{size:8pt}');
     s = run(s, K['Mod-8']);
     expect(body(s)).toContain('{size:7pt}');
+  });
+  it('Smart Shrink: unread paragraphs to 5pt, unread words around read ones to 8pt, and no cycling', () => {
+    setPref(P.smartShrink, true);
+    try {
+      const s0 = make([['tag', 'Tag'], ['normal', 'Smith 24'], ['normal', 'skip all of this'], ['normal', BODY], ['normal', 'see [Table Omitted] here']]);
+      let s = run(select(s0, 'pushed utilities'), K.F9);
+      s = run(caret(s, 'skip'), K['Mod-8']);
+      const lines = map(s).split('\n');
+      expect(lines[2]).toBe('normal: [skip all of this]{size:5pt}');
+      expect(lines[3]).toBe('normal: [The rapid expansion of AI has ]{size:8pt}[pushed utilities]{underline}[ to their limits.]{size:8pt}');
+      expect(lines[4]).toBe('normal: [see ]{size:5pt}[Table Omitted][ here]{size:5pt}');
+      expect(map(run(s, K['Mod-8']))).toBe(map(s));
+      expect(map(run(s, K['Mod-Shift-8']))).toBe(map(run(select(s0, 'pushed utilities'), K.F9)));
+      setPref(P.shrinkMin, 6);
+      expect(map(run(caret(run(select(s0, 'pushed utilities'), K.F9), 'skip'), K['Mod-8'])).split('\n')[2]).toBe('normal: [skip all of this]{size:6pt}');
+    } finally { resetPrefs(); }
   });
   it('Shift-F3 cycles lower → UPPER → Title → lower', () => {
     let s = run(select(card(), 'rapid expansion'), K['Shift-F3']);
@@ -219,5 +236,33 @@ describe('analytic (Mod-F7) over imported run color', () => {
   });
   it('keeps inline color when the line becomes a hat', () => {
     expect(map(run(caret(navy(), 'sides', 1), K.F5)).split('\n')[0]).toBe('hat: [Switch sides solves]{color}');
+  });
+});
+
+describe('applying a style, like CardMirror', () => {
+  const small = (t: string) => schema.text(t, [schema.marks.size.create({ pt: 8 })]);
+  const para = (...kids: PMNode[]) => createState(schema.node('doc', null, [schema.node('paragraph', { style: 'normal' }, kids)]));
+  const hl = schema.marks.highlight.create({ color: 'cyan' });
+  afterEach(() => setPref(P.styleOffClears, true));
+  it('shrunk text goes back to full size when underlined, emphasized or cited', () => {
+    for (const key of ['F9', 'F10', 'F8']) {
+      const s = run(select(para(small('tiny words')), 'tiny words'), K[key]);
+      expect(map(s)).not.toContain('size');
+    }
+  });
+  it('hand formatting goes, highlight stays', () => {
+    const marks = [schema.marks.bold.create(), schema.marks.italic.create(), schema.marks.shading.create(), schema.marks.color.create({ color: '#FF0000' }), hl];
+    const s = run(select(para(schema.text('marked', marks)), 'marked'), K.F9);
+    expect(map(s)).toBe('normal: [marked]{highlight:cyan+underline}');
+  });
+  it('taking underline off leaves plain text, unless Settings says keep it', () => {
+    const under = () => para(schema.text('lit', [schema.marks.underline.create(), hl]));
+    expect(map(run(select(under(), 'lit'), K.F9))).toBe('normal: lit');
+    setPref(P.styleOffClears, false);
+    expect(map(run(select(under(), 'lit'), K.F9))).toBe('normal: [lit]{highlight:cyan}');
+  });
+  it('bold and italic keys leave size alone', () => {
+    const s = run(select(para(small('tiny')), 'tiny'), K['Mod-b']);
+    expect(map(s)).toContain('size:8pt');
   });
 });

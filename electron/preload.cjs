@@ -10,7 +10,9 @@ contextBridge.exposeInMainWorld('falcon', {
   indexFolders: () => ipcRenderer.invoke('falcon:index-folders'),
   addIndexFolder: () => ipcRenderer.invoke('falcon:index-add'),
   removeIndexFolder: (p) => ipcRenderer.invoke('falcon:index-remove', p),
+  importIndexFolders: (paths) => ipcRenderer.invoke('falcon:index-import', paths),
   indexedFiles: () => ipcRenderer.invoke('falcon:index-files'),
+  searchCards: (q) => ipcRenderer.invoke('falcon:card-search', q),
   dictionaryWords: () => ipcRenderer.invoke('falcon:dict-words'),
   removeDictionaryWord: (w) => ipcRenderer.invoke('falcon:dict-remove', w),
   onMenu: (f) => {
@@ -26,6 +28,20 @@ contextBridge.exposeInMainWorld('falcon', {
     return () => ipcRenderer.removeListener('falcon:open-paths', on);
   },
   setMenuKeys: (keys) => ipcRenderer.send('falcon:menu-keys', keys),
+  // other debate apps (Nimbus...) asking for the open docs, inserting a card, jumping back, or asking to connect.
+  // f(kind, payload) answers with a promise; subscribing tells the main process the page can answer
+  onBridge: (f) => {
+    const on = async (_e, id, kind, payload) => {
+      let a;
+      try { a = await f(String(kind), payload ?? {}); } catch { a = { ok: false, error: 'internal' }; }
+      ipcRenderer.send('falcon:bridge-answer', id, a ?? null);
+    };
+    ipcRenderer.on('falcon:bridge', on);
+    ipcRenderer.send('falcon:bridge-ready');
+    return () => ipcRenderer.removeListener('falcon:bridge', on);
+  },
+  linkedApps: () => ipcRenderer.invoke('falcon:bridge-apps'),
+  allowLinkedApp: (id, on) => ipcRenderer.invoke('falcon:bridge-allow', id, on),
   onConfirmClose: (f) => {
     const on = (_e, quit) => f(quit === true);
     ipcRenderer.on('falcon:confirm-close', on);
@@ -40,6 +56,27 @@ contextBridge.exposeInMainWorld('falcon', {
     return () => ipcRenderer.removeListener('falcon:update', on);
   },
   installUpdate: () => ipcRenderer.invoke('falcon:update-install'),
+  checkUpdate: () => ipcRenderer.invoke('falcon:update-check'),
   track: (event, props) => ipcRenderer.send('falcon:track', String(event), props ?? {}),
+  // SpeechDrop: each call answers { ok, value } or { ok: false, error } (a SpeechDrop error code)
+  speechdrop: {
+    room: (room) => ipcRenderer.invoke('falcon:sd-room', room),
+    make: (name) => ipcRenderer.invoke('falcon:sd-make', name),
+    upload: (room, name, data) => ipcRenderer.invoke('falcon:sd-upload', { room, name, data }),
+    remove: (room, index) => ipcRenderer.invoke('falcon:sd-delete', room, index),
+    pick: () => ipcRenderer.invoke('falcon:sd-pick'),
+    open: (room, index, name) => ipcRenderer.invoke('falcon:sd-open', room, index, name),
+    download: (room, index, name) => ipcRenderer.invoke('falcon:sd-download', room, index, name),
+    archive: (room, title) => ipcRenderer.invoke('falcon:sd-archive', room, title),
+    // the live list of `room`, one watch per room; returns an unsubscribe
+    watch: (room, files, f) => {
+      const on = (_e, u) => { if (u && u.room === room) f(u); };
+      ipcRenderer.on('falcon:sd-files', on);
+      ipcRenderer.send('falcon:sd-watch', room, files);
+      return () => { ipcRenderer.removeListener('falcon:sd-files', on); ipcRenderer.send('falcon:sd-unwatch', room); };
+    },
+  },
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
+  // crash recovery for docs too big for localStorage: read once as the page starts, written on every backup
+  recovery: { read: () => ipcRenderer.sendSync('falcon:recovery-read'), write: (text) => ipcRenderer.send('falcon:recovery-write', String(text)) },
 });

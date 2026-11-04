@@ -1,0 +1,44 @@
+/* The timer window (TimerWindow.tsx). Its own page, so it carries its own base styles; the theme's
+   variables are copied onto its root from the main window. Controls follow Settings: raised keys in a track, rows in a card. */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--u-panel, #141416); color: var(--u-tx, #ededed); font: 14px/1.2 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased; overflow: hidden; user-select: none; cursor: default; }
+button { font: inherit; color: inherit; background: none; border: 0; margin: 0; padding: 0; cursor: default; }
+button:focus-visible { outline: 2px solid #6a8dff; outline-offset: 1px; }
+svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.num { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+
+.tw { display: flex; flex-direction: column; height: 100%; padding-top: 14px; }
+.tw-top { padding: 0 16px 16px; text-align: center; }
+/* the speech picker: Settings' segmented track, the arrows around the raised speech name */
+.tw-pick { display: inline-flex; align-items: center; padding: 3px; border-radius: 9px; background: var(--u-ctl, #26262a); }
+.tw-pick button { display: grid; place-items: center; width: 28px; height: 26px; border-radius: 6px; color: var(--u-tx2, #a1a1a6); }
+.tw-pick button:hover:not(:disabled) { color: var(--u-tx, #ededed); }
+.tw-pick button:disabled { opacity: .35; }
+.tw-pick b { min-width: 58px; padding: 0 10px; white-space: nowrap; height: 26px; display: grid; place-items: center; border-radius: 6px; background: var(--u-ctl-on, #3a3a3f);
+  box-shadow: var(--u-top, inset 0 1px 0 rgba(255, 255, 255, .08)); font: 600 13px/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+.tw-big { font-size: 60px; font-weight: 500; margin: 14px 0 16px; line-height: 1; }
+.tw-big[data-on] { color: var(--ink-ui, #00e5ff); }
+/* Start or Pause, and Reset: raised keys in one track */
+.tw-ctl { display: flex; gap: 4px; padding: 4px; border-radius: 11px; background: var(--u-ctl, #26262a); }
+.tw-ctl button { flex: 1; height: 34px; border-radius: 8px; font-size: 13px; background: var(--u-ctl-on, #3a3a3f);
+  box-shadow: var(--u-top, inset 0 1px 0 rgba(255, 255, 255, .08)), 0 1px 2px rgba(0, 0, 0, calc(.35 * var(--u-sh, 1))); }
+.tw-ctl button:active { transform: translateY(.5px); box-shadow: none; }
+
+/* prep: a Settings card, one row per side. Click a row to start or pause it, right-click to reset */
+.tw-well { margin: 0 12px 12px; padding: 2px 14px; border-radius: 12px; background: var(--u-well, #1c1c1f); }
+.tw-p { display: flex; align-items: center; gap: 12px; width: 100%; height: 46px; text-align: left; }
+.tw-p + .tw-p { border-top: 1px solid var(--u-line, #232326); }
+.tw-p .who { flex: 1; color: var(--u-tx2, #a1a1a6); font-size: 13.5px; }
+.tw-p:hover .who, .tw-p[data-on] .who { color: var(--u-tx, #ededed); }
+.tw-bar { width: 64px; height: 4px; border-radius: 2px; background: var(--u-ctl2, #2c2c30); overflow: hidden; }
+.tw-bar i { display: block; height: 100%; border-radius: 2px; background: var(--u-tx2, #a1a1a6); transition: width 300ms linear; }
+.tw-p[data-on] .tw-bar i { background: var(--ink-ui, #00e5ff); }
+.tw-p .num { width: 44px; text-align: right; font-size: 16px; }
+.tw-p[data-on] .num { color: var(--ink-ui, #00e5ff); }
+
+/* the last seconds, when Settings asks for the flash */
+.low, .low[data-on] { color: #ff6b6b !important; animation: tw-low 1s steps(1) infinite; }
+@keyframes tw-low { 50% { opacity: .4; } }
+:root[data-chrome="light"] .low { color: #d32f2f !important; }

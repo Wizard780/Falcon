@@ -14,6 +14,11 @@ export function setActiveColor(kind: 'highlight' | 'shading', color: string | nu
 
 export type IndexFolder = { path: string; count: number | null; missing: boolean };
 export type IndexedFile = { path: string; root: string; mtime: number };
+/** One card from Search cards: the file it's in and which tag or analytic it is there (0-based). */
+export type CardHit = { path: string; ordinal: number; file: string; tag: string; cite: string; headings: string[]; copies: number };
+/** An app that asked to send cards in over the bridge. */
+export type LinkedApp = { id: string; name: string; allowed: boolean };
+export type CardIndexStatus = { files: number; cards: number; scanning: boolean; done: number; total: number };
 type FalconBridge = {
   readClipboardText?: () => Promise<string>;
   openFile?: () => Promise<{ name: string; path: string; data: Uint8Array } | null>;
@@ -24,13 +29,17 @@ type FalconBridge = {
   /** Pick folders in the native dialog and allow them. Returns the new list. */
   addIndexFolder?: () => Promise<IndexFolder[]>;
   removeIndexFolder?: (path: string) => Promise<IndexFolder[]>;
+  /** A settings import's folders: the real ones are allowed, no dialog. Returns the new list. */
+  importIndexFolders?: (paths: string[]) => Promise<IndexFolder[]>;
   /** Every .docx in the allowed folders (openPath opens any of them). */
   indexedFiles?: () => Promise<IndexedFile[]>;
+  /** Search cards: the cards in those folders whose tag, cite, headings or file name hold every word. */
+  searchCards?: (query: string) => Promise<{ hits: CardHit[]; status: CardIndexStatus }>;
   /** Words added with right-click > Add to Dictionary, sorted. */
   dictionaryWords?: () => Promise<string[]>;
   /** Take a word back out of the dictionary. Returns the new list. */
   removeDictionaryWord?: (word: string) => Promise<string[]>;
-  /** Mac File menu clicks ('new', 'open', 'save', 'saveAs', 'close', 'settings'). Returns an unsubscribe. */
+  /** Mac File menu clicks ('new', 'newSpeech', 'open', 'save', 'saveAs', 'close', 'settings'). Returns an unsubscribe. */
   onMenu?: (f: (cmd: string) => void) => () => void;
   /** Files the OS asked Falcon to open (double-click, Open With). Subscribing says the page is ready. Returns an unsubscribe. */
   onOpenPaths?: (f: (paths: string[]) => void) => () => void;
@@ -43,13 +52,43 @@ type FalconBridge = {
   /** The theme changed: the window's own background (shown before the page paints) and native menus follow it.
    *  system: the theme is System, so native stays on the OS setting (forcing it would freeze prefers-color-scheme). */
   setTheme?: (bg: string, dark: boolean, system: boolean) => void;
+  /** Crash recovery for docs too big for localStorage: the desktop app keeps them in a file. `write('')` clears it. */
+  recovery?: { read: () => string; write: (text: string) => void };
   /** A newer Falcon, downloaded and ready to install (null: none). Fires with the current state on subscribe. Returns an unsubscribe. */
   onUpdate?: (f: (u: UpdateInfo | null) => void) => () => void;
   /** Install the downloaded update and restart (or open its disk image when Falcon can't replace itself). */
   installUpdate?: () => Promise<void>;
+  /** Check for a newer Falcon now: 'ready' once one is downloaded (onUpdate fires too), 'none' when this is the latest, 'failed' offline. */
+  checkUpdate?: () => Promise<'ready' | 'none' | 'failed'>;
   /** Anonymous usage count (electron/telemetry.cjs drops unknown events and any non-word value). */
   track?: (event: string, props?: Record<string, string | number | boolean>) => void;
+  /** SpeechDrop (electron/speechdrop.cjs): rooms, live file lists, uploads and downloads. */
+  speechdrop?: SpeechDropBridge;
+  /** Other debate apps (electron/editor-bridge.cjs): kind is ping, docs, insert, jump or consent. Returns an unsubscribe. */
+  onBridge?: (f: (kind: string, payload: Record<string, unknown>) => Promise<unknown>) => () => void;
+  /** The apps that asked to send cards in, and whether they're allowed. */
+  linkedApps?: () => Promise<LinkedApp[]>;
+  /** Allow or block an app (null forgets it, so it asks again). Returns the new list. */
+  allowLinkedApp?: (id: string, on: boolean | null) => Promise<LinkedApp[]>;
   platform?: string;
+};
+/** A SpeechDrop answer: the value, or SpeechDrop's error code ('no_room', 'too_large', 'unreachable'…). */
+export type SdResult<T> = { ok: true; value: T } | { ok: false; error: string };
+/** One file in a room. `index` is SpeechDrop's slot for it (part of its URL); `ctime` is when it came, in ms. */
+export type SdFile = { index: number; name: string; ctime: number };
+export type SpeechDropBridge = {
+  room: (room: string) => Promise<SdResult<{ room: string; name: string; files: SdFile[] }>>;
+  make: (name: string) => Promise<SdResult<string>>;
+  upload: (room: string, name: string, data: Uint8Array) => Promise<SdResult<{ files: SdFile[]; index: number | null }>>;
+  remove: (room: string, index: number) => Promise<SdResult<SdFile[]>>;
+  /** The native picker: each picked file's bytes (none for one over SpeechDrop's 10 MB). */
+  pick: () => Promise<SdResult<{ name: string; size: number; data?: Uint8Array }[]>>;
+  /** Download to ~/Downloads/SpeechDrop/<room>; a .docx comes back for Falcon to open, anything else opens in its app. */
+  open: (room: string, index: number, name: string) => Promise<SdResult<{ path: string; docx: boolean }>>;
+  download: (room: string, index: number, name: string) => Promise<SdResult<string>>;
+  archive: (room: string, title: string) => Promise<SdResult<{ path: string; count: number; skipped: number }>>;
+  /** The room's list, pushed on every change. Returns an unsubscribe (which stops watching). */
+  watch: (room: string, files: SdFile[] | null, f: (u: { room: string; files: SdFile[]; live: boolean }) => void) => () => void;
 };
 export type UpdateInfo = { version: string; date: string; notes: string; url: string; state: 'ready' | 'installing' | 'error'; manual: boolean; error?: string };
 export const bridge: FalconBridge = (globalThis as unknown as { falcon?: FalconBridge }).falcon ?? {};

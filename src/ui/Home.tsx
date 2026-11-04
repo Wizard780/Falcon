@@ -3,17 +3,25 @@ import { clock, dots } from './home-fx';
 import { tidy, whenLabel, type Recent } from './recents';
 import { keyOf, keyText } from '../editor/keybinds';
 import { SvgIcon } from './icons';
+import { launchFalcon } from './falcon';
+import { reducedMotion } from './motion';
+import { P, pref } from '../editor/prefs';
 
 
-/** The start screen (and ⌘T): the files you opened recently, the one you point at drawn as a page beside them. */
+/** The start screen (and ⌘T): the files you opened recently, the first page of the one you point at beside them. */
+let launched = false; // the falcon's flight plays once per page load, not on every Home
+
 export function Home(props: {
   open: boolean;
-  current: string;
   recents: Recent[];
   onNew: () => void;
+  onNewSpeech: () => void;
+  onSpeechDrop: () => void;
   onOpen: () => void;
   onRecent: (r: Recent) => void;
   onClear: (keep: Recent[] | null) => void;
+  /** A recent from before previews were kept: read it so its page can be shown. */
+  onPeek: (r: Recent) => void;
 }) {
   const { open, recents } = props;
   const homeRef = useRef<HTMLElement>(null);
@@ -23,6 +31,15 @@ export function Home(props: {
   const rows = useRef<(HTMLButtonElement | null)[]>([]);
   const [sel, setSel] = useState(0);
   const [undo, setUndo] = useState<Recent[] | null>(null);
+
+  // the falcon flies in once per launch, when Falcon starts on Home; after that it just sits on its perch
+  const perchRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    const fly = open && !launched && pref(P.launchFalcon) && !reducedMotion();
+    launched = true;
+    return launchFalcon(homeRef.current!, perchRef.current!, titleRef.current!, fly);
+  }, []);
 
   // the effects run only while home is showing; focus in a layout effect, so keys pressed right after it opens land here
   useLayoutEffect(() => {
@@ -55,6 +72,8 @@ export function Home(props: {
   const shown = undo ? [] : recents;
   const at = Math.min(sel, Math.max(0, shown.length - 1));
   const pick = shown[at];
+  const { onPeek } = props;
+  useEffect(() => { if (open && pick && pick.preview === undefined) onPeek(pick); }, [open, pick, onPeek]);
   // the arrow keys walk the list (focus follows, so Enter opens the row); the page beside it follows
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && e.target === homeRef.current && pick) { e.preventDefault(); props.onRecent(pick); return; }
@@ -66,10 +85,6 @@ export function Home(props: {
     rows.current[i]?.focus();
   };
 
-  const now = new Date();
-  const day = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  const h = now.getHours(), greeting = h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-  const total = shown.reduce((s, r) => s + r.cards, 0);
   return (
     <section ref={homeRef} tabIndex={-1} className={`home${open ? ' open' : ''}`} aria-label="Home" aria-hidden={!open} onKeyDown={onKey}>
       <div ref={bgRef} className="hm-bg" aria-hidden="true" />
@@ -78,12 +93,15 @@ export function Home(props: {
         <div className="hm-in">
           <header className="hm-head">
             <div className="hm-text">
-              <p className="hm-date">{day}</p>
-              <h1 className="hm-hi">{greeting}</h1>
-              <p className="hm-sub">{props.current ? `${props.current} is open. Esc goes back to it` : shown.length ? `${shown.length} recent ${shown.length === 1 ? 'file' : 'files'} · ${total.toLocaleString('en-US')} cards` : 'Open a file or start a new one'}</p>
+              <div className="hm-brand">
+                <div ref={perchRef} className="hm-perch" aria-hidden="true" />
+                <h1 ref={titleRef} className="hm-title">{[...'Falcon'].map((ch, i) => <span key={i} className="hm-ch">{ch}</span>)}</h1>
+              </div>
               <div className="hm-acts">
                 <button className="hm-act" onClick={props.onNew}><SvgIcon name="plus" /><span>New document</span>{keyOf('new') && <kbd>{keyText(keyOf('new'))}</kbd>}</button>
+                <button className="hm-act" onClick={props.onNewSpeech}><SvgIcon name="mic" /><span>New speech doc</span>{keyOf('newSpeech') && <kbd>{keyText(keyOf('newSpeech'))}</kbd>}</button>
                 <button className="hm-act" onClick={props.onOpen}><SvgIcon name="open" /><span>Open…</span>{keyOf('open') && <kbd>{keyText(keyOf('open'))}</kbd>}</button>
+                <button className="hm-act" onClick={props.onSpeechDrop}><SvgIcon name="inbox" /><span>SpeechDrop</span>{keyOf('speechdrop') && <kbd>{keyText(keyOf('speechdrop'))}</kbd>}</button>
               </div>
             </div>
             <div ref={clockRef} className="hm-clock" aria-live="off" />
@@ -132,12 +150,24 @@ export function Home(props: {
   );
 }
 
-// a small seeded random, so a file's page looks the same every time it's drawn
+// a small seeded random, so the blank page looks the same every time it's drawn
 const rnd = (s: string) => { let x = [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 2147483647, 7) || 7; return () => (x = (x * 16807) % 2147483647) / 2147483647; };
 
-/** A file as a page: its name as the pocket, its hats and blocks as headings, and stand-in cards under each, cut and highlighted. */
+/** A file's first page, drawn the way the editor draws it and shrunk to fit, like a Finder preview. */
 function Sheet({ r }: { r?: Recent }) {
-  const rand = rnd(r?.name ?? 'blank');
+  if (r) return (
+    <article className="hm-sheet hm-page">
+      {r.preview
+        ? <div className="ProseMirror hm-doc" dangerouslySetInnerHTML={{ __html: r.preview }} />
+        : <p className="sh-pocket">{tidy(r.name)}</p>}
+    </article>
+  );
+  return <Blank />;
+}
+
+/** No file yet: a page with stand-in cards, cut and highlighted. */
+function Blank() {
+  const rand = rnd('blank');
   const card = (k: number) => (
     <div key={k} className="sh-card">
       <i className="sh-tag" style={{ width: `${55 + rand() * 40}%` }} />
@@ -148,16 +178,10 @@ function Sheet({ r }: { r?: Recent }) {
       })}</p>
     </div>
   );
-  const blocks = r?.blocks.length ? r.blocks.slice(0, 4) : null;
   return (
-    <article className="hm-sheet hm-page" data-blank={!r || undefined}>
-      <p className="sh-pocket">{r ? tidy(r.name) : 'Untitled'}</p>
-      {blocks ? blocks.map((b, i) => (
-        <div key={i}>
-          <p className={b.level === 2 ? 'sh-hat' : 'sh-block'}>{b.label}</p>
-          {Array.from({ length: Math.max(1, Math.min(b.cards, 2)) }, (_, k) => card(k))}
-        </div>
-      )) : [0, 1, 2].map(card)}
+    <article className="hm-sheet hm-page" data-blank>
+      <p className="sh-pocket">Untitled</p>
+      {[0, 1, 2].map(card)}
     </article>
   );
 }

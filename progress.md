@@ -184,3 +184,53 @@ User ask: drag the left rail wider so the open files' names show.
 - [x] the toolbar packs closer by its own width (a container query) instead of the window's, so a wide rail doesn't clip it
 - [x] vitest 313 pass (tests/rail.test.ts), tsc clean; drove it in the web build and in Electron (drag, relaunch on the same profile, double-click)
 - [x] behind a setting, off by default (Settings > Appearance > Resizable rail, `falcon.railResize`, also in the command center): off, no handle and icons only; the dragged width is kept for when it's back on
+
+## Stage: toolbar fills the bar, Grey theme, reader speeds for tags (2026-11-02, branch ui-polish on top of sel-read-words)
+User ask (screenshots): the toolbar left a gap between the tools row and Pocket; black is too harsh, wants a greyish theme; nicer spacing; the status bar should give a selection's words and read time; each reader needs a card speed and a tags-and-analytics speed (CardMirror's tagWpm).
+- [x] toolbar groups run as one evenly spaced row (4px, like the buttons inside a group) right after the tools row; spreading them apart split Cite/Emphasis off from the styles. Read and the timer at the far right, rows 6px apart
+- [x] Grey preset (#202124 chrome, white page), between Dark and Light
+- [x] status bar: `Sel: 7 words · 0:02 / 0:01`, only the read words (highlighted, tags, analytics, cites), set off by a divider
+- [x] Settings > Speech and timers: Reader 1/2 cards, Reader 1/2 tags and analytics (Same as cards by default); cites count with tags, as in CardMirror; CardMirror settings import maps readers[n].tagWpm
+- [x] vitest 332 pass, tsc clean; journeys themes, settings, command-center, card-formatting, outline ok
+- [x] the outline pane's right edge drags it from 200 to 560px (40% of a narrow window), double-click resets to 280, arrows step it; kept in falcon.outlineWidth. The toolbar stays beside the tools row at any outline width
+- [x] the card drag grip (six dots) hides once the mouse leaves the text (300ms grace so crossing the margin onto it still works); it used to stay stuck beside the last card. With narrow margins it sat 12px outside the page, clipped and under the outline's resize edge; it now stays inside the page
+
+## Stage: starred files in file search (2026-11-03, branch starred-files)
+User ask: in the library (file search folders, e.g. four Dropboxes), star a file so it shows first and marked as starred, and its same-named copies in the other Dropboxes stop showing.
+- [x] star from Cmd-K with Alt-P (CardMirror's key) or the row's star button; starred rows get a gold star, sit under "Starred" first with no query, and outrank every other match
+- [x] a starred file hides its copies, the same path inside another search folder (not open docs, not a same-named file in another folder); its row says "N more hidden" and the tooltip explains
+- [x] rows name the search folder a file came from (`Team Dropbox › DA`), so same-named files can be told apart
+- [x] stored in falcon.starredFiles; vitest file-search covers ranking and hiding; journey starred-files drives it with a stand-in bridge
+
+## Fix: card grip covered the start of a line (2026-11-03, branch grip-click)
+User report: the six-dot card grip won't let you click the text next to it.
+- [x] with narrow margins the grip (pulled inside the page in #71) sat over the first 6 to 9px of each tag, so a click there grabbed the grip; it now slims to fit the margin (pad - 2px, 8 to 16px wide) and ends before the text
+- [x] the outline's resize edge sits inside the pane (6px) instead of 4px over the page
+- [x] checked at narrow and normal margins, 100% and 150% zoom: a click 2px into a tag puts the caret at its start, and the grip's center is still the grip
+- [x] follow-up report "the cursor won't let me select it": the left margin (where the grip lives) was a dead zone, so a click or drag starting beside a line did nothing. A press in the margin now goes to the line's near edge (Word and CardMirror put the caret at the line's start), and the grip itself tells a click (caret at its line's start), a sideways drag (selects from the line's start) and an up/down drag (moves the card) apart. Journey margin-click covers it at normal and narrow margins
+
+## Fix: backfiles open with the underline Word shows (2026-11-03, branch import-run-overrides)
+Bug hunt (Aarav asked for "bugs and everything"): opened 500 of his .docx files through the importer and compared what Word shows with what Falcon shows and saves.
+- [x] a run that keeps the Underline or Emphasis style but switches its underline off (`<w:u w:val="none"/>`, usually shrunk unread text) showed, and saved, as underlined: 101k characters in 106 of 500 files. It now shows without it; Emphasis with its underline off stays boxed only where Word still draws the box. A run's `<w:bdr w:val="none"/>` turns an Emphasis box off (underline stays)
+- [x] character styles with no Falcon name lost their look: "Heading 4 Char" cites showed plain, "Strong" not bold, "8-point small" full size (45k characters in 95 of 500 files). Their bold (only on text that isn't bold already), italic, size and color now carry over
+- [x] his own NATO block files open and save exactly as before (effective formatting diffed run by run)
+- [x] vitest tests/import-overrides.test.ts (fails on main), journey backfile-overrides; before/after screenshot of a real Impact Defense card
+
+## Stage: falcon on launch (2026-11-03, branch launch-falcon)
+User ask: an animated falcon that sweeps in whenever the app opens and settles at the top, with Home itself exactly the same; smooth animation, a more complex falcon.
+- [x] src/ui/falcon.ts draws a peregrine in SVG: layered coverts, secondaries and primaries built feather by feather, a far wing behind, barred chest, fanned tail, dark crown and mustache, hooked beak; eye ring and cere in the pen color (--ink)
+- [x] on a page load that starts on Home it flies over Home on an overlay (in low from the left, past close, banking up and round), wingbeats integrated by phase so the rate can slow into a glide without a jump, banking through a low-pass, an ease-out all the way to a soft landing; 2.5 s
+- [x] lands in .hm-perch, the empty strip above the date, and holds still (no loop, so Home stays at ~0 idle CPU); Home's layout is identical during, after, and with the flight off
+- [x] follow-up ("falcon too close to top"; "falcon on the left to the words, get rid of the good morning, look like our logo but masculine and detailed"): the greeting is gone; the date and the line under it sit right of the logo; what lands is the logo, the app icon's head drawn in detail (hood, mustache, heavy brow over a pen-colored eye ring, notched beak, hackles, chevron feathers), growing out of the bird's eye as the bird fades
+- [x] follow-up ("the transition from falcon to the logo is messy, it should be smoother"): one continuous hand-off, 1.8 to 2.95 s: the wings fold back along the body as it comes in, wings and body dissolve, and the head blends into the logo, which rides on the bird's eye (same place, bank and scale) until the bird is down, so there is never a second head; smoothstep eases throughout
+- [x] any key or click lands it; Settings > Appearance > Falcon on launch (falcon.launchFalcon, on) and Reduce motion skip the flight
+- [x] vitest 416 pass, tsc clean; journey launch-falcon (10 ok) films the flight and the landing in the web build
+
+## Fix: crash recovery for block files (2026-11-03, branch big-file-recovery)
+Bug hunt: opening either NATO block file said "too big for crash recovery, so save often". Crash recovery lived in localStorage (about 5M characters), so any doc over 400k (every block file and most backfiles) had none.
+- [x] the desktop app keeps the docs localStorage can't hold in `userData/recovery.json` (written through a temp file, only the newest copy queued), up to 10M of content; small docs stay in localStorage as before, and the rail comes back in its order across the two
+- [x] cost measured on real files: a block file's copy takes ~7 ms, a 30 MB backfile with pictures ~60 ms, once per pause in typing (800 ms debounce, at idle)
+- [x] the web build has no file, so it keeps the 400k limit and the warning
+- [x] vitest tests/big-recovery.test.ts (3 of 4 fail on main); scripts/electron-recovery.mjs kills the real app mid-edit and relaunches: the edit is back, unsaved, on a generated file and on a copy of NATO AT Neg; electron-smoke passes with `recovery` added to the bridge
+- Note: in the app tests, a backup taken inside the same `act` as the typing records the doc as saved, because the render that marks it unsaved waits for the act to end. Not an app bug; wait in a second act (`typeAndBackUp`)
+

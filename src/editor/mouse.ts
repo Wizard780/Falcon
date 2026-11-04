@@ -25,6 +25,30 @@ type Span = { from: number; to: number };
 export function wordSelection() {
   let lastUnit: Unit = 'char';
   return new Plugin({
+    // a press in the page's margin beside a line (where the card grip shows) goes to the line's near edge, the way
+    // Word and CardMirror put the caret at the start of the line; a drag from there selects as usual
+    view(view) {
+      const page = view.dom.parentElement?.parentElement; // .page > mount > .ProseMirror
+      if (!page) return {};
+      const onDown = (e: MouseEvent) => {
+        if (e.button !== 0 || !e.isTrusted) return;
+        const t = e.target as HTMLElement;
+        if (view.dom.contains(t) || t.closest?.('.f-grip')) return;
+        const r = view.dom.getBoundingClientRect();
+        if (e.clientY < r.top || e.clientY > r.bottom) return;
+        const x = Math.max(r.left + 2, Math.min(r.right - 2, e.clientX));
+        const el = document.elementFromPoint(x, e.clientY);
+        if (!el || !view.dom.contains(el)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        el.dispatchEvent(new MouseEvent('mousedown', {
+          bubbles: true, cancelable: true, clientX: x, clientY: e.clientY, detail: e.detail, button: 0, buttons: e.buttons,
+          shiftKey: e.shiftKey, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey,
+        }));
+      };
+      page.addEventListener('mousedown', onDown);
+      return { destroy: () => page.removeEventListener('mousedown', onDown) };
+    },
     props: {
       handleDOMEvents: {
         mousedown: (view, ev) => {
