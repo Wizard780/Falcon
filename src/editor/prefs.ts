@@ -19,7 +19,7 @@ export const P = {
   reopen: def('reopen', false),
   confirmClose: def('confirmClose', true),
   crashRecovery: def('crashRecovery', true),
-  recentCount: def('recentCount', 12),
+  recentCount: def('recentCount', 7), // how many files Home lists (1 to recents.ts MAX)
   usageStats: def('usageStats', true), // anonymous feature counts to PostHog (src/ui/analytics.ts)
   newName: def<'untitled' | 'speech' | 'date'>('newName', 'untitled'),
   aiOn: def('aiOn', false), // off until you turn it on and add a key (Settings > AI)

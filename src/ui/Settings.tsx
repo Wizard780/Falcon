@@ -26,6 +26,7 @@ const FEATURE_SETTINGS: SettingSpec[] = [...navSettings, ...docToolSettings, ...
 export const DEFAULTS = { zoom: 1, speechMin: 8, showOutline: true, depth: 3, highlight: 'yellow' };
 
 import { FONTS, SIZE_PREFS, UI_FONTS } from './display';
+import { MAX as MAX_RECENTS } from './recents';
 
 const STYLE_OPTS: [string, string][] = [['normal', 'Normal text'], ['pocket', 'Pocket'], ['hat', 'Hat'], ['block', 'Block'], ['tag', 'Tag'], ['analytic', 'Analytic'], ['undertag', 'Undertag']];
 const MARKERS: [string, string][] = [['#FF0000', 'Red'], ['#0070C0', 'Blue'], ['#00B050', 'Green'], ['#7030A0', 'Purple']];
@@ -51,6 +52,26 @@ function ThemeLook({ t }: { t: Theme }) {
     <span className="st-look" style={{ background: t.bg }}>
       <i style={{ background: t.text }} /><i style={{ background: t.text }} />
       <b style={{ background: t.paper }}><i style={{ background: t.paperInk }} /><i style={{ background: t.paperInk }} /><i style={{ background: t.paperInk }} /></b>
+    </span>
+  );
+}
+
+/** A whole number typed in a box, clamped to min..max and saved on Enter or leaving the box. Escape puts the saved one back. */
+function CountField({ p, label, min, max, unit }: { p: Pref<number>; label: string; min: number; max: number; unit: string }) {
+  const saved = String(pref(p));
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    const n = parseInt(draft, 10);
+    if (Number.isFinite(n)) setPref(p, Math.min(max, Math.max(min, n)));
+  };
+  return (
+    <span className="st-num">
+      <input className="st-text" aria-label={label} inputMode="numeric" maxLength={String(max).length} spellCheck={false}
+        value={draft ?? saved} onChange={(e) => setDraft(e.target.value.replace(/\D/g, ''))} data-draft={draft === null ? undefined : ''} onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') setDraft(null); }} />
+      <span className="st-unit">{unit}</span>
     </span>
   );
 }
@@ -288,7 +309,7 @@ export function Settings(props: Props) {
       ['Files', [
         tog(P.confirmClose, 'Unsaved changes confirmation', 'Ask before closing a file or quitting with unsaved changes.'),
         tog(P.crashRecovery, 'Crash recovery', 'Keep a copy of open files, brought back if Falcon closes unexpectedly.'),
-        pickNum(P.recentCount, 'Recent files', 'How many files Home lists.', [[6, '6'], [12, '12'], [24, '24']]),
+        { label: 'Recent files', hint: `How many files Home lists, up to ${MAX_RECENTS}.`, control: <CountField key={P.recentCount.key} p={P.recentCount} label="Recent files" min={1} max={MAX_RECENTS} unit="files" /> },
         { label: 'Name new files', hint: 'What an Untitled document is called when you first save it.', control:
           select('Name new files', pref(P.newName), (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), (h) => setPref(P.newName, h as 'untitled')) },
         { label: 'Speech doc name', wide: true, search: 'speech filename template date',

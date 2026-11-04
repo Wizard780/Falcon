@@ -1407,7 +1407,7 @@ export function App() {
       ))}
       </div>
       <div className="covered" inert={!!ask}>
-      <Home open={homeOpen} current={dirty || meta.path ? name : ''} recents={recents.slice(0, pref(P.recentCount))}
+      <Home open={homeOpen} recents={recents.slice(0, pref(P.recentCount))}
         onNew={fileNew} onNewSpeech={fileNewSpeech} onOpen={() => void fileOpen()} onSpeechDrop={openSd} onRecent={(r) => void openRecent(r)} onPeek={peekRecent}
         onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
       <Palette open={paletteOpen === 'files'} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
