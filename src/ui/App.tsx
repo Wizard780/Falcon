@@ -370,6 +370,7 @@ export function App() {
   const backupSoon = useRef(() => {});
   const viewChanged = useRef<(v: EditorView, id: number) => void>(() => {});
   const measureRef = useRef(() => {}); // measureRead, for the panes' scroll listeners
+  const paneDrag = useRef((_id: number, _e: PointerEvent) => {}); // dragPane, for the panes' name bars
   useEffect(() => {
     const backups = loadBackups();
     const first = backups.find((b) => b.active) ?? backups[0];
@@ -611,6 +612,7 @@ export function App() {
         // clicking into a pane focuses it; a click in its margin puts the caret in it, as the main page does
         el.addEventListener('focusin', () => { if (activeRef.current !== id) focusPane(id, false); });
         el.addEventListener('mousedown', (e) => { if (e.target === scroll || head.contains(e.target as Node)) { e.preventDefault(); focusPane(id); } });
+        head.addEventListener('pointerdown', (e) => paneDrag.current(id, e));
         scroll.addEventListener('scroll', () => { if (scrollRef.current === scroll) measureRef.current(); }, { passive: true });
         p = { view, el, scroll, head };
         panes.current.set(id, p);
@@ -739,6 +741,65 @@ export function App() {
     setGroup(order);
     arrange(order, order.includes(activeRef.current) ? activeRef.current : order[0]);
   }, [arrange, flash]);
+  /** A pane's X: that file leaves the split (it stays open, just after the group in the rail); below two, the split comes apart. */
+  const leave = useCallback((id: number) => {
+    const g = groupRef.current;
+    if (!g?.includes(id)) return;
+    if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to unjoin files.'); return; }
+    const left = g.filter((x) => x !== id), keep = left.length >= 2;
+    setDocs((ds) => {
+      const n = ds.filter((d) => d.id !== id);
+      n.splice(Math.max(...n.map((d, i) => (left.includes(d.id) ? i : -1))) + 1, 0, ds.find((d) => d.id === id)!);
+      return n;
+    });
+    const focus = id === activeRef.current ? left[Math.min(g.indexOf(id), left.length - 1)] : activeRef.current;
+    setGroup(keep ? left : null);
+    arrange(keep ? left : null, focus);
+    backupSoon.current();
+  }, [arrange, flash]);
+  /** Dragging a pane by its name onto another swaps the two, in the split and in the rail. */
+  paneDrag.current = (id, e) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('.pane-x')) return;
+    const src = panes.current.get(id)?.el, x0 = e.clientX, y0 = e.clientY;
+    if (!src) return;
+    let on = false, to: number | null = null;
+    const move = (m: PointerEvent) => {
+      if (!on) {
+        if (Math.hypot(m.clientX - x0, m.clientY - y0) < 5) return;
+        on = true;
+        src.toggleAttribute('data-drag', true);
+      }
+      m.preventDefault();
+      to = null;
+      for (const [k, p] of panes.current) {
+        const b = p.el.getBoundingClientRect(), hit = k !== id && m.clientX >= b.left && m.clientX < b.right;
+        p.el.toggleAttribute('data-drop', hit);
+        if (hit) to = k;
+      }
+    };
+    const end = (ok: boolean) => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', cancel);
+      removeEventListener('keydown', key, true);
+      for (const p of panes.current.values()) { p.el.removeAttribute('data-drag'); p.el.removeAttribute('data-drop'); }
+      const g = groupRef.current;
+      if (!ok || to === null || !g?.includes(id) || !g.includes(to)) return;
+      const a = g.indexOf(id), b = g.indexOf(to), n = [...g];
+      [n[a], n[b]] = [n[b], n[a]];
+      // the rail keeps the group's slots, filled in the new order
+      setDocs((ds) => { const slot = n.map((x) => ds.find((d) => d.id === x)!); let k = 0; return ds.map((d) => (g.includes(d.id) ? slot[k++] : d)); });
+      setGroup(n);
+      arrange(n, activeRef.current);
+      backupSoon.current();
+    };
+    const up = () => end(true), cancel = () => end(false);
+    const key = (k: KeyboardEvent) => { if (k.key === 'Escape') { k.preventDefault(); k.stopPropagation(); end(false); } };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', cancel);
+    addEventListener('keydown', key, true);
+  };
   /** Unjoin: the files go back to one at a time, the focused one staying on screen. */
   const unjoin = useCallback(() => {
     if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to unjoin files.'); return; }
@@ -1358,7 +1419,8 @@ export function App() {
       <div ref={splitBox} className="split" />
       {splitOn && [...panes.current].map(([id, p]) => {
         const d = docs.find((x) => x.id === id);
-        return d && createPortal(<><span className="nm">{tidy(d.meta.name || 'Untitled')}</span>{d.dirty && <i className="dot" aria-label="unsaved" />}{id === speechId && <i className="spk" aria-hidden="true">S</i>}</>, p.head, String(id));
+        return d && createPortal(<><span className="nm">{tidy(d.meta.name || 'Untitled')}</span>{d.dirty && <i className="dot" aria-label="unsaved" />}{id === speechId && <i className="spk" aria-hidden="true">S</i>}
+          <button className="pane-x" title="Take out of the split (the file stays open)" aria-label={`Take ${tidy(d.meta.name || 'Untitled')} out of the split`} onClick={() => leave(id)}><SvgIcon name="x" /></button></>, p.head, String(id));
       })}
       {findOpen && view && <FindBar view={view} inputRef={findRef} flash={flash} onClose={() => setFindOpen(false)} />}
 
@@ -1577,7 +1639,9 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
     setSel([...sel, id]);
   };
   // right-clicking a file while others are picked counts it in, so pick two and right-click either
+  // and the open file counts in too when that alone would leave one, so pick one and right-click it or the open one
   const joining = menu ? (sel.length ? [...new Set([...sel, menu.id])] : []) : [];
+  if (joining.length === 1 && props.docs.some((d) => d.id === props.active) && !props.home && !props.sd.some((s) => s.on) && !joining.includes(props.active)) joining.push(props.active);
   const member = !!menu && !!props.group?.includes(menu.id);
   const openMenu = (id: number) => (e: React.MouseEvent) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, id }); };
   useLayoutEffect(() => {
