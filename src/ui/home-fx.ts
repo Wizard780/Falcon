@@ -55,14 +55,22 @@ const OFF = path(null), ON = Object.fromEntries(Object.keys(G).map((k) => [k, pa
 const glyph = (ch: string) => `<svg viewBox="-0.5 -0.5 5 7" aria-hidden="true"><path d="${OFF}" class="off"/><path d="${ON[ch] || ON[' ']}" class="on"/></svg>`;
 
 /** The airport matrix clock: changed characters roll up into place. Returns a stop function. */
+/** Good morning until noon, afternoon until 5, evening after that. */
+export const greeting = (h: number) => (h >= 5 && h < 12 ? 'Good morning' : h >= 12 && h < 17 ? 'Good afternoon' : 'Good evening');
+
 export function clock(el: HTMLElement): () => void {
-  el.innerHTML = '<div class="mx" aria-hidden="true"></div><p class="mx-l">Local time</p><span class="sr-only"></span>';
+  el.innerHTML = '<p class="hm-greet"></p><p class="hm-date"></p><div class="mx" aria-hidden="true"></div><p class="mx-l">Local time</p><span class="sr-only"></span>';
   const mx = el.querySelector('.mx') as HTMLElement, sr = el.querySelector('.sr-only') as HTMLElement;
-  let prev = '';
+  const greet = el.querySelector('.hm-greet') as HTMLElement, date = el.querySelector('.hm-date') as HTMLElement;
+  let prev = '', day = '';
   const tick = () => {
     const d = new Date(), hh = String(d.getHours() % 12 || 12).padStart(2, ' '), mm = String(d.getMinutes()).padStart(2, '0');
     const t = `${hh}:${mm}`;
     if (t === prev) return;
+    // the greeting and the date sit over the digits and roll with them (at noon, at five, at midnight)
+    greet.textContent = greeting(d.getHours());
+    const today = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    if (today !== day) { day = today; date.textContent = `It\u2019s ${today}`; }
     sr.textContent = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     if (!prev) mx.innerHTML = [...t].map((ch) => `<span class="mx-c">${glyph(ch)}</span>`).join('');
     else [...t].forEach((ch, i) => {
