@@ -20,17 +20,17 @@ const BOX = { x: -170, y: -140, w: 240, h: 200 };
 export function falconSvg(): string {
   return `<svg class="falcon-bird" viewBox="${BOX.x} ${BOX.y} ${BOX.w} ${BOX.h}" xmlns="${NS}" aria-hidden="true" focusable="false">
 <g transform="translate(${-EYE.x} ${-EYE.y})">
-  <g data-wing="far"><path d="${WING}" fill="var(--falcon-far, #8a8a92)"/></g>
-  <path data-body d="${BODY}" fill="var(--falcon-ink, #f4f4f6)"/>
-  <path data-head d="${HEAD}" fill="var(--falcon-ink, #f4f4f6)" fill-rule="evenodd"/>
-  <g data-wing="near"><path d="${WING}" fill="var(--falcon-ink, #f4f4f6)"/></g>
+  <g data-wing="far"><path d="${WING}" fill="var(--u-mut)"/></g>
+  <path data-body d="${BODY}" fill="currentColor"/>
+  <path data-head d="${HEAD}" fill="currentColor" fill-rule="evenodd"/>
+  <g data-wing="near"><path d="${WING}" fill="currentColor"/></g>
 </g>
 </svg>`;
 }
 
 /** The logo on its perch: the icon's head, flat, as the rail draws it. */
 export function logoSvg(): string {
-  return `<svg class="falcon-logo" viewBox="10 9 48 50" xmlns="${NS}" aria-hidden="true" focusable="false"><path d="${HEAD}" fill="var(--falcon-ink, #f4f4f6)" fill-rule="evenodd"/></svg>`;
+  return `<svg class="falcon-logo" viewBox="10 9 48 50" xmlns="${NS}" aria-hidden="true" focusable="false"><path d="${HEAD}" fill="currentColor" fill-rule="evenodd"/></svg>`;
 }
 
 type Pt = { x: number; y: number; s: number };
