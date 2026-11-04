@@ -226,14 +226,23 @@ ipcMain.handle('falcon:index-add', async (e) => {
   return index().folders();
 });
 // a settings import naming search folders: only real folders on this computer get added
-ipcMain.handle('falcon:index-import', async (_e, paths) => {
+ipcMain.handle('falcon:index-import', async (e, paths) => {
   if (!Array.isArray(paths)) throw new Error('bad import request');
   const real = [];
   for (const p of paths.slice(0, 50)) {
     if (typeof p !== 'string' || !path.isAbsolute(p)) continue;
     if (await fs.stat(p).then((s) => s.isDirectory(), () => false)) real.push(p);
   }
-  if (real.length) await index().add(real);
+  // the allowed folders decide which files the page can read, so the user says yes, as with the picker
+  if (real.length) {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showMessageBox(win, {
+      type: 'question', buttons: ['Add folders', 'Skip'], defaultId: 0, cancelId: 1,
+      message: `Add ${real.length === 1 ? 'this folder' : `these ${real.length} folders`} to file search?`,
+      detail: real.join('\n'),
+    });
+    if (r.response === 0) await index().add(real);
+  }
   return index().folders();
 });
 ipcMain.handle('falcon:index-remove', async (_e, p) => {
