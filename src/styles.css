@@ -331,14 +331,14 @@ button.b:active { transform: scale(.97); }
 .hm-sc { position: absolute; inset: 0; overflow: auto; z-index: 1; container-type: inline-size; }
 .hm-in { position: relative; max-width: 1160px; margin: 0 auto; padding: 72px 48px 56px; }
 .hm-brand { display: flex; align-items: center; gap: 18px; }
-.hm-perch { flex: none; width: 62px; height: 65px; pointer-events: none; } /* the falcon logo, left of the date */
+.hm-perch { flex: none; width: 62px; height: 65px; pointer-events: none; color: var(--u-tx); } /* the falcon logo, left of the name, in the text color like the rail's */
 .hm-perch svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.falcon-flight { position: absolute; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; }
+.falcon-flight { position: absolute; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; color: var(--u-tx); }
 .falcon-flight canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .falcon-flight svg { overflow: visible; }
 .hm-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: 32px; padding-bottom: 36px; }
-.hm-date { margin: 0 0 10px; font-size: 13px; color: var(--u-mut); }
-.hm-sub { margin: 8px 0 0; font-size: 14px; color: var(--u-tx2); }
+.hm-title { margin: 0; font-size: 44px; font-weight: 600; line-height: 1; letter-spacing: -.022em; color: var(--u-tx); } /* same tight setting as the logo lockup */
+.hm-ch { position: relative; top: 0; } /* each letter, so the falcon can drop them in one by one; inline, so the word keeps its kerning */
 .hm-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
 .hm-act { display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px 0 12px; border-radius: 8px; background: color-mix(in srgb, var(--u-card) 75%, transparent);
   box-shadow: inset 0 0 0 1px var(--u-line), var(--u-top); color: var(--u-tx); font-size: 13.5px; cursor: pointer; transition: background 150ms var(--u-ease), box-shadow 150ms var(--u-ease), transform 150ms var(--u-ease); }
@@ -346,6 +346,8 @@ button.b:active { transform: scale(.97); }
 .hm-act:hover { background: var(--u-raised); box-shadow: inset 0 0 0 1px var(--u-ctl-on), var(--u-top); }
 .hm-act:active { transform: scale(.98); }
 .hm-clock { padding-bottom: 6px; text-align: right; }
+.hm-greet { margin: 0; font-size: 15px; font-weight: 500; color: var(--u-tx); }
+.hm-date { margin: 4px 0 14px; font-size: 13px; color: var(--u-mut); }
 .mx { display: inline-flex; gap: 4px; color: var(--u-tx); }
 .mx-c { position: relative; display: inline-block; width: 20px; height: 28px; overflow: hidden; }
 .mx-c svg { position: absolute; inset: 0; width: 20px !important; height: 28px !important; overflow: visible; }
