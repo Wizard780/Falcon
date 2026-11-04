@@ -234,3 +234,11 @@ Bug hunt: opening either NATO block file said "too big for crash recovery, so sa
 - [x] vitest tests/big-recovery.test.ts (3 of 4 fail on main); scripts/electron-recovery.mjs kills the real app mid-edit and relaunches: the edit is back, unsaved, on a generated file and on a copy of NATO AT Neg; electron-smoke passes with `recovery` added to the bridge
 - Note: in the app tests, a backup taken inside the same `act` as the typing records the doc as saved, because the render that marks it unsaved waits for the act to end. Not an app bug; wait in a second act (`typeAndBackUp`)
 
+
+## Stage: recents by day, a month kept (2026-11-04, branch recents-by-day)
+User ask: "the recents for files opened are catagroized by today last 7 days and then all else (tracks only for month)".
+- [x] Home's Recent list sits under Today (since local midnight), Last 7 days (the six days before) and Earlier (the rest of the month), by the local day each file was last opened or saved; an empty section has no label, and no recents at all keeps the empty state
+- [x] a month kept: an entry last opened more than 30 calendar days ago leaves the list and `falcon.recents.v1` (dropped on load, on every save of the list and on every open); one with no time can't be dated and goes too. Before, up to 100 were kept forever
+- [x] opening a file puts it at the top of Today; ↑/↓ walk straight across the sections; the Recent files count (Settings) still caps how many Home shows
+- [x] labels are 11px mono, muted, under the existing Recent · Clear line
+- [x] vitest tests/recents-groups.test.ts (midnight, 23:59 yesterday, day 6 vs 7, exactly 30 vs 31 days, a clock-change day, storage prune, Home sections, arrows across a section); journey recents-by-day (10 ok) in the web build

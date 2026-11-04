@@ -370,6 +370,9 @@ button.b:active { transform: scale(.97); }
 .hm-clear { color: var(--u-mut); font: 13px var(--ui-font); cursor: pointer; transition: color 150ms var(--u-ease); }
 .hm-clear:hover { color: var(--u-tx); }
 .hm-list { display: flex; flex-direction: column; gap: 2px; }
+.hm-grp { display: flex; flex-direction: column; gap: 2px; }
+.hm-grp + .hm-grp { margin-top: 14px; }
+.hm-sec { padding: 4px 12px 4px; font: 11px/16px var(--mono); color: var(--u-mut); opacity: .8; }
 /* each file: a tile, its name over its folder and cards, and when; the one shown as a page is lit in the pen color */
 .hm-row { position: relative; flex: none; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; grid-template-rows: 1fr 1fr; column-gap: 14px; row-gap: 2px; align-items: center; height: 60px; padding: 0 14px 0 12px;
   border-radius: 10px; color: var(--u-tx); text-align: left; cursor: pointer; transition: background 150ms var(--u-ease), box-shadow 150ms var(--u-ease); }

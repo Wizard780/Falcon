@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { clock, dots } from './home-fx';
-import { tidy, whenLabel, type Recent } from './recents';
+import { groupRecents, tidy, whenLabel, type Recent } from './recents';
 import { keyOf, keyText } from '../editor/keybinds';
 import { SvgIcon } from './icons';
 import { launchFalcon } from './falcon';
@@ -69,7 +69,9 @@ export function Home(props: {
     return () => cancelAnimationFrame(s.raf);
   }, [undo]);
 
-  const shown = undo ? [] : recents;
+  // Today, Last 7 days, Earlier: worked out each time Home opens, so one left up past midnight sorts again when it's next shown
+  const groups = useMemo(() => (undo ? [] : groupRecents(recents)), [recents, undo, open]);
+  const shown = useMemo(() => groups.flatMap((g) => g.items), [groups]); // the arrow keys run straight through the sections
   const at = Math.min(sel, Math.max(0, shown.length - 1));
   const pick = shown[at];
   const { onPeek } = props;
@@ -85,6 +87,7 @@ export function Home(props: {
     rows.current[i]?.focus();
   };
 
+  let row = 0; // each row's place in `shown`, counted across the sections
   return (
     <section ref={homeRef} tabIndex={-1} className={`home${open ? ' open' : ''}`} aria-label="Home" aria-hidden={!open} onKeyDown={onKey}>
       <div ref={bgRef} className="hm-bg" aria-hidden="true" />
@@ -111,14 +114,22 @@ export function Home(props: {
             <div className="hm-col">
               <div className="hm-lab"><span>Recent</span>{shown.length > 0 && <button className="hm-clear" onClick={() => { setUndo(recents); props.onClear(null); }}>Clear</button>}</div>
               <div className="hm-list">
-                {shown.length ? shown.map((r, i) => (
-                  <button key={(r.path ?? '') + r.name} ref={(el) => { rows.current[i] = el; }} className="hm-row" data-on={i === at || undefined}
-                    onPointerEnter={(e) => { setSel(i); if (document.activeElement?.classList.contains('hm-row')) e.currentTarget.focus({ preventScroll: true }); }} onFocus={() => setSel(i)} onClick={() => props.onRecent(r)}>
-                    <span className="ic"><SvgIcon name="doc" /></span>
-                    <span className="nm">{r.name}</span>
-                    <span className="fd">{[r.folder, r.cards ? `${r.cards} cards` : ''].filter(Boolean).join(' · ')}</span>
-                    <span className="wh">{whenLabel(r.when)}</span>
-                  </button>
+                {shown.length ? groups.map((g) => (
+                  <div key={g.label} className="hm-grp" role="group" aria-label={g.label}>
+                    <div className="hm-sec" aria-hidden="true">{g.label}</div>
+                    {g.items.map((r) => {
+                      const i = row++;
+                      return (
+                        <button key={(r.path ?? '') + r.name} ref={(el) => { rows.current[i] = el; }} className="hm-row" data-on={i === at || undefined}
+                          onPointerEnter={(e) => { setSel(i); if (document.activeElement?.classList.contains('hm-row')) e.currentTarget.focus({ preventScroll: true }); }} onFocus={() => setSel(i)} onClick={() => props.onRecent(r)}>
+                          <span className="ic"><SvgIcon name="doc" /></span>
+                          <span className="nm">{r.name}</span>
+                          <span className="fd">{[r.folder, r.cards ? `${r.cards} cards` : ''].filter(Boolean).join(' · ')}</span>
+                          <span className="wh">{whenLabel(r.when)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )) : <p className="hm-none"><b>No recent files yet</b>Files you open show up here</p>}
               </div>
               {shown.length > 1 && <p className="hm-keys"><kbd>↑</kbd><kbd>↓</kbd> choose <kbd>↵</kbd> open <kbd>esc</kbd> back</p>}
