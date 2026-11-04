@@ -70,6 +70,11 @@ type FalconBridge = {
   linkedApps?: () => Promise<LinkedApp[]>;
   /** Allow or block an app (null forgets it, so it asks again). Returns the new list. */
   allowLinkedApp?: (id: string, on: boolean | null) => Promise<LinkedApp[]>;
+  /** The AI key is kept in electron/ai.cjs; the page only ever learns whether there is one. An empty key removes it. */
+  aiHasKey?: () => Promise<boolean>;
+  aiSetKey?: (key: string) => Promise<boolean>;
+  /** One model request. `stop` means retrying won't help (a bad key, no credit). */
+  aiAsk?: (req: { system: string; text: string; model: string; maxTokens: number }) => Promise<{ text?: string; error?: string; stop?: boolean }>;
   platform?: string;
 };
 /** A SpeechDrop answer: the value, or SpeechDrop's error code ('no_room', 'too_large', 'unreachable'…). */

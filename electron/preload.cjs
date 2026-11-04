@@ -40,6 +40,9 @@ contextBridge.exposeInMainWorld('falcon', {
     ipcRenderer.send('falcon:bridge-ready');
     return () => ipcRenderer.removeListener('falcon:bridge', on);
   },
+  aiHasKey: () => ipcRenderer.invoke('falcon:ai-has-key'),
+  aiSetKey: (key) => ipcRenderer.invoke('falcon:ai-set-key', key),
+  aiAsk: (req) => ipcRenderer.invoke('falcon:ai-ask', req),
   linkedApps: () => ipcRenderer.invoke('falcon:bridge-apps'),
   allowLinkedApp: (id, on) => ipcRenderer.invoke('falcon:bridge-allow', id, on),
   onConfirmClose: (f) => {

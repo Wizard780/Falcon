@@ -22,6 +22,11 @@ export const P = {
   recentCount: def('recentCount', 12),
   usageStats: def('usageStats', true), // anonymous feature counts to PostHog (src/ui/analytics.ts)
   newName: def<'untitled' | 'speech' | 'date'>('newName', 'untitled'),
+  aiOn: def('aiOn', false), // off until you turn it on and add a key (Settings > AI)
+  aiModel: def('aiModel', ''), // blank: electron/ai.cjs picks
+  aiMaxTokens: def('aiMaxTokens', 8192),
+  aiCitePreset: def('aiCitePreset', ''), // which saved prompt is in use, '' for the built-in one
+  aiCitePresets: def('aiCitePresets', '[]'), // the saved prompts, as JSON (ai-cite.ts)
   speechName: def('speechName', 'Speech {speech} {date:M-D h-mmA}'), // New speech doc's file name (files.ts speechFileName)
   savePrefix: def('savePrefix', true), // Save As puts the prefixes below on Send, Read and Marked Doc names
   prefixSend: def('prefix.send', 'SEND_'),

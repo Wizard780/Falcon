@@ -176,6 +176,12 @@ bind('Files', [
   { id: 'recentDoc', label: 'Switch to recent document', key: 'Ctrl-Tab' }, { id: 'recentDocBack', label: 'Switch to recent document, backward', key: 'Ctrl-Shift-Tab' },
   { id: 'nextDoc', label: 'Next open document' }, { id: 'prevDoc', label: 'Previous open document' },
 ]);
+bind('AI', [
+  { id: 'aiCite', label: 'Format cite with AI', key: 'Mod-Shift-x' },
+  { id: 'reformatCites', label: 'Reformat every cite with AI' },
+  { id: 'aiPreset0', label: 'AI cite creator: use built-in prompt' },
+  ...Array.from({ length: 10 }, (_, i) => ({ id: `aiPreset${i + 1}`, label: `AI cite creator: use prompt preset ${i + 1}` })),
+]);
 // the SpeechDrop tab (no key until you give it one)
 bind('SpeechDrop', [{ id: 'speechdrop', label: 'SpeechDrop: join a room, upload and open its files' }]);
 // a plain key on purpose: the page can't type it while it's bound (text boxes still can)
