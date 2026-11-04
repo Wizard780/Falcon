@@ -28,6 +28,7 @@ Preconditions:
 - **Depth 1.** Click `[aria-label="Show pockets"]`. Only `Seed Pocket` is left.
 - **Jump.** At depth 4, click `.sb-row.ol:has-text("Warming is real")`. That row gets `data-on`, and the caret's paragraph is `Warming is real`.
 - **Persist.** Reload. `localStorage['falcon.depth']` is `4`, and the depth-4 button has `data-on`.
+- **Folds.** Run `$V run .claude/skills/verify-falcon/journeys/outline-folds.mjs` (five `ok` lines). It types three hats that each hold a block named `Main`; clicking one `Main`'s chevron (`[data-tw]`) opens only that one (`aria-expanded`), a second click closes it, and a double-click on the chevron ends closed instead of flickering open again.
 - **Proof.** `evidence/outline/` holds `01-depth-3.png`, `02-jumped.png` and `results.txt`.
 
 ## Gotchas

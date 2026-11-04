@@ -2,18 +2,30 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { levelOf, type ParaStyle } from './schema';
 import { norm } from './find';
 
-export type OutlineItem = { pos: number; level: number; text: string; style: ParaStyle; cards: number; hasKids: boolean };
+export type OutlineItem = { pos: number; level: number; text: string; style: ParaStyle; cards: number; hasKids: boolean; key: string };
 
-/** Headings in document order, each with the number of cards (tags/analytics) under it. */
+/**
+ * Headings in document order, each with the number of cards (tags/analytics) under it. `key` names the
+ * heading by its text and the headings above it (plus a count among same-named siblings), so a fold
+ * follows "Answers under Link" and not every "Answers" in the file, and survives typing above it.
+ */
 export function buildOutline(doc: PMNode): OutlineItem[] {
   const items: OutlineItem[] = [];
   const stack: OutlineItem[] = [];
+  const seen: Map<string, number>[] = [new Map()];
   doc.forEach((node, pos) => {
     const style = node.attrs.style as ParaStyle;
     const level = levelOf(node);
     if (!level) return;
-    const item: OutlineItem = { pos, level, text: node.textContent.trim(), style, cards: 0, hasKids: false };
-    while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
+    const text = node.textContent.trim();
+    while (stack.length && stack[stack.length - 1].level >= level) { stack.pop(); seen.pop(); }
+    const parent = stack[stack.length - 1];
+    const under = seen[seen.length - 1];
+    const name = `${level}:${text}`;
+    const n = under.get(name) ?? 0;
+    under.set(name, n + 1);
+    const item: OutlineItem = { pos, level, text, style, cards: 0, hasKids: false, key: `${parent ? parent.key + '/' : ''}${name}#${n}` };
+    seen.push(new Map());
     for (const s of stack) {
       s.hasKids = true;
       if (level === 4) s.cards++;
