@@ -1,6 +1,6 @@
 # Falcon on launch
 
-When Falcon starts on Home, a flat peregrine in the app icon's style (the icon's head with a dark hood, mustache stripe, pen-colored eye ring and beak tip, on a body with pointed dark-tipped wings, a barred tail and chest chevrons) sweeps in over Home from the bottom left, climbs through the list, rounds the top and comes back left across the title, dropping the letters of **Falcon** into place one by one as it passes, then turns and settles left of them as the logo (the same hooded head). Home's layout never moves for the flight. Any key or click lands it at once, with the title complete. Landed, it holds still.
+When Falcon starts on Home, a flat peregrine in the app icon's style (the icon's head with a dark hood, mustache stripe, pen-colored eye ring and beak tip, on a body with pointed dark-tipped wings, a barred tail and chest chevrons) sweeps in over Home from the bottom left, climbs through the list, rounds the top and comes back left across the title, dropping the letters of **Falcon** into place one by one as it passes, then turns and settles left of them as the logo: its hood, mustache, eye ring and beak tip fade with the body and wings, leaving the plain icon head the rail draws. Home's layout never moves for the flight. Any key or click lands it at once, with the title complete. Landed, it holds still.
 
 Right of the header, above the clock, Home greets you (Good morning until noon, Good afternoon until five, Good evening after) and says `It's Wednesday, November 4`. Both roll with the clock.
 

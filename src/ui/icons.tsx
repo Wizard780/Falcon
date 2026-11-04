@@ -1,4 +1,3 @@
-import { logoSvg } from './falcon';
 const PATHS: Record<string, string> = {
   plus: 'M12 5v14M5 12h14',
   folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
@@ -57,9 +56,9 @@ const P16: Record<string, string> = {
   gear: '<path d="M8 1.3L8.44 1.31L8.87 1.36L9.2 1.95L9.36 2.92L9.51 3.54L9.8 3.66L10.08 3.78L10.35 3.93L10.61 4.09L10.86 4.27L11.1 4.46L11.72 4.28L12.64 3.93L13.31 3.92L13.57 4.28L13.8 4.65L14.01 5.04L14.19 5.44L13.84 6.02L13.08 6.64L12.62 7.08L12.66 7.39L12.69 7.69L12.7 8L12.69 8.31L12.66 8.61L12.62 8.92L13.08 9.36L13.84 9.98L14.19 10.56L14.01 10.96L13.8 11.35L13.57 11.72L13.31 12.08L12.64 12.07L11.72 11.72L11.1 11.54L10.86 11.73L10.61 11.91L10.35 12.07L10.08 12.22L9.8 12.34L9.51 12.46L9.36 13.08L9.2 14.05L8.87 14.64L8.44 14.69L8 14.7L7.56 14.69L7.13 14.64L6.8 14.05L6.64 13.08L6.49 12.46L6.2 12.34L5.92 12.22L5.65 12.07L5.39 11.91L5.14 11.73L4.9 11.54L4.28 11.72L3.36 12.07L2.69 12.08L2.43 11.72L2.2 11.35L1.99 10.96L1.81 10.56L2.16 9.98L2.92 9.36L3.38 8.92L3.34 8.61L3.31 8.31L3.3 8L3.31 7.69L3.34 7.39L3.38 7.08L2.92 6.64L2.16 6.02L1.81 5.44L1.99 5.04L2.2 4.65L2.43 4.28L2.69 3.92L3.36 3.93L4.28 4.28L4.9 4.46L5.14 4.27L5.39 4.09L5.65 3.93L5.92 3.78L6.2 3.66L6.49 3.54L6.64 2.92L6.8 1.95L7.13 1.36L7.56 1.31Z"/><circle cx="8" cy="8" r="2.2"/>',
 };
 // the Head mark (logo/build-brand.mjs makes every other brand asset from the same path)
-export const LOGO = 'M12 57V36A24 24 0 0 1 36 12H42C50.5 12 56 18 56 26C56 30.5 54 33.5 50.5 35.5C51 31.5 49 29 45.5 29H41C37 29 34.5 32 34.5 36V57ZM39 17.5A3.5 3.5 0 1 0 39 24.5A3.5 3.5 0 1 0 39 17.5Z';
+const LOGO = 'M12 57V36A24 24 0 0 1 36 12H42C50.5 12 56 18 56 26C56 30.5 54 33.5 50.5 35.5C51 31.5 49 29 45.5 29H41C37 29 34.5 32 34.5 36V57ZM39 17.5A3.5 3.5 0 1 0 39 24.5A3.5 3.5 0 1 0 39 17.5Z';
 
 export function SvgIcon({ name }: { name: string }) {
-  if (name === 'logo') return <span className="logo-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: logoSvg() }} />; // the hooded falcon head, as Home's perch draws it
+  if (name === 'logo') return <svg viewBox="12 12 44 45" aria-hidden="true"><path d={LOGO} fill="currentColor" fillRule="evenodd" /></svg>;
   return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: P16[name] }} />;
 }

@@ -31,15 +31,15 @@ export function falconSvg(): string {
 <g transform="translate(${-EYE.x} ${-EYE.y})">
   <g data-wing="far"><path d="${WING}" fill="var(--u-mut)"/><path d="${TIP}" fill="${DARK}"/></g>
   <g data-body><path d="${BODY}" fill="currentColor"/><path d="${BARS}" stroke="${DARK}" stroke-width="5"/><path d="${CHEST}" stroke="var(--u-mut)" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
-  <g data-head><path d="${HEAD}" fill="currentColor" fill-rule="evenodd"/>${MARKS}</g>
+  <g data-head><path d="${HEAD}" fill="currentColor" fill-rule="evenodd"/><g data-marks>${MARKS}</g></g>
   <g data-wing="near"><path d="${WING}" fill="currentColor"/><path d="${TIP}" fill="${DARK}"/></g>
 </g>
 </svg>`;
 }
 
-/** The logo on its perch: the icon's head with the falcon's hood, mustache, eye ring and beak tip. */
+/** The logo on its perch: the icon's head, flat, as the rail draws it. The bird's marks fade off it as it lands. */
 export function logoSvg(): string {
-  return `<svg class="falcon-logo" viewBox="10 9 48 50" xmlns="${NS}" aria-hidden="true" focusable="false"><path d="${HEAD}" fill="currentColor" fill-rule="evenodd"/>${MARKS}</svg>`;
+  return `<svg class="falcon-logo" viewBox="10 9 48 50" xmlns="${NS}" aria-hidden="true" focusable="false"><path d="${HEAD}" fill="currentColor" fill-rule="evenodd"/></svg>`;
 }
 
 type Pt = { x: number; y: number; s: number };
@@ -105,7 +105,7 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
   host.innerHTML = falconSvg();
   const svg = host.firstElementChild as SVGSVGElement;
   const near = svg.querySelector<SVGGElement>('[data-wing="near"]')!, far = svg.querySelector<SVGGElement>('[data-wing="far"]')!;
-  const body = svg.querySelector<SVGGElement>('[data-body]')!;
+  const body = svg.querySelector<SVGGElement>('[data-body]')!, marks = svg.querySelector<SVGGElement>('[data-marks]')!;
   const wings = (deg: number, lag: number) => {
     near.setAttribute('transform', `translate(${SHOULDER.x} ${SHOULDER.y}) rotate(${f1(deg)})`);
     far.setAttribute('transform', `translate(${SHOULDER.x + 4} ${SHOULDER.y - 4}) rotate(${f1(lag - 10)})`);
@@ -183,7 +183,7 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
     wings((amp * Math.sin(phase) - 4) * (1 - flare) - 40 * flare, (amp * Math.sin(phase - 0.6) - 4) * (1 - flare) - 48 * flare);
     // one continuous hand-off: body and wings dissolve as it settles, the head is already the logo
     const rest = String(1 - smooth((k - 0.9) / 0.1));
-    near.style.opacity = far.style.opacity = body.style.opacity = rest;
+    near.style.opacity = far.style.opacity = body.style.opacity = marks.style.opacity = rest;
     svg.style.transform = `translate(${f1(x + BOX.x)}px,${f1(y + BOX.y)}px) scale(${(s * facing).toFixed(4)},${s.toFixed(4)}) rotate(${f1(bank * facing)}deg)`;
     // flying left over the title, each letter drops out behind it as it clears the letter's middle
     // the trail and the letters come off the tail's tip, carried through the bird's own transform (scale, then turn)
