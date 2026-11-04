@@ -186,9 +186,11 @@ export function launchFalcon(home: HTMLElement, perch: HTMLElement, title: HTMLE
     near.style.opacity = far.style.opacity = body.style.opacity = rest;
     svg.style.transform = `translate(${f1(x + BOX.x)}px,${f1(y + BOX.y)}px) scale(${(s * facing).toFixed(4)},${s.toFixed(4)}) rotate(${f1(bank * facing)}deg)`;
     // flying left over the title, each letter drops out behind it as it clears the letter's middle
-    const tailX = x + 110 * s, tailY = y + 34 * s;
+    // the trail and the letters come off the tail's tip, carried through the bird's own transform (scale, then turn)
+    const tr = (bank * facing * Math.PI) / 180, lx = -97 - EYE.x, ly = 57 - EYE.y;
+    const tailX = x + (lx * Math.cos(tr) - ly * Math.sin(tr)) * s * facing, tailY = y + (lx * Math.sin(tr) + ly * Math.cos(tr)) * s;
     if (dx < 0 && k > 0.6 && !skip) {
-      const h = home0(), vent = x + 36 * s;
+      const h = home0(), vent = x + (-30 - EYE.x) * Math.cos(tr) * s * facing; // the belly, between head and tail
       for (const l of letters) {
         if (shown.has(l)) continue;
         const r = l.getBoundingClientRect();

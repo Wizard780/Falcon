@@ -25,7 +25,7 @@ Preconditions:
 
 - `falcon-verify doctor` is all `ok`.
 
-- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/launch-falcon.mjs`. It starts the app itself without the Escape `openFalcon` presses, films the flight, and checks the letters are hidden in flight and partly down at 2.2 s, the landing, the logo's place, the greeting and date over the clock, the layout, the setting, Reduce motion and a key mid-flight. Fourteen `ok` lines.
+- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/launch-falcon.mjs`. It starts the app itself without the Escape `openFalcon` presses, films the flight, and checks the letters are hidden in flight and partly down at 2.35 s, the landing, the logo's place, the greeting and date over the clock, the layout, the setting, Reduce motion and a key mid-flight. Fourteen `ok` lines.
 - **Layout.** It compares the boxes of `.hm-perch`, `.hm-title`, `.hm-acts`, `.hm-clock` and `.hm-main` during the flight, after it, and with the setting off. All three must match.
 - **Proof.** `evidence/launch-falcon/` holds `flight-0250.png` to `flight-3600.png` (2000 to 3200 show the pass over the title and the letters dropping), `perched.png`, `layout.txt` and `results.txt`.
 

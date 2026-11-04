@@ -36,12 +36,12 @@ const hidden = (page) => page.evaluate(() => [...document.querySelectorAll('.hm-
 want(await hidden(page) === 6, 'the six letters of Falcon are hidden while it flies');
 const t0 = Date.now();
 let midway = 0;
-for (const t of [250, 600, 950, 1300, 1700, 2000, 2200, 2400, 2600, 2800, 3000, 3200, 3600]) {
+for (const t of [250, 600, 950, 1300, 1700, 2000, 2200, 2350, 2400, 2600, 2800, 3000, 3200, 3600]) {
   const w = t - (Date.now() - t0); if (w > 0) await page.waitForTimeout(w);
-  if (t === 2200) midway = await hidden(page);
+  if (t === 2350) midway = await hidden(page);
   await page.screenshot({ path: `${out}/flight-${String(t).padStart(4, '0')}.png` });
 }
-want(midway > 0 && midway < 6, `partway across the title some letters are down and some still to come (${6 - midway} of 6 at 2.2 s)`);
+want(midway > 0 && midway < 6, `partway across the title some letters are down and some still to come (${6 - midway} of 6 at 2.35 s)`);
 want(!(await flying(page)) && await perched(page), 'it lands on the perch and the flight layer is gone');
 want(await hidden(page) === 0 && await page.evaluate(() => [...document.querySelectorAll('.hm-title .hm-ch')].every((l) => !l.style.top && !l.style.opacity)), 'every letter is in place with no styles left on it');
 const after = await layout(page);
