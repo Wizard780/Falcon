@@ -190,7 +190,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.beep, 'Timer sound', 'general', 'Two short tones when a timer reaches zero.'),
     tog(P.confirmClose, 'Unsaved changes confirmation', 'general', 'Ask before closing a file or quitting with unsaved changes.'),
     tog(P.crashRecovery, 'Crash recovery', 'general', 'Keep a copy of open files, brought back if Falcon closes unexpectedly.'),
-    pick(P.recentCount, 'Recent files', 'general', [[6, '6'], [12, '12'], [24, '24']], 'How many files Home lists.'),
+    { id: P.recentCount.key, label: 'Recent files', page: 'general', query: 'Recent files count Home list', hint: 'Type it in Settings.', link: true, get: () => String(pref(P.recentCount)), set: () => {} },
     pick(P.newName, 'Name new files', 'general', (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), 'What an Untitled document is called when you first save it.'),
     { id: P.speechName.key, label: 'Speech doc name', page: 'general', query: 'Speech doc name filename', hint: 'Type it in Settings.', link: true, get: () => pref(P.speechName), set: () => {} },
     tog(P.savePrefix, 'Prefix Save As copies', 'general', 'Send, Read and Marked Doc copies start with a prefix.'),

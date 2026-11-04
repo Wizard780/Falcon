@@ -2,8 +2,8 @@ import { DOMSerializer, type Node as PMNode } from 'prosemirror-model';
 import { buildOutline } from '../editor/outline';
 import { schema } from '../editor/schema';
 import { readJson, safeSet } from './storage';
-// the most Settings lets Home show; Home shows the first `Recent files` of them
-const MAX = 24;
+// the most Settings lets Home show (Recent files is typed, 1 to this); Home shows the first `Recent files` of them
+export const MAX = 100;
 
 /** A file the user opened or saved. `blocks` is a short outline; `preview` is its first page as HTML, for the home peek. */
 export type Recent = {
