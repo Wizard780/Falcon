@@ -59,21 +59,11 @@ const marks: Record<string, MarkSpec> = {
     parseDOM: [{ tag: 'span.f-cite' }],
     toDOM: () => ['span', { class: 'f-cite' }, 0],
   },
-  // Font size sits outside underline, emphasis and highlight so their box and background take the text's size (inside cite, whose own size it overrides).
+  // Font size sits outside highlight, underline and emphasis so their box and background take the text's size (inside cite, whose own size it overrides).
   size: {
     attrs: { pt: {} },
     parseDOM: [{ tag: 'span.f-size', getAttrs: (el) => ({ pt: Number((el as HTMLElement).dataset.pt) || 11 }) }],
     toDOM: (m) => ['span', { class: 'f-size', 'data-pt': String(m.attrs.pt), style: `font-size:${m.attrs.pt}pt` }, 0],
-  },
-  underline: {
-    excludes: 'underline emphasis',
-    parseDOM: [{ tag: 'span.f-underline' }, { tag: 'u' }, { style: 'text-decoration-line=underline' }, { style: 'text-decoration=underline' }],
-    toDOM: () => ['span', { class: 'f-underline' }, 0],
-  },
-  emphasis: {
-    excludes: 'underline emphasis',
-    parseDOM: [{ tag: 'span.f-emphasis' }],
-    toDOM: () => ['span', { class: 'f-emphasis' }, 0],
   },
   highlight: {
     attrs: { color: { default: 'yellow' } },
@@ -88,6 +78,17 @@ const marks: Record<string, MarkSpec> = {
     attrs: { color: { default: '#D9D9D9' } },
     parseDOM: [{ tag: 'span.f-shading', getAttrs: (el) => ({ color: color((el as HTMLElement).dataset.color ?? null) || '#D9D9D9' }) }],
     toDOM: (m) => ['span', { class: 'f-shading', 'data-color': m.attrs.color, style: `background-color:${m.attrs.color}` }, 0],
+  },
+  // Underline and emphasis sit inside highlight and shading, so a boxed word's box can fill with the color around it.
+  underline: {
+    excludes: 'underline emphasis',
+    parseDOM: [{ tag: 'span.f-underline' }, { tag: 'u' }, { style: 'text-decoration-line=underline' }, { style: 'text-decoration=underline' }],
+    toDOM: () => ['span', { class: 'f-underline' }, 0],
+  },
+  emphasis: {
+    excludes: 'underline emphasis',
+    parseDOM: [{ tag: 'span.f-emphasis' }],
+    toDOM: () => ['span', { class: 'f-emphasis' }, 0],
   },
   color: {
     attrs: { color: {} },

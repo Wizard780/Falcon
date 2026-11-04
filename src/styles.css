@@ -461,7 +461,7 @@ button.b:active { transform: scale(.97); }
 .ProseMirror > :first-child { margin-top: 0 !important; }
 .f-cite { font-size: 13pt; font-weight: 700; }
 .f-underline { text-decoration: underline; }
-.f-emphasis { font-weight: 700; text-decoration: underline; border: 1px solid #222; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.f-emphasis { font-weight: 700; text-decoration: underline; border: 1px solid #222; -webkit-box-decoration-break: clone; box-decoration-break: clone; position: relative; } /* positioned so its border paints over the next line's highlight; it sits inside highlight and shading, which fill it */
 .f-unbold { font-weight: 400 !important; }
 .ProseMirror .f-size .f-underline, .ProseMirror .f-underline .f-size { text-decoration: underline; }
 .f-highlight { color: inherit; }

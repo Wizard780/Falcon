@@ -10,12 +10,12 @@ export const SEED = path.join(process.env.FALCON_SKILL ?? '', 'fixtures/seed.doc
 export const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 if (!URL || !EVIDENCE) throw new Error('start drive scripts with: falcon-verify run <script.mjs>');
 
-/** A fresh browser on a clean profile, Home dismissed, editor focused. `feature` names the evidence folder. */
-export async function openFalcon(feature, { viewport = { width: 1400, height: 900 }, storage = {} } = {}) {
+/** A fresh browser on a clean profile, Home dismissed, editor focused. `feature` names the evidence folder; `scale` is the device pixel ratio (2 for a retina screen). */
+export async function openFalcon(feature, { viewport = { width: 1400, height: 900 }, storage = {}, scale = 1 } = {}) {
   const out = path.join(EVIDENCE, feature);
   fs.mkdirSync(out, { recursive: true });
   const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport, acceptDownloads: true });
+  const context = await browser.newContext({ viewport, deviceScaleFactor: scale, acceptDownloads: true });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
