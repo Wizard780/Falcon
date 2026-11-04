@@ -7,6 +7,17 @@ const CM = readFileSync('tests/fixtures/cardmirror-settings.json', 'utf8');
 afterEach(async () => { await unmountAll(); });
 
 describe('settings file', () => {
+  it('brings CardMirror\'s AI settings over, and a blank prompt leaves Falcon\'s in place', async () => {
+    await freshStorage();
+    const { importSettings } = await import('../src/ui/settings-file');
+    const { P, pref } = await import('../src/editor/prefs');
+    const file = (prompt: string) => JSON.stringify({ ...JSON.parse(CM), settings: { ...JSON.parse(CM).settings, aiFeaturesEnabled: true, aiModelOverride: 'claude-haiku-4-5', aiCitePrompt: prompt } });
+    expect(importSettings(file('')).ok).toBe(true);
+    expect(pref(P.aiCitePreset)).toBe('');
+    expect(importSettings(file('my house style')).ok).toBe(true);
+    expect([pref(P.aiOn), pref(P.aiModel), pref(P.aiCitePreset)]).toEqual([true, 'claude-haiku-4-5', 'cardmirror']);
+    expect(JSON.parse(pref(P.aiCitePresets))).toEqual([{ id: 'cardmirror', name: 'My prompt', prompt: 'my house style' }]);
+  });
   it('exports settings, not documents, recents or the usage-stats choice, and imports them back exactly', async () => {
     await freshStorage({
       'falcon.wpm1': '250', 'falcon.key.tag': 'F9', 'falcon.find.order': 'position', 'falcon.zoom': '1.3',

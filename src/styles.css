@@ -334,6 +334,10 @@ button.b:active { transform: scale(.97); }
 .home.open { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition: opacity 200ms var(--u-ease), transform 300ms var(--u-ease), visibility 0s; }
 .hm-bg { position: absolute; inset: 0; pointer-events: none;
   -webkit-mask-image: radial-gradient(ellipse 80% 90% at 70% 25%, #000 0, rgba(0, 0, 0, .45) 50%, transparent 90%); mask-image: radial-gradient(ellipse 80% 90% at 70% 25%, #000 0, rgba(0, 0, 0, .45) 50%, transparent 90%); }
+.ai-busy { background: color-mix(in srgb, #00DAFF 25%, transparent); border-radius: 2px; }
+.ai-busy.ai-flash { animation: ai-flash 300ms ease-out; }
+@keyframes ai-flash { from { background: color-mix(in srgb, #00DAFF 65%, transparent); } }
+.st-area { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--u-line); background: transparent; color: var(--u-tx); font: inherit; font-size: 12.5px; line-height: 1.45; resize: vertical; }
 .hm-glow { position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(1000px 560px at 16% -14%, color-mix(in srgb, var(--u-tx) 6%, transparent), transparent 70%),
     linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, calc(.3 * var(--u-sh)))); }

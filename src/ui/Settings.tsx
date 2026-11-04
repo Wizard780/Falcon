@@ -1,3 +1,4 @@
+import { MAX_PRESETS, citePresets, currentPreset, deletePreset, editPreset, newPreset } from '../editor/ai-cite';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
 import { HIGHLIGHTS, HIGHLIGHT_NAMES } from '../editor/schema';
@@ -127,6 +128,10 @@ export function Settings(props: Props) {
   // apps that asked to send cards in (Nimbus...), kept by the main process
   const [linked, setLinked] = useState<LinkedApp[]>([]);
   useEffect(() => { if (props.open && bridge.linkedApps) bridge.linkedApps().then(setLinked, () => {}); }, [props.open]);
+  const [aiKey, setAiKey] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [delArmed, setDelArmed] = useState(false); // Delete takes two clicks
+  useEffect(() => { if (props.open && bridge.secretList) bridge.secretList().then((l) => setAiKey(l.includes('anthropic')), () => {}); }, [props.open]);
   // starred and pinned files get picked here, from what the search folders hold
   const [starred, setStarred] = useState<string[]>(loadStarred);
   const [pinned, setPinned] = useState<string[]>(loadPinned);
@@ -288,6 +293,7 @@ export function Settings(props: Props) {
   ];
   const profile = (speech: number, prepMin: number) => () => { props.onSpeechMin(speech); setPref(P.prepMin, prepMin); };
 
+  const preset = currentPreset();
   const pages: Page[] = [
     { id: 'general', title: 'General', icon: 'sliders', sections: [
       ['Startup', [
@@ -328,6 +334,33 @@ export function Settings(props: Props) {
       ['Privacy', [
         tog(P.usageStats, 'Share usage statistics', 'Send anonymous counts of which features get used, like opening and saving files. Never file names or anything you type. Desktop app only.'),
       ]],
+    ] },
+    { id: 'ai', title: 'AI', icon: 'spark', sections: [
+      ['Cites', !bridge.aiAsk
+        ? [{ label: 'AI features', hint: 'AI needs the desktop app.', control: null }]
+        : [
+          tog(P.aiOn, 'AI features', `${keyLabel('aiCite')} turns a selected citation or URL into a styled cite. The text you format goes to Anthropic. Nothing is sent until you run it.`),
+          { label: 'Anthropic API key', search: 'key claude console', hint: aiKey ? 'Saved on this computer, encrypted. Falcon\'s pages and settings files never see it.' : 'Make one at console.anthropic.com. It\'s separate from a Claude subscription and needs a little credit. It\'s typed into its own window, and isn\'t saved if this computer can\'t encrypt it.', control: aiKey
+            ? <button className="st-btn" onClick={() => void bridge.secretRemove!('anthropic').then((l) => setAiKey(l.includes('anthropic')))}>Remove key</button>
+            : <button className="st-btn" onClick={() => void bridge.secretPrompt!('anthropic').then(setAiKey)}>Add key…</button> },
+          { label: 'AI model', search: 'claude opus sonnet haiku', hint: 'Paste any model id your key can use and it goes to Anthropic as is. Leave blank for Claude Opus 5.5.', control: (
+            <input className="st-text st-wide" aria-label="AI model" spellCheck={false} placeholder="claude-opus-5-5" maxLength={200} value={pref(P.aiModel)} onChange={(e) => setPref(P.aiModel, e.target.value)} />) },
+          { label: 'Max output tokens', search: 'budget thinking', hint: 'Thinking spends from this too, so too low a number can cut the cite off. Minimum 1024.', control: (
+            <input className="st-text" aria-label="Max output tokens" inputMode="numeric" maxLength={6} spellCheck={false} value={pref(P.aiMaxTokens) || ''} onChange={(e) => setPref(P.aiMaxTokens, Number(e.target.value.replace(/\D/g, '')))} />) },
+          { label: 'AI cite-creator prompt', search: 'format style preset instructions', hint: `What the AI is told when it formats a cite, so it sets your citation style. Pick the built-in prompt or save up to ${MAX_PRESETS} of your own.`, control: (
+            <span className="st-fold">
+              {select('AI cite-creator prompt', preset?.id ?? '', [['', 'Built-in prompt'], ...citePresets().map((f): [string, string] => [f.id, f.name])], (v) => { setPref(P.aiCitePreset, v); setDelArmed(false); })}
+              {preset && <button className="st-btn" onClick={() => setPromptOpen((o) => !o)}>{promptOpen ? 'Done' : 'Edit'}</button>}
+              <button className="st-btn" disabled={citePresets().length >= MAX_PRESETS} onClick={() => { newPreset(); setPromptOpen(true); setDelArmed(false); }}>New preset</button>
+              {preset && <button className="st-btn" onClick={() => { if (delArmed) { deletePreset(preset.id); setPromptOpen(false); } setDelArmed(!delArmed); }}>{delArmed ? 'Really delete?' : 'Delete'}</button>}
+            </span>) },
+          ...(preset && promptOpen ? [
+            { label: 'Preset name', control: <input className="st-text st-wide" aria-label="Preset name" spellCheck={false} maxLength={40} value={preset.name} onChange={(e) => editPreset(preset.id, { name: e.target.value })} /> },
+            { id: 'ai-prompt', label: '', wide: true, control: (
+              <textarea className="st-area" aria-label="Preset prompt" spellCheck={false} rows={20} value={preset.prompt} onChange={(e) => editPreset(preset.id, { prompt: e.target.value })} />) },
+            { label: 'Writing your own prompt', hint: 'Ask for any style. Whatever the AI answers becomes the cite. To say which part gets the cite style, have it answer with [[CITE]], [[TOKENS]] and [[END]] like the built-in prompt. {DATE} becomes today.', control: null },
+          ] : []),
+        ]],
     ] },
     { id: 'search', title: 'File search', icon: 'search', sections: [
       ['Folders', !bridge.indexFolders

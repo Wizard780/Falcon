@@ -3,6 +3,7 @@
  * Settings live in localStorage as `falcon.*` strings; the file holds those strings with the prefix taken off.
  * Import also reads CardMirror's settings export, carrying over the settings Falcon has an equivalent for.
  */
+import { citePresets } from '../editor/ai-cite';
 import { P, allPrefs, reloadPrefs } from '../editor/prefs';
 import { HIGHLIGHTS, SHADES } from '../editor/schema';
 import { BINDINGS, bindingOf, keyOf, keyText, norm, reservedFor } from '../editor/keybinds';
@@ -26,6 +27,8 @@ const APP_KEYS: Record<string, (v: string) => boolean> = {
   zoom: inRange(0.5, 3), speech: (v) => inRange(1, 30)(v) && Number.isInteger(Number(v)), depth: (v) => ['1', '2', '3', '4'].includes(v),
   outline: (v) => v === 'on' || v === 'off', outlineWidth: inRange(200, 560), highlight: (v) => v in HIGHLIGHTS, shading: (v) => HEX.test(v), fontColor: (v) => HEX.test(v),
   themes: (v) => { try { return Array.isArray(JSON.parse(v)); } catch { return false; } },
+  aiMaxTokens: inRange(1024, 128000),
+  aiCitePresets: (v) => { try { return Array.isArray(JSON.parse(v)); } catch { return false; } },
 };
 /** Does `v` fit setting `key` (with its `falcon.` prefix)? Unknown keys don't. */
 function fits(key: string, v: string): boolean {
@@ -171,6 +174,12 @@ const CM_MAP: [string, string, (get: Get) => string | undefined][] = [
   ['smartPaste', 'smartPasteConversion', (g) => bool(g('smartPasteConversion'))],
   ['smartQuotes', 'smartQuotes', (g) => bool(g('smartQuotes'))],
   ['hlUnderlined', 'highlightUnderlinedOnly', (g) => bool(g('highlightUnderlinedOnly'))],
+  ['aiOn', 'aiFeaturesEnabled', (g) => bool(g('aiFeaturesEnabled'))],
+  ['aiModel', 'aiModelOverride', (g) => { const v = g('aiModelOverride'); return typeof v === 'string' && v ? v : undefined; }],
+  ['aiMaxTokens', 'aiMaxTokens', (g) => { const v = g('aiMaxTokens'); return typeof v === 'number' && v >= 1024 ? String(Math.round(v)) : undefined; }],
+  // a customized prompt comes over as a preset, next to any you've saved, and goes into use
+  ['aiCitePresets', 'aiCitePrompt', (g) => { const v = g('aiCitePrompt'); return typeof v === 'string' && v.trim() ? JSON.stringify([...citePresets().filter((f) => f.id !== 'cardmirror'), { id: 'cardmirror', name: 'My prompt', prompt: v }]) : undefined; }],
+  ['aiCitePreset', 'aiCitePrompt', (g) => { const v = g('aiCitePrompt'); return typeof v === 'string' && v.trim() ? 'cardmirror' : undefined; }],
   ['citeNearest', 'copyPreviousCiteNearestOnly', (g) => bool(g('copyPreviousCiteNearestOnly'))],
   ['styleOffClears', 'clearFormattingOnNamedStyleToggleOff', (g) => bool(g('clearFormattingOnNamedStyleToggleOff'))],
   ['beep', 'timerSoundEnabled', (g) => bool(g('timerSoundEnabled'))],

@@ -1,5 +1,5 @@
 // Falcon main process: one window, native file dialogs, and the clipboard bridge.
-const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, shell } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, safeStorage, shell } = require('electron');
 const crypto = require('node:crypto');
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
@@ -10,6 +10,8 @@ const updater = require('./updater.cjs');
 const speechdrop = require('./speechdrop.cjs');
 const telemetry = require('./telemetry.cjs');
 const { createEditorBridge, bridgeDir } = require('./editor-bridge.cjs');
+const { createAi } = require('./ai.cjs');
+const { createSecrets, promptSecret } = require('./secrets.cjs');
 
 const DEV = process.env.FALCON_DEV === '1';
 const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a window
@@ -481,6 +483,15 @@ ipcMain.on('falcon:bridge-ready', (e) => { bridgePage = e.sender; });
 ipcMain.on('falcon:bridge-answer', (_e, id, answer) => { const done = bridgeWaits.get(id); if (done) { bridgeWaits.delete(id); done(answer); } });
 let editorBridge = null;
 const linkedApps = () => editorBridge?.apps() ?? [];
+let secretsApi = null;
+const secrets = () => (secretsApi ??= createSecrets({ safeStorage, dir: path.join(app.getPath('userData'), 'secrets') }));
+// the page names a secret; it can ask for one to be entered or removed, never read one
+ipcMain.handle('falcon:secret-list', () => secrets().list());
+ipcMain.handle('falcon:secret-prompt', (e, id) => promptSecret({ BrowserWindow, parent: BrowserWindow.fromWebContents(e.sender), secrets: secrets(), id, show: !HEADLESS }));
+ipcMain.handle('falcon:secret-remove', (_e, id) => { secrets().remove(id); return secrets().list(); });
+let aiApi = null;
+const ai = () => (aiApi ??= createAi({ key: () => secrets().get('anthropic') }));
+ipcMain.handle('falcon:ai-ask', (_e, r) => ai().ask({ system: String(r?.system ?? ''), text: String(r?.text ?? '').slice(0, 20000), model: String(r?.model ?? ''), maxTokens: Number(r?.maxTokens) }));
 ipcMain.handle('falcon:bridge-apps', () => linkedApps());
 ipcMain.handle('falcon:bridge-allow', (_e, appId, on) => { if (typeof appId === 'string') { if (on === null) editorBridge?.forget(appId); else editorBridge?.setAllowed(appId, on === true); } return linkedApps(); });
 function startEditorBridge() {

@@ -34,6 +34,7 @@ import { Home } from './Home';
 import { SHOW_EVENT, SpeechDrop, type SdTab } from './SpeechDrop';
 import './display'; // the display settings (fonts, sizes, root classes) apply at startup
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
+import { formatCite, reformatCites, reformatCount, usePreset } from '../editor/ai-cite';
 import { Confirm, nameList, type Ask } from './Confirm';
 import { ComparePanel } from './ComparePanel';
 import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
@@ -92,7 +93,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -1109,6 +1110,25 @@ export function App() {
     return onPrefs(send);
   }, []);
 
+  // one pass per doc is plenty; Esc stops it after the cite in flight
+  const citePass = useRef<{ stop: boolean } | null>(null);
+  const reformatAll = async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (citePass.current) { flash('Cites are already being reformatted. Esc stops it.'); return; }
+    const n = reformatCount(view);
+    if (typeof n === 'string') { flash(n); return; }
+    if (!n) { flash('No cites in this document.'); return; }
+    const yes = await confirmAsk({ title: 'Reformat every cite with AI?', body: `${n} ${n === 1 ? 'cite goes' : 'cites go'} to Anthropic one at a time and get rewritten, so this makes ${n} ${n === 1 ? 'request' : 'requests'} on your API key. Each one is its own undo step.`, ok: 'Reformat' });
+    if (!yes) return;
+    const pass = { stop: false };
+    citePass.current = pass;
+    const r = await reformatCites(view, { stopped: () => pass.stop, progress: (i, total) => flash(`Reformatting cite ${i + 1} of ${total}. Esc stops.`) });
+    citePass.current = null;
+    const tail = [r.failed && `${r.failed} failed`, r.unmarked && `${r.unmarked} left unmarked`].filter(Boolean).join(', ');
+    flash(`${r.stopped ? 'Stopped. ' : ''}${r.done} ${r.done === 1 ? 'cite' : 'cites'} reformatted${tail ? `, ${tail}` : ''}.${r.failed && r.error ? ` ${r.error}` : ''}`);
+  };
+
   /** The app's own commands, by binding id: its keys and the command center both run them here. */
   const appCommand = useCallback((id: string) => {
     if (id === 'nextDoc' || id === 'prevDoc') cycle(id === 'nextDoc' ? 1 : -1);
@@ -1120,6 +1140,9 @@ export function App() {
     else if (id === 'newSpeech') fileNewSpeech();
     else if (id === 'close') { if (sdOnRef.current) closeSd(); else closeDoc(activeRef.current); }
     else if (id === 'speechdrop') openSd();
+    else if (id === 'aiCite') { if (viewRef.current) void formatCite(viewRef.current, flash); }
+    else if (id === 'reformatCites') void reformatAll();
+    else if (id.startsWith('aiPreset')) { const n = Number(id.slice(8)); const name = usePreset(n); flash(name ? `Cites now use ${name}.` : `There's no prompt preset ${n}.`); }
     else if (id === 'home') setHomeOpen((h) => !h);
     else if (id === 'settings') setSettingsOpen((o) => !o);
     else if (id === 'outline') setShowOutline((o) => !o);
@@ -1189,6 +1212,7 @@ export function App() {
       // Esc in a filled Settings search clears the search before it closes Settings, and in a half-typed number puts it back
       if (e.key === 'Escape' && settingsRef.current && e.target instanceof HTMLInputElement && ((e.target.closest('.st-search') || e.target.classList.contains('st-find')) && e.target.value || 'draft' in e.target.dataset)) return;
       if (e.key === 'Escape' && settingsRef.current) { e.preventDefault(); e.stopPropagation(); setSettingsOpen(false); return; }
+      if (e.key === 'Escape' && citePass.current && !citePass.current.stop) { e.preventDefault(); e.stopPropagation(); citePass.current.stop = true; flash('Stopping after this cite…'); return; }
       if (e.key === 'Escape' && homeRef.current) { e.preventDefault(); e.stopPropagation(); setHomeOpen(false); return; }
       if (!id) return;
       e.preventDefault();

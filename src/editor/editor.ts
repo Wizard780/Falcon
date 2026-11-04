@@ -1,3 +1,4 @@
+import { aiCitePlugin } from './ai-cite';
 import { baseKeymap } from 'prosemirror-commands';
 import { dropCursor } from 'prosemirror-dropcursor';
 import { gapCursor } from 'prosemirror-gapcursor';
@@ -131,6 +132,7 @@ export function createState(doc: PMNode = emptyDoc()) {
     doc,
     plugins: [
       readPlugin, // first, so its keyboard lock runs before the formatting keys
+      aiCitePlugin,
       multiSelectionPlugin,
       ...navPlugins, // card numbers, dragging cards on the page
       ...tablePlugins, // before the keymap (Tab moves between cells) and mouse selection (column edges, cell drags)

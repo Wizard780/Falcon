@@ -1,0 +1,95 @@
+import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+
+const require = createRequire(import.meta.url);
+const { createAi } = require('../electron/ai.cjs');
+const { createSecrets } = require('../electron/secrets.cjs');
+const Anthropic = require('@anthropic-ai/sdk');
+
+const safeStorage = {
+  isEncryptionAvailable: () => true,
+  encryptString: (s: string) => Buffer.from(`enc:${s}`),
+  decryptString: (b: Buffer) => b.toString().slice(4),
+};
+const dir = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-ai-')), 'secrets');
+function clientWith(...answers: unknown[]) {
+  const create = vi.fn(async () => { const a = answers.shift(); if (a instanceof Error) throw a; return a; });
+  return { create, Client: class { beta = { messages: { create } }; } };
+}
+const done = (text: string) => ({ stop_reason: 'end_turn', content: [{ type: 'text', text }] });
+const req = { system: 's', text: 't', model: '', maxTokens: 8192 };
+
+describe('secrets', () => {
+  it('are kept encrypted, listed by name only, and can be removed', () => {
+    const d = dir();
+    const s = createSecrets({ safeStorage, dir: d });
+    expect(s.list()).toEqual([]);
+    expect(s.set('anthropic', ' abc ')).toBe(true);
+    expect(fs.readFileSync(path.join(d, 'anthropic.bin'), 'utf8')).toBe('enc:abc');
+    expect(s.list()).toEqual(['anthropic']);
+    expect(s.get('anthropic')).toBe('abc');
+    s.remove('anthropic');
+    expect(s.list()).toEqual([]);
+  });
+  it('are never stored in the clear', () => {
+    const d = dir();
+    expect(createSecrets({ safeStorage: { ...safeStorage, isEncryptionAvailable: () => false }, dir: d }).set('anthropic', 'abc')).toBe(false);
+    expect(fs.existsSync(d)).toBe(false);
+  });
+  it('only take known names, so a name cannot walk out of the folder', () => {
+    const s = createSecrets({ safeStorage, dir: dir() });
+    expect(s.set('../x', 'abc')).toBe(false);
+    expect(s.get('__proto__')).toBe('');
+  });
+  it('without a key, nothing is sent', async () => {
+    const { create, Client } = clientWith();
+    expect((await createAi({ key: () => '', Client }).ask(req)).stop).toBe(true);
+    expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe('asking', () => {
+  const ready = (Client: unknown) => createAi({ key: () => 'k', Client });
+  it('defaults to Opus 5.5 with refusal fallbacks and a cached prompt', async () => {
+    const { create, Client } = clientWith(done('hi'));
+    expect(await ready(Client).ask(req)).toEqual({ text: 'hi' });
+    const b = (create.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    expect(b).toMatchObject({ model: 'claude-opus-5-5', fallbacks: 'default', betas: ['server-side-fallback-2026-07-01'] });
+    expect((b.system as { cache_control: unknown }[])[0].cache_control).toEqual({ type: 'ephemeral' });
+  });
+  it('leaves off what a smaller model would reject', async () => {
+    const { create, Client } = clientWith(done('hi'));
+    await ready(Client).ask({ ...req, model: 'claude-haiku-4-5' });
+    const b = (create.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    expect(b.model).toBe('claude-haiku-4-5');
+    expect(b.fallbacks).toBeUndefined();
+    expect(b.betas).toBeUndefined();
+  });
+  it('sends any pasted model as is and holds max tokens to the minimum', async () => {
+    const { create, Client } = clientWith(done('hi'));
+    await ready(Client).ask({ ...req, model: ' vendor/some-model:v2 ', maxTokens: 50 });
+    expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({ model: 'vendor/some-model:v2', max_tokens: 1024 });
+  });
+  it('names a model Anthropic does not have, and passes on what it said about a bad request', async () => {
+    const c1 = clientWith(new Anthropic.NotFoundError(404, {}, 'no', new Headers()));
+    expect(await ready(c1.Client).ask({ ...req, model: 'gpt-x' })).toMatchObject({ stop: true, error: expect.stringContaining('gpt-x') });
+    const c2 = clientWith(new Anthropic.BadRequestError(400, { error: { message: 'max_tokens is too big' } }, 'no', new Headers()));
+    expect((await ready(c2.Client).ask(req)).error).toContain('max_tokens is too big');
+  });
+  it('turns a refusal into a message', async () => {
+    const { Client } = clientWith({ stop_reason: 'refusal', content: [] });
+    expect((await ready(Client).ask(req)).error).toContain('declined');
+  });
+  it('says what went wrong, and when retrying is pointless', async () => {
+    const bad = new Anthropic.AuthenticationError(401, {}, 'no', new Headers());
+    const { Client } = clientWith(bad);
+    expect(await ready(Client).ask(req)).toMatchObject({ stop: true });
+    const c2 = clientWith(new Anthropic.RateLimitError(429, {}, 'slow', new Headers()));
+    const r = await ready(c2.Client).ask(req);
+    expect(r.error).toContain('too many');
+    expect(r.stop).toBeUndefined();
+  });
+});

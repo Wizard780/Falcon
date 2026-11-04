@@ -24,6 +24,7 @@ export function Icon({ name, className = 'icon' }: { name: string; className?: s
 // The prototype's 16px icons (prototypes/src/side.js and top-api.js).
 const P16: Record<string, string> = {
   logo: '',
+  spark: '<path d="M8 2.5 9.4 6.6l4.1 1.4-4.1 1.4L8 13.5 6.6 9.4 2.5 8l4.1-1.4z"/>',
   search: '<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>',
   doc: '<path d="M4 2.5h5.5L12 5v8.5H4z"/><path d="M6 8h4M6 10.5h4"/>',
   plus: '<path d="M8 3.5v9M3.5 8h9"/>',

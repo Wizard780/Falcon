@@ -70,6 +70,13 @@ type FalconBridge = {
   linkedApps?: () => Promise<LinkedApp[]>;
   /** Allow or block an app (null forgets it, so it asks again). Returns the new list. */
   allowLinkedApp?: (id: string, on: boolean | null) => Promise<LinkedApp[]>;
+  /** Secrets (API keys) by name, like 'anthropic'. The page learns which are saved, never a value:
+   *  secretPrompt opens a window the main process owns to type one in, and resolves true if it saved. */
+  secretList?: () => Promise<string[]>;
+  secretPrompt?: (id: string) => Promise<boolean>;
+  secretRemove?: (id: string) => Promise<string[]>;
+  /** One model request. `stop` means retrying won't help (a bad key, no credit). */
+  aiAsk?: (req: { system: string; text: string; model: string; maxTokens: number }) => Promise<{ text?: string; error?: string; stop?: boolean }>;
   platform?: string;
 };
 /** A SpeechDrop answer: the value, or SpeechDrop's error code ('no_room', 'too_large', 'unreachable'…). */

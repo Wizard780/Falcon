@@ -3,6 +3,7 @@
  * every setting with its choices, the headings and cards in the open file, and .docx files (the ones
  * Cmd-K finds). The card library is a separate source, added beside these later.
  */
+import { citePresets, currentPreset } from '../editor/ai-cite';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
@@ -192,6 +193,11 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.crashRecovery, 'Crash recovery', 'general', 'Keep a copy of open files, brought back if Falcon closes unexpectedly.'),
     { id: P.recentCount.key, label: 'Recent files', page: 'general', query: 'Recent files count Home list', hint: 'Type it in Settings.', link: true, get: () => String(pref(P.recentCount)), set: () => {} },
     pick(P.newName, 'Name new files', 'general', (['untitled', 'speech', 'date'] as const).map((h) => [h, newFileName(h)]), 'What an Untitled document is called when you first save it.'),
+    tog(P.aiOn, 'AI features', 'ai', 'Format cites with Anthropic, on your own API key. Off by default.'),
+    { id: P.aiModel.key, label: 'AI model', page: 'ai', query: 'AI model claude', hint: 'Type it in Settings.', link: true, get: () => pref(P.aiModel), set: () => {} },
+    pick(P.aiCitePreset, 'AI cite-creator prompt', 'ai', [['', 'Built-in prompt'], ...citePresets().map((f): [string, string] => [f.id, f.name])]),
+    { id: P.aiCitePresets.key, label: 'AI cite-creator prompt presets', page: 'ai', query: 'AI cite prompt preset', hint: 'Save them in Settings.', link: true, get: () => currentPreset()?.name ?? 'Built-in prompt', set: () => {} },
+    { id: P.aiMaxTokens.key, label: 'AI max output tokens', page: 'ai', query: 'AI max output tokens', hint: 'Type it in Settings.', link: true, get: () => pref(P.aiMaxTokens), set: () => {} },
     { id: P.speechName.key, label: 'Speech doc name', page: 'general', query: 'Speech doc name filename', hint: 'Type it in Settings.', link: true, get: () => pref(P.speechName), set: () => {} },
     tog(P.savePrefix, 'Prefix Save As copies', 'general', 'Send, Read and Marked Doc copies start with a prefix.'),
     { id: P.prefixSend.key, label: 'Send Doc filename prefix', page: 'general', query: 'Send Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixSend), set: () => {} },

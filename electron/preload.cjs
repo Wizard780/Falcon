@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld('falcon', {
     ipcRenderer.send('falcon:bridge-ready');
     return () => ipcRenderer.removeListener('falcon:bridge', on);
   },
+  // secrets go by name; their values stay in the main process
+  secretList: () => ipcRenderer.invoke('falcon:secret-list'),
+  secretPrompt: (id) => ipcRenderer.invoke('falcon:secret-prompt', id),
+  secretRemove: (id) => ipcRenderer.invoke('falcon:secret-remove', id),
+  aiAsk: (req) => ipcRenderer.invoke('falcon:ai-ask', req),
   linkedApps: () => ipcRenderer.invoke('falcon:bridge-apps'),
   allowLinkedApp: (id, on) => ipcRenderer.invoke('falcon:bridge-allow', id, on),
   onConfirmClose: (f) => {
