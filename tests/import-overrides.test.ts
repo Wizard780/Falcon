@@ -59,7 +59,7 @@ test('character styles Falcon has no name for keep the bold, size and italic Wor
     p(r('Smith', '<w:rStyle w:val="Heading4Char"/>') + r(' 24, Professor', '') + r(' strong', '<w:rStyle w:val="Strong"/>') + r(' small', '<w:rStyle w:val="8-pointsmall"/>') + r(' own size', '<w:rStyle w:val="8-pointsmall"/><w:sz w:val="22"/>')),
     p(r('Tag with ') + r('tagword', '<w:rStyle w:val="Strong"/>'), 'Heading4'),
   ].join('')));
-  expect(marksOf(doc, 'Smith')).toBe('bold size(13)');
+  expect(marksOf(doc, 'Smith')).toBe('size(13) bold');
   expect(marksOf(doc, ' strong')).toBe('bold');
   expect(marksOf(doc, ' small')).toBe('size(8)');
   expect(marksOf(doc, ' own size')).toBe(''); // the run's own 11pt beats the style's 8pt

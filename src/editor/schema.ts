@@ -59,6 +59,12 @@ const marks: Record<string, MarkSpec> = {
     parseDOM: [{ tag: 'span.f-cite' }],
     toDOM: () => ['span', { class: 'f-cite' }, 0],
   },
+  // Font size sits outside underline, emphasis and highlight so their box and background take the text's size (inside cite, whose own size it overrides).
+  size: {
+    attrs: { pt: {} },
+    parseDOM: [{ tag: 'span.f-size', getAttrs: (el) => ({ pt: Number((el as HTMLElement).dataset.pt) || 11 }) }],
+    toDOM: (m) => ['span', { class: 'f-size', 'data-pt': String(m.attrs.pt), style: `font-size:${m.attrs.pt}pt` }, 0],
+  },
   underline: {
     excludes: 'underline emphasis',
     parseDOM: [{ tag: 'span.f-underline' }, { tag: 'u' }, { style: 'text-decoration-line=underline' }, { style: 'text-decoration=underline' }],
@@ -101,11 +107,6 @@ const marks: Record<string, MarkSpec> = {
   italic: {
     parseDOM: [{ tag: 'em' }, { tag: 'i' }, { style: 'font-style=italic' }],
     toDOM: () => ['em', 0],
-  },
-  size: {
-    attrs: { pt: {} },
-    parseDOM: [{ tag: 'span.f-size', getAttrs: (el) => ({ pt: Number((el as HTMLElement).dataset.pt) || 11 }) }],
-    toDOM: (m) => ['span', { class: 'f-size', 'data-pt': String(m.attrs.pt), style: `font-size:${m.attrs.pt}pt` }, 0],
   },
   strike: {
     parseDOM: [{ tag: 's' }, { tag: 'del' }, { style: 'text-decoration-line=line-through' }],
