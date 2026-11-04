@@ -61,10 +61,16 @@ describe('asking', () => {
     expect(b.fallbacks).toBeUndefined();
     expect(b.betas).toBeUndefined();
   });
-  it('ignores a malformed model and holds max tokens to the minimum', async () => {
+  it('sends any pasted model as is and holds max tokens to the minimum', async () => {
     const { create, Client } = clientWith(done('hi'));
-    await ready(Client).ask({ ...req, model: 'not a model!', maxTokens: 50 });
-    expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({ model: 'claude-opus-5-5', max_tokens: 1024 });
+    await ready(Client).ask({ ...req, model: ' vendor/some-model:v2 ', maxTokens: 50 });
+    expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({ model: 'vendor/some-model:v2', max_tokens: 1024 });
+  });
+  it('names a model Anthropic does not have, and passes on what it said about a bad request', async () => {
+    const c1 = clientWith(new Anthropic.NotFoundError(404, {}, 'no', new Headers()));
+    expect(await ready(c1.Client).ask({ ...req, model: 'gpt-x' })).toMatchObject({ stop: true, error: expect.stringContaining('gpt-x') });
+    const c2 = clientWith(new Anthropic.BadRequestError(400, { error: { message: 'max_tokens is too big' } }, 'no', new Headers()));
+    expect((await ready(c2.Client).ask(req)).error).toContain('max_tokens is too big');
   });
   it('turns a refusal into a message', async () => {
     const { Client } = clientWith({ stop_reason: 'refusal', content: [] });

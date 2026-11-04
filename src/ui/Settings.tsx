@@ -346,11 +346,11 @@ export function Settings(props: Props) {
             : <input className="st-text st-wide" type="password" aria-label="Anthropic API key" placeholder="Paste your key" spellCheck={false} autoComplete="off"
                 onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                 onBlur={(e) => { const k = e.target.value.trim(); if (k) void bridge.aiSetKey!(k).then((ok) => { setAiKey(ok); setAiKeyBad(!ok); }); e.target.value = ''; }} /> },
-          { label: 'AI model (advanced)', search: 'claude opus sonnet haiku', hint: 'Leave blank for Claude Opus 5.5. Set another Claude model id to use that instead. A malformed entry is ignored.', control: (
-            <input className="st-text st-wide" aria-label="AI model" spellCheck={false} placeholder="claude-opus-5-5" maxLength={80} value={pref(P.aiModel)} onChange={(e) => setPref(P.aiModel, e.target.value)} />) },
+          { label: 'AI model', search: 'claude opus sonnet haiku', hint: 'Paste any model id your key can use and it goes to Anthropic as is. Leave blank for Claude Opus 5.5.', control: (
+            <input className="st-text st-wide" aria-label="AI model" spellCheck={false} placeholder="claude-opus-5-5" maxLength={200} value={pref(P.aiModel)} onChange={(e) => setPref(P.aiModel, e.target.value)} />) },
           { label: 'Max output tokens', search: 'budget thinking', hint: 'Thinking spends from this too, so too low a number can cut the cite off. Minimum 1024.', control: (
             <input className="st-text" aria-label="Max output tokens" inputMode="numeric" maxLength={6} spellCheck={false} value={pref(P.aiMaxTokens) || ''} onChange={(e) => setPref(P.aiMaxTokens, Number(e.target.value.replace(/\D/g, '')))} />) },
-          { label: 'AI cite-creator prompt', search: 'format style preset instructions', hint: `What the AI is told when it formats a cite. Pick the built-in prompt or one of up to ${MAX_PRESETS} presets you've saved.`, control: (
+          { label: 'AI cite-creator prompt', search: 'format style preset instructions', hint: `What the AI is told when it formats a cite, so it sets your citation style. Pick the built-in prompt or save up to ${MAX_PRESETS} of your own.`, control: (
             <span className="st-fold">
               {select('AI cite-creator prompt', preset?.id ?? '', [['', 'Built-in prompt'], ...citePresets().map((f): [string, string] => [f.id, f.name])], (v) => { setPref(P.aiCitePreset, v); setDelArmed(false); })}
               {preset && <button className="st-btn" onClick={() => setPromptOpen((o) => !o)}>{promptOpen ? 'Done' : 'Edit'}</button>}
@@ -361,7 +361,7 @@ export function Settings(props: Props) {
             { label: 'Preset name', control: <input className="st-text st-wide" aria-label="Preset name" spellCheck={false} maxLength={40} value={preset.name} onChange={(e) => editPreset(preset.id, { name: e.target.value })} /> },
             { id: 'ai-prompt', label: '', wide: true, control: (
               <textarea className="st-area" aria-label="Preset prompt" spellCheck={false} rows={20} value={preset.prompt} onChange={(e) => editPreset(preset.id, { prompt: e.target.value })} />) },
-            { label: 'How a prompt has to answer', hint: 'With a [[CITE]] line, a [[TOKENS]] line and [[END]], like the built-in one and CardMirror\'s. {DATE} becomes today.', control: null },
+            { label: 'Writing your own prompt', hint: 'Ask for any style. Whatever the AI answers becomes the cite. To say which part gets the cite style, have it answer with [[CITE]], [[TOKENS]] and [[END]] like the built-in prompt. {DATE} becomes today.', control: null },
           ] : []),
         ]],
     ] },

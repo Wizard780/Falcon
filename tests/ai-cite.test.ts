@@ -32,8 +32,18 @@ describe('reading the reply', () => {
   it('takes a reply cut off before [[END]]', () => {
     expect(parseCite('[[CITE]]\nA 1 [b]\n[[TOKENS]]\nA 1')?.tokens).toEqual(['A 1']);
   });
-  it('refuses anything else', () => {
-    expect(parseCite('Here is your cite: Smith 24')).toBeNull();
+  it('takes a plain answer from a prompt of your own as the cite', () => {
+    expect(parseCite('Doe, Jane. "A Title."\nJournal, 2020.\n')).toEqual({ cite: 'Doe, Jane. "A Title." Journal, 2020.', tokens: [] });
+    expect(parseCite('```\nDoe 20 [x]\n```')).toEqual({ cite: 'Doe 20 [x]', tokens: [] });
+  });
+  it('never lets a marker into the doc', () => {
+    expect(parseCite('[[CITE]] Doe 20 [x]\n[[END]]')).toEqual({ cite: 'Doe 20 [x]', tokens: [] });
+    expect(parseCite('[[CITE]]\nDoe 20 [x]')).toEqual({ cite: 'Doe 20 [x]', tokens: [] });
+    expect(parseCite('Doe 20 [x]\n[[TOKENS]]\nDoe 20\n[[END]]')).toEqual({ cite: 'Doe 20 [x]', tokens: ['Doe 20'] });
+    expect(parseCite('[[CITE]] Doe 20 [x] [[TOKENS]] Doe 20 [[END]]')).toEqual({ cite: 'Doe 20 [x]', tokens: ['Doe 20'] });
+  });
+  it('refuses an empty answer', () => {
+    expect(parseCite('  \n ')).toBeNull();
     expect(parseCite('[[CITE]]\n\n[[TOKENS]]\nx\n[[END]]')).toBeNull();
   });
   it('marks a token even when the quotes differ', () => {

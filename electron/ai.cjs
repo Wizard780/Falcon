@@ -9,14 +9,17 @@ const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 // not every model takes these, and a custom model id can be anything
 const hasFallbacks = (m) => /^claude-(opus-5|fable-5|sonnet-5-5)/.test(m);
 
-function failure(e) {
+function failure(e, model) {
   if (e instanceof Anthropic.AuthenticationError) return { error: 'Anthropic turned down your API key. Check it in Settings > AI.', stop: true };
-  if (e instanceof Anthropic.NotFoundError) return { error: 'That model isn\'t available. Check the model in Settings > AI.', stop: true };
+  if (e instanceof Anthropic.NotFoundError) return { error: `Anthropic has no model called ${model}, or your key can't use it. Check Settings > AI.`, stop: true };
   if (e instanceof Anthropic.RateLimitError) return { error: 'Anthropic says too many requests. Try again in a minute.' };
   if (e instanceof Anthropic.APIConnectionError) return { error: 'Couldn\'t reach Anthropic. Are you online?' };
   if (e instanceof Anthropic.APIError) {
     const out = /credit balance/i.test(e.message ?? '');
-    return { error: out ? 'Your Anthropic account is out of credit.' : `Anthropic error ${e.status ?? ''}`.trim(), stop: out };
+    if (out) return { error: 'Your Anthropic account is out of credit.', stop: true };
+    // a pasted model can have its own limits, so pass on what Anthropic said
+    const said = e.error?.error?.message;
+    return { error: said ? `Anthropic said: ${said}` : `Anthropic error ${e.status ?? ''}`.trim() };
   }
   return { error: 'The AI request failed.' };
 }
@@ -39,7 +42,7 @@ function createAi({ safeStorage, file, Client = Anthropic }) {
     async ask({ system, text, model, maxTokens }) {
       const apiKey = key();
       if (!apiKey) return { error: 'Add your Anthropic API key in Settings > AI.', stop: true };
-      const m = /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(model ?? '') ? model : DEFAULT_MODEL; // a malformed id falls back
+      const m = (typeof model === 'string' && model.trim()) || DEFAULT_MODEL; // whatever you pasted goes as is
       const body = {
         model: m,
         max_tokens: Math.max(MIN_TOKENS, Math.round(maxTokens) || DEFAULT_TOKENS),
@@ -54,7 +57,7 @@ function createAi({ safeStorage, file, Client = Anthropic }) {
         if (res.stop_reason === 'max_tokens') return { error: 'The AI ran out of room on this one.' };
         return { text: res.content.filter((b) => b.type === 'text').map((b) => b.text).join('') };
       } catch (e) {
-        return failure(e);
+        return failure(e, m);
       }
     },
   };

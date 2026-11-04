@@ -14,7 +14,7 @@ const server = http.createServer((req, res) => {
     const body = JSON.parse(raw);
     seen.push({ path: req.url, auth: req.headers.authorization, beta: req.headers['anthropic-beta'], body });
     const n = seen.length;
-    const text = `[[CITE]]\nSmith ${n} [John Smith, professor; May 1, 2024; "Title," Journal, https://example.com/a]\n[[TOKENS]]\nSmith ${n}\n[[END]]`;
+    const text = body.system[0].text.startsWith('PLAIN') ? 'Doe, Jane. "A Title." Journal, 2020.' : `[[CITE]]\nSmith ${n} [John Smith, professor; May 1, 2024; "Title," Journal, https://example.com/a]\n[[TOKENS]]\nSmith ${n}\n[[END]]`;
     setTimeout(() => {
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify({ id: `msg_${n}`, type: 'message', role: 'assistant', model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text }], usage: { input_tokens: 1, output_tokens: 1 } }));
@@ -107,6 +107,29 @@ await win.waitForFunction((n) => document.querySelector('.toast')?.textContent.i
 want(seen.length === before + 2, `two requests: ${seen.length - before}`);
 want((await win.textContent(editor)).includes('some body text'), 'body text left alone');
 await win.screenshot({ path: 'shots/ai-reformatted.png' });
+
+// any model id, and a prompt of your own that answers with just the cite
+await win.click('.fstrip [aria-label="Settings"]');
+await win.click('.st-nav >> text=AI');
+await win.waitForTimeout(200);
+await win.fill('input[aria-label="AI model"]', 'vendor/some-model:v2');
+if (!(await win.$('textarea[aria-label="Preset prompt"]'))) await win.click('button:text-is("Edit")');
+await win.fill('textarea[aria-label="Preset prompt"]', 'PLAIN mla style please');
+await win.waitForTimeout(100);
+await win.click('[aria-label="Close settings"]');
+await win.waitForTimeout(200);
+await win.click(editor);
+await win.keyboard.press(`${MOD}+ArrowDown`);
+await win.keyboard.press('Enter');
+await win.keyboard.type('jane doe 2020');
+await win.keyboard.press('Shift+Home');
+await win.keyboard.press(`${MOD}+Shift+x`);
+await win.waitForFunction(() => document.querySelector('.ProseMirror').textContent.includes('Doe, Jane.'), null, { timeout: 8000 });
+want(seen.at(-1).body.model === 'vendor/some-model:v2', `the pasted model goes out as is: ${seen.at(-1).body.model}`);
+want(seen.at(-1).body.fallbacks === undefined, 'no fallbacks on a model that may not take them');
+want(!(await win.textContent(editor)).includes('jane doe 2020'), 'a plain answer replaces the selection');
+await win.waitForFunction(() => document.querySelector('.toast')?.textContent.includes('F8'), null, { timeout: 3000 });
+want(true, 'it says the name and date still need marking');
 
 await app.close();
 server.close();

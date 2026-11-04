@@ -64,17 +64,16 @@ export function usePreset(n: number): string | null {
 }
 
 const part = (text: string, name: string) => text.search(new RegExp(`\\[\\[\\s*${name}\\s*\\]\\]`, 'i'));
-const afterLine = (s: string) => s.slice(s.indexOf('\n') + 1);
+const noTag = (s: string) => s.replace(/^\[\[\s*\w+\s*\]\]/, '');
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
 
-/** The cite and the stretches of it to mark, out of a [[CITE]] / [[TOKENS]] / [[END]] reply. Null when it isn't one. */
+/** The cite and the stretches of it to mark. The [[CITE]] / [[TOKENS]] / [[END]] block is optional: a prompt of your own can just answer with the cite. Null when there's nothing in it. */
 export function parseCite(reply: string): { cite: string; tokens: string[] } | null {
-  const c = part(reply, 'CITE'), t = part(reply, 'TOKENS');
-  if (c < 0 || t < c) return null;
-  const e = part(reply, 'END');
-  const cite = oneLine(afterLine(reply.slice(c, t)));
+  const c = part(reply, 'CITE'), t = part(reply, 'TOKENS'), e = part(reply, 'END');
+  const stop = t > c ? t : e > c ? e : reply.length;
+  const cite = oneLine(noTag(reply.slice(Math.max(c, 0), stop)).replace(/```\w*/g, ''));
   if (!cite) return null;
-  const tokens = afterLine(reply.slice(t, e > t ? e : undefined)).split('\n').map(oneLine).filter(Boolean);
+  const tokens = t > c ? noTag(reply.slice(t, e > t ? e : undefined)).split('\n').map(oneLine).filter(Boolean) : [];
   return { cite, tokens };
 }
 
@@ -162,7 +161,7 @@ async function rewrite(view: EditorView, range: Span): Promise<CiteResult> {
   view.dispatch(view.state.tr.setMeta(key, { drop: id }).setMeta('addToHistory', false));
   if (answer.error !== undefined) return { ok: false, error: answer.error, stop: answer.stop, end: now.to };
   const parsed = parseCite(answer.text ?? '');
-  if (!parsed) return { ok: false, error: 'The AI\'s answer wasn\'t a cite. If you changed the prompt, check its output block.', end: now.to };
+  if (!parsed) return { ok: false, error: 'The AI sent back nothing to put in.', end: now.to };
   if (read(now) !== original) return { ok: false, error: 'That text changed, so the cite wasn\'t put in.', end: now.to };
   const { nodes, marked } = citeNodes(parsed);
   const tr = closeHistory(view.state.tr).replaceWith(now.from, now.to, nodes).setMeta(key, { own: true }).scrollIntoView();
