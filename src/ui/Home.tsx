@@ -13,7 +13,6 @@ let launched = false; // the falcon's flight plays once per page load, not on ev
 
 export function Home(props: {
   open: boolean;
-  current: string;
   recents: Recent[];
   onNew: () => void;
   onNewSpeech: () => void;
@@ -85,9 +84,6 @@ export function Home(props: {
     rows.current[i]?.focus();
   };
 
-  const now = new Date();
-  const day = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  const total = shown.reduce((s, r) => s + r.cards, 0);
   return (
     <section ref={homeRef} tabIndex={-1} className={`home${open ? ' open' : ''}`} aria-label="Home" aria-hidden={!open} onKeyDown={onKey}>
       <div ref={bgRef} className="hm-bg" aria-hidden="true" />
@@ -98,10 +94,7 @@ export function Home(props: {
             <div className="hm-text">
               <div className="hm-brand">
                 <div ref={perchRef} className="hm-perch" aria-hidden="true" />
-                <div className="hm-words">
-                  <p className="hm-date">{day}</p>
-                  <p className="hm-sub">{props.current ? `${props.current} is open. Esc goes back to it` : shown.length ? `${shown.length} recent ${shown.length === 1 ? 'file' : 'files'} · ${total.toLocaleString('en-US')} cards` : 'Open a file or start a new one'}</p>
-                </div>
+                <h1 className="hm-title">Falcon</h1>
               </div>
               <div className="hm-acts">
                 <button className="hm-act" onClick={props.onNew}><SvgIcon name="plus" /><span>New document</span>{keyOf('new') && <kbd>{keyText(keyOf('new'))}</kbd>}</button>

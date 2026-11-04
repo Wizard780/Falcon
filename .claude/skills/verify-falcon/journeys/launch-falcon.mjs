@@ -24,7 +24,7 @@ async function start(storage = {}) {
 const flying = (page) => page.evaluate(() => !!document.querySelector('.falcon-flight svg'));
 const perched = (page) => page.evaluate(() => !!document.querySelector('.hm-perch svg'));
 /** Where Home's own parts sit: these must not move for the falcon. */
-const layout = (page) => page.evaluate(() => ['.hm-perch', '.hm-date', '.hm-sub', '.hm-acts', '.hm-clock', '.hm-main']
+const layout = (page) => page.evaluate(() => ['.hm-perch', '.hm-title', '.hm-acts', '.hm-clock', '.hm-main']
   .map((s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r ? `${s} ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}` : `${s} missing`; }).join('\n'));
 
 // 1. a normal launch: the flight, filmed
@@ -39,8 +39,9 @@ for (const t of [250, 600, 950, 1300, 1700, 1950, 2150, 2350, 2550, 2750, 2950, 
 want(!(await flying(page)) && await perched(page), 'it lands on the perch and the flight layer is gone');
 const after = await layout(page);
 want(during === after, 'nothing on Home moved while it flew');
-const perch = await page.evaluate(() => { const p = document.querySelector('.hm-perch').getBoundingClientRect(), d = document.querySelector('.hm-date').getBoundingClientRect(), s = document.querySelector('.hm-sub').getBoundingClientRect(); return { right: Math.round(p.right), dateLeft: Math.round(d.left), mid: Math.round((p.top + p.bottom) / 2), words: Math.round((d.top + s.bottom) / 2) }; });
-want(perch.right < perch.dateLeft && Math.abs(perch.mid - perch.words) < 6, `the logo sits left of the date and the line under it, centered on them: ${JSON.stringify(perch)}`);
+const perch = await page.evaluate(() => { const p = document.querySelector('.hm-perch').getBoundingClientRect(), t = document.querySelector('.hm-title').getBoundingClientRect(); return { right: Math.round(p.right), titleLeft: Math.round(t.left), mid: Math.round((p.top + p.bottom) / 2), words: Math.round((t.top + t.bottom) / 2) }; });
+want(perch.right < perch.titleLeft && Math.abs(perch.mid - perch.words) < 6, `the logo sits left of the name, centered on it: ${JSON.stringify(perch)}`);
+want(await page.evaluate(() => document.querySelector('.hm-title').textContent === 'Falcon' && !document.querySelector('.hm-date, .hm-sub')), 'Home says Falcon, with no date or file counts');
 want(await page.evaluate(() => !document.querySelector('.hm-hi') && !/Good (morning|afternoon|evening)|Up late/.test(document.querySelector('.hm-head').textContent)), 'no greeting');
 want(await page.evaluate(() => !!document.querySelector('.hm-perch svg.falcon-logo') && !document.querySelector('.hm-perch .falcon-bird')), 'what lands is the logo, not the flying bird');
 await page.screenshot({ path: `${out}/perched.png`, clip: { x: 0, y: 0, width: 900, height: 330 } });

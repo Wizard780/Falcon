@@ -5,7 +5,7 @@ When Falcon starts on Home, a falcon (drawn feather by feather, its eye ring and
 ## Sub-features
 
 - `flight` the falcon flies over Home on a page load that starts on Home, about 2.5 s, wingbeats slowing into a glide and a pen-colored trail behind it.
-- `perch` it ends as `svg.falcon-logo` in `.hm-perch` (62x65, left of `.hm-date` and `.hm-sub`, centered on them), in one continuous hand-off (the wings fold, wings and body dissolve, the head blends into the logo, which rides on the bird's eye until it is down), and stays there with no animation running.
+- `perch` it ends as `svg.falcon-logo` in `.hm-perch` (62x65, left of `.hm-title`, centered on it), in one continuous hand-off (the wings fold, wings and body dissolve, the head blends into the logo, which rides on the bird's eye until it is down), and stays there with no animation running.
 - `skip` any key or click mid-flight lands it straight away.
 - `setting` Settings > Appearance > Falcon on launch (`falcon.launchFalcon`, on by default, also in the command center) turns the flight off; the falcon is then perched from the start.
 - `reduce-motion` Reduce motion (the setting or the OS) skips the flight the same way.
@@ -22,7 +22,7 @@ Preconditions:
 - `falcon-verify doctor` is all `ok`.
 
 - **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/launch-falcon.mjs`. It starts the app itself without the Escape `openFalcon` presses, films the flight, and checks the landing, the logo's place and that the greeting is gone, the layout, the setting, Reduce motion and a key mid-flight. Ten `ok` lines.
-- **Layout.** It compares the boxes of `.hm-perch`, `.hm-date`, `.hm-sub`, `.hm-acts`, `.hm-clock` and `.hm-main` during the flight, after it, and with the setting off. All three must match.
+- **Layout.** It compares the boxes of `.hm-perch`, `.hm-title`, `.hm-acts`, `.hm-clock` and `.hm-main` during the flight, after it, and with the setting off. All three must match.
 - **Proof.** `evidence/launch-falcon/` holds `flight-0250.png` to `flight-3200.png` (1950 to 2950 show the hand-off from bird to logo), `perched.png`, `layout.txt` and `results.txt`.
 
 ## Gotchas
