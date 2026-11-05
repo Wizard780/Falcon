@@ -189,10 +189,13 @@ function rank(hay, query, limit = 60, memo) {
 
 // ---------- the index ----------
 
+const flat = (p) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+
 /** `listFiles` gives every .docx in the allowed folders ([{ path, mtime }]); `storeFile` keeps the index. */
 function createCardIndex(storeFile, listFiles) {
   let files = new Map(); // path -> { mtime, size, bad, cards }
   let hay = null; // lowercase copies for searching, built on the first search after a change
+  let hidden = []; // files and folders kept out of the search, as forward-slash paths
   const memo = { hay: null, ws: [], hits: [] }; // the last search's matches, for narrowing while typing
   let loaded = null, scanning = null, scannedAt = 0;
   let progress = { done: 0, total: 0 };
@@ -251,6 +254,8 @@ function createCardIndex(storeFile, listFiles) {
     if (hay) return hay;
     hay = [];
     for (const [p, f] of files) {
+      const at = flat(p);
+      if (hidden.some((d) => at === d || at.startsWith(`${d}/`))) continue;
       const name = path.basename(p).replace(/\.docx$/i, '').toLowerCase();
       let last = null, lower = '';
       f.cards.forEach(([tag, cite, heads], i) => {
@@ -270,8 +275,10 @@ function createCardIndex(storeFile, listFiles) {
   return {
     scan,
     /** Matching cards, from what's indexed now. A stale index is brought up to date in the background. */
-    async search(query, limit) {
+    async search(query, limit, hide = []) {
       await load();
+      const dirs = hide.map(flat);
+      if (dirs.join('\n') !== hidden.join('\n')) { hidden = dirs; hay = null; }
       if (!scanning && Date.now() - scannedAt > STALE_MS) void scan();
       const hits = rank(haystack(), query, limit, memo).map(({ h, copies }) => {
         const [tag, cite, heads] = files.get(h.path).cards[h.i];

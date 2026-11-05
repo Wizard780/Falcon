@@ -27,10 +27,17 @@ export const stripDocx = (n: string) => n.replace(/\.docx$/i, '');
 /** The folder a file sits in, as one name ("Aff"), not a path. */
 export const parentName = (p: string) => { const parts = p.split(SEP); return parts.length > 1 ? parts[parts.length - 2] : ''; };
 
+const flat = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+/** A test for whether a path is hidden: it's one of `hidden`, or inside a folder that is. */
+export function hiddenTest(hidden: readonly string[]) {
+  const dirs = hidden.map(flat);
+  return (path: string) => { const p = flat(path); return dirs.some((d) => p === d || p.startsWith(`${d}/`)); };
+}
+
 /**
  * Pinned files first, then open docs, recents and indexed files; each path appears once, as its first source.
  * Starred files keep their place (a search puts them on top). A starred or pinned file hides its copies: the same
- * path inside another search folder (an open one stays: it's open).
+ * path inside another search folder (an open one stays: it's open). Hidden paths are left out, unless they're open.
  */
 export function collectHits(
   open: { id: number; name: string; path?: string }[],
@@ -38,7 +45,9 @@ export function collectHits(
   files: { path: string; mtime: number; root?: string }[],
   starred: readonly string[] = [],
   pinned: readonly string[] = [],
+  hidden: readonly string[] = [],
 ): FileHit[] {
+  const gone = hiddenTest(hidden);
   const seen = new Set<string>();
   const out: FileHit[] = [];
   const add = (h: FileHit) => {
@@ -48,8 +57,8 @@ export function collectHits(
     out.push(h);
   };
   for (const d of open) add({ key: `o${d.id}`, name: d.name, folder: d.path ? parentName(d.path) : '', path: d.path, docId: d.id, kind: 'open', when: Infinity });
-  for (const r of recents) add({ key: `r:${r.path ?? r.name}`, name: r.name, folder: r.folder, path: r.path, kind: 'recent', when: r.when });
-  for (const f of files) add({ key: `f:${f.path}`, name: stripDocx(base(f.path)), folder: parentName(f.path), path: f.path, kind: 'file', when: f.mtime, source: f.root ? base(f.root.replace(/[\\/]+$/, '')) : undefined });
+  for (const r of recents) if (!r.path || !gone(r.path)) add({ key: `r:${r.path ?? r.name}`, name: r.name, folder: r.folder, path: r.path, kind: 'recent', when: r.when });
+  for (const f of files) if (!gone(f.path)) add({ key: `f:${f.path}`, name: stripDocx(base(f.path)), folder: parentName(f.path), path: f.path, kind: 'file', when: f.mtime, source: f.root ? base(f.root.replace(/[\\/]+$/, '')) : undefined });
   if (!starred.length && !pinned.length) return out;
   const stars = new Set(starred), pins = new Set(pinned);
   const marked = (h: FileHit) => !!h.path && (stars.has(h.path) || pins.has(h.path));

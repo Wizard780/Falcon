@@ -4,7 +4,7 @@ import { safeSet } from './storage';
 /**
  * Starred and pinned files, as paths in the order they were marked. Both hide their copies in other search folders.
  * A starred file goes to the top of file search when it matches what you type; a pinned one also always shows,
- * listed first with the box empty.
+ * listed first with the box empty. A hidden path (a file or a whole folder) stays out of file search and Search cards.
  */
 const list = (key: string) => {
   const load = (): string[] => {
@@ -24,6 +24,7 @@ const list = (key: string) => {
 };
 export const [loadStarred, toggleStarred] = list('falcon.starredFiles');
 export const [loadPinned, togglePinned] = list('falcon.pinnedFiles');
+export const [loadHidden, toggleHidden] = list('falcon.hiddenFiles');
 
 const icon = (d: string) => () => createElement('svg', { viewBox: '0 0 16 16', 'aria-hidden': true }, createElement('path', { d }));
 export const StarIcon = icon('M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z');

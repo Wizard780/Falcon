@@ -12,7 +12,7 @@ contextBridge.exposeInMainWorld('falcon', {
   removeIndexFolder: (p) => ipcRenderer.invoke('falcon:index-remove', p),
   importIndexFolders: (paths) => ipcRenderer.invoke('falcon:index-import', paths),
   indexedFiles: () => ipcRenderer.invoke('falcon:index-files'),
-  searchCards: (q) => ipcRenderer.invoke('falcon:card-search', q),
+  searchCards: (q, hidden) => ipcRenderer.invoke('falcon:card-search', q, hidden),
   dictionaryWords: () => ipcRenderer.invoke('falcon:dict-words'),
   removeDictionaryWord: (w) => ipcRenderer.invoke('falcon:dict-remove', w),
   onMenu: (f) => {
