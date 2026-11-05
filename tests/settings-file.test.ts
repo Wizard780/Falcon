@@ -11,11 +11,12 @@ describe('settings file', () => {
     await freshStorage();
     const { importSettings } = await import('../src/ui/settings-file');
     const { P, pref } = await import('../src/editor/prefs');
-    const file = (prompt: string) => JSON.stringify({ ...JSON.parse(CM), settings: { ...JSON.parse(CM).settings, aiFeaturesEnabled: true, aiModelOverride: 'claude-haiku-4-5', aiCitePrompt: prompt } });
+    const file = (prompt: string) => JSON.stringify({ ...JSON.parse(CM), settings: { ...JSON.parse(CM).settings, aiFeaturesEnabled: true, aiModelOverride: 'claude-haiku-4-5', aiProvider: 'openrouter', openrouterModel: 'deepseek/deepseek-chat', aiCitePrompt: prompt } });
     expect(importSettings(file('')).ok).toBe(true);
     expect(pref(P.aiCitePreset)).toBe('');
     expect(importSettings(file('my house style')).ok).toBe(true);
     expect([pref(P.aiOn), pref(P.aiModel), pref(P.aiCitePreset)]).toEqual([true, 'claude-haiku-4-5', 'cardmirror']);
+    expect([pref(P.aiProvider), pref(P.aiRouterModel)]).toEqual(['openrouter', 'deepseek/deepseek-chat']);
     expect(JSON.parse(pref(P.aiCitePresets))).toEqual([{ id: 'cardmirror', name: 'My prompt', prompt: 'my house style' }]);
   });
   it('exports settings, not documents, recents or the usage-stats choice, and imports them back exactly', async () => {

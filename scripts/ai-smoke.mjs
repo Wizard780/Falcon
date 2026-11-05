@@ -12,8 +12,14 @@ const server = http.createServer((req, res) => {
   req.on('data', (d) => { raw += d; });
   req.on('end', () => {
     const body = JSON.parse(raw);
-    seen.push({ path: req.url, auth: req.headers.authorization, beta: req.headers['anthropic-beta'], body });
+    seen.push({ path: req.url, auth: req.headers.authorization, beta: req.headers['anthropic-beta'], title: req.headers['x-title'], body });
     const n = seen.length;
+    if (req.url.endsWith('/chat/completions')) {
+      const content = `[[CITE]]\nRouter ${n} [Ann Lee; 2021; "Title"]\n[[TOKENS]]\nRouter ${n}\n[[END]]`;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ id: `gen-${n}`, model: body.model, choices: [{ finish_reason: 'stop', message: { role: 'assistant', content } }] }));
+      return;
+    }
     const text = body.system[0].text.startsWith('PLAIN') ? 'Doe, Jane. "A Title." Journal, 2020.' : `[[CITE]]\nSmith ${n} [John Smith, professor; May 1, 2024; "Title," Journal, https://example.com/a]\n[[TOKENS]]\nSmith ${n}\n[[END]]`;
     setTimeout(() => {
       res.setHeader('content-type', 'application/json');
@@ -23,7 +29,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const { ELECTRON_RUN_AS_NODE, ...env } = process.env;
-Object.assign(env, { FALCON_USER_DATA: fs.mkdtempSync(`${os.tmpdir()}/falcon-ai-`), FALCON_HEADLESS: '1', ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.address().port}` });
+Object.assign(env, { FALCON_USER_DATA: fs.mkdtempSync(`${os.tmpdir()}/falcon-ai-`), FALCON_HEADLESS: '1', ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.address().port}`, OPENROUTER_BASE_URL: `http://127.0.0.1:${server.address().port}/api/v1` });
 fs.mkdirSync('shots', { recursive: true });
 const results = [];
 const want = (ok, what) => { results.push(`${ok ? 'ok  ' : 'FAIL'} ${what}`); return ok; };
@@ -136,6 +142,55 @@ want(seen.at(-1).body.fallbacks === undefined, 'no fallbacks on a model that may
 want(!(await win.textContent(editor)).includes('jane doe 2020'), 'a plain answer replaces the selection');
 await win.waitForFunction(() => document.querySelector('.toast')?.textContent.includes('F8'), null, { timeout: 3000 });
 want(true, 'it says the name and date still need marking');
+
+// OpenRouter: its own key and model, and nothing goes out until both are there
+await win.click('.fstrip [aria-label="Settings"]');
+await win.click('.st-nav >> text=AI');
+await win.waitForTimeout(200);
+await win.click('button:text-is("OpenRouter")');
+await win.waitForSelector('text=OpenRouter API key');
+want(!!(await win.$('text=Add key…')), 'OpenRouter asks for its own key, the Anthropic one does not carry over');
+want(await win.inputValue('input[aria-label="AI model"]') === '', 'the model field is OpenRouter\'s own');
+const routerKeyWin = app.waitForEvent('window');
+await win.click('text=Add key…');
+const rw = await routerKeyWin;
+await rw.waitForSelector('#v');
+await rw.fill('#v', 'router-key-for-the-stand-in');
+await rw.press('#v', 'Enter').catch(() => {});
+await win.waitForSelector('text=Remove key');
+await win.click('[aria-label="Close settings"]');
+await win.waitForTimeout(200);
+await win.click(editor);
+await win.keyboard.press(`${MOD}+ArrowDown`);
+await win.keyboard.press('Enter');
+await win.keyboard.type('ann lee 2021');
+await win.keyboard.press('Shift+Home');
+const beforeRouter = seen.length;
+await win.keyboard.press(`${MOD}+Shift+x`);
+await win.waitForFunction(() => document.querySelector('.toast')?.textContent.includes('Paste an OpenRouter model'), null, { timeout: 3000 });
+want(seen.length === beforeRouter, 'with no model pasted nothing is sent and it says so');
+await win.click('.fstrip [aria-label="Settings"]');
+await win.click('.st-nav >> text=AI');
+await win.waitForTimeout(200);
+await win.fill('input[aria-label="AI model"]', 'deepseek/deepseek-chat');
+await win.waitForTimeout(100);
+await win.screenshot({ path: 'shots/ai-openrouter.png' });
+await win.click('[aria-label="Close settings"]');
+await win.waitForTimeout(200);
+await win.locator(editor).getByText('ann lee 2021').click({ clickCount: 3 });
+await win.keyboard.press(`${MOD}+Shift+x`);
+await win.waitForFunction(() => document.querySelector('.ProseMirror').textContent.includes('[Ann Lee; 2021'), null, { timeout: 8000 });
+const rr = seen.at(-1);
+want(rr.path === '/api/v1/chat/completions' && rr.auth === 'Bearer router-key-for-the-stand-in', `it goes to OpenRouter with OpenRouter's key: ${rr.path}`);
+want(rr.body.model === 'deepseek/deepseek-chat' && rr.title === 'Falcon', 'the pasted model goes out as is');
+want(rr.body.messages[0].role === 'system' && rr.body.messages[0].content.startsWith('PLAIN') && rr.body.messages[1].content === 'ann lee 2021', 'the prompt goes as the system message, the selection as the user message');
+want((await cites()).some((c) => c.startsWith('Router ')), `the reply block still marks the cite: ${await cites()}`);
+await win.click('.fstrip [aria-label="Settings"]');
+await win.click('.st-nav >> text=AI');
+await win.waitForTimeout(200);
+await win.click('button:text-is("Anthropic")');
+await win.waitForSelector('text=Anthropic API key');
+want(await win.inputValue('input[aria-label="AI model"]') === 'vendor/some-model:v2' && !!(await win.$('text=Remove key')), 'switching back finds the Anthropic key and model untouched');
 
 await app.close();
 server.close();

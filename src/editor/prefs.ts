@@ -23,7 +23,9 @@ export const P = {
   usageStats: def('usageStats', true), // anonymous feature counts to PostHog (src/ui/analytics.ts)
   newName: def<'untitled' | 'speech' | 'date'>('newName', 'untitled'),
   aiOn: def('aiOn', false), // off until you turn it on and add a key (Settings > AI)
+  aiProvider: def<'anthropic' | 'openrouter'>('aiProvider', 'anthropic'),
   aiModel: def('aiModel', ''), // blank: electron/ai.cjs picks
+  aiRouterModel: def('aiRouterModel', ''), // OpenRouter's has to be pasted in, there's no sensible default
   aiMaxTokens: def('aiMaxTokens', 8192),
   aiCitePreset: def('aiCitePreset', ''), // which saved prompt is in use, '' for the built-in one
   aiCitePresets: def('aiCitePresets', '[]'), // the saved prompts, as JSON (ai-cite.ts)

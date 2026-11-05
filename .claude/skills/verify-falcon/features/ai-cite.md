@@ -5,6 +5,7 @@ Mod-Shift-X turns a selected citation or URL into a styled cite with the name an
 - Requests run in `electron/ai.cjs`. The key is a named secret in `electron/secrets.cjs` (`secrets/anthropic.bin` under userData, encrypted with safeStorage). The page only names it: Add key… opens a window main owns (`secret-prompt.html`), so the value never reaches the page or a settings file.
 - A reply can be a `[[CITE]]`, `[[TOKENS]]`, `[[END]]` block, the same as CardMirror's prompts answer, so a custom prompt imported from there works. Any other reply goes in whole as the cite, just unmarked, so people can write prompts for their own style.
 - The model field is sent as typed, blank means Opus 5.5.
+- Settings > AI also offers OpenRouter (a raw fetch in `electron/ai.cjs`, its own key and its own model pref). Its model has to be pasted in.
 - Settings > AI picks the prompt: the built-in one or up to ten presets, like CardMirror. Each preset has a bindable Use Prompt Preset command.
 - A stretch being worked on is tinted (`.ai-busy`), follows edits around it, and is locked: typing in it does nothing and it flashes.
 
