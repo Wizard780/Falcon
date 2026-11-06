@@ -107,7 +107,7 @@ function revive(tr: Transaction, out: Map<number, NumMark>): boolean {
       const m = ghosts.get(n);
       if (!m) return;
       const p = after.map(step.from + o, 1);
-      if (tr.doc.nodeAt(p) === n && !out.has(p)) { out.set(p, m); found = true; }
+      if (tr.doc.nodeAt(p) === n && !out.has(p)) { out.set(p, m); ghosts.delete(n); found = true; } // spent: a number removed after this stays removed
     });
   });
   return found;
