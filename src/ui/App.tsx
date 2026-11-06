@@ -1133,8 +1133,9 @@ export function App() {
     if (!yes) return;
     const pass = { stop: false };
     citePass.current = pass;
-    const r = await reformatCites(view, { stopped: () => pass.stop, progress: (i, total) => flash(`Reformatting cite ${i + 1} of ${total}. Esc stops.`) });
-    citePass.current = null;
+    let r;
+    try { r = await reformatCites(view, { stopped: () => pass.stop, progress: (i, total) => flash(`Reformatting cite ${i + 1} of ${total}. Esc stops.`) }); }
+    finally { citePass.current = null; }
     const tail = [r.failed && `${r.failed} failed`, r.unmarked && `${r.unmarked} left unmarked`].filter(Boolean).join(', ');
     flash(`${r.stopped ? 'Stopped. ' : ''}${r.done} ${r.done === 1 ? 'cite' : 'cites'} reformatted${tail ? `, ${tail}` : ''}.${r.failed && r.error ? ` ${r.error}` : ''}`);
   };

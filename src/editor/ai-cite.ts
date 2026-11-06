@@ -107,6 +107,9 @@ type Span = { from: number; to: number };
 type Held = Span & { id: number };
 const key = new PluginKey<Held[]>('aiCite');
 let nextId = 0;
+/** Requests still out. A span outlives its request in a doc that left the view, and then it holds nothing. */
+const waiting = new Set<number>();
+const held = (state: EditorState) => key.getState(state)!.filter((s) => waiting.has(s.id));
 
 /** Does this change touch a held stretch? Each step's positions are in the doc as the last step left it. */
 function touches(tr: Transaction, spans: Span[]) {
@@ -132,14 +135,14 @@ export const aiCitePlugin = new Plugin<Held[]>({
   },
   // typing there does nothing and the text flashes; the rest of the doc stays editable
   filterTransaction(tr, state) {
-    const spans = key.getState(state)!;
+    const spans = held(state);
     if (!spans.length || !tr.docChanged || tr.getMeta(key)?.own || !touches(tr, spans)) return true;
     document.querySelectorAll('.ai-busy').forEach((el) => { el.classList.remove('ai-flash'); void (el as HTMLElement).offsetWidth; el.classList.add('ai-flash'); });
     return false;
   },
   props: {
     decorations(state) {
-      const spans = key.getState(state)!.filter((s) => s.to > s.from);
+      const spans = held(state).filter((s) => s.to > s.from);
       return spans.length ? DecorationSet.create(state.doc, spans.map((s) => Decoration.inline(s.from, s.to, { class: 'ai-busy' }))) : null;
     },
   },
@@ -157,16 +160,22 @@ async function rewrite(view: EditorView, range: Span): Promise<CiteResult> {
   const original = read(range);
   if (!original.trim()) return { ok: false, error: 'There\'s no text in that selection.', end: range.to };
   const id = ++nextId;
+  waiting.add(id);
   view.dispatch(view.state.tr.setMeta(key, { add: { ...range, id } }).setMeta('addToHistory', false));
   const provider = pref(P.aiProvider);
   const model = pref(provider === 'openrouter' ? P.aiRouterModel : P.aiModel).trim();
-  const answer = await bridge.aiAsk!({ provider, system: citePrompt(), text: original.trim(), model, maxTokens: pref(P.aiMaxTokens) });
+  let answer;
+  try { answer = await bridge.aiAsk!({ provider, system: citePrompt(), text: original.trim(), model, maxTokens: pref(P.aiMaxTokens) }); }
+  finally { waiting.delete(id); }
   if (view.isDestroyed) return { ok: false, error: 'The document closed.', stop: true, end: 0 };
-  const now = key.getState(view.state)!.find((s) => s.id === id)!;
+  // one view shows many docs: this one may be in another tab by now
+  const now = key.getState(view.state)!.find((s) => s.id === id);
+  if (!now) return { ok: false, error: 'You left that document, so the cite wasn\'t put in.', stop: true, end: 0 };
   view.dispatch(view.state.tr.setMeta(key, { drop: id }).setMeta('addToHistory', false));
   if (answer.error !== undefined) return { ok: false, error: answer.error, stop: answer.stop, end: now.to };
   const parsed = parseCite(answer.text ?? '');
   if (!parsed) return { ok: false, error: 'The AI sent back nothing to put in.', end: now.to };
+  if (isReading(view.state)) return { ok: false, error: 'Read mode is on, so the cite wasn\'t put in.', stop: true, end: now.to };
   if (read(now) !== original) return { ok: false, error: 'That text changed, so the cite wasn\'t put in.', end: now.to };
   const { nodes, marked } = citeNodes(parsed);
   const tr = closeHistory(view.state.tr).replaceWith(now.from, now.to, nodes).setMeta(key, { own: true }).scrollIntoView();
@@ -183,7 +192,7 @@ function citeRange(state: EditorState): Span {
   return { from, to };
 }
 
-const overlaps = (state: EditorState, r: Span) => key.getState(state)!.some((s) => s.from < r.to && r.from < s.to);
+const overlaps = (state: EditorState, r: Span) => held(state).some((s) => s.from < r.to && r.from < s.to);
 
 const ready = (view: EditorView): string | null => {
   if (!bridge.aiAsk) return 'AI features need the desktop app.';
