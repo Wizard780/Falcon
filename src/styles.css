@@ -628,6 +628,8 @@ button.b:active { transform: scale(.97); }
 .sa-mode b { font-size: 13px; font-weight: 600; line-height: 18px; }
 .sa-mode span { font-size: 12px; line-height: 17px; color: var(--u-tx2); }
 .cf.sa .cf-btns { margin-top: 16px; }
+.nd-kinds { margin-top: 12px; }
+.nd-kinds .sa-mode { min-height: 92px; justify-content: flex-start; }
 /* Compare Text: two texts side by side, red only in Text 1, green only in Text 2 */
 .cf.cmp { width: min(1040px, calc(100vw - 48px)); height: min(86vh, 760px); display: flex; flex-direction: column; gap: 12px; user-select: text; }
 .cf.cmp h2 { margin: 0; }

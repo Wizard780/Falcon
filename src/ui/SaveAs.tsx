@@ -43,6 +43,31 @@ export function SaveAs({ name, onSave, onClose }: { name: string | null; onSave:
   );
 }
 
+/** New document, from the + button: a blank file or a speech doc. Enter takes the focused one (Blank Doc to start); Esc or a backdrop click cancels. */
+export function NewDoc({ open, onBlank, onSpeech, onClose }: { open: boolean; onBlank: () => void; onSpeech: () => void; onClose: () => void }) {
+  const blankRef = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    blankRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); } };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="cf-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="cf sa" role="dialog" aria-modal="true" aria-labelledby="nd-t">
+        <h2 id="nd-t">New Document</h2>
+        <div className="sa-modes nd-kinds">
+          <button ref={blankRef} className="sa-mode" onClick={onBlank}><b>Blank Doc</b><span>An empty file.</span></button>
+          <button className="sa-mode" onClick={onSpeech}><b>Speech Doc</b><span>Named for the speech. Send puts cards here.</span></button>
+        </div>
+        <div className="cf-btns"><button onClick={onClose}>Cancel</button></div>
+      </div>
+    </div>
+  );
+}
+
 /** New speech doc: type the speech's name (1NC, 2AC…), and the file is named from Settings' template. Enter makes it; Esc cancels. */
 export function NewSpeech({ open, onMake, onClose }: { open: boolean; onMake: (speech: string) => void; onClose: () => void }) {
   const [value, setValue] = useState('');
