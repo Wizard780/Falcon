@@ -42,7 +42,7 @@ contextBridge.exposeInMainWorld('falcon', {
   },
   // secrets go by name; their values stay in the main process
   secretList: () => ipcRenderer.invoke('falcon:secret-list'),
-  secretPrompt: (id) => ipcRenderer.invoke('falcon:secret-prompt', id),
+  secretPrompt: (id, look) => ipcRenderer.invoke('falcon:secret-prompt', id, look),
   secretRemove: (id) => ipcRenderer.invoke('falcon:secret-remove', id),
   aiAsk: (req) => ipcRenderer.invoke('falcon:ai-ask', req),
   linkedApps: () => ipcRenderer.invoke('falcon:bridge-apps'),

@@ -19,7 +19,7 @@ import { PinIcon, StarIcon, loadHidden, loadPinned, loadStarred, toggleHidden, t
 import { StarTree } from './StarTree';
 import { downloadSettings, importSettings } from './settings-file';
 import { FORMAT_NAME, FORMAT_PREP } from './round-clock';
-import { PRESETS, SYSTEM, addCustomTheme, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
+import { PRESETS, SYSTEM, addCustomTheme, chromeLook, customThemes, deleteCustomTheme, isDark, resolveTheme, updateCustomTheme, type Theme } from './theme';
 
 /** Settings the features declare in their own files (see SettingSpec), shown on the Editor page. */
 const FEATURE_SETTINGS: SettingSpec[] = [...navSettings, ...docToolSettings, ...cardToolSettings];
@@ -360,12 +360,12 @@ export function Settings(props: Props) {
           pick(P.aiProvider, 'AI provider', 'Anthropic runs Claude models. OpenRouter reaches models from many companies, like GPT, Gemini and DeepSeek, on one key.', [['anthropic', 'Anthropic'], ['openrouter', 'OpenRouter']]),
           { label: `${aiService()} API key`, search: 'key claude console openrouter', hint: aiKeys.includes(aiId) ? 'Saved on this computer, encrypted. Falcon\'s pages and settings files never see it.' : `${router ? 'Make one at openrouter.ai/keys. It needs a little credit.' : 'Make one at console.anthropic.com. It\'s separate from a Claude subscription and needs a little credit.'} It\'s typed into its own window, and isn\'t saved if this computer can\'t encrypt it.`, control: aiKeys.includes(aiId)
             ? <button className="st-btn" onClick={() => void bridge.secretRemove!(aiId).then(setAiKeys)}>Remove key</button>
-            : <button className="st-btn" onClick={() => void bridge.secretPrompt!(aiId).then(() => bridge.secretList!()).then(setAiKeys)}>Add key…</button> },
+            : <button className="st-btn" onClick={() => void bridge.secretPrompt!(aiId, chromeLook()).then(() => bridge.secretList!()).then(setAiKeys)}>Add key…</button> },
           { label: 'AI model', search: 'claude opus sonnet haiku gpt gemini deepseek openrouter', hint: router ? 'Paste any model id from openrouter.ai/models and it goes there as is.' : 'Paste any model id your key can use and it goes to Anthropic as is. Leave blank for Claude Opus 5.5.', control: (
             <input className="st-text st-wide" aria-label="AI model" spellCheck={false} placeholder={router ? 'deepseek/deepseek-chat' : 'claude-opus-5-5'} maxLength={200} value={pref(aiModelPref)} onChange={(e) => setPref(aiModelPref, e.target.value)} />) },
           { label: 'Max output tokens', search: 'budget thinking', hint: 'Thinking spends from this too, so too low a number can cut the cite off. Minimum 1024.', control: (
             <input className="st-text" aria-label="Max output tokens" inputMode="numeric" maxLength={6} spellCheck={false} value={pref(P.aiMaxTokens) || ''} onChange={(e) => setPref(P.aiMaxTokens, Number(e.target.value.replace(/\D/g, '')))} />) },
-          { label: 'AI cite-creator prompt', search: 'format style preset instructions', hint: `What the AI is told when it formats a cite, so it sets your citation style. Pick the built-in prompt or save up to ${MAX_PRESETS} of your own.`, control: (
+          { label: 'AI cite-creator prompt', wide: true, search: 'format style preset instructions', hint: `What the AI is told when it formats a cite, so it sets your citation style. Pick the built-in prompt or save up to ${MAX_PRESETS} of your own.`, control: (
             <span className="st-fold">
               {select('AI cite-creator prompt', preset?.id ?? '', [['', 'Built-in prompt'], ...citePresets().map((f): [string, string] => [f.id, f.name])], (v) => { setPref(P.aiCitePreset, v); setDelArmed(false); })}
               {preset && <button className="st-btn" onClick={() => setPromptOpen((o) => !o)}>{promptOpen ? 'Done' : 'Edit'}</button>}

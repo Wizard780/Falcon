@@ -137,6 +137,25 @@ export function applyTheme() {
   bridge.setTheme?.(t.bg, chromeDark, pref(P.theme) === SYSTEM);
 }
 
+/** The file behind a bundled font's Latin letters, as a full URL. '' for a font the system has. */
+function fontFile(family: string) {
+  const plain = (s: string) => s.replace(/['"]/g, '').trim();
+  for (const sheet of document.styleSheets) for (const r of sheet.cssRules) {
+    if (!(r instanceof CSSFontFaceRule) || plain(r.style.getPropertyValue('font-family')) !== plain(family)) continue;
+    const range = r.style.getPropertyValue('unicode-range');
+    const url = /url\(["']?([^"')]+)/.exec(r.style.getPropertyValue('src'))?.[1];
+    if (url && (!range || /U\+0+-0*FF\b/i.test(range))) return new URL(url, sheet.href ?? location.href).href;
+  }
+  return '';
+}
+
+/** The chrome's colors and font as they stand, for a window that can't read this page's styles. */
+export function chromeLook() {
+  const s = getComputedStyle(document.documentElement);
+  const look = Object.fromEntries(['--u-card', '--u-tx', '--u-tx2', '--u-ctl2', '--u-ctl-on', '--u-top', '--ui-font'].map((k) => [k, s.getPropertyValue(k).trim()]));
+  return { ...look, font: fontFile(look['--ui-font'].split(',')[0]) };
+}
+
 /** The old Document paper toggle (falcon.pageDark) becomes the paper setting, once. */
 function migrate() {
   if (localStorage.getItem(P.paper.key) === null && localStorage.getItem('falcon.pageDark') === 'on') safeSet(P.paper.key, 'dark');

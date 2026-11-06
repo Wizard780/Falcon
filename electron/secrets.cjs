@@ -29,12 +29,12 @@ function createSecrets({ safeStorage, dir }) {
   };
 }
 
-/** Asks for a secret in a small window main owns. Resolves true if one was saved. */
-function promptSecret({ BrowserWindow, parent, secrets, id, show = true }) {
+/** Asks for a secret in a small window main owns. Resolves true if one was saved. `look` is the page's CSS variables, so it matches the app. */
+function promptSecret({ BrowserWindow, parent, secrets, id, look, show = true }) {
   if (!ok(id)) return Promise.resolve(false);
   return new Promise((resolve) => {
     const w = new BrowserWindow({
-      parent, modal: !!parent, show: false, width: 440, height: 200, resizable: false, minimizable: false, maximizable: false,
+      parent, modal: !!parent, show: false, width: 460, height: 185, useContentSize: true, resizable: false, minimizable: false, maximizable: false,
       title: NAMES[id], autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, 'secret-preload.cjs'), contextIsolation: true, sandbox: true },
     });
@@ -47,7 +47,7 @@ function promptSecret({ BrowserWindow, parent, secrets, id, show = true }) {
     const { ipcMain } = require('electron');
     ipcMain.on('falcon:secret-submit', onSubmit);
     w.on('closed', () => { ipcMain.off('falcon:secret-submit', onSubmit); resolve(saved); });
-    w.loadFile(path.join(__dirname, 'secret-prompt.html'), { query: { label: NAMES[id] } });
+    w.loadFile(path.join(__dirname, 'secret-prompt.html'), { query: { ...look, label: NAMES[id] } });
     if (show) w.once('ready-to-show', () => w.show());
   });
 }

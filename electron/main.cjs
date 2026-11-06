@@ -487,7 +487,7 @@ let secretsApi = null;
 const secrets = () => (secretsApi ??= createSecrets({ safeStorage, dir: path.join(app.getPath('userData'), 'secrets') }));
 // the page names a secret; it can ask for one to be entered or removed, never read one
 ipcMain.handle('falcon:secret-list', () => secrets().list());
-ipcMain.handle('falcon:secret-prompt', (e, id) => promptSecret({ BrowserWindow, parent: BrowserWindow.fromWebContents(e.sender), secrets: secrets(), id, show: !HEADLESS }));
+ipcMain.handle('falcon:secret-prompt', (e, id, look) => promptSecret({ BrowserWindow, parent: BrowserWindow.fromWebContents(e.sender), secrets: secrets(), id, look, show: !HEADLESS }));
 ipcMain.handle('falcon:secret-remove', (_e, id) => { secrets().remove(id); return secrets().list(); });
 let aiApi = null;
 const ai = () => (aiApi ??= createAi({ key: (id) => secrets().get(id) }));

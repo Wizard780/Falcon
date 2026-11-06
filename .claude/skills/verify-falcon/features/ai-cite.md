@@ -2,7 +2,7 @@
 
 Mod-Shift-X turns a selected citation or URL into a styled cite with the name and date cite-marked. Reformat Every Cite runs that over each cite in the doc. Both need AI features on and an Anthropic key in Settings > AI.
 
-- Requests run in `electron/ai.cjs`. The key is a named secret in `electron/secrets.cjs` (`secrets/anthropic.bin` under userData, encrypted with safeStorage). The page only names it: Add key… opens a window main owns (`secret-prompt.html`), so the value never reaches the page or a settings file.
+- Requests run in `electron/ai.cjs`. The key is a named secret in `electron/secrets.cjs` (`secrets/anthropic.bin` under userData, encrypted with safeStorage). The page only names it: Add key… opens a window main owns (`secret-prompt.html`), so the value never reaches the page or a settings file. That window can't read the app's styles, so the page sends its colors and its font's file in the URL (`chromeLook` in `theme.ts`). Nothing comes back the other way.
 - A reply can be a `[[CITE]]`, `[[TOKENS]]`, `[[END]]` block, the same as CardMirror's prompts answer, so a custom prompt imported from there works. Any other reply goes in whole as the cite, just unmarked, so people can write prompts for their own style.
 - The model field is sent as typed, blank means Opus 5.5.
 - Settings > AI also offers OpenRouter (a raw fetch in `electron/ai.cjs`, its own key and its own model pref). Its model has to be pasted in.
