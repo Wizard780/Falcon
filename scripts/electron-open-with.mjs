@@ -48,6 +48,21 @@ const reloadFile = path.join(dir, 'After Reload.docx'); fs.copyFileSync(seed, re
 await app.evaluate(({ app, BrowserWindow }, p) => { BrowserWindow.getAllWindows()[0].webContents.reload(); app.emit('open-file', { preventDefault() {} }, p); }, reloadFile);
 await win.waitForSelector('.ProseMirror');
 const afterReload = await waitTab('After Reload');
+// a file sent while the crash screen is up has no listener to reach: it waits for Reload. Array methods that
+// throw for one render are what puts the screen up, since nothing in a healthy app can
+await win.evaluate(() => {
+  const { map, filter } = Array.prototype;
+  window.dispatchEvent(new Event('falcon:sd-show'));
+  Array.prototype.map = Array.prototype.filter = () => { throw new Error('boom'); };
+  setTimeout(() => Object.assign(Array.prototype, { map, filter }), 30);
+});
+const crashed = await win.waitForSelector('[role=alert] h1', { timeout: 3000 }).then(() => true, () => false);
+const crashFile = path.join(dir, 'While Crashed.docx'); fs.copyFileSync(seed, crashFile);
+await app.evaluate(({ app }, p) => app.emit('open-file', { preventDefault() {} }, p), crashFile);
+await win.waitForTimeout(500);
+await win.click('[role=alert] button').catch(() => {});
+await win.waitForSelector('.ProseMirror');
+const afterCrash = await waitTab('While Crashed');
 await app.close();
 
 console.log('tabs:', after, '| active:', active);
@@ -58,5 +73,6 @@ want(after.filter((t) => t === 'Clicked First').length === 1 && active === 'Clic
 want(childExited && handedOver, `a second launch with a file hands it to the running app and quits: exited ${childExited}, opened ${handedOver}`);
 want(allMany, 'several files opened at once all open');
 want(afterReload, 'a file sent during a page reload opens in the reloaded page');
-want(!errors.length, `page errors: ${errors.join('; ')}`);
+want(crashed && afterCrash, `a file sent while the crash screen is up opens after Reload: screen ${crashed}, opened ${afterCrash}`);
+want(!errors.filter((e) => e !== 'boom').length, `page errors: ${errors.filter((e) => e !== 'boom').join('; ')}`);
 if (!process.exitCode) console.log('open-with: all checks pass');
