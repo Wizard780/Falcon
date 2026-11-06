@@ -102,7 +102,7 @@ describe('settings file', () => {
     expect([s('theme'), s('font'), s('zoom'), s('depth'), s('prepMin')]).toEqual(['light', 'verdana', '1.2', '3', '3']);
     expect([s('wpm1'), s('wpm2')]).toEqual(['200', '260']); // any typed speed carries over as is
     expect([s('sz.pocket'), s('sz.hat'), s('sz.tag'), s('sz.undertag')]).toEqual(['26', '22', '14', '12']);
-    expect(s('lineHeight')).toBe('1.2'); // CardMirror's 1.3 isn't a Falcon choice: nearest one
+    expect(s('lineHeight')).toBe('1.3');
     expect([s('condense'), s('emphasisBox'), s('spellcheck'), s('highlight'), s('markerColor')]).toEqual(['integrity', 'on', 'on', 'cyan', '#FF0000']);
     expect(s('standardizeHighlightException')).toBe('darkGray'); // every Word highlight color is a choice now
     expect(s('standardizeShadingException')).toBe('#FFFF00');

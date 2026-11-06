@@ -1,4 +1,5 @@
 import { P, onPrefs, pref, type Pref } from '../editor/prefs';
+import { safeSet } from './storage';
 import './settings.css';
 
 // ---------- display settings: CSS variables and root classes (settings.css); none of them change the file ----------
@@ -17,6 +18,26 @@ export const SIZE_PREFS: [string, string, Pref<number>][] = [
   ['normal', 'Body text', P.szNormal], ['pocket', 'Pocket', P.szPocket], ['hat', 'Hat', P.szHat], ['block', 'Block', P.szBlock],
   ['tag', 'Tag', P.szTag], ['cite', 'Cite', P.szCite], ['analytic', 'Analytic', P.szAnalytic], ['undertag', 'Undertag', P.szUndertag],
 ];
+/** The doc font's ascent and descent (in em) and the screen's pixel ratio, which box-fit line spacing rounds to. */
+function applyMetrics() {
+  const root = document.documentElement;
+  root.style.setProperty('--dpr', String(window.devicePixelRatio || 1));
+  const ctx = document.createElement('canvas').getContext('2d');
+  if (!ctx) return;
+  ctx.font = `bold 1000px ${getComputedStyle(root).getPropertyValue('--doc-font')}`;
+  const m = ctx.measureText('x');
+  root.style.setProperty('--asc', String(m.fontBoundingBoxAscent / 1000));
+  root.style.setProperty('--dsc', String(m.fontBoundingBoxDescent / 1000));
+}
+function watchPixelRatio() {
+  matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener('change', () => { applyMetrics(); watchPixelRatio(); }, { once: true });
+}
+/** A saved 1.2 was the old default or CardMirror's 1.3 rounded down on import: it moves to 1.3, once. Picking 1.2 after that stays. */
+function migrateLineHeight() {
+  if (localStorage.getItem('falcon.lineHeightMoved')) return;
+  if (localStorage.getItem(P.lineHeight.key) === '1.2') safeSet(P.lineHeight.key, '1.3');
+  safeSet('falcon.lineHeightMoved', 'on');
+}
 function applyDisplay() {
   const root = document.documentElement;
   const v = (k: string, val: string) => (val ? root.style.setProperty(k, val) : root.style.removeProperty(k));
@@ -32,10 +53,14 @@ function applyDisplay() {
   root.dataset.caret = pref(P.caret);
   root.dataset.sel = pref(P.selection);
   const cls: [string, boolean][] = [
-    ['cite-plain', !pref(P.citeBold)], ['emph-nobox', !pref(P.emphasisBox)], ['pocket-nobox', !pref(P.pocketBox)],
+    ['lh-box', pref(P.lineHeight) === '1.3'], ['cite-plain', !pref(P.citeBold)], ['emph-nobox', !pref(P.emphasisBox)], ['pocket-nobox', !pref(P.pocketBox)],
     ['hat-single', pref(P.hatLine) === 'single'], ['shade-dots', pref(P.shadingDots)], ['no-card-bar', !pref(P.cardBar)], ['reduce-motion', pref(P.reduceMotion)],
   ];
   for (const [c, on] of cls) root.classList.toggle(c, on);
+  applyMetrics();
 }
+migrateLineHeight();
 applyDisplay();
 onPrefs(applyDisplay);
+watchPixelRatio();
+void document.fonts?.ready.then(applyMetrics);

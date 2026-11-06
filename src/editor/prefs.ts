@@ -45,7 +45,7 @@ export const P = {
   margins: def<'narrow' | 'normal' | 'wide'>('margins', 'normal'),
   font: def('font', 'calibri'),
   uiFont: def('uiFont', 'geist'), // the chrome's font (Settings.tsx UI_FONTS); `font` is the document's
-  lineHeight: def('lineHeight', '1.2'),
+  lineHeight: def('lineHeight', '1.3'),
   szNormal: def('sz.normal', 11),
   szPocket: def('sz.pocket', 26),
   szHat: def('sz.hat', 22),
