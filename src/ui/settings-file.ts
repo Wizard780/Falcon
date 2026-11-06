@@ -159,7 +159,7 @@ const CM_MAP: [string, string, (get: Get) => string | undefined][] = [
   ['lineHeight', 'lineHeight', (g) => {
     const v = g('lineHeight');
     if (typeof v !== 'number') return undefined;
-    return [1, 1.2, 1.5, 2].reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a)).toString();
+    return [1, 1.2, 1.3, 1.5, 2].reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a)).toString();
   }],
   ['condense', 'paragraphIntegrity,usePilcrows', (g) => (g('paragraphIntegrity') === true ? 'integrity' : g('paragraphIntegrity') === false ? (g('usePilcrows') === true ? 'pilcrows' : 'merge') : undefined)],
   ['pasteCondense', 'condenseOnPaste', (g) => bool(g('condenseOnPaste'))],

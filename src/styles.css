@@ -469,7 +469,7 @@ button.b:active { transform: scale(.97); }
 .desktop .app:has(.files[data-open]) .toolbar { -webkit-app-region: no-drag; }
 /* page */
 .page { zoom: var(--zoom); padding: 36px 20px 50vh 30px; color: var(--doc-ink); }
-.ProseMirror { outline: none; font-family: var(--doc-font); font-size: 11pt; line-height: 1.2; white-space: pre-wrap; word-wrap: break-word; caret-color: #000; min-height: 60vh; text-decoration-skip-ink: none; }
+.ProseMirror { outline: none; font-family: var(--doc-font); font-size: 11pt; line-height: 1.3; white-space: pre-wrap; word-wrap: break-word; caret-color: #000; min-height: 60vh; text-decoration-skip-ink: none; }
 .ProseMirror p { margin: 0; }
 .ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4 { margin: 0; font-weight: 700; }
 .f-pocket { font-size: 26pt; text-align: center; border: 3px solid #333; padding: 0.4rem 1rem; margin: 1rem 0 0.6rem !important; line-height: 1.1; }
@@ -481,7 +481,7 @@ button.b:active { transform: scale(.97); }
 .ProseMirror > :first-child { margin-top: 0 !important; }
 .f-cite { font-size: 13pt; font-weight: 700; }
 .f-underline { text-decoration: underline; }
-.f-emphasis { font-weight: 700; text-decoration: underline; border: 1px solid #222; -webkit-box-decoration-break: clone; box-decoration-break: clone; position: relative; } /* positioned so its border paints over the next line's highlight; it sits inside highlight and shading, which fill it */
+.f-emphasis { font-weight: 700; text-decoration: underline; border: 1pt solid #333; -webkit-box-decoration-break: clone; box-decoration-break: clone; position: relative; } /* positioned so its border paints over the next line's highlight; it sits inside highlight and shading, which fill it */
 .f-unbold { font-weight: 400 !important; }
 .ProseMirror .f-size .f-underline, .ProseMirror .f-underline .f-size { text-decoration: underline; }
 .f-highlight { color: inherit; }

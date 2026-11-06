@@ -1,6 +1,6 @@
 /* Display settings (Settings sets the variables and root classes in applyDisplay). None of them change
    the file. This sheet loads before styles.css, so every rule here is more specific than the one it overrides. */
-.f-scroll .ProseMirror { font-size: var(--sz-normal, 11pt); line-height: var(--doc-lh, 1.2); }
+.f-scroll .ProseMirror { font-size: var(--sz-normal, 11pt); line-height: var(--doc-lh, 1.3); }
 .ProseMirror .f-pocket { font-size: var(--sz-pocket, 26pt); }
 .ProseMirror .f-hat { font-size: var(--sz-hat, 22pt); }
 .ProseMirror .f-block { font-size: var(--sz-block, 16pt); }

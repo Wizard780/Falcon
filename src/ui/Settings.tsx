@@ -513,7 +513,7 @@ export function Settings(props: Props) {
       ]],
       ['Look', [
         fontTiles(P.font, 'Editor font', 'The document\'s text. Verdana and Comic Sans are easier for some readers with dyslexia.', FONTS, 'Calibri, Carlito, Arial, sans-serif'),
-        pick(P.lineHeight, 'Line spacing', 'Space between the lines of a paragraph.', [['1', '1.0'], ['1.2', '1.2'], ['1.5', '1.5'], ['2', '2.0']]),
+        pick(P.lineHeight, 'Line spacing', 'Space between the lines of a paragraph.', [['1', '1.0'], ['1.2', '1.2'], ['1.3', '1.3'], ['1.5', '1.5'], ['2', '2.0']]),
         tog(P.pocketBox, 'Box around pockets', 'Draw the box around pocket headings.'),
         pick(P.hatLine, 'Hat underline', 'Hats are underlined twice, or once.', [['double', 'Double'], ['single', 'Single']]),
         tog(P.citeBold, 'Bold cites', 'Off shows cites at normal weight.'),

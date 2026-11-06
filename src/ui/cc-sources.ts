@@ -255,7 +255,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
       get: () => (pref(P.emphasisBox) ? 'box' : 'bold'), set: (v) => setPref(P.emphasisBox, v === 'box') },
     pick(P.shrinkMin, 'Shrink down to', 'formatting', [[4, '4 pt'], [6, '6 pt'], [8, '8 pt']], 'The smallest size Shrink steps down to.', 'Unread text'),
     pick(P.font, 'Editor font', 'formatting', FONTS),
-    pick(P.lineHeight, 'Line spacing', 'formatting', [['1', '1.0'], ['1.2', '1.2'], ['1.5', '1.5'], ['2', '2.0']]),
+    pick(P.lineHeight, 'Line spacing', 'formatting', [['1', '1.0'], ['1.2', '1.2'], ['1.3', '1.3'], ['1.5', '1.5'], ['2', '2.0']]),
     tog(P.pocketBox, 'Box around pockets', 'formatting'),
     pick(P.hatLine, 'Hat underline', 'formatting', [['double', 'Double'], ['single', 'Single']]),
     tog(P.citeBold, 'Bold cites', 'formatting'),
