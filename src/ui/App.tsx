@@ -1053,6 +1053,9 @@ export function App() {
   }, [flash, patch]);
   // Nimbus and other debate apps send cards in over the bridge (electron/editor-bridge.cjs), the way they do
   // into CardMirror: they list the open docs, then insert into one (usually the speech doc) without taking focus
+  // the main process stopped waiting for a consent answer: an Allow clicked now would go nowhere
+  const consentAsk = useRef<Ask | null>(null);
+  useEffect(() => bridge.onBridgeExpired?.(() => { if (askRef.current === consentAsk.current) askRef.current?.done(false); }), []);
   useEffect(() => bridge.onBridge?.(async (kind, p) => {
     const target = (d: OpenDoc) => `falcon-${d.id}`;
     const name = typeof p.name === 'string' && p.name ? p.name[0].toUpperCase() + p.name.slice(1) : 'An app';
@@ -1060,11 +1063,15 @@ export function App() {
     if (kind === 'docs') return { docs: docsRef.current.map((d) => ({ target: target(d), title: d.meta.name || 'Untitled', focusedWindow: d.id === activeRef.current, isSpeech: d.id === speechRef.current })) };
     if (kind === 'consent') {
       if (askRef.current) return { answer: null }; // another question is up: it asks again next time
-      return new Promise((resolve) => setAsk({
+      return new Promise((resolve) => {
+        const a = {
         title: `Let ${name} send cards to Falcon?`,
         body: `${name} wants to put cards into your open docs, the way it does with CardMirror. You can change this in Settings > General > Linked apps.`,
-        ok: 'Allow', done: (yes) => { setAsk(null); resolve({ answer: yes ? 'allow' : null }); },
-      }));
+        ok: 'Allow', done: (yes: boolean) => { setAsk(null); resolve({ answer: yes ? 'allow' : null }); },
+        };
+        consentAsk.current = a;
+        setAsk(a);
+      });
     }
     if (kind === 'jump') return { ok: false, error: 'not-found' }; // nothing hands out source tokens yet
     if (kind !== 'insert') return { ok: false, error: 'bad-request' };

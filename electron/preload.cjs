@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld('falcon', {
     const on = (_e, paths) => { if (Array.isArray(paths)) f(paths.filter((p) => typeof p === 'string')); };
     ipcRenderer.on('falcon:open-paths', on);
     ipcRenderer.send('falcon:open-paths-ready');
-    return () => ipcRenderer.removeListener('falcon:open-paths', on);
+    return () => { ipcRenderer.removeListener('falcon:open-paths', on); ipcRenderer.send('falcon:open-paths-gone'); };
   },
   setMenuKeys: (keys) => ipcRenderer.send('falcon:menu-keys', keys),
   // other debate apps (Nimbus...) asking for the open docs, inserting a card, jumping back, or asking to connect.
@@ -39,6 +39,11 @@ contextBridge.exposeInMainWorld('falcon', {
     ipcRenderer.on('falcon:bridge', on);
     ipcRenderer.send('falcon:bridge-ready');
     return () => ipcRenderer.removeListener('falcon:bridge', on);
+  },
+  onBridgeExpired: (f) => {
+    const on = () => f();
+    ipcRenderer.on('falcon:bridge-expired', on);
+    return () => ipcRenderer.removeListener('falcon:bridge-expired', on);
   },
   // secrets go by name; their values stay in the main process
   secretList: () => ipcRenderer.invoke('falcon:secret-list'),
