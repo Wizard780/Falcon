@@ -317,13 +317,12 @@ function cardBodyRange(state: EditorState): Range | null {
 const shrinkSteps = () => [8, 7, 6, 5, 4].filter((pt) => pt >= pref(P.shrinkMin));
 const OMISSION = /[[<][^\]>]*omitted[^\]>]*[\]>]/gi;
 
-const READ = (m: Mark) => m.type === M.underline || m.type === M.emphasis || m.type === M.cite;
+const READ = (m: Mark) => m.type === M.underline || m.type === M.emphasis || m.type === M.cite || m.type === M.highlight;
 
-/** The unread (not underlined/emphasized/cited) text in `r`, minus protected omission notes, tagged with whether its paragraph has any read text. */
+/** The unread (not underlined/emphasized/cited/highlighted) text in `r`, minus protected omission notes, tagged with its size and whether its paragraph has any read text. */
 function unreadPieces(doc: PMNode, r: Range) {
-  const pieces: (Range & { marked: boolean })[] = [];
+  const pieces: (Range & { marked: boolean; pt: number | null })[] = [];
   const protect = pref(P.shrinkProtect);
-  let current: number | null | undefined;
   let marked = false;
   doc.nodesBetween(r.from, r.to, (node, pos, parent) => {
     if (node.isTextblock) {
@@ -335,29 +334,30 @@ function unreadPieces(doc: PMNode, r: Range) {
     if (!node.isText || !parent) return false;
     if (node.marks.some(READ)) return false;
     const from = Math.max(r.from, pos), to = Math.min(r.to, pos + node.nodeSize);
-    if (current === undefined) current = M.size.isInSet(node.marks)?.attrs.pt ?? null;
+    const pt: number | null = M.size.isInSet(node.marks)?.attrs.pt ?? null;
     // keep omission notes like [Table Omitted] at full size
     const text = node.text!.slice(from - pos, to - pos);
     let last = 0;
     if (protect) for (const m of text.matchAll(OMISSION)) {
-      if (m.index! > last) pieces.push({ from: from + last, to: from + m.index!, marked });
+      if (m.index! > last) pieces.push({ from: from + last, to: from + m.index!, marked, pt });
       last = m.index! + m[0].length;
     }
-    if (last < text.length) pieces.push({ from: from + last, to, marked });
+    if (last < text.length) pieces.push({ from: from + last, to, marked, pt });
     return false;
   });
-  return { pieces, current };
+  return pieces;
 }
 
 /**
- * Mod-8: cycle the unread text in the card through smaller sizes. With Smart Shrink on in Settings it
+ * Mod-8: cycle the unread text in the card through smaller sizes. Mixed sizes all go to 8 pt first, so
+ * nothing steps smaller until everything unread is at 8 pt. With Smart Shrink on in Settings it
  * shrinks in one pass instead: a paragraph with nothing read in it drops to 5 pt, the unread words
  * between read ones to 8 pt (never below Shrink down to). Pressing it again changes nothing.
  */
 export const shrink: Command = (state, dispatch) => {
   const r = cardBodyRange(state);
   if (!r) return false;
-  const { pieces, current } = unreadPieces(state.doc, r);
+  const pieces = unreadPieces(state.doc, r);
   if (!pieces.length) return false;
   const tr = state.tr;
   if (pref(P.smartShrink)) {
@@ -366,7 +366,7 @@ export const shrink: Command = (state, dispatch) => {
     return finish(state, tr, dispatch);
   }
   const steps = shrinkSteps();
-  const i = current == null ? -1 : steps.indexOf(current);
+  const i = pieces.every((p) => p.pt === pieces[0].pt) ? steps.indexOf(pieces[0].pt!) : -1;
   const next = i + 1 < steps.length ? steps[i + 1] : null;
   for (const p of pieces) next === null ? tr.removeMark(p.from, p.to, M.size) : tr.addMark(p.from, p.to, M.size.create({ pt: next }));
   return finish(state, tr, dispatch);
