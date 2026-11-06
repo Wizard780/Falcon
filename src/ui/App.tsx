@@ -437,7 +437,7 @@ export function App() {
     const what = quit ? 'Quit' : 'Close';
     void confirmAsk({
       title: `${what} Falcon without saving?`,
-      body: `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They'll be lost.`,
+      body: `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They won't be saved to the file, but Falcon brings them back next time it opens.`,
       ok: `${what} Without Saving`,
     }).then((yes) => { if (yes) bridge.forceClose?.(quit); });
   }), [confirmAsk]);
@@ -455,7 +455,7 @@ export function App() {
       const names = docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled');
       if (!(await confirmAsk({
         title: `Install Falcon ${update.version} and restart?`,
-        body: names.length ? `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They'll be lost.` : 'Falcon will close and reopen on the new version.',
+        body: names.length ? `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They won't be saved to the file, but Falcon brings them back when it reopens.` : 'Falcon will close and reopen on the new version.',
         ok: names.length ? 'Restart Without Saving' : 'Install and Restart',
       }))) return;
     }
