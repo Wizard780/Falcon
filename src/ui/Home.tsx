@@ -51,7 +51,7 @@ export function Home(props: {
     return () => stops.forEach((s) => s());
   }, [open]);
 
-  // Clear hides the list for five seconds before it counts; hovering the toast pauses the clock
+  // Clear can be undone for five seconds; hovering the toast pauses the clock
   const undoBar = useRef<HTMLElement>(null);
   const undoState = useRef({ left: 0, last: 0, paused: false, raf: 0 });
   useEffect(() => {
@@ -143,7 +143,7 @@ export function Home(props: {
       <div className={`hm-undo${undo ? ' open' : ''}`} role="status"
         onPointerEnter={() => (undoState.current.paused = true)} onPointerLeave={() => (undoState.current.paused = false)}>
         <span>Recent cleared</span>
-        <button onClick={() => { props.onClear(true); setUndo(false); }}>Undo</button>
+        <button disabled={!undo} onClick={() => { props.onClear(true); setUndo(false); }}>Undo</button>
         <i ref={undoBar} />
       </div>
     </section>

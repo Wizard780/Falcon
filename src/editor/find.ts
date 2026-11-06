@@ -190,19 +190,22 @@ function reveal(view: EditorView) {
   }
 }
 
-/** Replace the current match and go on to the next one. */
-export function replaceOne(view: EditorView, text: string) {
+/** Replace the current match and go on to the next one. False if an AI edit's lock refused the change. */
+export function replaceOne(view: EditorView, text: string): boolean {
   const st = findKey.getState(view.state);
   const m = current(st);
-  if (!st || !m || isReading(view.state)) return;
+  if (!st || !m || isReading(view.state)) return true;
   const tr = text ? view.state.tr.insertText(text, m.from, m.to) : view.state.tr.delete(m.from, m.to);
+  const before = view.state.doc;
   view.dispatch(tr);
+  if (view.state.doc === before) return false;
   // the next match is the first one past the replacement, in the same order
   const now = findKey.getState(view.state)!;
   const past = keyOf({ ...m, from: m.from + text.length }, now.anchor, now.grouped);
   const i = now.order.findIndex((k) => cmp(keyOf(now.matches[k], now.anchor, now.grouped), past) >= 0);
   view.dispatch(view.state.tr.setMeta(findKey, { index: i < 0 ? 0 : i }));
   reveal(view);
+  return true;
 }
 
 /** Replace every match, as one undo step. Returns how many were replaced, or -1 if an AI edit's lock refused the change. */

@@ -107,6 +107,10 @@ describe('the find bar', () => {
     await app.act(() => { all.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })); });
     expect(v.state.doc.textContent).toBe('alpha beta alpha');
     expect(app.toast()).toBe('An AI edit is working on some of those matches. Try again in a moment.');
+    const one = [...document.querySelectorAll('.findbar button')].find((b) => b.textContent === 'Replace' && (b as HTMLElement).title.startsWith('Replace (Enter)'))!;
+    await app.act(() => { one.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })); });
+    expect(v.state.doc.textContent).toBe('alpha beta alpha');
+    expect(document.querySelector('.findbar .count')?.textContent).toBe('1/2'); // it stays on the match it couldn't change
     ask.done({ text: '' });
     await app.act(() => job);
   });
@@ -124,6 +128,8 @@ describe('Home Clear and Undo', () => {
     expect(stored()).toEqual([]);
     await app.click(document.querySelector('.hm-undo button'));
     expect(stored()).toEqual(all);
+    // the toast only fades out, so its button must not answer the keyboard once it has gone
+    expect((document.querySelector('.hm-undo button') as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
