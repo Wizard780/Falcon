@@ -22,7 +22,7 @@ import { TimerWindow, useRoundClocks } from './TimerWindow';
 import { insertIntoSpeech, sendContent } from '../editor/speech';
 import { insertContent, insertLabel } from '../editor/linked-insert';
 import { selectionState } from './selection-state';
-import { SvgIcon } from './icons';
+import { Stopwatch, SvgIcon } from './icons';
 import { newFileName, openDocument, speechFileName, openPath, saveDocument, type DocMeta } from './files';
 import type { Ctx } from './cc-sources';
 import type { FileHit } from './file-search';
@@ -1418,8 +1418,6 @@ export function App() {
         onSend={sendToSpeech}
         onPick={(kind, c) => { setActiveColor(kind, c); setTick((t) => t + 1); const v = viewRef.current; if (v && !v.state.selection.empty) run(commandOf(kind)); }}
         flash={flash}
-        reading={reading}
-        onRead={() => run(toggleRead)}
         speechSeconds={speechMin * 60}
       />
       </div>
@@ -1825,7 +1823,7 @@ function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onN
       <span className="sep" />
       {b('search', titled('Find', 'find', 'search this file'), props.onFind)}
       {b('list', titled('Outline', 'outline', 'show or hide the list of pockets, hats, blocks and tags'), props.onOutline, props.outline)}
-      {b('eye', titled('Read mode', 'read', 'show only what\'s read aloud'), props.onRead, props.reading)}
+      {b('eye', titled('Read mode', 'read', 'show only what\'s read aloud. Typing is locked and Space drops a marker'), props.onRead, props.reading)}
       {b('mic', `Speech doc: make this file the speech doc, where ${keyOf('sendToSpeech') ? keyText(keyOf('sendToSpeech')) : 'Send'} sends the selection. Click again to unmark it`, props.onSpeech, props.speech)}
     </div>
   );
@@ -1837,7 +1835,7 @@ type SelState = ReturnType<typeof selectionState>;
 type PopKind = 'highlight' | 'shading' | 'font' | 'size' | 'doc' | 'card';
 const SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48];
 
-function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; reading: boolean; onRead: () => void; onSend: () => void; speechSeconds: number }) {
+function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; onSend: () => void; speechSeconds: number }) {
   const { sel, run } = props;
   const SPEECH_SECONDS = props.speechSeconds;
   const [pop, setPop] = useState<{ kind: PopKind; x: number; y: number; origin: number } | null>(null);
@@ -1974,12 +1972,11 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
           {menuBtn('card', 'Card', 'Card tools: condense, extract and convert the card at the cursor')}
         </div>
         <div className="end">
-          <button className="b" data-on={props.reading || undefined} title={titled('Read mode', 'read', 'show only what\'s read aloud. Typing is locked and Space drops a marker')} onMouseDown={(e) => { e.preventDefault(); props.onRead(); }}>Read</button>
-          <button className={`b timer${low('speech')}`} data-on={clocks.on === 'speech' || undefined} aria-haspopup="dialog" aria-expanded={timerOpen}
+          <button className={`b timer clock${low('speech')}`} data-on={clocks.on === 'speech' || undefined} aria-haspopup="dialog" aria-expanded={timerOpen}
             title={`Timer: ${rc.speeches[clocks.idx].name}. Click to open the timer window, with both sides' prep. Right-click to reset`}
             onMouseDown={(e) => { e.preventDefault(); if (e.button === 0) setTimerReq((n) => n + 1); }}
             onContextMenu={(e) => { e.preventDefault(); rc.reset('speech'); }}>
-            {clock(clocks.speech)}
+            <Stopwatch left={clocks.speech / rc.speeches[clocks.idx].sec} />{clock(clocks.speech)}
           </button>
           <TimerWindow req={timerReq} onOpen={setTimerOpen} rc={rc} low={lowSec} />
           {pref(P.showSend) && (
