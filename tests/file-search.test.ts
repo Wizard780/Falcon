@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectHits, parentName, rankHits } from '../src/ui/file-search';
+import { collectHits, hiddenTest, parentName, rankHits } from '../src/ui/file-search';
 
 const files = [
   { path: '/d/Aff/Aff---2AC Blocks.docx', mtime: 3 },
@@ -36,6 +36,23 @@ describe('file search ranking', () => {
     ]);
     expect(hits[0].docId).toBe(7);
     expect(rankHits(hits, 'aff')[0].kind).toBe('open');
+  });
+  it('leaves out hidden files and everything in hidden folders, but never what is open', () => {
+    const files = [
+      { path: '/d/Aff/1AC.docx', root: '/d', mtime: 1 },
+      { path: '/d/Aff/Old/2AC.docx', root: '/d', mtime: 2 },
+      { path: '/d/Affirmatives/K.docx', root: '/d', mtime: 3 },
+      { path: '/d/Neg/Cap.docx', root: '/d', mtime: 4 },
+    ];
+    const names = (h: { name: string }[]) => h.map((x) => x.name);
+    expect(names(collectHits([], [], files, [], [], ['/d/Neg/Cap.docx']))).toEqual(['1AC', '2AC', 'K']);
+    // a folder, not anything that starts the same
+    expect(names(collectHits([], [], files, [], [], ['/d/Aff']))).toEqual(['K', 'Cap']);
+    expect(names(collectHits([], [{ name: 'Cap', path: '/d/Neg/Cap.docx', folder: 'Neg', when: 1 }], [], [], [], ['/d/Neg']))).toEqual([]);
+    expect(names(collectHits([{ id: 1, name: 'Cap', path: '/d/Neg/Cap.docx' }], [], files, [], [], ['/d/Neg']))).toEqual(['Cap', '1AC', '2AC', 'K']);
+    // hiding beats a pin, and takes either path style
+    expect(names(collectHits([], [], files, [], ['/d/Neg/Cap.docx'], ['/d/Neg']))).not.toContain('Cap');
+    expect(hiddenTest(['C:\\Debate/Aff'])('C:\\Debate\\Aff\\1AC.docx')).toBe(true);
   });
   it('names the folder a file is in, on either path style', () => {
     expect(parentName('C:\\Debate\\Neg\\Cap K.docx')).toBe('Neg');

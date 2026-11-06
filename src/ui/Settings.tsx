@@ -14,8 +14,8 @@ import { readSetting, type SettingSpec } from '../editor/tools';
 import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
 import { newFileName, speechFileName } from './files';
 import { bridge, setActiveColor, type IndexFolder, type IndexedFile, type LinkedApp } from '../editor/host';
-import { collectHits, rankHits, type FileHit } from './file-search';
-import { PinIcon, StarIcon, loadPinned, loadStarred, togglePinned, toggleStarred } from './starred';
+import { collectHits, hiddenTest, rankHits, type FileHit } from './file-search';
+import { PinIcon, StarIcon, loadHidden, loadPinned, loadStarred, toggleHidden, togglePinned, toggleStarred } from './starred';
 import { StarTree } from './StarTree';
 import { downloadSettings, importSettings } from './settings-file';
 import { FORMAT_NAME, FORMAT_PREP } from './round-clock';
@@ -135,6 +135,7 @@ export function Settings(props: Props) {
   // starred and pinned files get picked here, from what the search folders hold
   const [starred, setStarred] = useState<string[]>(loadStarred);
   const [pinned, setPinned] = useState<string[]>(loadPinned);
+  const [hidden, setHidden] = useState<string[]>(loadHidden);
   const [files, setFiles] = useState<IndexedFile[]>([]);
   const [starQuery, setStarQuery] = useState('');
   const [openFolders, setOpenFolders] = useState<string[]>([]); // search folders opened to star inside them
@@ -142,6 +143,7 @@ export function Settings(props: Props) {
     if (!props.open) return;
     setStarred(loadStarred());
     setPinned(loadPinned());
+    setHidden(loadHidden());
     setStarQuery('');
     let live = true;
     void bridge.indexedFiles?.().then((f) => live && setFiles(f), () => {});
@@ -151,6 +153,7 @@ export function Settings(props: Props) {
   const plainHits = useMemo(() => collectHits([], [], files), [files]);
   const markedHits = useMemo(() => collectHits([], [], files, starred, pinned).filter((h) => h.starred || h.pinned), [files, starred, pinned]);
   const markedPaths = useMemo(() => [...new Set([...pinned, ...starred])], [pinned, starred]);
+  const isHidden = useMemo(() => hiddenTest(hidden), [hidden]);
   if (!props.open) return null;
 
   const zoomTo = (z: number) => props.onZoom(Math.max(0.5, Math.min(3, +z.toFixed(2))));
@@ -237,9 +240,17 @@ export function Settings(props: Props) {
 
   // Starred and pinned files: typing finds files to mark, otherwise the marked ones, sorted by search folder
   const where = (h: FileHit) => (h.source && h.source !== h.folder ? `${h.source} › ${h.folder}` : h.folder);
+  // inside a hidden folder there's nothing to do on the file itself: show the folder to bring it back
+  const hideBtn = (path: string, name: string) => {
+    const on = hidden.includes(path), off = isHidden(path);
+    return (
+      <button className="st-eye" aria-pressed={off} aria-label={`${on ? 'Show' : 'Hide'} ${name}`} disabled={off && !on}
+        title={on ? 'Show it in search again' : off ? 'Hidden with its folder' : `Hide from ${keyLabel('search')} and Search cards`} onClick={() => setHidden(toggleHidden(path))}><SvgIcon name={off ? 'eyeOff' : 'eye'} /></button>);
+  };
   const markBtns = (path: string, name: string) => {
     const pin = pinned.includes(path), star = starred.includes(path);
     return (<>
+      {hideBtn(path, name)}
       <button className="st-star st-pin" aria-pressed={pin} aria-label={`${pin ? 'Unpin' : 'Pin'} ${name}`}
         title={pin ? 'Unpin' : `Pin: always list it first in ${keyLabel('search')}`} onClick={() => setPinned(togglePinned(path))}><PinIcon /></button>
       <button className="st-star" aria-pressed={star} aria-label={`${star ? 'Unstar' : 'Star'} ${name}`}
@@ -264,6 +275,9 @@ export function Settings(props: Props) {
         // Enter stars the top match (and leaves it starred if it already is)
         else if (e.key === 'Enter' && sq) { const h = rankHits(plainHits, sq, 1)[0]; if (h && !starred.includes(h.path!)) setStarred(toggleStarred(h.path!)); }
       }} />) };
+  const hiddenRows: Row[] = hidden.length
+    ? hidden.map((p) => { const name = p.split(/[\\/]/).filter(Boolean).pop()!.replace(/\.docx$/i, ''); return { label: name, hint: p, path: true, search: 'hidden hide remove exclude', control: <span className="st-fold">{hideBtn(p, name)}</span> }; })
+    : [{ label: 'Nothing hidden', search: 'hidden hide remove exclude', hint: `Click the eye next to a file, or a folder inside a search folder, to keep it out of ${keyLabel('search')} and Search cards. Nothing on disk changes.`, control: null }];
   const starNone: Row = { label: sq ? `No files match “${sq}”` : 'No starred or pinned files yet', hint: sq ? 'Only .docx files in your search folders can be starred or pinned.' : 'Find a file above and click its star or pin.', control: null };
   const prep = pref(P.prepMin);
   const round = pref(P.round);
@@ -375,7 +389,7 @@ export function Settings(props: Props) {
             const isOpen = openFolders.includes(f.path);
             const canOpen = !!bridge.indexedFiles && !f.missing && !!f.count;
             return [{ label: name, hint: f.path, path: true, lead: canOpen && (
-              <button className="sb-ico st-chev" aria-expanded={isOpen} aria-label={`${isOpen ? 'Close' : 'Open'} ${name}`} title={isOpen ? 'Close' : 'Show its files, to star them'}
+              <button className="sb-ico st-chev" aria-expanded={isOpen} aria-label={`${isOpen ? 'Close' : 'Open'} ${name}`} title={isOpen ? 'Close' : 'Show its files, to star or hide them'}
                 onClick={() => setOpenFolders((o) => (isOpen ? o.filter((x) => x !== f.path) : [...o, f.path]))}><SvgIcon name="chev" /></button>), control: (
               <span className="st-fold">
                 <output>{f.missing ? 'Not found' : f.count === null ? 'Indexing…' : `${f.count.toLocaleString('en-US')} ${f.count === 1 ? 'file' : 'files'}`}</output>
@@ -383,12 +397,12 @@ export function Settings(props: Props) {
                   onClick={() => void bridge.removeIndexFolder!(f.path).then(setFolders)}><SvgIcon name="x" /></button>
               </span>) },
             ...(canOpen && isOpen ? [{ id: `tree:${f.path}`, label: '', wide: true, control: (
-              <StarTree root={f.path} files={files} starred={markedPaths} star={markBtns} />) }] : [])];
+              <StarTree root={f.path} files={files} starred={markedPaths} star={markBtns} hide={hideBtn} isHidden={isHidden} />) }] : [])];
           }),
           { label: folders?.length ? 'Add another folder' : 'No folders yet', hint: `Files in these folders, and the folders inside them, show up in ${keyLabel('search')}, and their cards in Search cards (${keyLabel('searchCards')}). Only .docx files are listed.`, control: (
             <button className="st-btn" onClick={() => void bridge.addIndexFolder!().then(setFolders)}><SvgIcon name="plus" />Add folder…</button>) },
         ]],
-      ...(bridge.indexedFiles ? [['Starred and pinned files', [starFind, ...(starRows.length ? starRows : [starNone])]] as [string, Row[]]] : []),
+      ...(bridge.indexedFiles ? [['Starred and pinned files', [starFind, ...(starRows.length ? starRows : [starNone])]], ['Hidden from search', hiddenRows]] as [string, Row[]][] : []),
     ] },
     { id: 'appearance', title: 'Appearance', icon: 'contrast', sections: [
       ['Theme', [

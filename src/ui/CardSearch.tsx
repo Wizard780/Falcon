@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { bridge, type CardHit, type CardIndexStatus } from '../editor/host';
 import { keyText } from '../editor/keybinds';
 import { shortCite } from './card-search';
+import { loadHidden } from './starred';
 import { SvgIcon } from './icons';
 import './palette.css';
 
@@ -40,7 +41,7 @@ export function CardSearch(props: {
   useEffect(() => {
     if (!open || !bridge.searchCards) return;
     let live = true;
-    const ask = () => bridge.searchCards!(query).then((r) => { if (live) { setHits(r.hits); setStatus(r.status); } }, () => {});
+    const ask = () => bridge.searchCards!(query, loadHidden()).then((r) => { if (live) { setHits(r.hits); setStatus(r.status); } }, () => {});
     const t = setTimeout(ask, query ? 60 : 0);
     const again = scanning ? setInterval(ask, 800) : 0;
     return () => { live = false; clearTimeout(t); clearInterval(again); };

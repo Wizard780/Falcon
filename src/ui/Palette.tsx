@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { bridge, type IndexedFile } from '../editor/host';
 import { collectHits, rankHits, type FileHit } from './file-search';
 import type { Recent } from './recents';
-import { PinIcon, StarIcon, loadPinned, loadStarred } from './starred';
+import { PinIcon, StarIcon, loadHidden, loadPinned, loadStarred } from './starred';
 import { SvgIcon } from './icons';
 import './palette.css';
 
@@ -22,6 +22,7 @@ export function Palette(props: {
   const [folders, setFolders] = useState<number | null>(null); // how many folders are allowed (null: not asked yet)
   const [starred, setStarred] = useState<string[]>(loadStarred);
   const [pinned, setPinned] = useState<string[]>(loadPinned);
+  const [hidden, setHidden] = useState<string[]>(loadHidden);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -31,6 +32,7 @@ export function Palette(props: {
     setAt(0);
     setStarred(loadStarred());
     setPinned(loadPinned());
+    setHidden(loadHidden());
     inputRef.current?.focus();
     let live = true;
     void bridge.indexFolders?.().then((f) => live && setFolders(f.length), () => {});
@@ -41,7 +43,7 @@ export function Palette(props: {
   // hooks run before the `if (!open)` below, and App renders on every transaction: closed, rank nothing
   // stars only count in a search: with the box empty they'd hide a recent copy without showing themselves
   const typing = !!query.trim();
-  const all = useMemo(() => (open ? collectHits(props.docs, props.recents, files, typing ? starred : [], pinned) : []), [open, props.docs, props.recents, files, typing, starred, pinned]);
+  const all = useMemo(() => (open ? collectHits(props.docs, props.recents, files, typing ? starred : [], pinned, hidden) : []), [open, props.docs, props.recents, files, typing, starred, pinned, hidden]);
   // with no query: pinned files, then what's open, then recent files (starred ones only jump ahead in a search)
   const hits = useMemo(() => (open ? rankHits(typing ? all : all.filter((h) => h.kind !== 'file' || h.pinned), query) : []), [open, all, typing, query]);
   const cur = Math.min(at, hits.length - 1);

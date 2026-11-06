@@ -108,6 +108,12 @@ describe('createCardIndex', () => {
     await idx.scan();
     expect((await idx.search('ortiz')).hits.map((x: { file: string }) => x.file)).toEqual(['Neg']);
 
+    // hidden files and folders drop out of the search, and come back
+    expect((await idx.search('ortiz', 60, [b])).hits).toEqual([]);
+    expect((await idx.search('ortiz', 60, [dir])).hits).toEqual([]);
+    expect((await idx.search('ortiz', 60, [`${dir}x`])).hits).toHaveLength(1);
+    expect((await idx.search('ortiz')).hits).toHaveLength(1);
+
     // a file that's gone drops out on the next scan
     fs.rmSync(a);
     await idx.scan();

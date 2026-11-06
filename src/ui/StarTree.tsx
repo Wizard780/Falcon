@@ -34,8 +34,8 @@ export function buildTree(root: string, files: IndexedFile[]): Dir {
 
 const fileName = (p: string) => p.split(SEP).pop()!.replace(/\.docx$/i, '');
 
-/** A search folder's insides, folders opening in place, each file with a star. */
-export function StarTree(props: { root: string; files: IndexedFile[]; starred: string[]; star: (path: string, name: string) => ReactNode }) {
+/** A search folder's insides, folders opening in place, each file with a star and each folder with a way to hide it. */
+export function StarTree(props: { root: string; files: IndexedFile[]; starred: string[]; star: (path: string, name: string) => ReactNode; hide: (path: string, name: string) => ReactNode; isHidden: (path: string) => boolean }) {
   const tree = useMemo(() => buildTree(props.root, props.files), [props.root, props.files]);
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const on = new Set(props.starred);
@@ -46,19 +46,22 @@ export function StarTree(props: { root: string; files: IndexedFile[]; starred: s
       const isOpen = open.has(x.path);
       const stars = starsIn(x);
       return [
-        <button key={x.path} className="stt-row stt-dir" style={{ paddingLeft: depth * 18 + 4 }} aria-expanded={isOpen}
-          onClick={() => setOpen((s) => { const n = new Set(s); if (n.has(x.path)) n.delete(x.path); else n.add(x.path); return n; })}>
-          <span className="stt-chev"><SvgIcon name="chev" /></span>
-          <SvgIcon name="open" />
-          <span className="stt-name">{x.name}</span>
-          {stars > 0 && <span className="stt-stars" title={`${stars} starred or pinned inside`}>★ {stars}</span>}
-          <output>{x.count.toLocaleString('en-US')}</output>
-        </button>,
+        <div key={x.path} className="stt-row stt-dir" data-off={props.isHidden(x.path) || undefined} style={{ paddingLeft: depth * 18 + 4 }}>
+          <button className="stt-open" aria-expanded={isOpen}
+            onClick={() => setOpen((s) => { const n = new Set(s); if (n.has(x.path)) n.delete(x.path); else n.add(x.path); return n; })}>
+            <span className="stt-chev"><SvgIcon name="chev" /></span>
+            <SvgIcon name="open" />
+            <span className="stt-name">{x.name}</span>
+            {stars > 0 && <span className="stt-stars" title={`${stars} starred or pinned inside`}>★ {stars}</span>}
+            <output>{x.count.toLocaleString('en-US')}</output>
+          </button>
+          {props.hide(x.path, x.name)}
+        </div>,
         ...(isOpen ? level(x, depth + 1) : []),
       ];
     }),
     ...d.files.map((f) => (
-      <div key={f.path} className="stt-row stt-file" style={{ paddingLeft: depth * 18 + 26 }} title={f.path}>
+      <div key={f.path} className="stt-row stt-file" data-off={props.isHidden(f.path) || undefined} style={{ paddingLeft: depth * 18 + 26 }} title={f.path}>
         <SvgIcon name="doc" />
         <span className="stt-name">{fileName(f.path)}</span>
         {props.star(f.path, fileName(f.path))}

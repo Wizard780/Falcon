@@ -261,7 +261,7 @@ ipcMain.handle('falcon:dict-remove', async (e, w) => {
   return (await dictWords(e)).filter((x) => x !== w); // the list can lag the removal by a moment
 });
 ipcMain.handle('falcon:index-files', () => index().files());
-ipcMain.handle('falcon:card-search', (_e, q) => cards().search(typeof q === 'string' ? q.slice(0, 200) : '', 60));
+ipcMain.handle('falcon:card-search', (_e, q, hidden) => cards().search(typeof q === 'string' ? q.slice(0, 200) : '', 60, Array.isArray(hidden) ? hidden.filter((h) => typeof h === 'string') : []));
 async function saveFile(e, opts) {
   if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
   // Save writes straight into the document's own file, wherever it lives, as long as it's still there.

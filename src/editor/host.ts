@@ -34,7 +34,7 @@ type FalconBridge = {
   /** Every .docx in the allowed folders (openPath opens any of them). */
   indexedFiles?: () => Promise<IndexedFile[]>;
   /** Search cards: the cards in those folders whose tag, cite, headings or file name hold every word. */
-  searchCards?: (query: string) => Promise<{ hits: CardHit[]; status: CardIndexStatus }>;
+  searchCards?: (query: string, hidden?: string[]) => Promise<{ hits: CardHit[]; status: CardIndexStatus }>;
   /** Words added with right-click > Add to Dictionary, sorted. */
   dictionaryWords?: () => Promise<string[]>;
   /** Take a word back out of the dictionary. Returns the new list. */
