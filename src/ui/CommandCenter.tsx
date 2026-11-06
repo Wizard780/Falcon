@@ -2,14 +2,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { redo, undo } from 'prosemirror-history';
 import { IS_MAC, keyParts } from '../editor/keybinds';
 import { PREFIXES, loadRecent, matchRanges, noteRecent, parseArgs, parseQuery, rank, type Entry, type SourceId } from './command-center';
-import { argEntries, commandEntries, fileEntries, headingEntries, settingEntries, textEntries, type Ctx } from './cc-sources';
+import { argEntries, commandEntries, fileEntries, headingEntries, settingEntries, templateEntries, textEntries, type Ctx } from './cc-sources';
 import { collectHits } from './file-search';
 import { bridge, type IndexedFile } from '../editor/host';
 import { SvgIcon } from './icons';
 import './command-center.css';
 
-const SOURCE_NAME: Record<SourceId, string> = { arg: '', cmd: 'Commands', set: 'Settings', doc: 'In this file', file: 'Files', help: 'Help' };
-const BADGE: Record<SourceId, string> = { arg: 'GO', cmd: 'CMD', set: 'SET', doc: '', file: 'DOCX', help: '?' };
+const SOURCE_NAME: Record<SourceId, string> = { arg: '', cmd: 'Commands', set: 'Settings', doc: 'In this file', file: 'Files', tpl: 'Templates', help: 'Help' };
+const BADGE: Record<SourceId, string> = { arg: 'GO', cmd: 'CMD', set: 'SET', doc: '', file: 'DOCX', tpl: 'TPL', help: '?' };
 const badgeOf = (e: Entry) => e.badge ?? (e.key === 'find' || e.key === 'replace' ? 'FIND' : BADGE[e.source]);
 // like CardMirror: 50 rows at a time, arrowing past the end shows the next 50
 const PAGE = 50;
@@ -85,6 +85,9 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const files = useMemo(() => fileEntries(ctx, hits), [hits]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const templates = useMemo(() => (open ? templateEntries(ctx) : []), [open]);
+
   const { source, text } = parseQuery(query);
   const typed = !!text.trim();
   const rows: Row[] = useMemo(() => {
@@ -101,7 +104,8 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
       : source === 'set' ? base.filter((e) => e.source === 'set')
       : source === 'doc' ? headings
       : source === 'file' ? files
-      : [...base, ...headings, ...files];
+      : source === 'tpl' ? templates
+      : [...base, ...templates, ...headings, ...files];
     if (!typed) {
       if (source === 'doc') return pool.map((e) => ({ e }));
       // f alone: what's open and what you opened lately (the folders' files show once you type)
@@ -127,7 +131,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     const tail = !source || source === 'doc' ? textEntries(ctx, text) : [];
     return [...args, ...ranked, ...tail].map((e) => ({ e }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sub, query, base, headings, files, recent]);
+  }, [open, sub, query, base, headings, files, templates, recent]);
 
   const shown = rows.slice(0, limit);
   const cur = Math.max(0, Math.min(at, shown.length - 1));
@@ -170,7 +174,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     if (!e) return;
     if (e.fill !== undefined) { if (e.fill) { setQuery(e.fill); setAt(0); } inputRef.current?.focus(); return; }
     if (!e.run) return;
-    if (e.source === 'cmd' || e.source === 'set' || e.source === 'file') noteRecent(sub ? sub.entry.key : e.key);
+    if (e.source === 'cmd' || e.source === 'set' || e.source === 'file' || e.source === 'tpl') noteRecent(sub ? sub.entry.key : e.key);
     if (!stay) close(e.source === 'doc' || e.source === 'arg');
     const did = e.run();
     if (did === false) props.flash(e.can && !e.can() ? `${e.label}: nothing to do here` : `${e.label} didn't change anything`);
@@ -214,7 +218,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     return out;
   };
   // the hint strip says what each key does for the row you're on
-  const verb = (e: Entry) => e.fill !== undefined ? 'type it' : e.badge === 'TOG' ? 'toggle' : e.badge === 'CYC' ? 'cycle' : e.source === 'doc' || e.source === 'arg' ? 'go' : e.source === 'file' ? 'open' : 'run';
+  const verb = (e: Entry) => e.fill !== undefined ? 'type it' : e.badge === 'TOG' ? 'toggle' : e.badge === 'CYC' ? 'cycle' : e.source === 'doc' || e.source === 'arg' ? 'go' : e.source === 'file' || e.source === 'tpl' ? 'open' : 'run';
   const hints: [string, string][] = [];
   if (row) {
     hints.push(['↵', verb(row)]);
@@ -223,7 +227,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     else if (row.settings) hints.push(['⇥', row.settings.page === 'keys' ? 'change key' : 'settings']);
   }
   hints.push(['esc', sub ? 'back' : 'close']);
-  const empty = sub ? `No choice matches “${query.trim()}”.` : source === 'doc' && !typed ? 'This file has no headings yet.' : typed ? `Nothing matches “${text.trim()}”.` : '';
+  const empty = sub ? `No choice matches “${query.trim()}”.` : source === 'doc' && !typed ? 'This file has no headings yet.' : source === 'tpl' && !typed ? 'No templates yet. Make one in Settings > Templates.' : typed ? `Nothing matches “${text.trim()}”.` : '';
   const fill = (q: string) => { setQuery(q); setAt(0); inputRef.current?.focus(); };
 
   /** What a setting is now: a little switch for toggles, now → next for cycles, a tick for the current choice. */

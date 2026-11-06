@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
@@ -50,6 +50,7 @@ import type { ToolSection } from '../editor/tools';
 import { loadRecents, noteRecent, peekHtml, saveRecents, tidy, type Recent } from './recents';
 import { P, onPrefs, pref } from '../editor/prefs';
 import { track, type DocSource } from './analytics';
+import { pathName, templateName, type Template } from './templates';
 import { readJson, safeSet } from './storage';
 import { RAIL_MAX, RAIL_MIN, RAIL_NAMES, loadRail, railMax, railWidth, saveRail } from './rail';
 import { reducedMotion } from './motion';
@@ -1345,6 +1346,22 @@ export function App() {
       }
     });
   }, [opened, flash]);
+  // a template's files, in its order, then back to the first; ones already open stay put, and one that won't open doesn't stop the rest
+  const openTemplate = useCallback((t: Template) => {
+    pathQueue.current = pathQueue.current.then(async () => {
+      showEditor();
+      const failed: string[] = [];
+      for (const p of t.paths) {
+        if (openedPath(p)) continue;
+        // drawn before the next step: docsRef only catches up on a render, and switchTo reads it
+        try { const r = await openPath(p); flushSync(() => opened(r, 'template')); }
+        catch { failed.push(pathName(p)); }
+      }
+      const first = t.paths.map(openedPath).find(Boolean);
+      if (first) switchTo(first.id);
+      flash(failed.length ? `${templateName(t)}: couldn't open ${failed.join(', ')}` : `Opened ${templateName(t)}`);
+    });
+  }, [opened, switchTo, flash]);
   const queueRef = useRef(queueOpens);
   queueRef.current = queueOpens;
   // reopen last files: the files open at the last quit, read before the list below is rewritten
@@ -1400,7 +1417,7 @@ export function App() {
       requestAnimationFrame(() => { if (findRef.current) findRef.current.value = text; });
     },
     openSettings: openSettingsAt,
-    docs: docList, recents, openFile: (h) => void openHit(h),
+    docs: docList, recents, openFile: (h) => void openHit(h), openTemplate: bridge.openPath ? openTemplate : undefined,
   };
   const saveScroll = useCallback(() => {
     const sc = scrollRef.current, top = sc?.scrollTop ?? 0;

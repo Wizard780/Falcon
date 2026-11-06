@@ -48,8 +48,9 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Clipboard](./clipboard.md) covers rich copy out to Gmail/Docs/Word and smart paste in from Word, Docs, Gmail and CardMirror.
 - [Find and replace](./find-replace.md) covers the find bar, the match counter, Replace all and its single undo.
 - [Send to speech](./send-to-speech.md) covers the `` ` `` key (changeable in Settings), the speech doc in the rail, send order, the Undo toast, Mod-Z and the Speech doc button.
-- [Settings](./settings.md) covers the seven panes and the highlighter pen with its stored value and effect.
+- [Settings](./settings.md) covers the nine panes and the highlighter pen with its stored value and effect.
 - [Themes](./themes.md) covers the preset tiles, custom themes and their colors, Document paper, System, and the desktop window following the theme.
 - [Keybindings](./keybindings.md) covers changing a shortcut in Settings and the editor and app following it.
 - [Command center](./command-center.md) covers Mod-Shift-Space: commands, Toggle and Cycle settings, typed values, headings and cites, find, Shift-Enter, and Tab to Settings.
+- [Templates](./templates.md) covers named sets of files: making one in Settings, and opening it from the command center.
 - [Desktop shell](./desktop-shell.md) covers the Electron app with no visible window: launch, keys, the preload bridge, save in place, and the close guard.

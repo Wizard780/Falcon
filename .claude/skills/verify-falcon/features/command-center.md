@@ -1,11 +1,11 @@
 # Command center
 
-A user presses Mod-Shift-Space (CardMirror's Search Everything key) and gets a bar low over the page with results above the box and a hint strip under it. One box runs any command, flips any setting (Toggle rows) or steps it to its next value (Cycle rows), sets values typed as text (`zoom 150`, `14pt`, `card 12`), and jumps to any heading or card in the open file, cards also by their cite. It also opens .docx files as DOCX rows: open docs, recent files and (desktop) the folders Settings > File search allows, the same files Cmd-K finds. The card library is not in it yet.
+A user presses Mod-Shift-Space (CardMirror's Search Everything key) and gets a bar low over the page with results above the box and a hint strip under it. One box runs any command, flips any setting (Toggle rows) or steps it to its next value (Cycle rows), sets values typed as text (`zoom 150`, `14pt`, `card 12`), and jumps to any heading or card in the open file, cards also by their cite. It also opens .docx files as DOCX rows: open docs, recent files and (desktop) the folders Settings > File search allows, the same files Cmd-K finds, and (desktop) whole sets of files as TPL rows, see [Templates](./templates.md). The card library is not in it yet.
 
 ## Sub-features
 
 - `open` Mod-Shift-Space opens it with focus in the box, and closes it again. An empty box shows the prompt line and recent rows only.
-- `prefix` `c ` commands plus Toggle and Cycle rows, `s ` settings, `h ` (or `#`) headings in this file, `f ` files (with nothing typed: what's open and recent), `?` help. With a prefix and nothing typed, it browses the whole source, 50 rows at a time.
+- `prefix` `c ` commands plus Toggle and Cycle rows, `s ` settings, `h ` (or `#`) headings in this file, `f ` files (with nothing typed: what's open and recent), `t ` templates, `?` help. With a prefix and nothing typed, it browses the whole source, 50 rows at a time.
 - `run` Enter runs the row and closes. Shift-Enter runs it and keeps the box open. Mod-Z and Mod-Shift-Z undo and redo the document from the box.
 - `settings` Toggle rows flip on Enter, Cycle rows step to the next choice and say `Now → Next`, Tab (or →) lists a Cycle row's choices, typing a choice (`light`) lists `Theme: Light` directly.
 - `doc` heading rows show a CardMirror badge (POC HAT BLK TAG ANL). Arrowing onto one scrolls the page there, Enter moves the caret there, and Esc puts the page back where it was.
@@ -25,8 +25,8 @@ Preconditions:
 
 - `falcon-verify doctor` is all `ok`, and the seed is open.
 
-- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/command-center.mjs`. It exits 0 with 35 `ok` lines.
-- **Open.** Press `${MOD}+Shift+Space`. `.cc input` has focus, `.cc-start` starts with `Type to search everything`, and `.cc-chips` holds the c, s, h and ? chips.
+- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/command-center.mjs`. It exits 0 with 41 `ok` lines.
+- **Open.** Press `${MOD}+Shift+Space`. `.cc input` has focus, `.cc-start` starts with `Type to search everything`, and `.cc-chips` holds the c, s, h, f, t and ? chips.
 - **Command.** `f.select('Temperatures')`, open, fill `.cc input` with `hat`. `.cc-row[data-on] .cc-nm` is `Hat`, and Enter turns the line into `hat: Temperatures rose again.…`.
 - **Toggle.** Fill `bold cites`. The current row is `Toggle Bold cites` with `.cc-tog[aria-checked="true"]` (its aria-label says On or Off). Shift-Enter flips it to `Off`, the box stays, and `<html>` gets `cite-plain`.
 - **Cycle.** Fill `theme`, press Tab. the `.cc-chip` in the box reads `Theme` and the rows are the themes. Esc returns to `theme`.

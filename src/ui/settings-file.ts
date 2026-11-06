@@ -30,6 +30,7 @@ const APP_KEYS: Record<string, (v: string) => boolean> = {
   aiProvider: (v) => v === 'anthropic' || v === 'openrouter',
   aiMaxTokens: inRange(1024, 128000),
   aiCitePresets: (v) => { try { return Array.isArray(JSON.parse(v)); } catch { return false; } },
+  templates: (v) => { try { return Array.isArray(JSON.parse(v)); } catch { return false; } },
 };
 /** Does `v` fit setting `key` (with its `falcon.` prefix)? Unknown keys don't. */
 function fits(key: string, v: string): boolean {
