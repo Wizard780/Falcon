@@ -72,6 +72,7 @@
 .st-btn:hover { background: var(--u-ctl2); }
 .st-fold { display: flex; align-items: center; gap: 16px; }
 .st-fold output { font: 13px var(--mono); font-variant-numeric: tabular-nums; color: var(--u-mut); white-space: nowrap; }
+.st-row.wide .st-fold { flex-wrap: wrap; gap: 8px; }
 .st-fold .sb-ico { color: var(--u-mut); }
 .st-fold .sb-ico:hover { color: var(--u-tx); }
 /* starred files: an outline star to star, gold once starred */

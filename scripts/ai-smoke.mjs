@@ -60,6 +60,10 @@ await win.click('text=Add key…');
 const kw = await keyWin;
 await kw.waitForSelector('#v');
 want(await win.evaluate(() => !document.querySelector('input[type=password]')), 'the key is typed into its own window, not the page');
+await kw.evaluate(() => document.fonts.ready);
+const keyLook = await kw.evaluate(() => ({ bg: getComputedStyle(document.body).backgroundColor, fonts: [...document.fonts].map((f) => f.status).join() }));
+want(keyLook.bg === 'rgb(25, 25, 27)' && keyLook.fonts === 'loaded', `the key window has the app's colors and loads its font: ${JSON.stringify(keyLook)}`);
+want(await kw.evaluate(() => document.documentElement.scrollHeight <= innerHeight), 'the key window fits its contents');
 await kw.fill('#v', 'test-key-for-the-stand-in');
 await kw.screenshot({ path: 'shots/ai-key-window.png' });
 await kw.press('#v', 'Enter').catch(() => {}); // the window closes itself on save; Remove key below proves it saved
@@ -67,7 +71,14 @@ await win.waitForSelector('text=Remove key');
 want(true, 'a key typed in the key window saves, and Settings shows Remove key');
 await win.screenshot({ path: 'shots/ai-settings.png' });
 want(!(await win.evaluate(() => JSON.stringify(localStorage))).includes('test-key-for-the-stand-in'), 'the key is not in localStorage, so settings files never hold it');
+const insideCard = () => win.evaluate(() => {
+  const row = [...document.querySelectorAll('.st-row')].find((r) => r.textContent.includes('AI cite-creator prompt'));
+  const card = row.closest('.st-card').getBoundingClientRect();
+  return [...row.querySelectorAll('button, select')].every((e) => e.getBoundingClientRect().right <= card.right - 20);
+});
+want(await insideCard(), 'the prompt buttons stay inside the card');
 await win.click('text=New preset');
+want(await insideCard(), 'and still do with a preset picked');
 await win.fill('input[aria-label="Preset name"]', 'House style');
 await win.fill('textarea[aria-label="Preset prompt"]', 'house rules for {DATE} [[CITE]] [[TOKENS]] [[END]]');
 await win.waitForTimeout(100);

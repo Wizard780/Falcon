@@ -365,7 +365,7 @@ export function Settings(props: Props) {
             <input className="st-text st-wide" aria-label="AI model" spellCheck={false} placeholder={router ? 'deepseek/deepseek-chat' : 'claude-opus-5-5'} maxLength={200} value={pref(aiModelPref)} onChange={(e) => setPref(aiModelPref, e.target.value)} />) },
           { label: 'Max output tokens', search: 'budget thinking', hint: 'Thinking spends from this too, so too low a number can cut the cite off. Minimum 1024.', control: (
             <input className="st-text" aria-label="Max output tokens" inputMode="numeric" maxLength={6} spellCheck={false} value={pref(P.aiMaxTokens) || ''} onChange={(e) => setPref(P.aiMaxTokens, Number(e.target.value.replace(/\D/g, '')))} />) },
-          { label: 'AI cite-creator prompt', search: 'format style preset instructions', hint: `What the AI is told when it formats a cite, so it sets your citation style. Pick the built-in prompt or save up to ${MAX_PRESETS} of your own.`, control: (
+          { label: 'AI cite-creator prompt', wide: true, search: 'format style preset instructions', hint: `What the AI is told when it formats a cite, so it sets your citation style. Pick the built-in prompt or save up to ${MAX_PRESETS} of your own.`, control: (
             <span className="st-fold">
               {select('AI cite-creator prompt', preset?.id ?? '', [['', 'Built-in prompt'], ...citePresets().map((f): [string, string] => [f.id, f.name])], (v) => { setPref(P.aiCitePreset, v); setDelArmed(false); })}
               {preset && <button className="st-btn" onClick={() => setPromptOpen((o) => !o)}>{promptOpen ? 'Done' : 'Edit'}</button>}
