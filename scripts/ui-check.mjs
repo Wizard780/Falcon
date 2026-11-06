@@ -132,6 +132,7 @@ want(hidden && !(await page.$eval('.app', (x) => x.classList.contains('no-outlin
 
 // new, then close
 await page.click('.tools [aria-label="New document"]');
+await page.click('.cf .sa-mode:has-text("Blank Doc")');
 await page.waitForTimeout(150);
 want((await rows()).length === 3, 'New adds a third document');
 await page.keyboard.press(`${mod}+w`);
@@ -155,6 +156,7 @@ await page.screenshot({ path: `${shots}/6-after-close.png` });
 
 // behind Settings and in read mode, nothing swaps the document out
 await page.click('.tools [aria-label="New document"]');
+await page.click('.cf .sa-mode:has-text("Blank Doc")');
 await page.waitForTimeout(150);
 await page.click('.fstrip [aria-label="Settings"]');
 await page.keyboard.press(`${mod}+w`);

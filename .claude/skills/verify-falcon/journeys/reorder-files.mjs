@@ -4,7 +4,7 @@ import { openFalcon } from '../lib/falcon.mjs';
 const f = await openFalcon('reorder-files');
 const { page } = f;
 // a blank Untitled is reused by New, so give each file some text first
-const newDoc = async (text) => { await page.click('.ProseMirror'); await page.keyboard.type(text); await page.click('.tools [aria-label="New document"]'); };
+const newDoc = async (text) => { await page.click('.ProseMirror'); await page.keyboard.type(text); await page.click('.tools [aria-label="New document"]'); await page.click('.cf .sa-mode:has-text("Blank Doc")'); };
 await newDoc('one'); await newDoc('two'); await page.click('.ProseMirror'); await page.keyboard.type('three');
 const order = (sel) => page.$$eval(sel, (rs) => rs.map((r) => r.dataset.id).join(','));
 const active = () => page.$eval('.doc-row[data-on]', (r) => r.dataset.id);

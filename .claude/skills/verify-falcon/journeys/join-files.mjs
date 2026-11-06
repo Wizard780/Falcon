@@ -22,6 +22,7 @@ await page.click('.ProseMirror :text("Global")');
 await page.keyboard.press('Backquote');
 await page.waitForTimeout(300);
 await page.click('.tools [aria-label="New document"]');
+await page.click('.cf .sa-mode:has-text("Blank Doc")');
 await page.waitForTimeout(200);
 want((await page.locator('.fs-docs .doc-row').count()) === 3, 'three files open: seed, Speech, Untitled');
 
