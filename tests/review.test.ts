@@ -79,6 +79,25 @@ describe('read mode', () => {
     s = run(caret(s, 'Marked', 2), toggleMarker);
     expect(map(s).split('\n')[3]).toBe('normal: body [text]{highlight:yellow} here');
   });
+  it('the brush takes its own color back off, so a double click clears what is already that color', async () => {
+    const { createView, brushKey } = await import('../src/editor/editor');
+    const { activeColors } = await import('../src/editor/host');
+    const view = createView(document.createElement('div'), () => {}, make([['tag', 'Tag'], ['normal', 'Smith 24'], ['normal', 'body text here']]).doc);
+    view.dispatch(view.state.tr.setMeta(brushKey, 'highlight'));
+    const brushOver = async (word: string) => {
+      const from = at(view.state, word);
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, from + word.length)));
+      view.dom.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 0));
+      return map(view.state);
+    };
+    expect(await brushOver('text')).toContain('[text]{highlight:yellow}');
+    expect(await brushOver('text')).not.toContain('highlight');
+    await brushOver('text');
+    activeColors.highlight = 'green'; // another color still recolors rather than clears
+    expect(await brushOver('text')).toContain('[text]{highlight:green}');
+    activeColors.highlight = 'yellow';
+  });
   it('the highlight brush paints nothing in read mode', async () => {
     const { createView, brushKey } = await import('../src/editor/editor');
     const { toggleRead } = await import('../src/editor/read');
