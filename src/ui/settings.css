@@ -1,3 +1,6 @@
+/* 1.3 line spacing is box-fit: a line is a box minus one border, in whole device pixels (--dp), so a box's bottom edge
+   and the next line's top edge land on the same pixels. A fractional line height rounds each box its own way, a step at the seam. */
+:root { --dp: calc(1px / (var(--zoom, 1) * var(--dpr, 1))); }
 /* Display settings (Settings sets the variables and root classes in applyDisplay). None of them change
    the file. This sheet loads before styles.css, so every rule here is more specific than the one it overrides. */
 .f-scroll .ProseMirror { font-size: var(--sz-normal, 11pt); line-height: var(--doc-lh, 1.3); }
@@ -8,6 +11,7 @@
 .ProseMirror .f-analytic { font-size: var(--sz-analytic, 13pt); color: var(--c-analytic, #1f3f8a); }
 .ProseMirror .f-undertag { font-size: var(--sz-undertag, 11pt); color: var(--c-undertag, #2a6a3a); }
 .ProseMirror .f-cite { font-size: var(--sz-cite, 13pt); }
+.lh-box .ProseMirror p.f-normal, .lh-box .ProseMirror p.f-normal span { line-height: calc(round(calc(var(--asc) * 1em), var(--dp)) + round(calc(var(--dsc) * 1em), var(--dp)) + round(down, 1pt, var(--dp))); }
 .f-scroll .page { max-width: var(--text-w, none); margin: 0 auto; padding-left: var(--margin-x, 30px); padding-right: var(--margin-x, 20px); }
 
 /* dark page (the theme's paper is dark; theme.ts sets the class and the colors): light ink, and dark ink on highlighted or shaded text so it stays readable */
