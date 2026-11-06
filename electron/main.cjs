@@ -1,4 +1,4 @@
-// Falcon main process: one window, native file dialogs, and the clipboard bridge.
+// Falcon main process: the windows, native file dialogs, and the clipboard bridge.
 const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, safeStorage, shell } = require('electron');
 const crypto = require('node:crypto');
 const fsSync = require('node:fs');
@@ -38,12 +38,34 @@ function lastTheme() {
 // System leaves the native theme on the OS setting: forcing it would also fix the page's prefers-color-scheme
 const themeSource = (dark, system) => (system ? 'system' : dark ? 'dark' : 'light');
 
-function createWindow() {
+// The document windows, by page. All of them load the same page and share its storage, so each gets a `slot`
+// to keep its crash-recovery copy under ('' for the first), and tells us what it holds: `paths` are its open
+// files, `speech` the name of the speech doc when it has it. `start` is what a new window opens with.
+const windows = new Map(); // webContents -> { win, slot, paths, speech, start, listening, ready, isReady }
+let speechHolder = null; // the page holding the speech doc: there is one for the whole app
+let nextSlot = 0;
+const focusWin = (win) => { globalThis.falconFocused = win.id; if (!HEADLESS) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } };
+/** The window a request with no window of its own goes to: the focused one, or else the newest. */
+function frontPage(ok = () => true) {
+  const live = [...windows].filter(([wc, w]) => !wc.isDestroyed() && ok(w));
+  return (live.find(([, w]) => w.win.isFocused()) ?? live[live.length - 1])?.[0] ?? null;
+}
+/** Tell every page what the others hold: the files for Restore open files, and whether they have the speech doc. */
+function tellWindows() {
+  const session = [...new Set([...windows.values()].flatMap((w) => w.paths))];
+  const speech = speechHolder && windows.get(speechHolder)?.speech;
+  for (const wc of windows.keys()) if (!wc.isDestroyed()) wc.send('falcon:windows', { session, speech: wc === speechHolder ? null : speech ?? null });
+}
+
+function createWindow(start = null) {
   const theme = lastTheme();
   nativeTheme.themeSource = themeSource(theme.dark, theme.system);
+  // a new window starts down and right of the newest one, so it doesn't land exactly on top of it
+  const from = [...windows.values()].at(-1)?.win.getBounds();
   const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: from?.width ?? 1400,
+    height: from?.height ?? 900,
+    ...(from ? { x: from.x + 28, y: from.y + 28 } : {}),
     minWidth: 800,
     minHeight: 500,
     show: false,
@@ -60,7 +82,18 @@ function createWindow() {
       spellcheck: true, // Chromium's checker: the system dictionary on a Mac, Hunspell on Windows and Linux
     },
   });
-  if (!HEADLESS) win.once('ready-to-show', () => win.show());
+  const page = win.webContents;
+  const entry = { win, slot: windows.size ? `${Date.now().toString(36)}-${nextSlot++}` : '', paths: start?.path ? [start.path] : [], speech: start?.speech ?? null, start, listening: false, isReady: () => {} };
+  entry.ready = new Promise((resolve) => { entry.isReady = resolve; });
+  windows.set(page, entry);
+  if (entry.speech) speechHolder = page;
+  win.once('closed', () => {
+    windows.delete(page);
+    entry.isReady();
+    if (speechHolder === page) speechHolder = null;
+    if (!keepSession) tellWindows();
+  });
+  if (!HEADLESS) win.once('ready-to-show', () => (start?.inactive ? win.showInactive() : win.show()));
   if (DEV) win.loadURL('http://localhost:5173/');
   else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   // links open in the browser, never inside the app
@@ -98,7 +131,7 @@ function createWindow() {
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
   // a reload or crash drops the page's listener: hold OS opens until the new page asks again
-  const unlisten = () => { if (openTarget === win.webContents) openTarget = null; };
+  const unlisten = () => { entry.listening = false; };
   win.webContents.on('did-start-loading', unlisten);
   win.webContents.on('render-process-gone', unlisten);
   // the app is one page: block every navigation away from it
@@ -160,7 +193,6 @@ const templatePaths = () => (templateLoad ??= fs.readFile(templateFile(), 'utf8'
 // line, of this launch or of a second one. They wait here until the page says it's listening. Each becomes
 // a recent, which is what lets the page's openPath read it.
 const pendingOpens = [];
-let openTarget = null; // the page listening for them
 async function requestOpen(paths) {
   const docx = paths.filter((p) => typeof p === 'string' && p.toLowerCase().endsWith('.docx')).map((p) => path.resolve(p));
   for (const p of docx) await rememberPath(p);
@@ -169,21 +201,20 @@ async function requestOpen(paths) {
 }
 function flushOpens() {
   if (!app.isReady()) return; // whenReady makes the window, and its page asks for these
-  if (!openTarget || openTarget.isDestroyed()) {
-    openTarget = null;
-    if (pendingOpens.length && BrowserWindow.getAllWindows().length === 0) createWindow(); // Mac: app open, no window
+  const target = frontPage((w) => w.listening); // the page listening for them
+  if (!target) {
+    if (pendingOpens.length && !windows.size) createWindow(); // Mac: app open, no window
     return;
   }
-  const win = BrowserWindow.fromWebContents(openTarget);
-  if (win && !HEADLESS) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
-  if (pendingOpens.length) openTarget.send('falcon:open-paths', pendingOpens.splice(0));
+  focusWin(windows.get(target).win);
+  if (pendingOpens.length) target.send('falcon:open-paths', pendingOpens.splice(0));
 }
 if (primary) {
   app.on('open-file', (e, p) => { e.preventDefault(); void requestOpen([p]); });
   app.on('second-instance', (_e, argv) => { void requestOpen(argv.slice(1)); flushOpens(); });
-  ipcMain.on('falcon:open-paths-ready', (e) => { openTarget = e.sender; flushOpens(); });
+  ipcMain.on('falcon:open-paths-ready', (e) => { const w = windows.get(e.sender); if (w) w.listening = true; flushOpens(); });
   // the page is up but the app isn't (the crash screen): hold opens until Reload brings a listener back
-  ipcMain.on('falcon:open-paths-gone', (e) => { if (openTarget === e.sender) openTarget = null; });
+  ipcMain.on('falcon:open-paths-gone', (e) => { const w = windows.get(e.sender); if (w) w.listening = false; });
   void requestOpen(process.argv.slice(1));
 }
 
@@ -195,7 +226,10 @@ let cardIndex = null;
 const cards = () => (cardIndex ??= createCardIndex(path.join(app.getPath('userData'), 'card-index.json'), () => index().files()));
 
 let quitting = false; // the window is closing because the app is quitting (Cmd-Q), not just the window
-app.on('before-quit', () => { quitting = true; });
+// a quit keeps the list of open files, for Restore open files. Windows close while others still ask about unsaved
+// work, so this lasts past `quitting`, until a page reports in: then a window said Cancel and the app is in use
+let keepSession = false;
+app.on('before-quit', () => { quitting = true; keepSession = true; });
 ipcMain.on('falcon:force-close', (e, quit) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (!win) return;
@@ -321,28 +355,90 @@ ipcMain.handle('falcon:save-file', (e, opts) => {
 // Crash recovery for docs too big for the page's localStorage (about 5M characters, so any block file): the
 // page sends their backup here and it's kept in userData. Only the newest copy waits while one is written, and
 // each write goes through a temp file so a crash mid-write keeps the last good copy. '' removes the file.
-const recoveryFile = () => path.join(app.getPath('userData'), 'recovery.json');
-let recoveryNext = null, recoveryBusy = null;
-function writeRecovery(text) {
-  recoveryNext = text;
-  recoveryBusy ??= (async () => {
-    while (recoveryNext !== null) {
-      const t = recoveryNext;
-      recoveryNext = null;
-      const p = recoveryFile(), tmp = `${p}.tmp`;
+// Each window has its own file, named by its slot.
+const recoveryFile = (slot = '') => path.join(app.getPath('userData'), slot ? `recovery-${slot}.json` : 'recovery.json');
+const recoveryQueues = new Map(); // slot -> { next, busy }
+function writeRecovery(slot, text) {
+  const q = recoveryQueues.get(slot) ?? { next: null, busy: null };
+  recoveryQueues.set(slot, q);
+  q.next = text;
+  q.busy ??= (async () => {
+    while (q.next !== null) {
+      const t = q.next;
+      q.next = null;
+      const p = recoveryFile(slot), tmp = `${p}.tmp`;
       try {
         if (!t) await fs.rm(p, { force: true });
         else { await fs.writeFile(tmp, t); await fs.rename(tmp, p); }
       } catch { /* a full disk: the next backup tries again */ }
     }
-    recoveryBusy = null;
+    q.busy = null;
   })();
 }
-ipcMain.on('falcon:recovery-write', (e, text) => { if (typeof text === 'string') writeRecovery(text); });
+ipcMain.on('falcon:recovery-write', (e, text) => { if (typeof text === 'string') writeRecovery(windows.get(e.sender)?.slot ?? '', text); });
 // read once, as the page starts: synchronous, so these docs come back with the rest before the first render
 ipcMain.on('falcon:recovery-read', (e) => {
-  try { e.returnValue = fsSync.readFileSync(recoveryFile(), 'utf8'); } catch { e.returnValue = ''; }
+  try { e.returnValue = fsSync.readFileSync(recoveryFile(windows.get(e.sender)?.slot), 'utf8'); } catch { e.returnValue = ''; }
 });
+// The only window left picks up what closed or crashed windows left in their files. The files go as they're read:
+// the page's next backup holds whatever it keeps.
+ipcMain.on('falcon:recovery-orphans', (e) => {
+  const dir = app.getPath('userData'), out = [];
+  try {
+    for (const f of fsSync.readdirSync(dir)) {
+      if (!/^recovery-.+\.json$/.test(f)) continue;
+      try { out.push(fsSync.readFileSync(path.join(dir, f), 'utf8')); fsSync.rmSync(path.join(dir, f), { force: true }); } catch { /* unreadable: skip it */ }
+    }
+  } catch { /* no folder yet */ }
+  e.returnValue = out;
+});
+
+// What a page needs before its first render: its slot, whether it's the only window (so it takes over what the
+// others left), and what it was opened with. A reload gets the slot alone and comes back from its own backup.
+ipcMain.on('falcon:window-start', (e) => {
+  const w = windows.get(e.sender);
+  e.returnValue = { slot: w?.slot ?? '', alone: windows.size <= 1, ...w?.start };
+  if (w) w.start = null;
+});
+// Open a file or a doc in a window of its own. A file already open in another window is shown there instead,
+// `alone` or not; answers false when the page should open it itself.
+ipcMain.on('falcon:window-open', (e, r) => {
+  const p = typeof r?.path === 'string' ? r.path : undefined;
+  const there = p && !r.backup && [...windows].find(([wc, w]) => wc !== e.sender && w.paths.includes(p));
+  if (there) {
+    focusWin(there[1].win);
+    void askPage('shown', { path: p, card: r.card }, there[0]);
+    e.returnValue = true;
+    return;
+  }
+  if (r?.alone) createWindow({ path: p, card: r.card, backup: typeof r.backup === 'string' ? r.backup : undefined, speech: typeof r.speech === 'string' ? r.speech : null, inactive: r.inactive === true, caretEnd: r.caretEnd === true });
+  e.returnValue = r?.alone === true;
+});
+// the last doc in this window closed: the window goes too, unless it's the only one
+ipcMain.on('falcon:window-leave', (e) => {
+  const w = windows.get(e.sender);
+  const leaving = !!w && windows.size > 1;
+  e.returnValue = leaving;
+  if (leaving) { w.win.falconForceClose = true; setImmediate(() => { if (!w.win.isDestroyed()) w.win.close(); }); }
+});
+ipcMain.on('falcon:window-cycle', (e, dir) => {
+  const list = [...windows.values()], i = list.findIndex((w) => w === windows.get(e.sender));
+  if (i >= 0 && list.length > 1) focusWin(list[(i + (dir < 0 ? -1 : 1) + list.length) % list.length].win);
+});
+ipcMain.on('falcon:window-report', (e, r) => {
+  const w = windows.get(e.sender);
+  if (!w) return;
+  keepSession = false;
+  const speech = typeof r?.speech === 'string' ? r.speech : null;
+  // only a doc newly marked takes the speech doc over: a report sent before this page heard it was taken mustn't take it back
+  if (speech && !w.speech) speechHolder = e.sender;
+  else if (!speech && speechHolder === e.sender) speechHolder = null;
+  w.speech = speech;
+  w.paths = Array.isArray(r?.paths) ? r.paths.filter((p) => typeof p === 'string') : [];
+  tellWindows();
+});
+// Send to speech from a window that doesn't hold the speech doc: the page that does puts it in
+ipcMain.handle('falcon:speech-ask', (e, kind, payload) => (speechHolder && speechHolder !== e.sender ? askPage(kind, payload, speechHolder) : { ok: false, error: 'no-target-doc' }));
 
 // "Mod-Shift-s" (a keymap name, as Settings saves it) as an Electron accelerator, "Cmd+Shift+S"
 const ACC = { Mod: 'Cmd', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Shift', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', ' ': 'Space' };
@@ -483,11 +579,10 @@ app.on('will-quit', () => { for (const room of [...sdWatches.keys()]) sdStop(roo
 
 // Nimbus and other debate apps send cards in over the same local bridge CardMirror has (see editor-bridge.cjs).
 // Each request goes to the page, which knows the open docs, and comes back with its answer.
-let bridgePage = null;
 const bridgeWaits = new Map();
-function askPage(kind, payload) {
-  const wc = bridgePage && !bridgePage.isDestroyed() ? bridgePage : null;
-  if (!wc) return Promise.resolve(kind === 'docs' ? { docs: [] } : kind === 'ping' ? { hasActiveDoc: false } : { ok: false, error: 'no-target-doc' });
+async function askPage(kind, payload, wc) {
+  await windows.get(wc)?.ready; // a window just made hears nothing until its page is up
+  if (!wc || wc.isDestroyed()) return { ok: false, error: 'no-target-doc' };
   return new Promise((resolve) => {
     const id = crypto.randomBytes(8).toString('hex');
     // a person reads the consent question; everything else answers right away
@@ -502,7 +597,26 @@ function askPage(kind, payload) {
     wc.send('falcon:bridge', id, kind, payload);
   });
 }
-ipcMain.on('falcon:bridge-ready', (e) => { bridgePage = e.sender; });
+/** A linked app's request: `docs` lists every window's, an insert goes to the window with its target. */
+async function askApp(kind, payload) {
+  const front = frontPage((w) => w.answers);
+  if (!front) return kind === 'docs' ? { docs: [] } : kind === 'ping' ? { hasActiveDoc: false } : kind === 'consent' ? { answer: null } : { ok: false, error: 'no-target-doc' };
+  const pages = [...windows].filter(([, w]) => w.answers).map(([wc]) => wc);
+  if (kind === 'docs') {
+    const lists = await Promise.all(pages.map(async (wc) => ({ wc, docs: (await askPage('docs', payload, wc)).docs ?? [] })));
+    return { docs: lists.flatMap(({ wc, docs }) => docs.map((d) => ({ ...d, focusedWindow: d.focusedWindow === true && wc === front }))) };
+  }
+  if (kind === 'insert' && payload?.target) {
+    for (const wc of pages) {
+      const a = await askPage('insert', payload, wc);
+      if (a?.error !== 'target-not-found') return a;
+    }
+    return { ok: false, error: 'target-not-found' };
+  }
+  // no target: the speech doc, wherever it is
+  return askPage(kind, payload, kind === 'insert' && speechHolder ? speechHolder : front);
+}
+ipcMain.on('falcon:bridge-ready', (e) => { const w = windows.get(e.sender); if (w) { w.answers = true; w.isReady(); } });
 ipcMain.on('falcon:bridge-answer', (_e, id, answer) => { const done = bridgeWaits.get(id); if (done) { bridgeWaits.delete(id); done(answer); } });
 let editorBridge = null;
 const linkedApps = () => editorBridge?.apps() ?? [];
@@ -519,7 +633,7 @@ ipcMain.handle('falcon:bridge-apps', () => linkedApps());
 ipcMain.handle('falcon:bridge-allow', (_e, appId, on) => { if (typeof appId === 'string') { if (on === null) editorBridge?.forget(appId); else editorBridge?.setAllowed(appId, on === true); } return linkedApps(); });
 function startEditorBridge() {
   if (HEADLESS && !process.env.CARDMIRROR_BRIDGE_DIR) return; // tests never show up in the real folder
-  editorBridge = createEditorBridge({ dir: bridgeDir(app.getPath('appData')), appVersion: app.getVersion(), consentFile: path.join(app.getPath('userData'), 'linked-apps.json'), ask: askPage });
+  editorBridge = createEditorBridge({ dir: bridgeDir(app.getPath('appData')), appVersion: app.getVersion(), consentFile: path.join(app.getPath('userData'), 'linked-apps.json'), ask: askApp });
   editorBridge.start().catch(() => { editorBridge = null; });
 }
 app.on('will-quit', () => editorBridge?.stop());
@@ -535,6 +649,6 @@ if (primary) app.whenReady().then(() => {
   startEditorBridge();
   // read changed files into the card index after launch settles, so Search cards is current when first opened
   if (!HEADLESS) setTimeout(() => void cards().scan().catch(() => {}), 10000);
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  app.on('activate', () => { if (!windows.size) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

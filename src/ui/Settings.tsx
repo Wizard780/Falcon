@@ -352,6 +352,7 @@ export function Settings(props: Props) {
         { label: 'Open on launch', hint: 'What Falcon shows when it starts.', control:
           select('Open on launch', pref(P.openHome) ? 'home' : 'doc', [['home', 'Home'], ['doc', 'Last document']], (o) => setPref(P.openHome, o === 'home')) },
         tog(P.reopen, 'Restore open files', 'Reopen the files you had open when you quit. Desktop app only.'),
+        tog(P.fileWindows, 'Open files in new windows', 'Each file and new document gets its own window instead of a tab. Turning this on moves open tabs into windows; turning it off leaves windows as they are. Desktop app only.'),
       ]],
       ['Notifications', [
         pickNum(P.lowTime, 'Low time flash', 'The running clock flashes red for its last seconds.', [[0, 'Off'], [10, '10 s'], [30, '30 s'], [60, '1 min']]),
