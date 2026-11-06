@@ -3,13 +3,13 @@ import { createPortal, flushSync } from 'react-dom';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
-import { Node as PMNode } from 'prosemirror-model';
+import { Fragment, Node as PMNode } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
 import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
-import { activeColors, bridge, setActiveColor, type CardHit, type UpdateInfo } from '../editor/host';
+import { activeColors, bridge, setActiveColor, type CardHit, type CardSpot, type UpdateInfo, type WindowStart } from '../editor/host';
 import { cardContent, findCard } from './card-search';
 import { ago, releaseNotes } from './update';
 import { HIGHLIGHTS, HIGHLIGHT_NAMES, SHADES, schema, type ParaStyle } from '../editor/schema';
@@ -47,7 +47,7 @@ import { outlineNumbers } from '../editor/nav/numbering';
 import { DOC_TOOLS } from '../editor/doc-tools';
 import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
-import { loadRecents, noteRecent, peekHtml, saveRecents, tidy, type Recent } from './recents';
+import { RECENTS_KEY, loadRecents, noteRecent, peekHtml, saveRecents, tidy, type Recent } from './recents';
 import { P, onPrefs, pref } from '../editor/prefs';
 import { track, type DocSource } from './analytics';
 import { pathName, templateName, type Template } from './templates';
@@ -81,6 +81,7 @@ const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 
 const MODE_PREFIX = { send: P.prefixSend, read: P.prefixRead, marked: P.prefixMarked };
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty, speech }]: the open doc and every unsaved one
 const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could be open
+let windowSlot = ''; // which recovery file is this window's ('' for the first window: see electron/main.cjs)
 /** A command's key as text, for messages: ⌘S. */
 const keyLabel = (id: string) => keyText(keyOf(id));
 /** The keys that swap the document out, which read mode and Settings hold back. */
@@ -158,14 +159,16 @@ let diskHeld = true; // the desktop recovery file may hold docs (from the last r
 /** Crash-recovery copy of the open doc and every unsaved one. Docs too big for browser storage go to the
  *  desktop app's recovery file, or are left out on the web; returns false when the active doc was left out. */
 function autosave(list: Backup[]): boolean {
-  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); clearDisk(); return true; } // turned off in Settings
+  if (!pref(P.crashRecovery)) { clearStorage(); clearDisk(); return true; } // turned off in Settings
+  // Browser storage reaches disk seconds late, and later still with several windows writing to it, so a crash
+  // can take the last edits. With a window per file, every copy goes straight to that window's recovery file
+  const toDisk = !!bridge.recovery && (!!windowSlot || pref(P.fileWindows));
   // a doc whose pictures don't fit is left out whole: a copy without its pictures, saved, would lose them
-  const keep = list.filter((b) => b.doc.content.size <= AUTOSAVE_MAX && mediaSize(b.doc) <= AUTOSAVE_MEDIA_MAX);
-  const kept = [...keep];
+  const kept = toDisk ? [] : list.filter((b) => b.doc.content.size <= AUTOSAVE_MAX && mediaSize(b.doc) <= AUTOSAVE_MEDIA_MAX);
   for (;;) {
+    if (!kept.length) { clearStorage(); break; }
     try { localStorage.setItem(AUTOSAVE_KEY, packList(kept, list)); break; }
     catch { // storage full: let go of the biggest copy that isn't the open doc, the open doc last
-      if (!kept.length) { localStorage.removeItem(AUTOSAVE_KEY); break; }
       const drop = kept.filter((b) => !b.active).sort((a, b) => b.doc.content.size - a.doc.content.size)[0] ?? kept[0];
       kept.splice(kept.indexOf(drop), 1);
     }
@@ -175,17 +178,32 @@ function autosave(list: Backup[]): boolean {
   if (disk.length) { bridge.recovery!.write(packList(disk, list)); diskHeld = true; } else clearDisk();
   return kept.some((b) => b.active) || disk.some((b) => b.active);
 }
+/** The first window's copy in browser storage. The others have none, and this one isn't theirs to touch. */
+function clearStorage() {
+  if (!windowSlot) localStorage.removeItem(AUTOSAVE_KEY);
+}
 function clearDisk() {
   if (diskHeld && bridge.recovery) bridge.recovery.write('');
   diskHeld = false;
 }
-function loadBackups(): Backup[] {
+/** What windows that closed or crashed left behind: their unsaved docs and the speech doc. Taken once, by the only window left. */
+function orphanBackups(): Backup[] {
+  return (bridge.recovery?.orphans?.() ?? []).flatMap((t) => {
+    try { return unpackList(t).filter((b) => b.dirty || b.speech).map((b) => ({ ...b, active: false })); }
+    catch { return []; } // corrupt: skip it
+  });
+}
+function loadBackups(start: WindowStart): Backup[] {
   diskHeld = true; // a new page: the file may hold the last run's docs
-  if (!pref(P.crashRecovery)) { localStorage.removeItem(AUTOSAVE_KEY); clearDisk(); return []; } // turned off in Settings
+  if (start.backup) { // a doc handed to this new window, not a crash copy: it comes whatever Crash recovery says
+    try { return unpackList(start.backup); } catch { return []; }
+  }
+  const orphans = start.alone ? orphanBackups() : []; // taking them removes them, so this comes after the return above
+  if (!pref(P.crashRecovery)) { clearStorage(); clearDisk(); return []; } // turned off in Settings
   const out: Backup[] = [];
   try {
-    const v2 = localStorage.getItem(AUTOSAVE_KEY);
-    const v1 = v2 ? null : localStorage.getItem(OLD_AUTOSAVE_KEY);
+    const v2 = windowSlot ? null : localStorage.getItem(AUTOSAVE_KEY);
+    const v1 = v2 || windowSlot ? null : localStorage.getItem(OLD_AUTOSAVE_KEY);
     if (v2) out.push(...unpackList(v2));
     else if (v1) out.push({ meta: readJson<DocMeta>('falcon.meta', { name: 'Untitled' }), doc: PMNode.fromJSON(schema, JSON.parse(v1)), active: true });
   } catch { /* corrupt autosave: start blank */ }
@@ -194,7 +212,7 @@ function loadBackups(): Backup[] {
     if (disk) out.push(...unpackList(disk));
   } catch { /* corrupt recovery file: skip it */ }
   // the two stores split one rail: put it back in order
-  return out.some((b) => b.at != null) ? out.sort((a, b) => (a.at ?? 0) - (b.at ?? 0)) : out;
+  return [...(out.some((b) => b.at != null) ? out.sort((a, b) => (a.at ?? 0) - (b.at ?? 0)) : out), ...orphans];
 }
 const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 0));
 
@@ -249,6 +267,8 @@ export function App() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const panes = useRef(new Map<number, Pane>());
+  // read before anything touches the crash-recovery copy: it says which copy is this window's
+  const [start] = useState<WindowStart>(() => { const s = bridge.windowStart?.() ?? { slot: '' }; windowSlot = s.slot; return s; });
   const splitBox = useRef<HTMLDivElement>(null);
   // the joined files, in rail order (one group at a time); shown side by side while one of them is the open doc
   const [group, setGroupState] = useState<number[] | null>(null);
@@ -275,9 +295,12 @@ export function App() {
   const [speechId, setSpeechId] = useState<number | null>(null);
   const speechRef = useRef(speechId);
   speechRef.current = speechId;
+  const otherSpeech = useRef<string | null>(null); // the speech doc's name, when another window holds it
+  const sentAway = useRef(new Map<string, () => string | undefined>()); // Undo for sends from other windows
+  const nextSent = useRef(1);
   const [toast, setToast] = useState<Toast | null>(null);
   const [findOpen, setFindOpen] = useState(false);
-  const [homeOpen, setHomeOpen] = useState(() => pref(P.openHome));
+  const [homeOpen, setHomeOpen] = useState(() => pref(P.openHome) && !start.slot);
   // the SpeechDrop tabs, one per room (or the lobby), each a row in the rail after the docs; `sdLit` is the one
   // covering the page, as Home does. Home and it never both show.
   const [sdTabs, setSdTabs] = useState<{ key: number; info: SdTab }[]>([]);
@@ -375,7 +398,7 @@ export function App() {
   const measureRef = useRef(() => {}); // measureRead, for the panes' scroll listeners
   const paneDrag = useRef((_id: number, _e: PointerEvent) => {}); // dragPane, for the panes' name bars
   useEffect(() => {
-    const backups = loadBackups();
+    const backups = loadBackups(start);
     const first = backups.find((b) => b.active) ?? backups[0];
     const doc = first?.doc;
     // a recovered doc with unsaved changes must ask before closing; the file you last had open, untouched
@@ -385,7 +408,7 @@ export function App() {
     if (restored.length) {
       setDocs(restored);
       const spoken = backups.findIndex((b) => b.speech);
-      if (spoken >= 0) setSpeechId(restored[spoken].id);
+      if (spoken >= 0) { speechRef.current = restored[spoken].id; setSpeechId(restored[spoken].id); }
     }
     let saveTimer = 0, outlineTimer = 0;
     backupSoon.current = () => { window.clearTimeout(saveTimer); saveTimer = window.setTimeout(() => whenIdle(() => { if (!backup()) warnBig(); }), 800); };
@@ -409,6 +432,7 @@ export function App() {
     lastDocs.current.set(view, view.state.doc);
     if (!restored.length) savedDocs.current.set(1, view.state.doc);
     mainView.current = viewRef.current = view;
+    if (start.caretEnd) view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc))); // a new speech doc: typing starts under the pocket
     scrollRef.current = mainScroll.current;
     setTick(1);
     mounted.current = true;
@@ -653,13 +677,19 @@ export function App() {
     show(id, target.state, target.scroll);
   }, [show, arrange, focusPane]);
 
+  /** The window shows an untouched blank Untitled, which a new file takes the place of. */
+  const isBlank = useCallback(() => {
+    const v = viewRef.current!, cur = docsRef.current.find((d) => d.id === activeRef.current)!;
+    return !panes.current.size && !cur.dirty && !cur.meta.path && !v.state.doc.textContent.trim() && v.state.doc.childCount <= 1 && cur.id !== speechRef.current;
+  }, []);
+  /** Open files in new windows is on, and this window has its file already. */
+  const wantsWindow = useCallback(() => !!bridge.openWindow && pref(P.fileWindows) && !isBlank(), [isBlank]);
   /** A new tab for `doc`, after the current one. An untouched blank Untitled is replaced instead. */
   const addDoc = useCallback((doc: PMNode, m: DocMeta) => {
-    const v = viewRef.current!;
     const cur = docsRef.current.find((d) => d.id === activeRef.current)!;
     // joined files showing: the new one opens alone in the main editor, after the group, which stays joined
     const split = panes.current.size > 0;
-    const blank = !split && !cur.dirty && !cur.meta.path && !v.state.doc.textContent.trim() && v.state.doc.childCount <= 1 && cur.id !== speechRef.current;
+    const blank = isBlank();
     const id = blank ? cur.id : nextDocId++;
     const fresh: OpenDoc = { id, meta: m, dirty: false, state: null, scroll: 0 };
     savedDocs.current.set(id, doc);
@@ -677,7 +707,7 @@ export function App() {
       setDocs((ds) => { const i = ds.findIndex((d) => d.id === cur.id); const n = ds.map((d) => (d.id === cur.id ? { ...d, ...out } : d)); n.splice(i + 1, 0, fresh); return n; });
     }
     return show(id, createState(doc), 0);
-  }, [show]);
+  }, [show, isBlank]);
 
   const dropDoc = useCallback((id: number) => {
     const list = docsRef.current, i = list.findIndex((d) => d.id === id);
@@ -704,6 +734,12 @@ export function App() {
     }
     if (id !== activeRef.current) { setDocs(rest); return; }
     if (!rest.length) {
+      if (pref(P.fileWindows) && bridge.leaveWindow?.()) { // its doc is gone on purpose, so nothing is left to recover
+        mounted.current = false;
+        clearStorage();
+        clearDisk();
+        return;
+      }
       const nid = nextDocId++, blankDoc = emptyDoc();
       savedDocs.current.set(nid, blankDoc);
       setDocs([{ id: nid, meta: { name: 'Untitled' }, dirty: false, state: null, scroll: 0 }]);
@@ -834,7 +870,7 @@ export function App() {
   const recent = useCallback((dir: 1 | -1, mods: Mod[] = []) => {
     if (sdOnRef.current) { switchTo(activeRef.current); return; } // from the SpeechDrop tab: back to the doc you were in
     const ids = recentOrder(docsRef.current.map((d) => d.id), mru.current, activeRef.current);
-    if (ids.length < 2) return;
+    if (ids.length < 2) { bridge.cycleWindow?.(dir); return; } // one doc in this window: on to the next window
     const sel = dir > 0 ? 1 : ids.length - 1;
     if (!mods.length) { switchTo(ids[sel]); return; }
     tops.current.set(activeRef.current, topPos());
@@ -864,7 +900,7 @@ export function App() {
   // the SpeechDrop tabs (-1 - key; doc ids are positive) come after the docs, as their rows do in the rail
   const cycle = useCallback((dir: 1 | -1) => {
     const ring = [...docsRef.current.map((d) => d.id), ...sdTabsRef.current.map((x) => -1 - x.key)];
-    if (ring.length < 2) return;
+    if (ring.length < 2) { bridge.cycleWindow?.(dir); return; }
     const lit = sdLitRef.current;
     const i = ring.indexOf(lit !== null ? -1 - lit : activeRef.current);
     const next = ring[(i + dir + ring.length) % ring.length];
@@ -872,15 +908,21 @@ export function App() {
   }, [switchTo, showSd]);
 
   const openedPath = (p?: string) => (p ? docsRef.current.find((d) => d.meta.path === p) : undefined);
+  /** `path` opens in another window: the one that has it, or a new one when Open files in new windows wants that. */
+  const elsewhere = useCallback((path?: string, card?: CardSpot) => !!path && !openedPath(path) && !!bridge.openWindow?.({ path, card, alone: wantsWindow() }), [wantsWindow]);
   const opened = useCallback((r: { doc: PMNode; meta: DocMeta }, source: DocSource) => {
     setRecents((list) => noteRecent(list, r.doc, r.meta));
+    if (elsewhere(r.meta.path)) return;
     const already = openedPath(r.meta.path);
     if (already) { switchTo(already.id); flash(`${r.meta.name} is already open`); return; }
     if (source !== 'restore') track('doc_opened', { source }); // reopening last session's files isn't a user action
     if (pref(P.openDepth)) setDepth(pref(P.openDepth));
     flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${keyLabel('save')}).`);
-  }, [addDoc, switchTo, flash]);
-  const fileNew = useCallback(() => { track('doc_new'); addDoc(emptyDoc(), { name: 'Untitled' }); }, [addDoc]);
+  }, [addDoc, switchTo, flash, elsewhere]);
+  const fileNew = useCallback(() => {
+    track('doc_new');
+    if (wantsWindow()) bridge.openWindow!({ alone: true }); else addDoc(emptyDoc(), { name: 'Untitled' });
+  }, [addDoc, wantsWindow]);
   /** New speech doc: a file that opens on a pocket with the speech's name, already marked as the speech doc. */
   const fileNewSpeech = useCallback(() => {
     if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to make a new speech doc.'); return; }
@@ -892,12 +934,18 @@ export function App() {
     setSpeechAsk(false);
     track('doc_new', { speech: true });
     const p = (style: string, text = '') => schema.node('paragraph', { style }, text ? schema.text(text) : undefined);
-    addDoc(schema.node('doc', null, speech ? [p('pocket', speech), p('normal')] : [p('normal')]), { name: speechFileName(speech) });
+    const doc = schema.node('doc', null, speech ? [p('pocket', speech), p('normal')] : [p('normal')]), name = speechFileName(speech);
+    if (wantsWindow()) {
+      const b = [{ meta: { name }, doc, active: true, dirty: false, speech: true }];
+      bridge.openWindow!({ alone: true, backup: packList(b, b), speech: name, caretEnd: true });
+      return;
+    }
+    addDoc(doc, { name });
     const v = viewRef.current!;
     v.dispatch(v.state.tr.setSelection(TextSelection.atEnd(v.state.doc))); // typing starts under the pocket
     speechRef.current = activeRef.current;
     setSpeechId(activeRef.current);
-  }, [addDoc]);
+  }, [addDoc, wantsWindow]);
   const fileOpen = useCallback(async () => {
     try {
       const r = await openDocument();
@@ -923,9 +971,9 @@ export function App() {
     const already = openedPath(r.path) ?? (!r.path ? docsRef.current.find((d) => !d.meta.path && d.meta.name === r.name) : undefined);
     if (already) { switchTo(already.id); return; }
     if (!r.path || !bridge.openPath) { void fileOpen(); return; }
-    try { opened(await openPath(r.path), 'recent'); }
+    try { if (!elsewhere(r.path)) opened(await openPath(r.path), 'recent'); }
     catch (e) { openFailed(r.name, r.path, e); }
-  }, [opened, fileOpen, switchTo, openFailed]);
+  }, [opened, fileOpen, switchTo, openFailed, elsewhere]);
   // Cmd-K: an open doc switches to it; anything else opens by path (indexed folders and recents are allowed)
   const openHit = useCallback(async (h: FileHit): Promise<boolean> => {
     showEditor();
@@ -933,9 +981,18 @@ export function App() {
     const already = openedPath(h.path);
     if (already) { switchTo(already.id); return true; }
     if (!h.path || !bridge.openPath) { void fileOpen(); return false; }
-    try { opened(await openPath(h.path), 'search'); return true; }
+    try { if (!elsewhere(h.path)) opened(await openPath(h.path), 'search'); return true; }
     catch (e) { openFailed(h.name, h.path, e); return false; }
-  }, [opened, fileOpen, switchTo, openFailed]);
+  }, [opened, fileOpen, switchTo, openFailed, elsewhere]);
+  /** Put the caret on a card in the file on screen. */
+  const gotoCard = useCallback((c: CardSpot) => {
+    const v = viewRef.current!;
+    const pos = findCard(v.state.doc, c.tag, c.ordinal);
+    if (pos === null) { flash(`Couldn't find “${c.tag}” in ${c.file}. It may have changed since it was indexed.`); return; }
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, pos + 1)));
+    (v.dom as HTMLElement).focus({ preventScroll: true });
+    requestAnimationFrame(() => scrollToPos(v, pos)); // once the page has laid the new file out
+  }, [flash]);
   // Search cards: Enter opens the card's file at the card; Mod-Enter puts a copy of the card into the open document
   const pickCard = useCallback(async (h: CardHit, insert: boolean) => {
     const open = openedPath(h.path);
@@ -955,14 +1012,11 @@ export function App() {
       v.focus();
       return;
     }
+    const spot = { tag: h.tag, ordinal: h.ordinal, file: h.file };
+    if (elsewhere(h.path, spot)) return; // that window goes to the card
     if (!(await openHit({ key: `c:${h.path}`, name: h.file, folder: '', path: h.path, kind: 'file', when: 0 }))) return; // openHit said why
-    const v = viewRef.current!; // it shows the file now
-    const pos = findCard(v.state.doc, h.tag, h.ordinal);
-    if (pos === null) { flash(`Couldn't find “${h.tag}” in ${h.file}. It may have changed since it was indexed.`); return; }
-    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, pos + 1)));
-    (v.dom as HTMLElement).focus({ preventScroll: true });
-    requestAnimationFrame(() => scrollToPos(v, pos)); // once the page has laid the new file out
-  }, [openHit, flash]);
+    gotoCard(spot); // it shows the file now
+  }, [openHit, flash, elsewhere, gotoCard]);
   /**
    * Write the active doc. As-Is is the document itself, so the open file takes its new name and path;
    * Send, Read and Marked docs are copies and the open file stays as it was.
@@ -1016,6 +1070,26 @@ export function App() {
   const getScroller = useCallback(() => scrollRef.current, []);
   const { zoomTo, zoomBy, zoomWheel } = useSmoothZoom(zoom, setZoom, getScroller);
 
+  /** Undo a send, only while the doc is still exactly as the send left it, so it can't undo later typing. Says so when it can't. */
+  const takeBack = useCallback((id: number, sent: EditorState, name: string): string | undefined => {
+    const on = liveView(id);
+    const now = on?.state ?? docsRef.current.find((d) => d.id === id)?.state;
+    if (!now) return undefined;
+    if (now.doc !== sent.doc) return `${name} has changed since. Undo it there with ${keyText('Mod-z')}.`;
+    undo(now, (t) => { if (on) on.dispatch(t); else patch(id, { state: now.apply(t), dirty: true }); });
+    return undefined;
+  }, [patch]);
+  /** The speech doc is in another window (or, with Open files in new windows, the first send makes it there, behind this one). */
+  const sendAway = useCallback(async (sent: { content: Fragment; label: string }) => {
+    if (!otherSpeech.current) {
+      const b = [{ meta: { name: 'Speech' }, doc: emptyDoc(), active: true, dirty: false, speech: true }];
+      bridge.openWindow!({ alone: true, inactive: true, backup: packList(b, b), speech: 'Speech' });
+      otherSpeech.current = 'Speech';
+    }
+    const a = await bridge.speechAsk!('speech-send', { content: sent.content.toJSON() });
+    if (!a.ok) { flash(a.error === 'doc-readonly' ? `${a.docTitle} is in read mode. Leave it to send.` : "Couldn't reach the speech doc."); return; }
+    flash(`Sent “${sent.label}” to ${a.docTitle}`, { label: 'Undo', run: () => { void bridge.speechAsk!('speech-undo', { undo: a.undo }).then((u) => { if (u.note) flash(u.note); }); } });
+  }, [flash]);
   /** Send to speech: copy the selection (or the card or section at the caret) into the speech doc without leaving this file. */
   const sendToSpeech = useCallback(() => {
     const v = viewRef.current;
@@ -1024,6 +1098,7 @@ export function App() {
     const sent = sendContent(v.state);
     if (!sent) { flash('Nothing to send. Put the caret in a card or select some text.'); return; }
     let target = docsRef.current.find((d) => d.id === speechRef.current);
+    if (!target && bridge.speechAsk && (otherSpeech.current || pref(P.fileWindows))) { void sendAway(sent); return; }
     let base = target ? liveState(target.id) : null; // it may be showing beside this file, joined
     if (!target || !base) {
       // the speech doc is made on the first send, beside this file, and stays in the background
@@ -1044,23 +1119,15 @@ export function App() {
     let next: EditorState;
     if (shown) { shown.dispatch(tr.scrollIntoView()); next = shown.state; } // joined: you see the card land
     else { next = base.apply(tr); patch(id, { state: next, dirty: true }); }
-    // Undo only while the speech doc is still exactly as the send left it, so it can't undo later typing
-    const takeBack = () => {
-      const on = liveView(id);
-      const now = on?.state ?? docsRef.current.find((d) => d.id === id)?.state;
-      if (!now) return;
-      if (now.doc !== next.doc) { flash(`${speechName} has changed since. Undo it there with ${keyText('Mod-z')}.`); return; }
-      undo(now, (t) => { if (on) on.dispatch(t); else patch(id, { state: now.apply(t), dirty: true }); });
-    };
-    flash(`Sent “${sent.label}” to ${speechName}`, { label: 'Undo', run: takeBack });
-  }, [flash, patch]);
+    flash(`Sent “${sent.label}” to ${speechName}`, { label: 'Undo', run: () => { const note = takeBack(id, next, speechName); if (note) flash(note); } });
+  }, [flash, sendAway, takeBack, patch]);
   // Nimbus and other debate apps send cards in over the bridge (electron/editor-bridge.cjs), the way they do
   // into CardMirror: they list the open docs, then insert into one (usually the speech doc) without taking focus
   // the main process stopped waiting for a consent answer: an Allow clicked now would go nowhere
   const consentAsk = useRef<Ask | null>(null);
   useEffect(() => bridge.onBridgeExpired?.(() => { if (askRef.current === consentAsk.current) askRef.current?.done(false); }), []);
   useEffect(() => bridge.onBridge?.(async (kind, p) => {
-    const target = (d: OpenDoc) => `falcon-${d.id}`;
+    const target = (d: OpenDoc) => `falcon-${start.slot ? `${start.slot}-` : ''}${d.id}`;
     const name = typeof p.name === 'string' && p.name ? p.name[0].toUpperCase() + p.name.slice(1) : 'An app';
     if (kind === 'ping') return { hasActiveDoc: !!viewRef.current };
     if (kind === 'docs') return { docs: docsRef.current.map((d) => ({ target: target(d), title: d.meta.name || 'Untitled', focusedWindow: d.id === activeRef.current, isSpeech: d.id === speechRef.current })) };
@@ -1077,32 +1144,41 @@ export function App() {
       });
     }
     if (kind === 'jump') return { ok: false, error: 'not-found' }; // nothing hands out source tokens yet
-    if (kind !== 'insert') return { ok: false, error: 'bad-request' };
+    // another window asked for a file this one has: show it
+    if (kind === 'shown') {
+      const d = openedPath(p.path as string);
+      if (d) switchTo(d.id);
+      if (p.card) gotoCard(p.card as CardSpot); else if (d) flash(`${d.meta.name} is already open`);
+      return { ok: true };
+    }
+    if (kind === 'speech-undo') {
+      const back = sentAway.current.get(String(p.undo));
+      return back ? { ok: true, note: back() } : { ok: false };
+    }
+    const fromWindow = kind === 'speech-send';
+    if (kind !== 'insert' && !fromWindow) return { ok: false, error: 'bad-request' };
     const want = typeof p.target === 'string' ? p.target : null;
     // no target: the speech doc, else the doc on screen (CardMirror's fallback is the focused doc)
     const doc = want ? docsRef.current.find((d) => target(d) === want) : docsRef.current.find((d) => d.id === speechRef.current) ?? docsRef.current.find((d) => d.id === activeRef.current);
-    if (!doc) return { ok: false, error: 'target-not-found' };
+    if (!doc || (fromWindow && doc.id !== speechRef.current)) return { ok: false, error: 'target-not-found' };
     const shown = liveView(doc.id);
     const base = shown?.state ?? doc.state;
     if (!base) return { ok: false, error: 'no-target-doc' };
     if (isReading(base)) return { ok: false, error: 'doc-readonly', docTitle: doc.meta.name };
-    const content = insertContent(p.html, p.text);
+    const content = fromWindow ? Fragment.fromJSON(schema, p.content as object[]) : insertContent(p.html, p.text);
     if (!content) return { ok: false, error: 'bad-request' };
     const tr = insertIntoSpeech(base, content);
     let next = base.apply(tr);
-    if (shown) { shown.dispatch(tr); next = shown.state; } else patch(doc.id, { state: next, dirty: true });
+    if (shown) { shown.dispatch(fromWindow ? tr.scrollIntoView() : tr); next = shown.state; } else patch(doc.id, { state: next, dirty: true });
     const docName = doc.meta.name || 'Untitled';
-    // same undo as Send to speech: only while the doc is still as the insert left it
-    const takeBack = () => {
-      const on = liveView(doc.id);
-      const now = on?.state ?? docsRef.current.find((d) => d.id === doc.id)?.state;
-      if (!now) return;
-      if (now.doc !== next.doc) { flash(`${docName} has changed since. Undo it there with ${keyText('Mod-z')}.`); return; }
-      undo(now, (t) => { if (on) on.dispatch(t); else patch(doc.id, { state: now.apply(t), dirty: true }); });
-    };
-    flash(`${name} sent “${insertLabel(content)}” to ${docName}`, { label: 'Undo', run: takeBack });
+    if (fromWindow) {
+      const undoId = String(nextSent.current++);
+      sentAway.current.set(undoId, () => takeBack(doc.id, next, docName));
+      return { ok: true, docTitle: docName, undo: undoId };
+    }
+    flash(`${name} sent “${insertLabel(content)}” to ${docName}`, { label: 'Undo', run: () => { const note = takeBack(doc.id, next, docName); if (note) flash(note); } });
     return { ok: true, docTitle: docName };
-  }), [flash, patch]);
+  }), [flash, patch, takeBack, switchTo, gotoCard, start.slot]);
   const toggleSpeech = useCallback(() => {
     const here = activeRef.current;
     speechRef.current = speechRef.current === here ? null : here;
@@ -1333,7 +1409,7 @@ export function App() {
   // ---- settings that act on the app (the rest act through CSS or in the editor) ----
   const [, setPrefTick] = useState(0);
   useEffect(() => onPrefs(() => setPrefTick((t) => t + 1)), []); // redraw: word-count speeds, recents, the timer
-  useEffect(() => { track('app_opened'); whenIdle(() => void prefetch()); }, []);
+  useEffect(() => { if (!start.slot) track('app_opened'); whenIdle(() => void prefetch()); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Opens by path run one at a time: two at once both read the tab list before either adds its tab,
   // and one is lost (or the same file opens twice). Last session's files and OS opens share the queue.
   const pathQueue = useRef(Promise.resolve());
@@ -1341,18 +1417,18 @@ export function App() {
     pathQueue.current = pathQueue.current.then(async () => {
       for (const p of paths) {
         if (quiet && openedPath(p)) continue;
-        try { opened(await openPath(p), quiet ? 'restore' : 'os'); }
+        try { if (!elsewhere(p)) opened(await openPath(p), quiet ? 'restore' : 'os'); }
         catch (e) { if (!quiet) flash(`Couldn't open ${p.split(/[\\/]/).pop()}: ${(e as Error).message}`); }
       }
     });
-  }, [opened, flash]);
+  }, [opened, flash, elsewhere]);
   // a template's files, in its order, then back to the first; ones already open stay put, and one that won't open doesn't stop the rest
   const openTemplate = useCallback((t: Template) => {
     pathQueue.current = pathQueue.current.then(async () => {
       showEditor();
       const failed: string[] = [];
       for (const p of t.paths) {
-        if (openedPath(p)) continue;
+        if (openedPath(p) || elsewhere(p)) continue;
         // drawn before the next step: docsRef only catches up on a render, and switchTo reads it
         try { const r = await openPath(p); flushSync(() => opened(r, 'template')); }
         catch { failed.push(pathName(p)); }
@@ -1370,11 +1446,59 @@ export function App() {
   useEffect(() => {
     if (!hasView || reopened.current) return;
     reopened.current = true;
-    if (pref(P.reopen) && bridge.openPath) queueOpens(lastSession, true); // moved or deleted since: skipped
+    if (pref(P.reopen) && bridge.openPath && !start.slot) queueOpens(lastSession, true); // moved or deleted since: skipped
+    if (start.path && !start.backup) {
+      queueOpens([start.path], false);
+      void pathQueue.current.then(() => {
+        loadingPath.current = undefined;
+        if (start.card && openedPath(start.path)) gotoCard(start.card);
+        reportRef.current();
+      });
+    }
   }, [hasView]); // eslint-disable-line react-hooks/exhaustive-deps
   // files double-clicked in Finder/Explorer (or Open With): open each, or switch to it if it's already open
   useEffect(() => (hasView ? bridge.onOpenPaths?.((ps) => queueRef.current(ps, false)) : undefined), [hasView]);
-  useEffect(() => { safeSet('falcon.session', JSON.stringify(docs.flatMap((d) => (d.meta.path ? [d.meta.path] : [])))); }, [docs]);
+  // Restore open files keeps every window's files, so the main process gathers them and each page hears the list.
+  // The file this window is still reading counts, so it can't be opened a second time meanwhile
+  const loadingPath = useRef(start.backup ? undefined : start.path);
+  const reportRef = useRef(() => {});
+  reportRef.current = () => {
+    const paths = docs.flatMap((d) => (d.meta.path ? [d.meta.path] : []));
+    if (!bridge.reportWindow) { safeSet('falcon.session', JSON.stringify(paths)); return; }
+    bridge.reportWindow({ paths: loadingPath.current ? [loadingPath.current, ...paths] : paths, speech: docs.find((d) => d.id === speechId) ? docs.find((d) => d.id === speechId)!.meta.name || 'Speech' : null });
+  };
+  useEffect(() => { if (hasView) reportRef.current(); }, [docs, speechId, hasView]);
+  useEffect(() => bridge.onWindows?.((w) => {
+    safeSet('falcon.session', JSON.stringify(w.session));
+    otherSpeech.current = w.speech;
+    if (w.speech && speechRef.current !== null) { speechRef.current = null; setSpeechId(null); } // marked in another window: there's one speech doc
+  }), []);
+  // a file opened in another window belongs in this one's recents too, or the next save here writes over it
+  useEffect(() => {
+    const on = (e: StorageEvent) => { if (e.key === RECENTS_KEY) setRecents(loadRecents()); };
+    addEventListener('storage', on);
+    return () => removeEventListener('storage', on);
+  }, []);
+  // Open files in new windows: every doc past the first moves to a window of its own, unsaved edits and all
+  const spreading = !!bridge.openWindow && pref(P.fileWindows);
+  useEffect(() => {
+    if (!spreading || !hasView || docs.length < 2) return;
+    if (panes.current.size) { setGroup(null); arrange(null, activeRef.current); return; } // comes back here once they've come apart
+    const moved = new Set<number>();
+    for (const d of docsRef.current) {
+      const doc = d.id === activeRef.current ? null : liveState(d.id)?.doc;
+      if (!doc) continue;
+      const speech = d.id === speechRef.current, b = [{ meta: d.meta, doc, active: true, dirty: d.dirty, speech: speech || undefined }];
+      bridge.openWindow!({ alone: true, inactive: true, backup: packList(b, b), path: d.meta.path, speech: speech ? d.meta.name || 'Speech' : undefined });
+      moved.add(d.id);
+      savedDocs.current.delete(d.id);
+      if (speech) { speechRef.current = null; setSpeechId(null); }
+    }
+    setDocs((ds) => ds.filter((d) => !moved.has(d.id)));
+  }, [spreading, hasView, docs.length, group]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the window list and Mission Control tell one file's window from another by its title
+  const activeName = docs.find((d) => d.id === activeId)?.meta.name;
+  useEffect(() => { if (bridge.openWindow) document.title = spreading && activeName ? activeName : 'Falcon'; }, [spreading, activeName]);
   // a trackpad pinch zooms smoothly, always. it shows up as a wheel event with ctrlKey set while Ctrl isn't
   // actually down, so a held Ctrl (or Cmd) plus a real wheel only zooms with the setting on
   useEffect(() => {
@@ -1427,9 +1551,9 @@ export function App() {
   // SpeechDrop's Upload sends the doc you came from, as it is now; a .docx from the room opens as a tab
   const exportActive = useCallback(async () => (await import('../docx/export')).docToDocx(viewRef.current!.state.doc), []);
   const openFromSd = useCallback(async (p: string) => {
-    try { opened(await openPath(p), 'speechdrop'); }
+    try { if (!elsewhere(p)) opened(await openPath(p), 'speechdrop'); }
     catch (e) { flash(`Couldn't open it: ${(e as Error).message}`); }
-  }, [opened, flash]);
+  }, [opened, flash, elsewhere]);
   useEffect(() => {
     addEventListener(SHOW_EVENT, openSd);
     return () => removeEventListener(SHOW_EVENT, openSd);

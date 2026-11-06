@@ -88,6 +88,18 @@ contextBridge.exposeInMainWorld('falcon', {
     },
   },
   forceClose: (quit) => ipcRenderer.send('falcon:force-close', quit === true),
+  // the app's other windows (Settings > General > Open files in new windows)
+  windowStart: () => ipcRenderer.sendSync('falcon:window-start'),
+  openWindow: (req) => ipcRenderer.sendSync('falcon:window-open', req),
+  leaveWindow: () => ipcRenderer.sendSync('falcon:window-leave'),
+  cycleWindow: (dir) => ipcRenderer.send('falcon:window-cycle', dir),
+  reportWindow: (state) => ipcRenderer.send('falcon:window-report', state),
+  onWindows: (f) => {
+    const on = (_e, w) => f(w);
+    ipcRenderer.on('falcon:windows', on);
+    return () => ipcRenderer.removeListener('falcon:windows', on);
+  },
+  speechAsk: (kind, payload) => ipcRenderer.invoke('falcon:speech-ask', kind, payload),
   // crash recovery for docs too big for localStorage: read once as the page starts, written on every backup
-  recovery: { read: () => ipcRenderer.sendSync('falcon:recovery-read'), write: (text) => ipcRenderer.send('falcon:recovery-write', String(text)) },
+  recovery: { read: () => ipcRenderer.sendSync('falcon:recovery-read'), write: (text) => ipcRenderer.send('falcon:recovery-write', String(text)), orphans: () => ipcRenderer.sendSync('falcon:recovery-orphans') },
 });

@@ -19,6 +19,11 @@ export type CardHit = { path: string; ordinal: number; file: string; tag: string
 /** An app that asked to send cards in over the bridge. */
 export type LinkedApp = { id: string; name: string; allowed: boolean };
 export type CardIndexStatus = { files: number; cards: number; scanning: boolean; done: number; total: number };
+/** A place in a file, to jump to once it's open. */
+export type CardSpot = { tag: string; ordinal: number; file: string };
+export type WindowOpen = { path?: string; card?: CardSpot; alone?: boolean; backup?: string; speech?: string; inactive?: boolean; caretEnd?: boolean };
+export type WindowStart = { slot: string; alone?: boolean; path?: string; card?: CardSpot; backup?: string; caretEnd?: boolean };
+export type SpeechAnswer = { ok: boolean; error?: string; docTitle?: string; undo?: string; note?: string };
 type FalconBridge = {
   readClipboardText?: () => Promise<string>;
   openFile?: () => Promise<{ name: string; path: string; data: Uint8Array } | null>;
@@ -55,7 +60,18 @@ type FalconBridge = {
    *  system: the theme is System, so native stays on the OS setting (forcing it would freeze prefers-color-scheme). */
   setTheme?: (bg: string, dark: boolean, system: boolean) => void;
   /** Crash recovery for docs too big for localStorage: the desktop app keeps them in a file. `write('')` clears it. */
-  recovery?: { read: () => string; write: (text: string) => void };
+  recovery?: { read: () => string; write: (text: string) => void; orphans?: () => string[] };
+  /** This window's place among the app's windows, and what it opens with (read once, before the first render). */
+  windowStart?: () => WindowStart;
+  /** Show `path` in the window that has it, or with `alone` open a new window. False: this page opens it itself. */
+  openWindow?: (req: WindowOpen) => boolean;
+  /** This window's last doc closed: true when the window closes too (it isn't the only one). */
+  leaveWindow?: () => boolean;
+  cycleWindow?: (dir: 1 | -1) => void;
+  reportWindow?: (state: { paths: string[]; speech: string | null }) => void;
+  /** Every window's open files, and the name of the speech doc when another window holds it. */
+  onWindows?: (f: (w: { session: string[]; speech: string | null }) => void) => () => void;
+  speechAsk?: (kind: string, payload: Record<string, unknown>) => Promise<SpeechAnswer>;
   /** A newer Falcon, downloading or ready to install (null: none). Fires with the current state on subscribe. Returns an unsubscribe. */
   onUpdate?: (f: (u: UpdateInfo | null) => void) => () => void;
   /** Install this downloaded version and restart (or open its disk image when Falcon can't replace itself). Does nothing if a later one has replaced it. */

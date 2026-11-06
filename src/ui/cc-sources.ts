@@ -190,6 +190,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: P.openHome.key, label: 'Open on launch', page: 'general', hint: 'What Falcon shows when it starts.', options: [['home', 'Home'], ['doc', 'Last document']],
       get: () => (pref(P.openHome) ? 'home' : 'doc'), set: (v) => setPref(P.openHome, v === 'home') },
     tog(P.reopen, 'Restore open files', 'general', 'Reopen the files you had open when you quit.'),
+    tog(P.fileWindows, 'Open files in new windows', 'general', 'Each file and new document gets its own window instead of a tab.'),
     pick(P.lowTime, 'Low time flash', 'general', [[0, 'Off'], [10, '10 s'], [30, '30 s'], [60, '1 min']], 'The running clock flashes red for its last seconds.'),
     tog(P.beep, 'Timer sound', 'general', 'Two short tones when a timer reaches zero.'),
     tog(P.confirmClose, 'Unsaved changes confirmation', 'general', 'Ask before closing a file or quitting with unsaved changes.'),
