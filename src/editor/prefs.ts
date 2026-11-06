@@ -17,6 +17,7 @@ export const P = {
   // General
   openHome: def('openHome', true),
   reopen: def('reopen', false),
+  fileWindows: def('fileWindows', false), // every file and new doc in a window of its own, instead of tabs
   confirmClose: def('confirmClose', true),
   crashRecovery: def('crashRecovery', true),
   recentCount: def('recentCount', 7), // how many files Home lists (1 to recents.ts MAX)
@@ -158,6 +159,13 @@ export function resetPrefs() {
   cache.clear();
   changed();
 }
+// another window changed a setting: this page's copy is stale (key null: storage was cleared)
+if (typeof addEventListener === 'function') addEventListener('storage', (e) => {
+  if (e.key === null) cache.clear();
+  else if (KEYS.has(e.key)) cache.delete(e.key);
+  else return;
+  changed();
+});
 /** Many settings were written straight to storage (Import settings): forget the cached values and redraw. */
 export function reloadPrefs() {
   cache.clear();
