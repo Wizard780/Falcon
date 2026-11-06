@@ -11,7 +11,7 @@
 .ProseMirror .f-analytic { font-size: var(--sz-analytic, 13pt); color: var(--c-analytic, #1f3f8a); }
 .ProseMirror .f-undertag { font-size: var(--sz-undertag, 11pt); color: var(--c-undertag, #2a6a3a); }
 .ProseMirror .f-cite { font-size: var(--sz-cite, 13pt); }
-.lh-box .ProseMirror p.f-normal, .lh-box .ProseMirror p.f-normal span { line-height: calc(round(calc(var(--asc) * 1em), var(--dp)) + round(calc(var(--dsc) * 1em), var(--dp)) + round(down, 1pt, var(--dp))); }
+.lh-box .page .ProseMirror p.f-normal, .lh-box .page .ProseMirror p.f-normal span { line-height: calc(round(calc(var(--asc) * 1em), var(--dp)) + round(calc(var(--dsc) * 1em), var(--dp)) + round(down, 1pt, var(--dp))); }
 .f-scroll .page { max-width: var(--text-w, none); margin: 0 auto; padding-left: var(--margin-x, 30px); padding-right: var(--margin-x, 20px); }
 
 /* dark page (the theme's paper is dark; theme.ts sets the class and the colors): light ink, and dark ink on highlighted or shaded text so it stays readable */
