@@ -19,7 +19,7 @@ export function Home(props: {
   onSpeechDrop: () => void;
   onOpen: () => void;
   onRecent: (r: Recent) => void;
-  onClear: (keep: Recent[] | null) => void;
+  onClear: (undo: boolean) => void;
   /** A recent from before previews were kept: read it so its page can be shown. */
   onPeek: (r: Recent) => void;
 }) {
@@ -30,7 +30,7 @@ export function Home(props: {
   const scRef = useRef<HTMLDivElement>(null);
   const rows = useRef<(HTMLButtonElement | null)[]>([]);
   const [sel, setSel] = useState(0);
-  const [undo, setUndo] = useState<Recent[] | null>(null);
+  const [undo, setUndo] = useState(false);
 
   // the falcon flies in once per launch, when Falcon starts on Home; after that it just sits on its perch
   const perchRef = useRef<HTMLDivElement>(null);
@@ -62,7 +62,7 @@ export function Home(props: {
       if (!s.paused) s.left -= now - s.last;
       s.last = now;
       if (undoBar.current) undoBar.current.style.transform = `scaleX(${Math.max(0, s.left / 5000)})`;
-      if (s.left <= 0) { setUndo(null); return; }
+      if (s.left <= 0) { setUndo(false); return; }
       s.raf = requestAnimationFrame(tick);
     };
     s.raf = requestAnimationFrame(tick);
@@ -109,7 +109,7 @@ export function Home(props: {
 
           <div className="hm-main">
             <div className="hm-col">
-              <div className="hm-lab"><span>Recent</span>{shown.length > 0 && <button className="hm-clear" onClick={() => { setUndo(recents); props.onClear(null); }}>Clear</button>}</div>
+              <div className="hm-lab"><span>Recent</span>{shown.length > 0 && <button className="hm-clear" onClick={() => { setUndo(true); props.onClear(false); }}>Clear</button>}</div>
               <div className="hm-list">
                 {shown.length ? shown.map((r, i) => (
                   <button key={(r.path ?? '') + r.name} ref={(el) => { rows.current[i] = el; }} className="hm-row" data-on={i === at || undefined}
@@ -143,7 +143,7 @@ export function Home(props: {
       <div className={`hm-undo${undo ? ' open' : ''}`} role="status"
         onPointerEnter={() => (undoState.current.paused = true)} onPointerLeave={() => (undoState.current.paused = false)}>
         <span>Recent cleared</span>
-        <button onClick={() => { props.onClear(undo); setUndo(null); }}>Undo</button>
+        <button onClick={() => { props.onClear(true); setUndo(false); }}>Undo</button>
         <i ref={undoBar} />
       </div>
     </section>

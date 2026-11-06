@@ -1122,6 +1122,7 @@ export function App() {
 
   // one pass per doc is plenty; Esc stops it after the cite in flight
   const citePass = useRef<{ stop: boolean } | null>(null);
+  const clearedRecents = useRef<Recent[]>([]); // what Home's Clear took, for its Undo
   const reformatAll = async () => {
     const view = viewRef.current;
     if (!view) return;
@@ -1483,7 +1484,11 @@ export function App() {
       <div className="covered" inert={!!ask}>
       <Home open={homeOpen} recents={recents.slice(0, pref(P.recentCount))}
         onNew={fileNew} onNewSpeech={fileNewSpeech} onOpen={() => void fileOpen()} onSpeechDrop={openSd} onRecent={(r) => void openRecent(r)} onPeek={peekRecent}
-        onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
+        onClear={(undo) => {
+          if (!undo) { clearedRecents.current = recents; setRecents([]); return; }
+          // Home lists only the newest few; Undo brings back the whole list, behind anything opened since
+          setRecents((cur) => [...cur, ...clearedRecents.current.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))]);
+        }} />
       <Palette open={paletteOpen === 'files'} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
       <CardSearch open={paletteOpen === 'cards'} onClose={() => setPaletteOpen(false)} onPick={(h, insert) => void pickCard(h, insert)}
