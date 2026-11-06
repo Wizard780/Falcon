@@ -127,6 +127,29 @@ describe('shrink, case, condense', () => {
     s = run(s, K['Mod-8']);
     expect(body(s)).toContain('{size:7pt}');
   });
+  it('Mod-8 takes every unread word to 8pt before anything goes smaller', () => {
+    const s0 = make([['tag', 'Tag'], ['normal', 'Smith 24'], ['normal', 'first part'], ['normal', 'second part']]);
+    // the card starts at 8pt and the rest is normal: it must not step to 7pt
+    let s = run(select(s0, 'Smith 24'), K['Mod-8']);
+    s = run(caret(s, 'first'), K['Mod-8']);
+    expect(map(s)).toBe('tag: Tag\nnormal: [Smith 24]{size:8pt}\nnormal: [first part]{size:8pt}\nnormal: [second part]{size:8pt}');
+    expect(map(run(s, K['Mod-8']))).toContain('[second part]{size:7pt}');
+    // text already below 8pt comes back up to meet the rest, then they step down together
+    s = run(select(s0, 'Smith 24'), K['Mod-8']);
+    s = run(select(s, 'Smith 24'), K['Mod-8']);
+    s = run(caret(s, 'first'), K['Mod-8']);
+    expect(map(s)).toBe('tag: Tag\nnormal: [Smith 24]{size:8pt}\nnormal: [first part]{size:8pt}\nnormal: [second part]{size:8pt}');
+  });
+  it('Mod-8 goes by the text it shrinks: a protected omission note sets no size, highlighted text stays', () => {
+    const note = make([['tag', 'Tag'], ['normal', 'Smith 24'], ['normal', '[Table Omitted] then the rest']]);
+    setPref(P.shrinkProtect, false);
+    let s = run(run(select(note, '[Table Omitted]'), K['Mod-8']), K['Mod-8']);
+    resetPrefs();
+    s = run(caret(s, 'rest'), K['Mod-8']);
+    expect(map(s).split('\n')[2]).toBe('normal: [[Table Omitted]]{size:7pt}[ then the rest]{size:8pt}');
+    const lit = run(select(card(), 'pushed utilities'), K.F11);
+    expect(body(run(caret(lit, 'rapid'), K['Mod-8']))).toBe('normal: [The rapid expansion of AI has ]{size:8pt}[pushed utilities]{highlight:yellow}[ to their limits.]{size:8pt}');
+  });
   it('Smart Shrink: unread paragraphs to 5pt, unread words around read ones to 8pt, and no cycling', () => {
     setPref(P.smartShrink, true);
     try {
