@@ -8,6 +8,7 @@ import {
 } from 'prosemirror-tables';
 import { ReplaceAroundStep } from 'prosemirror-transform';
 import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
+import { isReading } from './read';
 import { colWidths, schema } from './schema';
 
 const T = schema.nodes;
@@ -134,7 +135,7 @@ class TableBar {
     return dom?.querySelector?.('table') ?? (dom?.tagName === 'TABLE' ? dom : null);
   }
   private place() {
-    const table = this.view.editable ? this.tableDom() : null;
+    const table = this.view.editable && !isReading(this.view.state) ? this.tableDom() : null;
     if (!table) { this.dom.hidden = true; return; }
     const r = table.getBoundingClientRect();
     const h = this.dom.offsetHeight || 30;

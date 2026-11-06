@@ -122,7 +122,7 @@ function dragView(view: EditorView) {
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); } };
 
   grip.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || head < 0) return;
+    if (e.button !== 0 || head < 0 || isReading(view.state)) return;
     e.preventDefault();
     const doc = view.state.doc;
     const sec = sectionAt(doc, head);
@@ -157,7 +157,7 @@ function dragView(view: EditorView) {
 
   return {
     // the doc changed under the grip: it comes back on the next mouse move
-    update(_v: EditorView, prev: { doc: unknown }) { if (!dragging && head >= 0 && prev.doc !== view.state.doc) hideGrip(); },
+    update(_v: EditorView, prev: { doc: unknown }) { if (!dragging && head >= 0 && (prev.doc !== view.state.doc || isReading(view.state))) hideGrip(); },
     destroy() { stay(); view.dom.removeEventListener('mousemove', onMove); host.removeEventListener('mouseleave', onLeave); host.removeEventListener('mouseenter', stay); grip.remove(); line.remove(); },
   };
 }
