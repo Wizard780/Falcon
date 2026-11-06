@@ -45,6 +45,43 @@ await page.keyboard.press('Escape');
 await page.waitForTimeout(150);
 want(!(await page.$('input[aria-label="Speech name"]')), 'Esc cancels');
 
+// + opens New Document: Esc and Cancel make nothing, Enter takes Blank Doc, Speech Doc goes on to the normal prompt
+const docs = () => page.locator('.fs-docs .doc-row').count();
+const plus = '.tools [aria-label="New document"]';
+const before = await docs();
+await page.click(plus);
+await page.waitForSelector('.cf h2:has-text("New Document")');
+await page.waitForTimeout(250);
+await f.shot('new-document');
+await page.keyboard.press(`${MOD}+n`); // the shortcut behind the dialog does nothing
+await page.waitForTimeout(100);
+want((await docs()) === before, 'Mod-N behind the dialog makes nothing');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(150);
+want(!(await page.$('.nd-kinds')) && (await docs()) === before, 'Esc cancels New Document');
+want(await page.evaluate(() => !!document.activeElement?.closest('.ProseMirror')), 'focus is back in the page after Esc');
+await page.click(plus);
+await page.click('.cf-btns button:has-text("Cancel")');
+await page.waitForTimeout(150);
+want(!(await page.$('.nd-kinds')) && (await docs()) === before, 'Cancel makes nothing');
+await page.click(plus);
+await page.waitForSelector('.nd-kinds');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(200);
+want(!(await page.$('.nd-kinds')) && (await docs()) === before + 1 && !!(await page.$('.doc-nm[aria-label="Untitled"]')), 'Enter makes a blank doc');
+await page.keyboard.type('x'); // an untouched blank doc is reused, so give this one text
+await page.keyboard.press(`${MOD}+n`);
+await page.waitForTimeout(200);
+want(!(await page.$('.nd-kinds')) && (await docs()) === before + 2, 'Mod-N still makes a blank doc with no popup');
+await page.click(plus);
+await page.click('.cf .sa-mode:has-text("Speech Doc")');
+await page.waitForSelector('input[aria-label="Speech name"]');
+want(!(await page.$('.nd-kinds')), 'Speech Doc swaps to the speech prompt');
+await page.keyboard.type('1AR');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(200);
+want(!!(await page.$(`.doc-nm[aria-label="Speech 1AR ${year} (speech doc)"]`)), 'Speech Doc goes through the normal speech doc flow');
+
 // Home's New speech doc button; it moves the speech doc to the new file
 await f.shot('before-home');
 await page.click('.fstrip [aria-label="Home"]');
@@ -56,5 +93,5 @@ await page.keyboard.type('2AC');
 await page.click('.cf-btns button:has-text("Create")');
 await page.waitForTimeout(200);
 want((await f.markMap()).startsWith('pocket: 2AC'), 'Create button makes the 2AC doc');
-want(!!(await page.$(`.doc-nm[aria-label="Speech 2AC ${year} (speech doc)"]`)) && !(await page.$(`.doc-nm[aria-label="Speech 1NC ${year} (speech doc)"]`)), 'the speech doc is now 2AC');
+want(!!(await page.$(`.doc-nm[aria-label="Speech 2AC ${year} (speech doc)"]`)) && !(await page.$(`.doc-nm[aria-label="Speech 1AR ${year} (speech doc)"]`)), 'the speech doc is now 2AC');
 await f.done();

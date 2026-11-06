@@ -38,7 +38,7 @@ import { aiService, formatCite, reformatCites, reformatCount, usePreset } from '
 import { Confirm, nameList, type Ask } from './Confirm';
 import { ComparePanel } from './ComparePanel';
 import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
-import { NewSpeech, SaveAs } from './SaveAs';
+import { NewDoc, NewSpeech, SaveAs } from './SaveAs';
 import { copyName, docForMode, type SaveMode } from '../editor/save-modes';
 import { Tips, parseTip } from './Tips';
 import { OutlinePane } from './Outline';
@@ -325,6 +325,7 @@ export function App() {
   const [ask, setAsk] = useState<Ask | null>(null);
   const [compareWith, setCompareWith] = useState<string | null>(null); // Compare Text is open, Text 1 from this selection
   const [speechAsk, setSpeechAsk] = useState(false); // the New speech doc dialog is up
+  const [newAsk, setNewAsk] = useState(false); // the + button's New Document dialog is up
   const [saveAsName, setSaveAsName] = useState<string | null>(null); // the Save As dialog is up, offering this name
   const askRef = useRef(ask);
   askRef.current = ask;
@@ -875,6 +876,7 @@ export function App() {
     setSpeechAsk(true);
   }, [flash]);
   const closeNewSpeech = useCallback(() => setSpeechAsk(false), []);
+  const closeNewDoc = useCallback(() => setNewAsk(false), []);
   const makeSpeech = useCallback((speech: string) => {
     setSpeechAsk(false);
     track('doc_new', { speech: true });
@@ -1092,10 +1094,10 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => compareRef.current !== null || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => compareRef.current !== null || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || newAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
     if (swRef.current) { endSw(false); return; } // a menu key or click while Ctrl-Tab is held: the switcher closes on the current doc
-    if (askRef.current || saveAsRef.current || speechAskRef.current) return; // a warning, Save As or New speech doc is up: it gets answered first
+    if (askRef.current || saveAsRef.current || speechAskRef.current || newAskRef.current) return; // a warning, Save As, New speech doc or New Document is up: it gets answered first
     if (paletteRef.current || ccRef.current) return; // file search or the command center is up: it gets closed first
     if (c === 'settings') { setSettingsOpen(true); return; }
     if (locked() && c !== 'save' && c !== 'saveAs') return;
@@ -1177,8 +1179,8 @@ export function App() {
       // Compare Text is up: text editing keys and its own (Mod-Enter), nothing else
       // (inside the panel its text boxes keep every editing key: word jumps, AltGr characters)
       if (compareRef.current !== null) { if ((e.ctrlKey || e.metaKey) && !(e.target as Element | null)?.closest?.('.cmp') && !/^([acvxz]|Enter)$/i.test(e.key)) e.preventDefault(); return; }
-      // so is New speech doc (its own Esc and Enter included)
-      if (speechAskRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
+      // so are New speech doc and New Document (their own Esc and Enter included)
+      if (speechAskRef.current || newAskRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // Send to speech (` unless changed in Settings), so the page can't type that key (AltGr layouts too: their character arrives with Ctrl+Alt held). Boxes with their own text field keep it.
       if (sendPressed(e) && !settingsRef.current && !e.isComposing && !homeRef.current && !sdOnRef.current && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && !(viewRef.current && isReading(viewRef.current.state))) {
         e.preventDefault(); e.stopPropagation();
@@ -1232,12 +1234,14 @@ export function App() {
   saveAsRef.current = saveAsName;
   const speechAskRef = useRef(speechAsk);
   speechAskRef.current = speechAsk;
+  const newAskRef = useRef(newAsk);
+  newAskRef.current = newAsk;
   settingsRef.current = settingsOpen;
   const paletteRef = useRef(paletteOpen);
   paletteRef.current = paletteOpen;
   const ccRef = useRef(ccOpen);
   ccRef.current = ccOpen;
-  useLayoutEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !speechAsk && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, speechAsk, paletteOpen, ccOpen]);
+  useLayoutEffect(() => { if (!settingsOpen && !ask && saveAsName === null && !speechAsk && !newAsk && !paletteOpen && !ccOpen && !homeRef.current) viewRef.current?.focus(); }, [settingsOpen, ask, saveAsName, speechAsk, newAsk, paletteOpen, ccOpen]);
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1395,7 +1399,7 @@ export function App() {
     return () => removeEventListener(SHOW_EVENT, openSd);
   }, [openSd]);
 
-  const modal = settingsOpen || !!paletteOpen || ccOpen || !!ask || saveAsName !== null || speechAsk;
+  const modal = settingsOpen || !!paletteOpen || ccOpen || !!ask || saveAsName !== null || speechAsk || newAsk;
   return (
     <div ref={appRef} className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
@@ -1424,7 +1428,7 @@ export function App() {
           drag area (which runs under these buttons) would swallow their clicks if they came first. */}
       <div className="covered" inert={sdOn || modal}>
       <Tools outline={showOutline} reading={reading}
-        onNew={(speech) => (speech ? fileNewSpeech() : fileNew())} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
+        onNew={(speech) => (speech ? fileNewSpeech() : setNewAsk(true))} onOpen={() => void fileOpen()} onSave={(as) => void fileSave(as)}
         onFind={openFind} onOutline={() => { showEditor(); setShowOutline((s) => !s); }}
         onRead={() => { showEditor(); run(toggleRead); }}
         speech={speechId === activeId} onSpeech={toggleSpeech} />
@@ -1491,6 +1495,7 @@ export function App() {
       <Confirm ask={ask} />
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
       <ComparePanel open={compareWith} onClose={closeCompare} readSelection={readSelection} />
+      <NewDoc open={newAsk} onBlank={() => { setNewAsk(false); fileNew(); }} onSpeech={() => { setNewAsk(false); fileNewSpeech(); }} onClose={closeNewDoc} />
       <NewSpeech open={speechAsk} onMake={makeSpeech} onClose={closeNewSpeech} />
       <div className={`toast${toast ? ' show' : ''}${toast?.action ? ' has-action' : ''}`} role="status">
         {toast?.msg}
@@ -1813,7 +1818,7 @@ function Tools(props: { outline: boolean; reading: boolean; speech: boolean; onN
   );
   return (
     <div className="tools" role="toolbar" aria-label="File and view">
-      {b('plus', titled('New document', 'new', 'start a blank file. Shift-click for a speech doc'), (e) => props.onNew(e.shiftKey))}
+      {b('plus', titled('New document', 'new', 'choose a blank file or a speech doc. Shift-click goes straight to a speech doc'), (e) => props.onNew(e.shiftKey))}
       {b('open', titled('Open…', 'open', 'open a .docx file'), props.onOpen)}
       {b('save', titled('Save', 'save', 'save this file. Shift-click for Save As'), (e) => props.onSave(e.shiftKey))}
       {b('saveAs', titled('Save As…', 'saveAs', 'save a copy, as-is or as a send, read or marked doc'), () => props.onSave(true))}
