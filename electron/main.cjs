@@ -152,7 +152,8 @@ async function rememberPath(p) {
 const templateFile = () => path.join(app.getPath('userData'), 'template-paths.json');
 let templateLoad = null;
 const templatePaths = () => (templateLoad ??= fs.readFile(templateFile(), 'utf8')
-  .then((t) => new Set(JSON.parse(t).filter((p) => typeof p === 'string')), () => new Set()));
+  .then((t) => new Set(JSON.parse(t).filter((p) => typeof p === 'string')))
+  .catch(() => new Set())); // missing or damaged: every other way of opening a file waits on this, so it can't throw
 
 // Files the OS asks us to open: a double-click in Finder or Explorer, or Open With. macOS sends
 // open-file (before ready, when the click is what launched the app); Windows puts the path on the command

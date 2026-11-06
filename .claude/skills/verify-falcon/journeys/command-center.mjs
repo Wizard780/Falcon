@@ -14,7 +14,7 @@ const open = () => p.$('.cc').then(Boolean);
 
 await openCC();
 f.want(await p.evaluate(() => document.activeElement?.closest('.cc') !== null), 'Mod-Shift-Space opens it with focus in the box');
-f.want((await p.$eval('.cc-start', (x) => x.textContent)).startsWith('Type to search everything') && await p.locator('.cc-chips button').count() === 5, 'an empty box shows the prompt and the prefix chips');
+f.want((await p.$eval('.cc-start', (x) => x.textContent)).startsWith('Type to search everything') && await p.locator('.cc-chips button').count() === 6, 'an empty box shows the prompt and the prefix chips');
 f.want(await p.evaluate(() => { const r = document.querySelector('.cc').getBoundingClientRect(); return r.bottom > innerHeight * 0.6 && document.querySelector('.cc-list').getBoundingClientRect().bottom <= document.querySelector('.cc-bar').getBoundingClientRect().top; }), 'it sits low on the page with results above the box');
 await f.shot('empty');
 await typeIn('c ');
