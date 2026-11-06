@@ -16,7 +16,7 @@ A user builds a speech inside Falcon by pressing `` ` `` in any file. It copies 
 ## How to get to it (user POV)
 
 - `` ` `` (Backquote) with the page focused, or whatever key Settings > Keybindings > Send to speech is set to.
-- The `Send` text button beside Read and the timer in the top bar.
+- The `Send` text button beside the timer in the top bar.
 - The mic button `Speech doc` in the tool row, to pick which file receives sends.
 
 ## Driving it with falcon-verify

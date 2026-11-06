@@ -60,6 +60,18 @@ const P16: Record<string, string> = {
 // the Head mark (logo/build-brand.mjs makes every other brand asset from the same path)
 const LOGO = 'M12 57V36A24 24 0 0 1 36 12H42C50.5 12 56 18 56 26C56 30.5 54 33.5 50.5 35.5C51 31.5 49 29 45.5 29H41C37 29 34.5 32 34.5 36V57ZM39 17.5A3.5 3.5 0 1 0 39 24.5A3.5 3.5 0 1 0 39 17.5Z';
 
+/** The speech timer's icon. The hand starts at twelve and winds back to it as `left` goes from 1 to 0. */
+export function Stopwatch({ left }: { left: number }) {
+  const a = left * 2 * Math.PI;
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6.5 1.8h3" />
+      <circle cx="8" cy="9.2" r="5.3" />
+      <path d={`M8 9.2L${(8 + 3.3 * Math.sin(a)).toFixed(2)} ${(9.2 - 3.3 * Math.cos(a)).toFixed(2)}`} />
+    </svg>
+  );
+}
+
 export function SvgIcon({ name }: { name: string }) {
   if (name === 'logo') return <svg viewBox="12 12 44 45" aria-hidden="true"><path d={LOGO} fill="currentColor" fillRule="evenodd" /></svg>;
   return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: P16[name] }} />;

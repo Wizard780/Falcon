@@ -43,7 +43,7 @@ t = await tipText();
 want(t?.startsWith('Find'), `moving to the next button swaps the tip at once: ${t}`);
 
 const toolbarTips = [];
-for (const label of ['Pocket', 'Hat', 'Block', 'Tag', 'Analytic', 'Undertag', 'Cite', 'Underline', 'Emphasis', 'Clear', 'Shrink', 'Read']) {
+for (const label of ['Pocket', 'Hat', 'Block', 'Tag', 'Analytic', 'Undertag', 'Cite', 'Underline', 'Emphasis', 'Clear', 'Shrink']) {
   await page.mouse.move(700, 600);
   await page.waitForTimeout(500);
   await page.hover(`.toolbar .b:has-text("${label}")`);

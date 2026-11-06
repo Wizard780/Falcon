@@ -95,7 +95,7 @@ export const P = {
   markerTime: def('markerTime', true),
   // Speech and timers
   showPrep: def('showPrep', false),
-  showSend: def('showSend', false), // the Send button beside Read; the send key works either way
+  showSend: def('showSend', false), // the Send button beside the timer; the send key works either way
   prepMin: def('prepMin', 8),
   round: def<'policy' | 'ld' | 'pf'>('round', 'policy'), // which speeches the timer window steps through (src/ui/round-clock.ts)
   lowTime: def('lowTime', 0), // seconds left when the timer starts flashing; 0 = never

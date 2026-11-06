@@ -217,7 +217,7 @@ svg { flex: none; }
 .toolbar { grid-column: 2 / 4; grid-row: 1; padding-left: var(--tools-w); display: flex; justify-content: flex-start; background: var(--u-deep); user-select: none; min-width: 0;
   overflow-x: auto; scrollbar-width: none; container-type: inline-size; }
 .toolbar::-webkit-scrollbar { display: none; }
-/* every group in one run, spaced like the buttons inside a group, right after the tools row; Read and the timer go to the far right */
+/* every group in one run, spaced like the buttons inside a group, right after the tools row; the timer goes to the far right */
 .bar { position: relative; flex: 1 0 auto; display: flex; align-items: center; height: 100%; padding: 0 24px 0 6px; gap: 4px; font: 500 13px/1 var(--ui-font); color: var(--u-tx); }
 .bar .end { margin-left: auto; }
 .bar .g, .bar .end { display: grid; grid-template-rows: 32px 32px; grid-auto-flow: column; gap: 6px 4px; }
@@ -267,6 +267,9 @@ button.b:active { transform: scale(.97); }
 .b.timer { font: 500 12px/1 var(--mono); color: var(--u-mut); font-variant-numeric: tabular-nums; min-width: 56px; }
 .b.timer[data-on] { color: var(--ink-ui); }
 .b.timer[data-on]::after { opacity: 0; }
+/* the speech timer: centered across both rows, wide enough that 10:00 doesn't move it */
+.bar .end > .b.clock { grid-row: span 2; align-self: center; min-width: 84px; padding: 0 10px; gap: 6px; }
+.b.clock svg { width: 16px; height: 16px; }
 .pop { position: fixed; z-index: 2000; display: flex; flex-wrap: wrap; gap: 8px; max-width: 236px; padding: 10px; border-radius: 12px; background: var(--u-pop);
   box-shadow: inset 0 1px 0 var(--u-hover), 0 12px 32px rgba(0, 0, 0, calc(.55 * var(--u-sh))); opacity: 0; transform: scale(.98); transition: opacity 160ms ease-out, transform 180ms cubic-bezier(.23, 1, .32, 1); }
 .pop.in { opacity: 1; transform: none; }
