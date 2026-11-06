@@ -205,7 +205,7 @@ export function replaceOne(view: EditorView, text: string) {
   reveal(view);
 }
 
-/** Replace every match, as one undo step. Returns how many were replaced. */
+/** Replace every match, as one undo step. Returns how many were replaced, or -1 if an AI edit's lock refused the change. */
 export function replaceAll(view: EditorView, text: string): number {
   const st = findKey.getState(view.state);
   if (!st || !st.matches.length || isReading(view.state)) return 0;
@@ -213,8 +213,9 @@ export function replaceAll(view: EditorView, text: string): number {
   for (const m of [...st.matches].reverse()) {
     if (text) tr.insertText(text, m.from, m.to); else tr.delete(m.from, m.to);
   }
+  const before = view.state.doc;
   view.dispatch(tr.scrollIntoView());
-  return st.matches.length;
+  return view.state.doc === before ? -1 : st.matches.length;
 }
 
 export function clearFind(view: EditorView) {
@@ -226,6 +227,6 @@ export const findInfo = (state: EditorState) => findKey.getState(state);
 /** A key asked for the find bar: with the replace row, or in position order (read once by the bar). */
 export let findRequest: { replace?: boolean; byPosition?: boolean } = {};
 export function requestFind(req: { replace?: boolean; byPosition?: boolean }) {
-  findRequest = req;
+  findRequest = { ...req }; // the bar wipes it once read, and a key's request is used again
   window.dispatchEvent(new CustomEvent('falcon-find'));
 }

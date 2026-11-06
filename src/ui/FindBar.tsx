@@ -32,7 +32,7 @@ export function FindBar({ view, inputRef, onClose, flash }: { view: EditorView; 
   const count = f && f.query ? (f.matches.length ? `${f.index + 1}/${f.matches.length}` : 'No results') : '';
   const doAll = () => {
     const n = replaceAll(view, with_);
-    flash(n ? `Replaced ${n} ${n === 1 ? 'match' : 'matches'}` : 'Nothing to replace');
+    flash(n < 0 ? 'An AI edit is working on some of those matches. Try again in a moment.' : n ? `Replaced ${n} ${n === 1 ? 'match' : 'matches'}` : 'Nothing to replace');
   };
   const keys = (e: React.KeyboardEvent, enter: (shift: boolean, mod: boolean) => void) => {
     if (e.key === 'Enter') { e.preventDefault(); enter(e.shiftKey, IS_MAC ? e.metaKey : e.ctrlKey); }
