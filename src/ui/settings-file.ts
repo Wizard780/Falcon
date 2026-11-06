@@ -16,7 +16,7 @@ import { safeSet } from './storage';
 
 const NS = 'falcon.';
 /** Stored values that aren't settings: open documents, recents, the last session. Never exported or imported. */
-const NOT_SETTINGS = ['autosave.', 'recents.', 'cc.recent', 'session', 'meta', 'pageDark'];
+const NOT_SETTINGS = ['autosave.', 'recents.', 'cc.recent', 'session', 'meta', 'pageDark', 'lineHeightMoved'];
 const isSetting = (key: string) =>
   key.startsWith(NS) && key !== P.usageStats.key && !NOT_SETTINGS.some((s) => key.slice(NS.length).startsWith(s));
 

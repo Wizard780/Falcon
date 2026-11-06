@@ -1,4 +1,5 @@
 import { P, onPrefs, pref, type Pref } from '../editor/prefs';
+import { safeSet } from './storage';
 import './settings.css';
 
 // ---------- display settings: CSS variables and root classes (settings.css); none of them change the file ----------
@@ -31,6 +32,12 @@ function applyMetrics() {
 function watchPixelRatio() {
   matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener('change', () => { applyMetrics(); watchPixelRatio(); }, { once: true });
 }
+/** A saved 1.2 was the old default or CardMirror's 1.3 rounded down on import: it moves to 1.3, once. Picking 1.2 after that stays. */
+function migrateLineHeight() {
+  if (localStorage.getItem('falcon.lineHeightMoved')) return;
+  if (localStorage.getItem(P.lineHeight.key) === '1.2') safeSet(P.lineHeight.key, '1.3');
+  safeSet('falcon.lineHeightMoved', 'on');
+}
 function applyDisplay() {
   const root = document.documentElement;
   const v = (k: string, val: string) => (val ? root.style.setProperty(k, val) : root.style.removeProperty(k));
@@ -52,6 +59,7 @@ function applyDisplay() {
   for (const [c, on] of cls) root.classList.toggle(c, on);
   applyMetrics();
 }
+migrateLineHeight();
 applyDisplay();
 onPrefs(applyDisplay);
 watchPixelRatio();
