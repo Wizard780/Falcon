@@ -86,7 +86,7 @@ function createWindow(start = null) {
   const entry = { win, slot: windows.size ? `${Date.now().toString(36)}-${nextSlot++}` : '', paths: start?.path ? [start.path] : [], speech: start?.speech ?? null, start, listening: false, isReady: () => {} };
   entry.ready = new Promise((resolve) => { entry.isReady = resolve; });
   windows.set(page, entry);
-  if (entry.speech) speechHolder = page;
+  if (entry.speech) { speechHolder = page; tellWindows(); } // now, not when its page is up: a send meanwhile must find it
   win.once('closed', () => {
     windows.delete(page);
     entry.isReady();
@@ -131,7 +131,7 @@ function createWindow(start = null) {
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
   // a reload or crash drops the page's listener: hold OS opens until the new page asks again
-  const unlisten = () => { entry.listening = false; };
+  const unlisten = () => { entry.listening = false; entry.answers = false; };
   win.webContents.on('did-start-loading', unlisten);
   win.webContents.on('render-process-gone', unlisten);
   // the app is one page: block every navigation away from it
@@ -383,10 +383,10 @@ ipcMain.on('falcon:recovery-read', (e) => {
 // The only window left picks up what closed or crashed windows left in their files. The files go as they're read:
 // the page's next backup holds whatever it keeps.
 ipcMain.on('falcon:recovery-orphans', (e) => {
-  const dir = app.getPath('userData'), out = [];
+  const dir = app.getPath('userData'), out = [], own = path.basename(recoveryFile(windows.get(e.sender)?.slot));
   try {
     for (const f of fsSync.readdirSync(dir)) {
-      if (!/^recovery-.+\.json$/.test(f)) continue;
+      if (!/^recovery-.+\.json$/.test(f) || f === own) continue;
       try { out.push(fsSync.readFileSync(path.join(dir, f), 'utf8')); fsSync.rmSync(path.join(dir, f), { force: true }); } catch { /* unreadable: skip it */ }
     }
   } catch { /* no folder yet */ }
@@ -581,7 +581,8 @@ app.on('will-quit', () => { for (const room of [...sdWatches.keys()]) sdStop(roo
 // Each request goes to the page, which knows the open docs, and comes back with its answer.
 const bridgeWaits = new Map();
 async function askPage(kind, payload, wc) {
-  await windows.get(wc)?.ready; // a window just made hears nothing until its page is up
+  // a window just made hears nothing until its page is up; one that never comes up mustn't hang the asker
+  await Promise.race([windows.get(wc)?.ready, new Promise((r) => { setTimeout(r, 15000); })]);
   if (!wc || wc.isDestroyed()) return { ok: false, error: 'no-target-doc' };
   return new Promise((resolve) => {
     const id = crypto.randomBytes(8).toString('hex');

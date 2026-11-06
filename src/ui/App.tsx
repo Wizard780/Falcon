@@ -195,10 +195,10 @@ function orphanBackups(): Backup[] {
 }
 function loadBackups(start: WindowStart): Backup[] {
   diskHeld = true; // a new page: the file may hold the last run's docs
-  const orphans = start.alone ? orphanBackups() : [];
   if (start.backup) { // a doc handed to this new window, not a crash copy: it comes whatever Crash recovery says
     try { return unpackList(start.backup); } catch { return []; }
   }
+  const orphans = start.alone ? orphanBackups() : []; // taking them removes them, so this comes after the return above
   if (!pref(P.crashRecovery)) { clearStorage(); clearDisk(); return []; } // turned off in Settings
   const out: Backup[] = [];
   try {
@@ -1484,16 +1484,17 @@ export function App() {
   useEffect(() => {
     if (!spreading || !hasView || docs.length < 2) return;
     if (panes.current.size) { setGroup(null); arrange(null, activeRef.current); return; } // comes back here once they've come apart
-    const moved = docsRef.current.filter((d) => d.id !== activeRef.current);
-    for (const d of moved) {
-      const doc = liveState(d.id)?.doc;
+    const moved = new Set<number>();
+    for (const d of docsRef.current) {
+      const doc = d.id === activeRef.current ? null : liveState(d.id)?.doc;
       if (!doc) continue;
       const speech = d.id === speechRef.current, b = [{ meta: d.meta, doc, active: true, dirty: d.dirty, speech: speech || undefined }];
       bridge.openWindow!({ alone: true, inactive: true, backup: packList(b, b), path: d.meta.path, speech: speech ? d.meta.name || 'Speech' : undefined });
+      moved.add(d.id);
       savedDocs.current.delete(d.id);
       if (speech) { speechRef.current = null; setSpeechId(null); }
     }
-    setDocs((ds) => ds.filter((d) => d.id === activeRef.current));
+    setDocs((ds) => ds.filter((d) => !moved.has(d.id)));
   }, [spreading, hasView, docs.length, group]); // eslint-disable-line react-hooks/exhaustive-deps
   // the window list and Mission Control tell one file's window from another by its title
   const activeName = docs.find((d) => d.id === activeId)?.meta.name;

@@ -216,6 +216,15 @@ app.on('window', watch);
 await (await app.firstWindow()).waitForSelector('.ProseMirror');
 want(await shows(['Four', 'One', 'Speech', 'Three', 'Two']), `Restore open files: ${await layout()}`);
 
+// the last window left, not the first one made, keeps its own file through a reload (the crash screen's Reload)
+await new Promise((r) => setTimeout(r, 1500));
+const lone = await page('Four');
+await app.evaluate(({ BrowserWindow }) => { for (const w of BrowserWindow.getAllWindows()) if (w.getTitle() !== 'Four') w.close(); });
+await until(async () => (await editors()).length === 1);
+await lone.reload();
+await lone.waitForSelector('.ProseMirror');
+want(await until(async () => (await names(lone)).includes('Four') && (await speechText(lone)).length > 20), `the only window reloads to its own file: ${await names(lone)}`);
+
 want(!errors.length, `no page errors: ${errors.join(' / ')}`);
 await app.evaluate(() => { globalThis.falconSkipUnloadGuard = true; });
 await app.close();
