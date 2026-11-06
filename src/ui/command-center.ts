@@ -1,7 +1,7 @@
 /** Command center (Mod-Shift-Space): what a query asks for and how rows rank. Pure, so it's unit tested. */
 
 /** Where a row comes from. The card library isn't here yet: it gets its own source later. */
-export type SourceId = 'arg' | 'cmd' | 'set' | 'doc' | 'file' | 'help';
+export type SourceId = 'arg' | 'cmd' | 'set' | 'doc' | 'file' | 'tpl' | 'help';
 
 /** One choice under a setting (Theme > Light). */
 export type Option = { label: string; on: boolean; pick: () => void };
@@ -45,12 +45,13 @@ export const PREFIXES: { prefix: string; source: SourceId; label: string }[] = [
   { prefix: 's', source: 'set', label: 'Settings' },
   { prefix: 'h', source: 'doc', label: 'Headings and cards in this file' },
   { prefix: 'f', source: 'file', label: 'Files: open, recent and in your search folders' },
+  { prefix: 't', source: 'tpl', label: 'Templates: sets of files that open together' },
   { prefix: '?', source: 'help', label: 'What you can type here' },
 ];
 
 /** "s theme" is settings only; ">" and "#" are VS Code style shorthands that need no space. */
 export function parseQuery(q: string): { source?: SourceId; text: string } {
-  const m = /^([cshf?])(?:\s+|$)/i.exec(q);
+  const m = /^([cshft?])(?:\s+|$)/i.exec(q);
   if (m && (q.length > 1 || m[1] === '?')) return { source: PREFIXES.find((p) => p.prefix === m[1].toLowerCase())!.source, text: q.slice(m[0].length) };
   if (q.startsWith('>')) return { source: 'cmd', text: q.slice(1).trimStart() };
   if (q.startsWith('#') && !/^#\s*\d+\s*$/.test(q)) return { source: 'doc', text: q.slice(1).trimStart() };
@@ -130,7 +131,7 @@ export function noteRecent(key: string) {
 }
 
 // commands edge out settings, which edge out headings, when they match equally well
-const WEIGHT: Record<SourceId, number> = { arg: 40, cmd: 6, set: 3, file: 5, doc: 0, help: 0 };
+const WEIGHT: Record<SourceId, number> = { arg: 40, cmd: 6, set: 3, file: 5, tpl: 6, doc: 0, help: 0 };
 
 /** Rank `entries` against `text`: every word has to hit the label, or (weaker) the group or keywords. */
 export function rank(entries: Entry[], text: string, recent: string[] = [], limit = 80): Entry[] {

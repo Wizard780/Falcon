@@ -147,6 +147,13 @@ async function rememberPath(p) {
   await recentWrite;
 }
 
+// Files picked for a template in Settings. The picker is the say-so, as with Open, and unlike recents they never
+// age out, so a template still opens long after its files were last used.
+const templateFile = () => path.join(app.getPath('userData'), 'template-paths.json');
+let templateLoad = null;
+const templatePaths = () => (templateLoad ??= fs.readFile(templateFile(), 'utf8')
+  .then((t) => new Set(JSON.parse(t).filter((p) => typeof p === 'string')), () => new Set()));
+
 // Files the OS asks us to open: a double-click in Finder or Explorer, or Open With. macOS sends
 // open-file (before ready, when the click is what launched the app); Windows puts the path on the command
 // line, of this launch or of a second one. They wait here until the page says it's listening. Each becomes
@@ -217,10 +224,19 @@ ipcMain.handle('falcon:open-path', async (_e, p) => {
   if (typeof p !== 'string') throw new Error('bad open request');
   const abs = path.resolve(p);
   if (!abs.toLowerCase().endsWith('.docx')) throw new Error('Falcon only opens .docx files');
-  if (!(await loadRecent()).includes(abs) && !(await index().allows(abs))) throw new Error('Open this file with Open first');
+  if (!(await loadRecent()).includes(abs) && !(await templatePaths()).has(abs) && !(await index().allows(abs))) throw new Error('Open this file with Open first');
   const data = new Uint8Array(await fs.readFile(abs));
   await rememberPath(abs);
   return { name: path.basename(abs), path: abs, data };
+});
+ipcMain.handle('falcon:pick-template-files', async (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const r = await dialog.showOpenDialog(win, { title: 'Add files to template', buttonLabel: 'Add', properties: ['openFile', 'multiSelections'], filters: DOCX });
+  if (r.canceled) return [];
+  const picked = r.filePaths.map((p) => path.resolve(p)), allowed = await templatePaths();
+  for (const p of picked) allowed.add(p);
+  await fs.writeFile(templateFile(), JSON.stringify([...allowed])).catch(() => { /* still opens until Falcon quits */ });
+  return picked;
 });
 ipcMain.handle('falcon:index-folders', () => index().folders());
 ipcMain.handle('falcon:index-add', async (e) => {

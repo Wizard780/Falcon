@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('falcon', {
   openFile: () => ipcRenderer.invoke('falcon:open-file'),
   openPath: (p) => ipcRenderer.invoke('falcon:open-path', p),
   saveFile: (opts) => ipcRenderer.invoke('falcon:save-file', opts),
+  pickTemplateFiles: () => ipcRenderer.invoke('falcon:pick-template-files'),
   indexFolders: () => ipcRenderer.invoke('falcon:index-folders'),
   addIndexFolder: () => ipcRenderer.invoke('falcon:index-add'),
   removeIndexFolder: (p) => ipcRenderer.invoke('falcon:index-remove', p),

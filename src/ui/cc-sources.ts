@@ -27,6 +27,7 @@ import { FONT_COLORS } from './swatches';
 import type { Arg, Entry, Option } from './command-center';
 import type { FileHit } from './file-search';
 import type { Recent } from './recents';
+import { TEMPLATES_KEY, fileCount, loadTemplates, pathName, templateName, type Template } from './templates';
 
 /** What the command center needs from the app to act. */
 export type Ctx = {
@@ -51,6 +52,8 @@ export type Ctx = {
   docs?: { id: number; name: string; path?: string }[];
   recents?: Recent[];
   openFile?: (h: FileHit) => void;
+  /** open every file in a template (desktop only) */
+  openTemplate?: (t: Template) => void;
 };
 
 /** The clocks live in the toolbar; the command center asks them through an event. */
@@ -60,7 +63,7 @@ export { TIMER_EVENT, type TimerRequest };
 const timer = (r: TimerRequest) => dispatchEvent(new CustomEvent(TIMER_EVENT, { detail: r }));
 
 export const PAGES: Record<string, string> = {
-  general: 'General', appearance: 'Appearance', editor: 'Editor', formatting: 'Formatting', keys: 'Keybindings', speech: 'Speech and timers',
+  general: 'General', appearance: 'Appearance', editor: 'Editor', formatting: 'Formatting', templates: 'Templates', keys: 'Keybindings', speech: 'Speech and timers',
 };
 
 // ---------- commands ----------
@@ -200,6 +203,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     pick(P.aiCitePreset, 'AI cite-creator prompt', 'ai', [['', 'Built-in prompt'], ...citePresets().map((f): [string, string] => [f.id, f.name])]),
     { id: P.aiCitePresets.key, label: 'AI cite-creator prompt presets', page: 'ai', query: 'AI cite prompt preset', hint: 'Save them in Settings.', link: true, get: () => currentPreset()?.name ?? 'Built-in prompt', set: () => {} },
     { id: P.aiMaxTokens.key, label: 'AI max output tokens', page: 'ai', query: 'AI max output tokens', hint: 'Type it in Settings.', link: true, get: () => pref(P.aiMaxTokens), set: () => {} },
+    { id: TEMPLATES_KEY, label: 'Templates', page: 'templates', query: 'Templates', hint: 'Set them in Settings.', link: true, get: () => String(loadTemplates().length), set: () => {} },
     { id: P.speechName.key, label: 'Speech doc name', page: 'general', query: 'Speech doc name filename', hint: 'Type it in Settings.', link: true, get: () => pref(P.speechName), set: () => {} },
     tog(P.savePrefix, 'Prefix Save As copies', 'general', 'Send, Read and Marked Doc copies start with a prefix.'),
     { id: P.prefixSend.key, label: 'Send Doc filename prefix', page: 'general', query: 'Send Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixSend), set: () => {} },
@@ -369,6 +373,17 @@ export function textEntries(ctx: Ctx, text: string): Entry[] {
 
 const KIND_NAME = { open: 'Open', recent: 'Recent', file: '', cmd: '' };
 /** .docx files as DOCX rows: picking one switches to it when it's open, or opens it. */
+/** One row per template: Enter opens its files, Tab goes to it in Settings. A file's name finds it too, more weakly. */
+export function templateEntries(ctx: Ctx): Entry[] {
+  const open = ctx.openTemplate;
+  if (!open) return [];
+  return loadTemplates().map((t): Entry => ({
+    key: `tpl:${t.id}`, source: 'tpl', label: templateName(t), badge: 'TPL', group: 'Templates', hint: fileCount(t.paths.length),
+    keywords: `template ${t.paths.map(pathName).join(' ')}`, settings: { page: 'templates', query: templateName(t) },
+    can: () => t.paths.length > 0, run: () => { if (!t.paths.length) return false; open(t); },
+  }));
+}
+
 export function fileEntries(ctx: Ctx, hits: FileHit[]): Entry[] {
   return hits.map((h): Entry => ({
     key: `file:${h.path ?? h.key}`, source: 'file', label: h.name, badge: 'DOCX',

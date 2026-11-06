@@ -15,6 +15,7 @@ import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/pref
 import { newFileName, speechFileName } from './files';
 import { bridge, setActiveColor, type IndexFolder, type IndexedFile, type LinkedApp } from '../editor/host';
 import { collectHits, hiddenTest, rankHits, type FileHit } from './file-search';
+import { addTemplatePaths, deleteTemplate, editTemplate, fileCount, loadTemplates, newTemplate, pathName, templateName } from './templates';
 import { PinIcon, StarIcon, loadHidden, loadPinned, loadStarred, toggleHidden, togglePinned, toggleStarred } from './starred';
 import { StarTree } from './StarTree';
 import { downloadSettings, importSettings } from './settings-file';
@@ -43,7 +44,7 @@ type Props = {
   depth: number; onDepth: (d: number) => void;
   highlight: string | null; onHighlight: (c: string) => void;
 };
-type Row = { id?: string; lead?: ReactNode; label: string; hint?: string; bad?: boolean; search?: string; preview?: ReactNode; control: ReactNode; path?: boolean; wide?: boolean };
+type Row = { id?: string; key?: string; lead?: ReactNode; label: string; hint?: string; bad?: boolean; search?: string; preview?: ReactNode; control: ReactNode; path?: boolean; wide?: boolean };
 type Page = { id: string; title: string; icon: string; group?: string; sections: [string, Row[]][] };
 
 /** A theme in miniature: its chrome around a strip of its paper, with a few lines of each one's text. */
@@ -131,7 +132,7 @@ export function Settings(props: Props) {
   const [aiKeys, setAiKeys] = useState<string[]>([]); // which providers have a key saved, by name
   const [promptOpen, setPromptOpen] = useState(false);
   const [delArmed, setDelArmed] = useState<string | null>(null); // the preset whose Delete was clicked once: it takes two
-  useEffect(() => { if (!props.open) setDelArmed(null); }, [props.open]);
+  useEffect(() => { if (!props.open) { setDelArmed(null); setDelTemplate(null); } }, [props.open]);
   useEffect(() => { if (props.open && bridge.secretList) bridge.secretList().then(setAiKeys, () => {}); }, [props.open]);
   // starred and pinned files get picked here, from what the search folders hold
   const [starred, setStarred] = useState<string[]>(loadStarred);
@@ -140,6 +141,9 @@ export function Settings(props: Props) {
   const [files, setFiles] = useState<IndexedFile[]>([]);
   const [starQuery, setStarQuery] = useState('');
   const [openFolders, setOpenFolders] = useState<string[]>([]); // search folders opened to star inside them
+  const [openTemplates, setOpenTemplates] = useState<string[]>([]); // templates opened to edit them
+  const [delTemplate, setDelTemplate] = useState<string | null>(null); // the template whose Delete was clicked once: it takes two
+  const [freshTemplate, setFreshTemplate] = useState<string | null>(null); // just made: its name field takes the focus
   useEffect(() => {
     if (!props.open) return;
     setStarred(loadStarred());
@@ -312,6 +316,36 @@ export function Settings(props: Props) {
   const router = pref(P.aiProvider) === 'openrouter';
   const aiId = router ? 'openrouter' : 'anthropic';
   const aiModelPref = router ? P.aiRouterModel : P.aiModel; // each provider keeps its own, ids don't carry over
+  const redraw = () => setSpecTick((t) => t + 1);
+  const templates = loadTemplates();
+  const templateRows: Row[] = !bridge.pickTemplateFiles
+    ? [{ label: 'Templates', hint: 'Templates open files from your computer, so they work in the desktop app.', control: null }]
+    : [
+      ...templates.flatMap((t): Row[] => {
+        const name = templateName(t), isOpen = openTemplates.includes(t.id), armed = delTemplate === t.id;
+        return [{ key: `tpl:${t.id}`, label: name, hint: fileCount(t.paths.length), search: t.paths.map(pathName).join(' '), lead: (
+          <button className="sb-ico st-chev" aria-expanded={isOpen} aria-label={`${isOpen ? 'Close' : 'Open'} ${name}`} title={isOpen ? 'Close' : 'Show its files'}
+            onClick={() => setOpenTemplates((o) => (isOpen ? o.filter((x) => x !== t.id) : [...o, t.id]))}><SvgIcon name="chev" /></button>), control: (
+          <span className="st-fold">
+            <button className="st-btn" onClick={() => { if (armed) deleteTemplate(t.id); setDelTemplate(armed ? null : t.id); }}>{armed ? 'Really delete?' : 'Delete'}</button>
+          </span>) },
+        ...(isOpen ? [
+          { key: `tpl-name:${t.id}`, label: 'Name', search: name, control: (
+            <input className="st-text" aria-label={`Name of ${name}`} spellCheck={false} maxLength={40} value={t.name} autoFocus={freshTemplate === t.id}
+              onFocus={(e) => { if (freshTemplate === t.id) { e.target.select(); setFreshTemplate(null); } }} onChange={(e) => { editTemplate(t.id, { name: e.target.value }); redraw(); }} />) },
+          ...t.paths.map((p): Row => ({ key: `tpl-file:${t.id}:${p}`, label: pathName(p), hint: p, path: true, search: name, control: (
+            <span className="st-fold">
+              <button className="sb-ico" aria-label={`Remove ${pathName(p)} from ${name}`} title="Remove from this template"
+                onClick={() => { editTemplate(t.id, { paths: t.paths.filter((x) => x !== p) }); redraw(); }}><SvgIcon name="x" /></button>
+            </span>) })),
+          { key: `tpl-add:${t.id}`, label: t.paths.length ? 'Add more files' : 'No files yet', hint: 'They open in this order, and you land on the first.', search: name, control: (
+            <button className="st-btn" onClick={() => void bridge.pickTemplateFiles!().then((ps) => { addTemplatePaths(t, ps); redraw(); })}><SvgIcon name="plus" />Add files…</button>) },
+        ] : [])];
+      }),
+      { label: templates.length ? 'Add another template' : 'No templates yet', hint: `A set of files that open together. In the command center (${keyLabel('commands')}), type t and a space, or just its name, then Enter.`, control: (
+        <button className="st-btn" onClick={() => { const id = newTemplate(); setOpenTemplates((o) => [...o, id]); setFreshTemplate(id); }}><SvgIcon name="plus" />New template</button>) },
+    ];
+
   const pages: Page[] = [
     { id: 'general', title: 'General', icon: 'sliders', sections: [
       ['Startup', [
@@ -405,6 +439,7 @@ export function Settings(props: Props) {
         ]],
       ...(bridge.indexedFiles ? [['Starred and pinned files', [starFind, ...(starRows.length ? starRows : [starNone])]], ['Hidden from search', hiddenRows]] as [string, Row[]][] : []),
     ] },
+    { id: 'templates', title: 'Templates', icon: 'open', sections: [['Templates', templateRows]] },
     { id: 'appearance', title: 'Appearance', icon: 'contrast', sections: [
       ['Theme', [
         { label: 'Theme', hint: 'The colors of Falcon and the page. + makes your own, starting from the one you have on.', wide: true, control: (
@@ -630,7 +665,7 @@ export function Settings(props: Props) {
                 <h3>{title}</h3>
                 <div className="st-card">
                   {rows.map((r) => (
-                    <div key={r.id ?? (r.path ? r.hint : r.label)} className={`st-row${r.wide ? ' wide' : ''}${r.id ? ' st-tree' : ''}`}>
+                    <div key={r.key ?? r.id ?? (r.path ? r.hint : r.label)} className={`st-row${r.wide ? ' wide' : ''}${r.id ? ' st-tree' : ''}`}>
                       {r.lead}
                       {r.label && <div className="st-txt"><span>{r.label}</span>{r.hint && (r.path ? <small className="path"><span dir="ltr">{r.hint}</span></small> : <small data-bad={r.bad || undefined}>{r.hint}</small>)}</div>}
                       {r.preview}

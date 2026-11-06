@@ -23,6 +23,8 @@ type FalconBridge = {
   readClipboardText?: () => Promise<string>;
   openFile?: () => Promise<{ name: string; path: string; data: Uint8Array } | null>;
   openPath?: (path: string) => Promise<{ name: string; path: string; data: Uint8Array }>;
+  /** Pick .docx files in the native dialog for a template, which lets openPath read them from then on. Returns their paths. */
+  pickTemplateFiles?: () => Promise<string[]>;
   saveFile?: (opts: { path?: string; name: string; data: Uint8Array }) => Promise<{ path: string; name: string } | null>;
   /** File search (Cmd-K): the folders allowed in Settings, with file counts (null while the first scan runs). */
   indexFolders?: () => Promise<IndexFolder[]>;
