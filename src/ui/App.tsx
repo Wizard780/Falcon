@@ -964,10 +964,9 @@ export function App() {
    * Write the active doc. As-Is is the document itself, so the open file takes its new name and path;
    * Send, Read and Marked docs are copies and the open file stays as it was.
    */
-  const writeDoc = useCallback(async (meta: DocMeta, mode: SaveMode, as: boolean) => {
-    const v = viewRef.current!;
-    const id = activeRef.current;
-    const saved = v.state.doc;
+  const writeDoc = useCallback(async (meta: DocMeta, mode: SaveMode, as: boolean, id = activeRef.current) => {
+    const saved = liveState(id)?.doc;
+    if (!saved) { flash('That file closed, so nothing was saved.'); return; }
     const out = docForMode(saved, mode);
     if (!out) { flash(mode === 'marked' ? 'No marked cards: mark one with red text first' : 'Nothing to save'); return; }
     try {
@@ -989,16 +988,17 @@ export function App() {
       flash(`Saved ${m.name}`);
     } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
   }, [patch, flash, dropDoc]);
-  /** Save writes the open file; Save As opens the dialog, which calls `saveCopy`. */
+  /** Save writes the open file; Save As opens the dialog, which calls `saveCopy`. A file opening meanwhile can change the active doc, so the dialog keeps the one it was opened on. */
+  const saveAsDoc = useRef(0);
   const fileSave = useCallback(async (as = false) => {
     const d = docsRef.current.find((x) => x.id === activeRef.current)!;
-    if (as) { setSaveAsName(!d.meta.path && (d.meta.name || 'Untitled') === 'Untitled' ? newFileName() : d.meta.name); return; }
+    if (as) { saveAsDoc.current = d.id; setSaveAsName(!d.meta.path && (d.meta.name || 'Untitled') === 'Untitled' ? newFileName() : d.meta.name); return; }
     await writeDoc(d.meta, 'asis', false);
   }, [writeDoc]);
   const saveCopy = (mode: SaveMode, name: string) => {
     setSaveAsName(null);
     const prefix = mode !== 'asis' && pref(P.savePrefix) ? pref(MODE_PREFIX[mode]) : '';
-    void writeDoc({ name: copyName(mode, name, prefix) }, mode, true);
+    void writeDoc({ name: copyName(mode, name, prefix) }, mode, true, saveAsDoc.current);
   };
   const closeSaveAs = useCallback(() => setSaveAsName(null), []);
 
