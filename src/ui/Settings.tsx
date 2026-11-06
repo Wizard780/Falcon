@@ -1,4 +1,4 @@
-import { MAX_PRESETS, citePresets, currentPreset, deletePreset, editPreset, newPreset } from '../editor/ai-cite';
+import { MAX_PRESETS, aiService, citePresets, currentPreset, deletePreset, editPreset, newPreset } from '../editor/ai-cite';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
 import { HIGHLIGHTS, HIGHLIGHT_NAMES } from '../editor/schema';
@@ -128,10 +128,10 @@ export function Settings(props: Props) {
   // apps that asked to send cards in (Nimbus...), kept by the main process
   const [linked, setLinked] = useState<LinkedApp[]>([]);
   useEffect(() => { if (props.open && bridge.linkedApps) bridge.linkedApps().then(setLinked, () => {}); }, [props.open]);
-  const [aiKey, setAiKey] = useState(false);
+  const [aiKeys, setAiKeys] = useState<string[]>([]); // which providers have a key saved, by name
   const [promptOpen, setPromptOpen] = useState(false);
   const [delArmed, setDelArmed] = useState(false); // Delete takes two clicks
-  useEffect(() => { if (props.open && bridge.secretList) bridge.secretList().then((l) => setAiKey(l.includes('anthropic')), () => {}); }, [props.open]);
+  useEffect(() => { if (props.open && bridge.secretList) bridge.secretList().then(setAiKeys, () => {}); }, [props.open]);
   // starred and pinned files get picked here, from what the search folders hold
   const [starred, setStarred] = useState<string[]>(loadStarred);
   const [pinned, setPinned] = useState<string[]>(loadPinned);
@@ -294,6 +294,9 @@ export function Settings(props: Props) {
   const profile = (speech: number, prepMin: number) => () => { props.onSpeechMin(speech); setPref(P.prepMin, prepMin); };
 
   const preset = currentPreset();
+  const router = pref(P.aiProvider) === 'openrouter';
+  const aiId = router ? 'openrouter' : 'anthropic';
+  const aiModelPref = router ? P.aiRouterModel : P.aiModel; // each provider keeps its own, ids don't carry over
   const pages: Page[] = [
     { id: 'general', title: 'General', icon: 'sliders', sections: [
       ['Startup', [
@@ -339,12 +342,13 @@ export function Settings(props: Props) {
       ['Cites', !bridge.aiAsk
         ? [{ label: 'AI features', hint: 'AI needs the desktop app.', control: null }]
         : [
-          tog(P.aiOn, 'AI features', `${keyLabel('aiCite')} turns a selected citation or URL into a styled cite. The text you format goes to Anthropic. Nothing is sent until you run it.`),
-          { label: 'Anthropic API key', search: 'key claude console', hint: aiKey ? 'Saved on this computer, encrypted. Falcon\'s pages and settings files never see it.' : 'Make one at console.anthropic.com. It\'s separate from a Claude subscription and needs a little credit. It\'s typed into its own window, and isn\'t saved if this computer can\'t encrypt it.', control: aiKey
-            ? <button className="st-btn" onClick={() => void bridge.secretRemove!('anthropic').then((l) => setAiKey(l.includes('anthropic')))}>Remove key</button>
-            : <button className="st-btn" onClick={() => void bridge.secretPrompt!('anthropic').then(setAiKey)}>Add key…</button> },
-          { label: 'AI model', search: 'claude opus sonnet haiku', hint: 'Paste any model id your key can use and it goes to Anthropic as is. Leave blank for Claude Opus 5.5.', control: (
-            <input className="st-text st-wide" aria-label="AI model" spellCheck={false} placeholder="claude-opus-5-5" maxLength={200} value={pref(P.aiModel)} onChange={(e) => setPref(P.aiModel, e.target.value)} />) },
+          tog(P.aiOn, 'AI features', `${keyLabel('aiCite')} turns a selected citation or URL into a styled cite. The text you format goes to ${router ? 'OpenRouter and the company running the model' : 'Anthropic'}. Nothing is sent until you run it.`),
+          pick(P.aiProvider, 'AI provider', 'Anthropic runs Claude models. OpenRouter reaches models from many companies, like GPT, Gemini and DeepSeek, on one key.', [['anthropic', 'Anthropic'], ['openrouter', 'OpenRouter']]),
+          { label: `${aiService()} API key`, search: 'key claude console openrouter', hint: aiKeys.includes(aiId) ? 'Saved on this computer, encrypted. Falcon\'s pages and settings files never see it.' : `${router ? 'Make one at openrouter.ai/keys. It needs a little credit.' : 'Make one at console.anthropic.com. It\'s separate from a Claude subscription and needs a little credit.'} It\'s typed into its own window, and isn\'t saved if this computer can\'t encrypt it.`, control: aiKeys.includes(aiId)
+            ? <button className="st-btn" onClick={() => void bridge.secretRemove!(aiId).then(setAiKeys)}>Remove key</button>
+            : <button className="st-btn" onClick={() => void bridge.secretPrompt!(aiId).then(() => bridge.secretList!()).then(setAiKeys)}>Add key…</button> },
+          { label: 'AI model', search: 'claude opus sonnet haiku gpt gemini deepseek openrouter', hint: router ? 'Paste any model id from openrouter.ai/models and it goes there as is.' : 'Paste any model id your key can use and it goes to Anthropic as is. Leave blank for Claude Opus 5.5.', control: (
+            <input className="st-text st-wide" aria-label="AI model" spellCheck={false} placeholder={router ? 'deepseek/deepseek-chat' : 'claude-opus-5-5'} maxLength={200} value={pref(aiModelPref)} onChange={(e) => setPref(aiModelPref, e.target.value)} />) },
           { label: 'Max output tokens', search: 'budget thinking', hint: 'Thinking spends from this too, so too low a number can cut the cite off. Minimum 1024.', control: (
             <input className="st-text" aria-label="Max output tokens" inputMode="numeric" maxLength={6} spellCheck={false} value={pref(P.aiMaxTokens) || ''} onChange={(e) => setPref(P.aiMaxTokens, Number(e.target.value.replace(/\D/g, '')))} />) },
           { label: 'AI cite-creator prompt', search: 'format style preset instructions', hint: `What the AI is told when it formats a cite, so it sets your citation style. Pick the built-in prompt or save up to ${MAX_PRESETS} of your own.`, control: (

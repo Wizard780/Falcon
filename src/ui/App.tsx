@@ -34,7 +34,7 @@ import { Home } from './Home';
 import { SHOW_EVENT, SpeechDrop, type SdTab } from './SpeechDrop';
 import './display'; // the display settings (fonts, sizes, root classes) apply at startup
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
-import { formatCite, reformatCites, reformatCount, usePreset } from '../editor/ai-cite';
+import { aiService, formatCite, reformatCites, reformatCount, usePreset } from '../editor/ai-cite';
 import { Confirm, nameList, type Ask } from './Confirm';
 import { ComparePanel } from './ComparePanel';
 import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
@@ -1119,7 +1119,7 @@ export function App() {
     const n = reformatCount(view);
     if (typeof n === 'string') { flash(n); return; }
     if (!n) { flash('No cites in this document.'); return; }
-    const yes = await confirmAsk({ title: 'Reformat every cite with AI?', body: `${n} ${n === 1 ? 'cite goes' : 'cites go'} to Anthropic one at a time and get rewritten, so this makes ${n} ${n === 1 ? 'request' : 'requests'} on your API key. Each one is its own undo step.`, ok: 'Reformat' });
+    const yes = await confirmAsk({ title: 'Reformat every cite with AI?', body: `${n} ${n === 1 ? 'cite goes' : 'cites go'} to ${aiService()} one at a time and get rewritten, so this makes ${n} ${n === 1 ? 'request' : 'requests'} on your API key. Each one is its own undo step.`, ok: 'Reformat' });
     if (!yes) return;
     const pass = { stop: false };
     citePass.current = pass;

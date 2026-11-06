@@ -26,6 +26,9 @@ the finished cite
 the part outside the bracket, copied exactly from the cite
 [[END]]`;
 
+/** Who gets the text, for what the app says. */
+export const aiService = () => (pref(P.aiProvider) === 'openrouter' ? 'OpenRouter' : 'Anthropic');
+
 export type CitePreset = { id: string; name: string; prompt: string };
 export const MAX_PRESETS = 10;
 
@@ -155,7 +158,9 @@ async function rewrite(view: EditorView, range: Span): Promise<CiteResult> {
   if (!original.trim()) return { ok: false, error: 'There\'s no text in that selection.', end: range.to };
   const id = ++nextId;
   view.dispatch(view.state.tr.setMeta(key, { add: { ...range, id } }).setMeta('addToHistory', false));
-  const answer = await bridge.aiAsk!({ system: citePrompt(), text: original.trim(), model: pref(P.aiModel).trim(), maxTokens: pref(P.aiMaxTokens) });
+  const provider = pref(P.aiProvider);
+  const model = pref(provider === 'openrouter' ? P.aiRouterModel : P.aiModel).trim();
+  const answer = await bridge.aiAsk!({ provider, system: citePrompt(), text: original.trim(), model, maxTokens: pref(P.aiMaxTokens) });
   if (view.isDestroyed) return { ok: false, error: 'The document closed.', stop: true, end: 0 };
   const now = key.getState(view.state)!.find((s) => s.id === id)!;
   view.dispatch(view.state.tr.setMeta(key, { drop: id }).setMeta('addToHistory', false));

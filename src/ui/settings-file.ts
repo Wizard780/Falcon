@@ -27,6 +27,7 @@ const APP_KEYS: Record<string, (v: string) => boolean> = {
   zoom: inRange(0.5, 3), speech: (v) => inRange(1, 30)(v) && Number.isInteger(Number(v)), depth: (v) => ['1', '2', '3', '4'].includes(v),
   outline: (v) => v === 'on' || v === 'off', outlineWidth: inRange(200, 560), highlight: (v) => v in HIGHLIGHTS, shading: (v) => HEX.test(v), fontColor: (v) => HEX.test(v),
   themes: (v) => { try { return Array.isArray(JSON.parse(v)); } catch { return false; } },
+  aiProvider: (v) => v === 'anthropic' || v === 'openrouter',
   aiMaxTokens: inRange(1024, 128000),
   aiCitePresets: (v) => { try { return Array.isArray(JSON.parse(v)); } catch { return false; } },
 };
@@ -176,6 +177,8 @@ const CM_MAP: [string, string, (get: Get) => string | undefined][] = [
   ['hlUnderlined', 'highlightUnderlinedOnly', (g) => bool(g('highlightUnderlinedOnly'))],
   ['aiOn', 'aiFeaturesEnabled', (g) => bool(g('aiFeaturesEnabled'))],
   ['aiModel', 'aiModelOverride', (g) => { const v = g('aiModelOverride'); return typeof v === 'string' && v ? v : undefined; }],
+  ['aiProvider', 'aiProvider', (g) => { const v = g('aiProvider'); return v === 'anthropic' || v === 'openrouter' ? v : undefined; }],
+  ['aiRouterModel', 'openrouterModel', (g) => { const v = g('openrouterModel'); return typeof v === 'string' && v ? v : undefined; }],
   ['aiMaxTokens', 'aiMaxTokens', (g) => { const v = g('aiMaxTokens'); return typeof v === 'number' && v >= 1024 ? String(Math.round(v)) : undefined; }],
   // a customized prompt comes over as a preset, next to any you've saved, and goes into use
   ['aiCitePresets', 'aiCitePrompt', (g) => { const v = g('aiCitePrompt'); return typeof v === 'string' && v.trim() ? JSON.stringify([...citePresets().filter((f) => f.id !== 'cardmirror'), { id: 'cardmirror', name: 'My prompt', prompt: v }]) : undefined; }],

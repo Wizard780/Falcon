@@ -76,7 +76,7 @@ type FalconBridge = {
   secretPrompt?: (id: string) => Promise<boolean>;
   secretRemove?: (id: string) => Promise<string[]>;
   /** One model request. `stop` means retrying won't help (a bad key, no credit). */
-  aiAsk?: (req: { system: string; text: string; model: string; maxTokens: number }) => Promise<{ text?: string; error?: string; stop?: boolean }>;
+  aiAsk?: (req: { provider: string; system: string; text: string; model: string; maxTokens: number }) => Promise<{ text?: string; error?: string; stop?: boolean }>;
   platform?: string;
 };
 /** A SpeechDrop answer: the value, or SpeechDrop's error code ('no_room', 'too_large', 'unreachable'…). */

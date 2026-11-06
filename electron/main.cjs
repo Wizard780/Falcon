@@ -490,8 +490,8 @@ ipcMain.handle('falcon:secret-list', () => secrets().list());
 ipcMain.handle('falcon:secret-prompt', (e, id) => promptSecret({ BrowserWindow, parent: BrowserWindow.fromWebContents(e.sender), secrets: secrets(), id, show: !HEADLESS }));
 ipcMain.handle('falcon:secret-remove', (_e, id) => { secrets().remove(id); return secrets().list(); });
 let aiApi = null;
-const ai = () => (aiApi ??= createAi({ key: () => secrets().get('anthropic') }));
-ipcMain.handle('falcon:ai-ask', (_e, r) => ai().ask({ system: String(r?.system ?? ''), text: String(r?.text ?? '').slice(0, 20000), model: String(r?.model ?? ''), maxTokens: Number(r?.maxTokens) }));
+const ai = () => (aiApi ??= createAi({ key: (id) => secrets().get(id) }));
+ipcMain.handle('falcon:ai-ask', (_e, r) => ai().ask({ provider: r?.provider === 'openrouter' ? 'openrouter' : 'anthropic', system: String(r?.system ?? ''), text: String(r?.text ?? '').slice(0, 20000), model: String(r?.model ?? ''), maxTokens: Number(r?.maxTokens) }));
 ipcMain.handle('falcon:bridge-apps', () => linkedApps());
 ipcMain.handle('falcon:bridge-allow', (_e, appId, on) => { if (typeof appId === 'string') { if (on === null) editorBridge?.forget(appId); else editorBridge?.setAllowed(appId, on === true); } return linkedApps(); });
 function startEditorBridge() {

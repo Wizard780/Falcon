@@ -51,6 +51,68 @@ describe('secrets', () => {
   });
 });
 
+describe('OpenRouter', () => {
+  const answer = (body: unknown, status = 200) => vi.fn(async (_url: string, _init: { headers: Record<string, string>; body: string }) => new Response(JSON.stringify(body), { status }));
+  const ok = (content: unknown, finish_reason = 'stop') => ({ choices: [{ finish_reason, message: { role: 'assistant', content } }] });
+  const ask = { ...req, provider: 'openrouter', model: 'deepseek/deepseek-chat' };
+  const router = (post: unknown, key = (id: string) => (id === 'openrouter' ? 'rk' : '')) => createAi({ key, post });
+
+  it('keeps its key apart from the Anthropic one', () => {
+    const s = createSecrets({ safeStorage, dir: dir() });
+    s.set('openrouter', 'rk');
+    expect([s.list(), s.get('anthropic')]).toEqual([['openrouter'], '']);
+  });
+  it('sends the prompt, the text and the pasted model with its own key', async () => {
+    const post = answer(ok('hi'));
+    expect(await router(post).ask(ask)).toEqual({ text: 'hi' });
+    const [url, init] = post.mock.calls[0];
+    expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+    expect(init.headers.Authorization).toBe('Bearer rk');
+    expect(JSON.parse(init.body)).toEqual({ model: 'deepseek/deepseek-chat', max_tokens: 8192, messages: [{ role: 'system', content: 's' }, { role: 'user', content: 't' }] });
+  });
+  it('sends nothing without a key or a model', async () => {
+    const post = answer(ok('hi'));
+    expect(await router(post, () => '').ask(ask)).toMatchObject({ stop: true, error: expect.stringContaining('OpenRouter API key') });
+    expect(await router(post).ask({ ...ask, model: ' ' })).toMatchObject({ stop: true, error: expect.stringContaining('Paste an OpenRouter model') });
+    expect(post).not.toHaveBeenCalled();
+  });
+  it('never touches Anthropic', async () => {
+    const { create, Client } = clientWith();
+    await createAi({ key: () => 'k', Client, post: answer(ok('hi')) }).ask(ask);
+    expect(create).not.toHaveBeenCalled();
+  });
+  it('stops a run on a bad key, no credit or a bad model, and not on a busy one', async () => {
+    const bad = (code: number, message: string) => router(answer({ error: { code, message } }, code)).ask(ask);
+    expect(await bad(401, 'no')).toMatchObject({ stop: true });
+    expect(await bad(402, 'no')).toMatchObject({ stop: true, error: expect.stringContaining('credit') });
+    expect(await bad(400, 'gpt-x is not a valid model ID')).toMatchObject({ stop: true, error: expect.stringContaining('gpt-x') });
+    expect(await bad(404, 'No endpoints found')).toMatchObject({ stop: true, error: expect.stringContaining('No endpoints') });
+    expect((await bad(429, 'slow')).stop).toBeUndefined();
+    expect(await bad(502, 'model is down')).toEqual({ error: 'OpenRouter said: model is down' });
+  });
+  it('catches a failure that comes back as a 200', async () => {
+    expect((await router(answer({ error: { code: 502, message: 'all providers failed' } })).ask(ask)).error).toContain('all providers failed');
+    expect((await router(answer({ choices: [{ error: { code: 500, message: 'died' } }] })).ask(ask)).error).toContain('died');
+    expect((await router(answer({})).ask(ask)).error).toBe('The AI request failed.');
+  });
+  it('says when a model declined or ran out of room', async () => {
+    expect((await router(answer(ok('x', 'content_filter'))).ask(ask)).error).toContain('declined');
+    expect((await router(answer(ok(null, 'length'))).ask(ask)).error).toContain('Raise max output tokens');
+  });
+  it('turns no content into an empty answer, not a crash', async () => {
+    expect(await router(answer(ok(null))).ask(ask)).toEqual({ text: '' });
+  });
+  it('says so when it can\'t get through or takes too long', async () => {
+    expect((await router(vi.fn(async () => { throw new TypeError('fetch failed'); })).ask(ask)).error).toContain('online');
+    const slow = vi.fn(async () => { throw Object.assign(new Error('t'), { name: 'TimeoutError' }); });
+    expect((await router(slow).ask(ask)).error).toContain('too long');
+  });
+  it('survives a body that isn\'t JSON', async () => {
+    const post = vi.fn(async () => new Response('<html>bad gateway</html>', { status: 502 }));
+    expect(await router(post).ask(ask)).toEqual({ error: 'OpenRouter error 502' });
+  });
+});
+
 describe('asking', () => {
   const ready = (Client: unknown) => createAi({ key: () => 'k', Client });
   it('defaults to Opus 5.5 with refusal fallbacks and a cached prompt', async () => {
