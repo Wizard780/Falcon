@@ -119,7 +119,9 @@ svg { flex: none; }
 .fs-b.upd:hover { background: var(--u-ctl-on); }
 .fs-b.upd[data-state="installing"] { cursor: progress; color: var(--u-mut); box-shadow: var(--u-top); }
 .upd-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--u-tx); box-shadow: 0 0 0 2px var(--u-raised); }
-.upd[data-state="installing"] .upd-dot { display: none; }
+.fs-b.upd[data-state="downloading"] { cursor: progress; color: var(--u-mut); box-shadow: var(--u-top); }
+.upd[data-state="downloading"]::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(var(--u-tx) var(--p), transparent 0); mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); }
+.upd[data-state="installing"] .upd-dot, .upd[data-state="downloading"] .upd-dot { display: none; }
 .upd[data-state="error"] .upd-dot { background: var(--ink-ui); }
 .upd-card { position: fixed; z-index: 1; left: calc(var(--strip-w) + 4px); width: 340px; padding: 18px 20px; border-radius: 20px; background: var(--u-deep);
   box-shadow: inset 0 0 0 1px var(--u-hover), 0 8px 24px rgba(0, 0, 0, calc(.35 * var(--u-sh))); color: var(--u-tx); font-size: 14px; line-height: 1.45;
