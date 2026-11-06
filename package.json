@@ -1,6 +1,6 @@
 {
   "name": "falcon",
-  "version": "0.1.9",
+  "version": "0.1.8",
   "description": "Falcon: a debate evidence editor",
   "main": "electron/main.cjs",
   "scripts": {
