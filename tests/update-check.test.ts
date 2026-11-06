@@ -63,8 +63,8 @@ describe('the update spot in the rail', () => {
   });
 
   it('warns before restarting: Cancel stays put, confirming installs', async () => {
-    let installs = 0;
-    const app = await mountApp({ onUpdate: (f: (u: UpdateInfo | null) => void) => { f(ready); return () => {}; }, installUpdate: async () => { installs++; } });
+    let installs = 0, asked = '';
+    const app = await mountApp({ onUpdate: (f: (u: UpdateInfo | null) => void) => { f(ready); return () => {}; }, installUpdate: async (v: string) => { installs++; asked = v; } });
     const click = () => app.act(() => (app.el.querySelector('.fs-b.upd') as HTMLButtonElement).click());
     await click();
     expect(app.el.querySelector('#cf-t')?.textContent).toBe('Install Falcon 9.9.9 and restart?');
@@ -74,6 +74,7 @@ describe('the update spot in the rail', () => {
     expect(app.el.querySelector('.cf-ok')?.textContent).toBe('Install and Restart');
     await app.act(() => (app.el.querySelector('.cf-ok') as HTMLButtonElement).click());
     expect(installs).toBe(1);
+    expect(asked).toBe('9.9.9');
   });
 
   it('opens the disk image with no warning when nothing restarts', async () => {

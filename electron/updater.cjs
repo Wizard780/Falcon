@@ -51,6 +51,9 @@ let file = null; // the downloaded installer
 let pending = null; // the check running now: a click during one waits on it
 let fetching = false; // an installer is downloading
 const dir = () => path.join(app.getPath('userData'), 'updates');
+/** Delete the downloaded versions `keep` says no to. */
+const sweep = (keep) => fsp.readdir(dir()).then((names) => Promise.all(names.filter((n) => !keep(n))
+  .map((n) => fsp.rm(path.join(dir(), n), { recursive: true, force: true })))).catch(() => {});
 function publish(next) {
   update = next;
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send('falcon:update', update);
@@ -140,10 +143,9 @@ async function fetchInstaller(info, asset, sums) {
       await fsp.rename(to + '.part', to);
     }
     if (update?.state === 'installing') return; // an older one is going in now; this one waits for next launch
-    const prev = file;
     file = to;
     publish({ ...info, state: 'ready' });
-    if (prev) fsp.rm(path.dirname(prev), { recursive: true, force: true }).catch(() => {});
+    void sweep((n) => n === info.version);
   } catch (e) {
     console.error('[falcon] update download failed:', e.message); // the next check starts it over
     fsp.rm(to + '.part', { force: true }).catch(() => {});
@@ -172,8 +174,9 @@ async function swapMac() {
   await rmApp(old); // start() sweeps up anything left
 }
 
-async function install() {
-  if (!update || !file || update.state === 'installing' || update.state === 'downloading') return;
+// version: what the user agreed to. A later one may have replaced it while the dialog was up: the rail shows that one, to ask again
+async function install(version) {
+  if (!update || !file || update.version !== version || update.state === 'installing' || update.state === 'downloading') return;
   if (update.manual) { await shell.openPath(file); return; } // the user drags it in from the disk image
   publish({ ...update, state: 'installing', error: undefined });
   try {
@@ -197,10 +200,9 @@ function start() {
   // what an interrupted Mac swap left beside the app
   if (process.platform === 'darwin' && app.isPackaged) for (const n of ['.Falcon-update.app', '.Falcon-old.app']) void rmApp(path.join(path.dirname(bundle()), n));
   // an installer for a later version stays: if it's still the latest, the next check won't download it again
-  swept = fsp.readdir(dir()).then((names) => Promise.all(names.filter((n) => !newer(n, app.getVersion()))
-    .map((n) => fsp.rm(path.join(dir(), n), { recursive: true, force: true })))).catch(() => {});
+  swept = sweep((n) => newer(n, app.getVersion()));
   ipcMain.handle('falcon:update-get', () => update);
-  ipcMain.handle('falcon:update-install', install);
+  ipcMain.handle('falcon:update-install', (_e, version) => install(version));
   ipcMain.handle('falcon:update-check', () => check()); // the button in the rail, when no update waits
   // packaged builds only (dev and test runs never update themselves), unless a test feed is set
   const feed = !!TEST_FEED;

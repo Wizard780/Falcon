@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld('falcon', {
     void ipcRenderer.invoke('falcon:update-get').then((u) => f(u ?? null));
     return () => ipcRenderer.removeListener('falcon:update', on);
   },
-  installUpdate: () => ipcRenderer.invoke('falcon:update-install'),
+  installUpdate: (version) => ipcRenderer.invoke('falcon:update-install', version),
   checkUpdate: () => ipcRenderer.invoke('falcon:update-check'),
   track: (event, props) => ipcRenderer.send('falcon:track', String(event), props ?? {}),
   // SpeechDrop: each call answers { ok, value } or { ok: false, error } (a SpeechDrop error code)

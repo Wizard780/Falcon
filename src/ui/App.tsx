@@ -449,7 +449,8 @@ export function App() {
     setUpdate(u);
   }), [flash]);
   const installUpdate = useCallback(async () => {
-    if (update && !update.manual) { // manual only opens the disk image: nothing restarts
+    if (!update) return;
+    if (!update.manual) { // manual only opens the disk image: nothing restarts
       const names = docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled');
       if (!(await confirmAsk({
         title: `Install Falcon ${update.version} and restart?`,
@@ -457,7 +458,7 @@ export function App() {
         ok: names.length ? 'Restart Without Saving' : 'Install and Restart',
       }))) return;
     }
-    void bridge.installUpdate?.();
+    void bridge.installUpdate?.(update.version);
   }, [confirmAsk, update]);
   // no update waiting: the same spot in the rail checks now
   const [checking, setChecking] = useState(false);
