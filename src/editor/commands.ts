@@ -174,7 +174,7 @@ function paintable(doc: PMNode, ranges: Range[], type: MarkType): Range[] {
   return out;
 }
 
-/** F11 / Mod-F11: toggle a color mark. `null` color is the "no color" pen, which strips the mark. */
+/** F11 / Mod-F11 and the paintbrush: toggle a color mark. `null` color is the "no color" pen, which strips the mark. */
 export function toggleColorMark(type: MarkType, color: string | null): Command {
   return (state, dispatch) => {
     const ranges = trimRanges(state.doc, targetRanges(state, 'none'));
@@ -189,18 +189,6 @@ export function toggleColorMark(type: MarkType, color: string | null): Command {
       if (has) for (const r of ranges) tr.removeMark(r.from, r.to, type);
       else for (const r of paint) tr.addMark(r.from, r.to, type.create({ color }));
     }
-    return finish(state, tr, dispatch);
-  };
-}
-
-/** Paint (never toggle) a color: used by the paintbrush. */
-export function paintColorMark(type: MarkType, color: string | null, from: number, to: number): Command {
-  return (state, dispatch) => {
-    const [r] = trimRanges(state.doc, [{ from, to }]);
-    if (!r) return false;
-    const tr = state.tr;
-    if (color === null) tr.removeMark(r.from, r.to, type);
-    else for (const p of paintable(state.doc, [r], type)) tr.addMark(p.from, p.to, type.create({ color }));
     return finish(state, tr, dispatch);
   };
 }

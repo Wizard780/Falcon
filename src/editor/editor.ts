@@ -8,7 +8,7 @@ import { keymap } from 'prosemirror-keymap';
 import { DOMParser as PMDOMParser, Fragment, Slice, type Node as PMNode } from 'prosemirror-model';
 import { EditorState, Plugin, PluginKey, TextSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
-import { cardAround, paintColorMark, pastedText } from './commands';
+import { cardAround, pastedText, toggleColorMark } from './commands';
 import { activeColors, disarmPlainPaste, plainPasteArmed } from './host';
 import { falconKeymap } from './keymap';
 import { IS_MAC } from './keybinds';
@@ -28,7 +28,7 @@ import { footnotePlugin } from './footnotes';
 import { WINDOW_META, windowPlugin } from './window';
 import { smartQuotesPlugin } from './quotes';
 
-/** Paintbrush: while armed, every mouse selection gets painted with the active color. */
+/** Paintbrush: while armed, every mouse selection gets the active color, or loses it if it's already all that color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
 const brush = new Plugin<{ kind: 'highlight' | 'shading' | null }>({
   key: brushKey,
@@ -47,11 +47,11 @@ const brush = new Plugin<{ kind: 'highlight' | 'shading' | null }>({
         if (!kind || isReading(view.state)) return false;
         // let the selection settle, then paint it
         setTimeout(() => {
-          const { from, to, empty } = view.state.selection;
+          const { to, empty } = view.state.selection;
           if (empty) return;
           const strip = (ev as MouseEvent).altKey || (IS_MAC && (ev as MouseEvent).ctrlKey);
           const color = strip ? null : activeColors[kind];
-          paintColorMark(schema.marks[kind], color, from, to)(view.state, view.dispatch);
+          toggleColorMark(schema.marks[kind], color)(view.state, view.dispatch);
           view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, to)));
         }, 0);
         return false;
