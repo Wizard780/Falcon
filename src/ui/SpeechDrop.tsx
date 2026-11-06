@@ -88,6 +88,7 @@ export function SpeechDrop(props: {
   const [busy, setBusy] = useState<string | null>(null); // "Uploading 1AC.docx…"
   const [drag, setDrag] = useState(false);
   const [at, setAt] = useState(0);
+  const here = useRef<string | null>(null); // the room this tab is in right now, for answers that come back after leaving it
   const known = useRef<Set<number> | null>(null);
   const filesRef = useRef<SdFile[]>([]);
   const uploading = useRef(new Set<string>());
@@ -128,6 +129,7 @@ export function SpeechDrop(props: {
     const r = await api.room(code);
     if (!r.ok) { flash(say(r.error)); return false; }
     known.current = null;
+    here.current = code;
     take(r.value.files, false);
     setFresh(new Set());
     setOwned(mine(code));
@@ -139,18 +141,18 @@ export function SpeechDrop(props: {
     return true;
   }, [api, take, flash]);
 
-  const leave = () => { setRoom(null); setFiles([]); setFresh(new Set()); known.current = null; };
+  const leave = () => { here.current = null; setRoom(null); setFiles([]); setFresh(new Set()); known.current = null; };
 
   const send = useCallback(async (name: string, data: Uint8Array) => {
-    if (!api || !room) return;
+    if (!api || !room || here.current !== room.code) return; // left mid-batch: the rest stay unsent
     uploading.current.add(name);
     setBusy(`Uploading ${name}…`);
     let r: SdResult<{ files: SdFile[]; index: number | null }>;
     try { r = await api.upload(room.code, name, data); }
     finally { setBusy(null); }
     if (!r.ok) { uploading.current.delete(name); flash(`Couldn't upload ${name}: ${say(r.error)}`); return; }
-    if (r.value.index !== null) { setMine(room.code, r.value.index, true); setOwned(mine(room.code)); }
-    take(r.value.files, false);
+    if (r.value.index !== null) setMine(room.code, r.value.index, true);
+    if (here.current === room.code) { setOwned(mine(room.code)); take(r.value.files, false); }
     uploading.current.delete(name);
     flash(`Uploaded ${name} to ${room.name}`);
   }, [api, room, take, flash]);
@@ -196,8 +198,7 @@ export function SpeechDrop(props: {
     const r = await api.remove(room.code, f.index);
     if (!r.ok) { flash(say(r.error)); return; }
     setMine(room.code, f.index, false);
-    setOwned(mine(room.code));
-    take(r.value, false);
+    if (here.current === room.code) { setOwned(mine(room.code)); take(r.value, false); }
   };
   const downloadAll = async () => {
     if (!api || !room) return;
