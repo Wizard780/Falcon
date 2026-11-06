@@ -5,7 +5,7 @@ import { gapCursor } from 'prosemirror-gapcursor';
 import { fixTables } from 'prosemirror-tables';
 import { history } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
-import { DOMParser as PMDOMParser, Slice, type Node as PMNode } from 'prosemirror-model';
+import { DOMParser as PMDOMParser, Fragment, Slice, type Node as PMNode } from 'prosemirror-model';
 import { EditorState, Plugin, PluginKey, TextSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { cardAround, paintColorMark, pastedText } from './commands';
@@ -96,13 +96,29 @@ const selectionClasses = new Plugin({
   },
 });
 
+/** One analytic or undertag line, as its own open slice. Null for anything else. A triple click also copies the empty start of the next line. */
+function inlineLine(slice: Slice): Slice | null {
+  const { firstChild: first, lastChild: last, childCount } = slice.content;
+  if (!first?.isTextblock || (first.attrs.style !== 'analytic' && first.attrs.style !== 'undertag')) return null;
+  if (childCount === 1) return new Slice(slice.content, 1, 1);
+  return childCount === 2 && !last!.content.size ? new Slice(Fragment.from(first), 1, 1) : null;
+}
+
+/** Does a paste here replace all of a line (or land on an empty one)? */
+function fillsLine({ $from, $to }: EditorState['selection']) {
+  return $from.sameParent($to) && $from.parentOffset === 0 && $to.parentOffset === $to.parent.content.size;
+}
+
 /** Mod-V after a refused F2 pastes plain; Word/web HTML is cleaned of source styling. Copies carry inline styles for Gmail, Docs and Word. */
 const pastePlugin = new Plugin({
   props: {
     clipboardSerializer,
     transformPastedHTML: (html) => cleanPastedHTML(html),
-    // a pasted tag or heading keeps its style instead of melting into the line it lands on
-    transformPasted: (slice) => {
+    // a pasted tag or heading keeps its style instead of melting into the line it lands on.
+    // analytics and undertags are just text, so on a line with words they sit right next to them
+    transformPasted: (slice, view) => {
+      const line = fillsLine(view.state.selection) ? null : inlineLine(slice);
+      if (line) return line;
       const first = slice.content.firstChild;
       if (slice.openStart > 0 && first?.isTextblock && first.attrs.style !== 'normal') return new Slice(slice.content, 0, slice.openEnd);
       return slice;

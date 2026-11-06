@@ -22,6 +22,7 @@ const M = schema.marks;
 /**
  * Backspace at a card's edges: never merge body text up into a tag.
  * At the start of a tag, a blank line above is removed; otherwise nothing happens.
+ * An analytic is just text, so it joins the line above.
  * On an empty line right below a tag, the line is removed.
  */
 const backspaceAtCardEdge: Command = (state, dispatch) => {
@@ -40,7 +41,7 @@ const backspaceAtCardEdge: Command = (state, dispatch) => {
       if (dispatch) dispatch(state.tr.delete(prevPos, prevPos + prev.nodeSize).scrollIntoView());
       return true;
     }
-    return true; // swallow: don't merge a tag into the paragraph above
+    return cur.attrs.style !== 'analytic'; // swallow: don't merge a tag into the paragraph above
   }
   if (isCardHead(prev)) {
     if (cur.content.size === 0) {
@@ -74,7 +75,7 @@ const deleteAtCardEdge: Command = (state, dispatch) => {
     if (isCardHead(next)) return false; // tag + tag merge normally
     return true;
   }
-  if (isCardHead(next) && cur.content.size > 0) return true; // don't pull a tag into body text
+  if (next.attrs.style === 'tag' && cur.content.size > 0) return true; // don't pull a tag into body text
   return false;
 };
 

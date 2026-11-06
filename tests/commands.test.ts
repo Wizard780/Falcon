@@ -88,6 +88,24 @@ describe('card edges', () => {
     expect(map(s1)).toBe('normal: para\ntag: Tag one');
     expect(map(run(caret(s1, 'Tag'), K.Backspace))).toBe('normal: para\ntag: Tag one');
   });
+  it('Backspace at the start of an analytic joins it to the line above, whatever that line is', () => {
+    expect(map(run(caret(make([['normal', 'para '], ['analytic', 'Two']]), 'Two'), K.Backspace))).toBe('normal: para Two');
+    expect(map(run(caret(make([['analytic', 'One '], ['analytic', 'Two']]), 'Two'), K.Backspace))).toBe('analytic: One Two');
+    expect(map(run(caret(make([['tag', 'Tag '], ['analytic', 'Two']]), 'Two'), K.Backspace))).toBe('tag: Tag Two');
+  });
+  it('Backspace at the start of an analytic takes out a blank line above first', () => {
+    expect(map(run(caret(make([['normal', 'para'], ['normal', ''], ['analytic', 'Two']]), 'Two'), K.Backspace))).toBe('normal: para\nanalytic: Two');
+  });
+  it('body text under an analytic still stays off it', () => {
+    const s = make([['analytic', 'One'], ['normal', 'body']]);
+    expect(map(run(caret(s, 'body'), K.Backspace))).toBe(map(s));
+  });
+  it('Delete at the end of a line pulls up an analytic, but not a tag', () => {
+    const s = make([['normal', 'para '], ['analytic', 'Two']]);
+    expect(map(run(caret(s, 'para ', 5), K.Delete))).toBe('normal: para Two');
+    const t = make([['normal', 'para '], ['tag', 'Two']]);
+    expect(map(run(caret(t, 'para ', 5), K.Delete))).toBe(map(t));
+  });
   it('Backspace on an empty line under a tag removes it', () => {
     const s = make([['tag', 'Tag'], ['normal', '']]);
     const after = run(s.apply(s.tr.setSelection(Selection.atEnd(s.doc))), K.Backspace);
@@ -264,5 +282,44 @@ describe('applying a style, like CardMirror', () => {
   it('bold and italic keys leave size alone', () => {
     const s = run(select(para(small('tiny')), 'tiny'), K['Mod-b']);
     expect(map(s)).toContain('size:8pt');
+  });
+});
+
+describe('pasting an analytic', () => {
+  /** Copy `from` to `to` in a doc and paste it through ProseMirror's real clipboard path, with the selection `pick` makes. */
+  function pasteInto(src: EditorState, from: number, to: number, into: EditorState, pick: (s: EditorState) => EditorState) {
+    const copy = createView(document.createElement('div'), () => {}, src.doc);
+    const { dom } = copy.serializeForClipboard(copy.state.doc.slice(from, to, true));
+    const view = createView(document.createElement('div'), () => {}, into.doc);
+    view.updateState(pick(view.state));
+    view.pasteHTML(dom.innerHTML, new Event('paste') as ClipboardEvent);
+    const out = map(view.state);
+    copy.destroy();
+    view.destroy();
+    return out;
+  }
+  const lines: [ParaStyle, string][] = [['analytic', 'Second point'], ['normal', 'next line']];
+  const src = make(lines);
+  const whole = [1, 13] as const;
+
+  it('sits next to the words on the line it lands on', () => {
+    expect(pasteInto(src, ...whole, make([['analytic', 'First point ']]), (s) => caret(s, 'First point ', 12))).toBe('analytic: First point Second point');
+    expect(pasteInto(src, ...whole, make([['normal', 'one  two']]), (s) => caret(s, 'one ', 4))).toBe('normal: one Second point two');
+  });
+  it('works for a few words of it, and for a triple-clicked line', () => {
+    expect(pasteInto(src, 8, 13, make([['analytic', 'A ']]), (s) => caret(s, 'A ', 2))).toBe('analytic: A point');
+    expect(pasteInto(src, 1, 15, make([['analytic', 'A ']]), (s) => caret(s, 'A ', 2))).toBe('analytic: A Second point');
+  });
+  it('keeps its style on an empty line or over a whole line', () => {
+    expect(pasteInto(src, ...whole, make([['normal', '']]), (s) => s)).toBe('analytic: Second point');
+    expect(pasteInto(src, ...whole, make([['normal', 'old']]), (s) => select(s, 'old'))).toBe('analytic: Second point');
+  });
+  it('an undertag goes inline too, and a tag still takes its own line', () => {
+    expect(pasteInto(make([['undertag', 'Note'], ['normal', 'x']]), 1, 5, make([['normal', 'A ']]), (s) => caret(s, 'A ', 2))).toBe('normal: A Note');
+    expect(pasteInto(make([['tag', 'Tag'], ['normal', 'x']]), 1, 4, make([['normal', 'A ']]), (s) => caret(s, 'A ', 2))).toContain('tag: Tag');
+  });
+  it('two lines of analytics paste as two lines', () => {
+    const two = make([['analytic', 'One'], ['analytic', 'Two'], ['normal', 'x']]);
+    expect(pasteInto(two, 1, 9, make([['normal', '']]), (s) => s).split('\n').length).toBe(2);
   });
 });
