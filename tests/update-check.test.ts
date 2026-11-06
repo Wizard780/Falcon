@@ -37,6 +37,53 @@ describe('the update spot in the rail', () => {
     expect(chk(app.el)!.hasAttribute('data-busy')).toBe(false);
   });
 
+  it('shows the download, which clicks can\'t install, then becomes the install button', async () => {
+    let push: (u: UpdateInfo | null) => void = () => {};
+    let installs = 0;
+    const app = await mountApp({ onUpdate: (f: (u: UpdateInfo | null) => void) => { push = f; f(null); return () => {}; }, installUpdate: async () => { installs++; } });
+    await app.act(() => push({ ...ready, state: 'downloading', done: 45e6, total: 123e6 }));
+    const btn = () => app.el.querySelector('.fs-b.upd') as HTMLButtonElement;
+    expect(btn().getAttribute('aria-disabled')).toBe('true');
+    expect(btn().style.getPropertyValue('--p')).toMatch(/^36\.5/);
+    expect(app.el.querySelector('.upd-act')?.textContent).toContain('45 of 123 MB');
+    await app.act(() => btn().click());
+    expect(app.el.querySelector('.cf')).toBeNull();
+    await app.act(() => push(ready));
+    expect(btn().hasAttribute('aria-disabled')).toBe(false);
+    expect(installs).toBe(0);
+  });
+
+  it('says so when the download fails, and goes back to the check button', async () => {
+    let push: (u: UpdateInfo | null) => void = () => {};
+    const app = await mountApp({ onUpdate: (f: (u: UpdateInfo | null) => void) => { push = f; f(null); return () => {}; }, checkUpdate: async () => 'none' });
+    await app.act(() => push({ ...ready, state: 'downloading', done: 0, total: 1 }));
+    await app.act(() => push(null));
+    expect(toast(app.el)).toContain("didn't finish downloading");
+    expect(chk(app.el)).not.toBeNull();
+  });
+
+  it('warns before restarting: Cancel stays put, confirming installs', async () => {
+    let installs = 0;
+    const app = await mountApp({ onUpdate: (f: (u: UpdateInfo | null) => void) => { f(ready); return () => {}; }, installUpdate: async () => { installs++; } });
+    const click = () => app.act(() => (app.el.querySelector('.fs-b.upd') as HTMLButtonElement).click());
+    await click();
+    expect(app.el.querySelector('#cf-t')?.textContent).toBe('Install Falcon 9.9.9 and restart?');
+    await app.act(() => (app.el.querySelector('.cf-btns button') as HTMLButtonElement).click());
+    expect(installs).toBe(0);
+    await click();
+    expect(app.el.querySelector('.cf-ok')?.textContent).toBe('Install and Restart');
+    await app.act(() => (app.el.querySelector('.cf-ok') as HTMLButtonElement).click());
+    expect(installs).toBe(1);
+  });
+
+  it('opens the disk image with no warning when nothing restarts', async () => {
+    let installs = 0;
+    const app = await mountApp({ onUpdate: (f: (u: UpdateInfo | null) => void) => { f({ ...ready, manual: true }); return () => {}; }, installUpdate: async () => { installs++; } });
+    await app.act(() => (app.el.querySelector('.fs-b.upd') as HTMLButtonElement).click());
+    expect(app.el.querySelector('.cf')).toBeNull();
+    expect(installs).toBe(1);
+  });
+
   it('is not there without the desktop app', async () => {
     const app = await mountApp();
     expect(chk(app.el)).toBeNull();

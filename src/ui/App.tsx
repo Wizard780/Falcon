@@ -440,16 +440,23 @@ export function App() {
       ok: `${what} Without Saving`,
     }).then((yes) => { if (yes) bridge.forceClose?.(quit); });
   }), [confirmAsk]);
-  // a newer Falcon, downloaded: the button in the rail installs it and restarts
+  // a newer Falcon: the button in the rail shows its download, then installs it and restarts
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
-  useEffect(() => bridge.onUpdate?.(setUpdate), []);
+  const updateRef = useRef(update);
+  useEffect(() => bridge.onUpdate?.((u) => {
+    if (!u && updateRef.current?.state === 'downloading') flash("The update didn't finish downloading. Try again when you're online.");
+    updateRef.current = u;
+    setUpdate(u);
+  }), [flash]);
   const installUpdate = useCallback(async () => {
-    const names = docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled');
-    if (names.length && !update?.manual && pref(P.confirmClose) && !(await confirmAsk({
-      title: 'Restart to update without saving?',
-      body: `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They'll be lost.`,
-      ok: 'Restart Without Saving',
-    }))) return;
+    if (update && !update.manual) { // manual only opens the disk image: nothing restarts
+      const names = docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled');
+      if (!(await confirmAsk({
+        title: `Install Falcon ${update.version} and restart?`,
+        body: names.length ? `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They'll be lost.` : 'Falcon will close and reopen on the new version.',
+        ok: names.length ? 'Restart Without Saving' : 'Install and Restart',
+      }))) return;
+    }
     void bridge.installUpdate?.();
   }, [confirmAsk, update]);
   // no update waiting: the same spot in the rail checks now
@@ -1772,7 +1779,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
   );
 }
 
-// the update button: lit while a downloaded update waits; hovering it shows what's new
+// the update button: a ring while the update downloads, lit once it's ready; hovering it shows what's new
 function UpdateButton({ u, onInstall }: { u: UpdateInfo; onInstall: () => void }) {
   const [open, setOpen] = useState(false);
   const [bottom, setBottom] = useState(0);
@@ -1782,14 +1789,18 @@ function UpdateButton({ u, onInstall }: { u: UpdateInfo; onInstall: () => void }
   const show = () => { clearTimeout(timer.current); setBottom(innerHeight - btn.current!.getBoundingClientRect().bottom); setOpen(true); };
   const hide = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(false), 180); };
   const { items, more } = useMemo(() => releaseNotes(u.notes), [u.notes]);
-  const busy = u.state === 'installing';
-  const title = busy ? 'Installing the update' : u.state === 'error' ? "The update didn't install" : 'Update ready to install';
-  const action = busy ? 'Falcon restarts when it\'s done.'
+  const downloading = u.state === 'downloading';
+  const busy = downloading || u.state === 'installing';
+  const title = downloading ? 'Downloading the update' : busy ? 'Installing the update' : u.state === 'error' ? "The update didn't install" : 'Update ready to install';
+  const mb = (n = 0) => Math.round(n / 1e6);
+  const action = downloading ? `${mb(u.done)} of ${mb(u.total)} MB. You can keep working.`
+    : busy ? 'Falcon restarts when it\'s done.'
     : u.state === 'error' ? `${u.error ?? 'Something went wrong'}. Click to try again.`
     : u.manual ? 'Click to open the installer, then drag Falcon onto Applications.' : 'Click to restart and update.';
   return (
     <>
       <button ref={btn} className="fs-b upd" aria-label={`${title}: Falcon ${u.version}`} aria-disabled={busy || undefined} data-state={u.state}
+        style={downloading ? { '--p': `${u.total ? (u.done ?? 0) / u.total * 100 : 0}%` } as React.CSSProperties : undefined}
         onClick={() => { if (!busy) onInstall(); }} onPointerEnter={show} onPointerLeave={hide} onFocus={show} onBlur={hide}>
         <SvgIcon name="download" /><i className="upd-dot" />
       </button>

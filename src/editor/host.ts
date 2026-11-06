@@ -54,11 +54,11 @@ type FalconBridge = {
   setTheme?: (bg: string, dark: boolean, system: boolean) => void;
   /** Crash recovery for docs too big for localStorage: the desktop app keeps them in a file. `write('')` clears it. */
   recovery?: { read: () => string; write: (text: string) => void };
-  /** A newer Falcon, downloaded and ready to install (null: none). Fires with the current state on subscribe. Returns an unsubscribe. */
+  /** A newer Falcon, downloading or ready to install (null: none). Fires with the current state on subscribe. Returns an unsubscribe. */
   onUpdate?: (f: (u: UpdateInfo | null) => void) => () => void;
   /** Install the downloaded update and restart (or open its disk image when Falcon can't replace itself). */
   installUpdate?: () => Promise<void>;
-  /** Check for a newer Falcon now: 'ready' once one is downloaded (onUpdate fires too), 'none' when this is the latest, 'failed' offline. */
+  /** Check for a newer Falcon now, without waiting on a download: 'ready' when there is one (onUpdate says how far along it is), 'none' when this is the latest, 'failed' offline. */
   checkUpdate?: () => Promise<'ready' | 'none' | 'failed'>;
   /** Anonymous usage count (electron/telemetry.cjs drops unknown events and any non-word value). */
   track?: (event: string, props?: Record<string, string | number | boolean>) => void;
@@ -97,7 +97,7 @@ export type SpeechDropBridge = {
   /** The room's list, pushed on every change. Returns an unsubscribe (which stops watching). */
   watch: (room: string, files: SdFile[] | null, f: (u: { room: string; files: SdFile[]; live: boolean }) => void) => () => void;
 };
-export type UpdateInfo = { version: string; date: string; notes: string; url: string; state: 'ready' | 'installing' | 'error'; manual: boolean; error?: string };
+export type UpdateInfo = { version: string; date: string; notes: string; url: string; state: 'downloading' | 'ready' | 'installing' | 'error'; manual: boolean; error?: string; done?: number; total?: number };
 export const bridge: FalconBridge = (globalThis as unknown as { falcon?: FalconBridge }).falcon ?? {};
 
 /** F2: paste the clipboard as plain text. */
