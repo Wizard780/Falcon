@@ -30,9 +30,11 @@ export function FindBar({ view, inputRef, onClose, flash }: { view: EditorView; 
   const close = () => { clearFind(view); onClose(); view.focus(); };
   const f = findInfo(view.state);
   const count = f && f.query ? (f.matches.length ? `${f.index + 1}/${f.matches.length}` : 'No results') : '';
+  const LOCKED = 'An AI edit is working on some of those matches. Try again in a moment.';
+  const doOne = () => { if (!replaceOne(view, with_)) flash(LOCKED); };
   const doAll = () => {
     const n = replaceAll(view, with_);
-    flash(n ? `Replaced ${n} ${n === 1 ? 'match' : 'matches'}` : 'Nothing to replace');
+    flash(n < 0 ? LOCKED : n ? `Replaced ${n} ${n === 1 ? 'match' : 'matches'}` : 'Nothing to replace');
   };
   const keys = (e: React.KeyboardEvent, enter: (shift: boolean, mod: boolean) => void) => {
     if (e.key === 'Enter') { e.preventDefault(); enter(e.shiftKey, IS_MAC ? e.metaKey : e.ctrlKey); }
@@ -60,8 +62,8 @@ export function FindBar({ view, inputRef, onClose, flash }: { view: EditorView; 
         <div className="fb-row">
           <span className="fb-sp" />
           <input className="fb-with" placeholder="Replace with" value={with_} onChange={(e) => setWith(e.target.value)}
-            onKeyDown={(e) => keys(e, (_s, mod) => (mod ? doAll() : replaceOne(view, with_)))} />
-          {btn('Replace (Enter): replace this match and go to the next', () => replaceOne(view, with_), 'Replace', 'fb-txt')}
+            onKeyDown={(e) => keys(e, (_s, mod) => (mod ? doAll() : doOne()))} />
+          {btn('Replace (Enter): replace this match and go to the next', doOne, 'Replace', 'fb-txt')}
           {btn(`Replace all (${IS_MAC ? '⌘' : 'Ctrl+'}Enter): replace every match, one undo step`, doAll, 'All', 'fb-txt')}
         </div>
       )}

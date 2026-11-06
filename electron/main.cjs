@@ -174,6 +174,8 @@ if (primary) {
   app.on('open-file', (e, p) => { e.preventDefault(); void requestOpen([p]); });
   app.on('second-instance', (_e, argv) => { void requestOpen(argv.slice(1)); flushOpens(); });
   ipcMain.on('falcon:open-paths-ready', (e) => { openTarget = e.sender; flushOpens(); });
+  // the page is up but the app isn't (the crash screen): hold opens until Reload brings a listener back
+  ipcMain.on('falcon:open-paths-gone', (e) => { if (openTarget === e.sender) openTarget = null; });
   void requestOpen(process.argv.slice(1));
 }
 
@@ -472,7 +474,11 @@ function askPage(kind, payload) {
   return new Promise((resolve) => {
     const id = crypto.randomBytes(8).toString('hex');
     // a person reads the consent question; everything else answers right away
-    const timer = setTimeout(() => { bridgeWaits.delete(id); resolve(kind === 'consent' ? { answer: null } : { ok: false, error: 'internal' }); }, kind === 'consent' ? 180000 : 5000);
+    const timer = setTimeout(() => {
+      bridgeWaits.delete(id);
+      if (kind === 'consent' && !wc.isDestroyed()) wc.send('falcon:bridge-expired'); // take the question down: an answer now reaches nothing
+      resolve(kind === 'consent' ? { answer: null } : { ok: false, error: 'internal' });
+    }, kind === 'consent' ? 180000 : 5000);
     bridgeWaits.set(id, (a) => { clearTimeout(timer); resolve(a); });
     // the question shows in Falcon while the user is in the other app: make the Dock or taskbar say so
     if (kind === 'consent' && !HEADLESS) { if (process.platform === 'darwin') app.dock?.bounce('critical'); else BrowserWindow.fromWebContents(wc)?.flashFrame(true); }

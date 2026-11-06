@@ -66,6 +66,7 @@ type FalconBridge = {
   speechdrop?: SpeechDropBridge;
   /** Other debate apps (electron/editor-bridge.cjs): kind is ping, docs, insert, jump or consent. Returns an unsubscribe. */
   onBridge?: (f: (kind: string, payload: Record<string, unknown>) => Promise<unknown>) => () => void;
+  onBridgeExpired?: (f: () => void) => () => void;
   /** The apps that asked to send cards in, and whether they're allowed. */
   linkedApps?: () => Promise<LinkedApp[]>;
   /** Allow or block an app (null forgets it, so it asks again). Returns the new list. */

@@ -130,7 +130,8 @@ export function Settings(props: Props) {
   useEffect(() => { if (props.open && bridge.linkedApps) bridge.linkedApps().then(setLinked, () => {}); }, [props.open]);
   const [aiKeys, setAiKeys] = useState<string[]>([]); // which providers have a key saved, by name
   const [promptOpen, setPromptOpen] = useState(false);
-  const [delArmed, setDelArmed] = useState(false); // Delete takes two clicks
+  const [delArmed, setDelArmed] = useState<string | null>(null); // the preset whose Delete was clicked once: it takes two
+  useEffect(() => { if (!props.open) setDelArmed(null); }, [props.open]);
   useEffect(() => { if (props.open && bridge.secretList) bridge.secretList().then(setAiKeys, () => {}); }, [props.open]);
   // starred and pinned files get picked here, from what the search folders hold
   const [starred, setStarred] = useState<string[]>(loadStarred);
@@ -367,10 +368,10 @@ export function Settings(props: Props) {
             <input className="st-text" aria-label="Max output tokens" inputMode="numeric" maxLength={6} spellCheck={false} value={pref(P.aiMaxTokens) || ''} onChange={(e) => setPref(P.aiMaxTokens, Number(e.target.value.replace(/\D/g, '')))} />) },
           { label: 'AI cite-creator prompt', wide: true, search: 'format style preset instructions', hint: `What the AI is told when it formats a cite, so it sets your citation style. Pick the built-in prompt or save up to ${MAX_PRESETS} of your own.`, control: (
             <span className="st-fold">
-              {select('AI cite-creator prompt', preset?.id ?? '', [['', 'Built-in prompt'], ...citePresets().map((f): [string, string] => [f.id, f.name])], (v) => { setPref(P.aiCitePreset, v); setDelArmed(false); })}
+              {select('AI cite-creator prompt', preset?.id ?? '', [['', 'Built-in prompt'], ...citePresets().map((f): [string, string] => [f.id, f.name])], (v) => { setPref(P.aiCitePreset, v); setDelArmed(null); })}
               {preset && <button className="st-btn" onClick={() => setPromptOpen((o) => !o)}>{promptOpen ? 'Done' : 'Edit'}</button>}
-              <button className="st-btn" disabled={citePresets().length >= MAX_PRESETS} onClick={() => { newPreset(); setPromptOpen(true); setDelArmed(false); }}>New preset</button>
-              {preset && <button className="st-btn" onClick={() => { if (delArmed) { deletePreset(preset.id); setPromptOpen(false); } setDelArmed(!delArmed); }}>{delArmed ? 'Really delete?' : 'Delete'}</button>}
+              <button className="st-btn" disabled={citePresets().length >= MAX_PRESETS} onClick={() => { newPreset(); setPromptOpen(true); setDelArmed(null); }}>New preset</button>
+              {preset && <button className="st-btn" onClick={() => { const armed = delArmed === preset.id; if (armed) { deletePreset(preset.id); setPromptOpen(false); } setDelArmed(armed ? null : preset.id); }}>{delArmed === preset.id ? 'Really delete?' : 'Delete'}</button>}
             </span>) },
           ...(preset && promptOpen ? [
             { label: 'Preset name', control: <input className="st-text st-wide" aria-label="Preset name" spellCheck={false} maxLength={40} value={preset.name} onChange={(e) => editPreset(preset.id, { name: e.target.value })} /> },

@@ -429,6 +429,8 @@ export function App() {
   useEffect(() => { saveRecents(recents); }, [recents]);
   // the list changed (switch, open, close, saved): refresh the crash-recovery copy once React has settled
   useEffect(() => { if (viewRef.current) whenIdle(() => { backup(); }); }, [docs, activeId, speechId, backup]);
+  // nothing clears the crash-recovery copy on the way out, so with it on these changes come back
+  const unsavedFate = () => (pref(P.crashRecovery) ? "They won't be saved to the file, but Falcon brings them back next time it opens." : "They'll be lost.");
   // quitting or closing the window with unsaved docs: the page blocks it, the main process passes
   // the question back here, and Falcon's own dialog asks it
   useEffect(() => bridge.onConfirmClose?.((quit) => {
@@ -437,7 +439,7 @@ export function App() {
     const what = quit ? 'Quit' : 'Close';
     void confirmAsk({
       title: `${what} Falcon without saving?`,
-      body: `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They'll be lost.`,
+      body: `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. ${unsavedFate()}`,
       ok: `${what} Without Saving`,
     }).then((yes) => { if (yes) bridge.forceClose?.(quit); });
   }), [confirmAsk]);
@@ -455,7 +457,7 @@ export function App() {
       const names = docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled');
       if (!(await confirmAsk({
         title: `Install Falcon ${update.version} and restart?`,
-        body: names.length ? `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They'll be lost.` : 'Falcon will close and reopen on the new version.',
+        body: names.length ? `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. ${unsavedFate()}` : 'Falcon will close and reopen on the new version.',
         ok: names.length ? 'Restart Without Saving' : 'Install and Restart',
       }))) return;
     }
@@ -964,10 +966,9 @@ export function App() {
    * Write the active doc. As-Is is the document itself, so the open file takes its new name and path;
    * Send, Read and Marked docs are copies and the open file stays as it was.
    */
-  const writeDoc = useCallback(async (meta: DocMeta, mode: SaveMode, as: boolean) => {
-    const v = viewRef.current!;
-    const id = activeRef.current;
-    const saved = v.state.doc;
+  const writeDoc = useCallback(async (meta: DocMeta, mode: SaveMode, as: boolean, id = activeRef.current) => {
+    const saved = liveState(id)?.doc;
+    if (!saved) { flash('That file closed, so nothing was saved.'); return; }
     const out = docForMode(saved, mode);
     if (!out) { flash(mode === 'marked' ? 'No marked cards: mark one with red text first' : 'Nothing to save'); return; }
     try {
@@ -989,16 +990,17 @@ export function App() {
       flash(`Saved ${m.name}`);
     } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
   }, [patch, flash, dropDoc]);
-  /** Save writes the open file; Save As opens the dialog, which calls `saveCopy`. */
+  /** Save writes the open file; Save As opens the dialog, which calls `saveCopy`. A file opening meanwhile can change the active doc, so the dialog keeps the one it was opened on. */
+  const saveAsDoc = useRef(0);
   const fileSave = useCallback(async (as = false) => {
     const d = docsRef.current.find((x) => x.id === activeRef.current)!;
-    if (as) { setSaveAsName(!d.meta.path && (d.meta.name || 'Untitled') === 'Untitled' ? newFileName() : d.meta.name); return; }
+    if (as) { saveAsDoc.current = d.id; setSaveAsName(!d.meta.path && (d.meta.name || 'Untitled') === 'Untitled' ? newFileName() : d.meta.name); return; }
     await writeDoc(d.meta, 'asis', false);
   }, [writeDoc]);
   const saveCopy = (mode: SaveMode, name: string) => {
     setSaveAsName(null);
     const prefix = mode !== 'asis' && pref(P.savePrefix) ? pref(MODE_PREFIX[mode]) : '';
-    void writeDoc({ name: copyName(mode, name, prefix) }, mode, true);
+    void writeDoc({ name: copyName(mode, name, prefix) }, mode, true, saveAsDoc.current);
   };
   const closeSaveAs = useCallback(() => setSaveAsName(null), []);
 
@@ -1053,6 +1055,9 @@ export function App() {
   }, [flash, patch]);
   // Nimbus and other debate apps send cards in over the bridge (electron/editor-bridge.cjs), the way they do
   // into CardMirror: they list the open docs, then insert into one (usually the speech doc) without taking focus
+  // the main process stopped waiting for a consent answer: an Allow clicked now would go nowhere
+  const consentAsk = useRef<Ask | null>(null);
+  useEffect(() => bridge.onBridgeExpired?.(() => { if (askRef.current === consentAsk.current) askRef.current?.done(false); }), []);
   useEffect(() => bridge.onBridge?.(async (kind, p) => {
     const target = (d: OpenDoc) => `falcon-${d.id}`;
     const name = typeof p.name === 'string' && p.name ? p.name[0].toUpperCase() + p.name.slice(1) : 'An app';
@@ -1060,11 +1065,15 @@ export function App() {
     if (kind === 'docs') return { docs: docsRef.current.map((d) => ({ target: target(d), title: d.meta.name || 'Untitled', focusedWindow: d.id === activeRef.current, isSpeech: d.id === speechRef.current })) };
     if (kind === 'consent') {
       if (askRef.current) return { answer: null }; // another question is up: it asks again next time
-      return new Promise((resolve) => setAsk({
+      return new Promise((resolve) => {
+        const a = {
         title: `Let ${name} send cards to Falcon?`,
         body: `${name} wants to put cards into your open docs, the way it does with CardMirror. You can change this in Settings > General > Linked apps.`,
-        ok: 'Allow', done: (yes) => { setAsk(null); resolve({ answer: yes ? 'allow' : null }); },
-      }));
+        ok: 'Allow', done: (yes: boolean) => { setAsk(null); resolve({ answer: yes ? 'allow' : null }); },
+        };
+        consentAsk.current = a;
+        setAsk(a);
+      });
     }
     if (kind === 'jump') return { ok: false, error: 'not-found' }; // nothing hands out source tokens yet
     if (kind !== 'insert') return { ok: false, error: 'bad-request' };
@@ -1122,6 +1131,7 @@ export function App() {
 
   // one pass per doc is plenty; Esc stops it after the cite in flight
   const citePass = useRef<{ stop: boolean } | null>(null);
+  const clearedRecents = useRef<Recent[]>([]); // what Home's Clear took, for its Undo
   const reformatAll = async () => {
     const view = viewRef.current;
     if (!view) return;
@@ -1133,8 +1143,9 @@ export function App() {
     if (!yes) return;
     const pass = { stop: false };
     citePass.current = pass;
-    const r = await reformatCites(view, { stopped: () => pass.stop, progress: (i, total) => flash(`Reformatting cite ${i + 1} of ${total}. Esc stops.`) });
-    citePass.current = null;
+    let r;
+    try { r = await reformatCites(view, { stopped: () => pass.stop, progress: (i, total) => flash(`Reformatting cite ${i + 1} of ${total}. Esc stops.`) }); }
+    finally { citePass.current = null; }
     const tail = [r.failed && `${r.failed} failed`, r.unmarked && `${r.unmarked} left unmarked`].filter(Boolean).join(', ');
     flash(`${r.stopped ? 'Stopped. ' : ''}${r.done} ${r.done === 1 ? 'cite' : 'cites'} reformatted${tail ? `, ${tail}` : ''}.${r.failed && r.error ? ` ${r.error}` : ''}`);
   };
@@ -1482,7 +1493,11 @@ export function App() {
       <div className="covered" inert={!!ask}>
       <Home open={homeOpen} recents={recents.slice(0, pref(P.recentCount))}
         onNew={fileNew} onNewSpeech={fileNewSpeech} onOpen={() => void fileOpen()} onSpeechDrop={openSd} onRecent={(r) => void openRecent(r)} onPeek={peekRecent}
-        onClear={(keep) => setRecents((cur) => (keep ? [...cur, ...keep.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))] : []))} />
+        onClear={(undo) => {
+          if (!undo) { clearedRecents.current = recents; setRecents([]); return; }
+          // Home lists only the newest few; Undo brings back the whole list, behind anything opened since
+          setRecents((cur) => [...cur, ...clearedRecents.current.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))]);
+        }} />
       <Palette open={paletteOpen === 'files'} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
       <CardSearch open={paletteOpen === 'cards'} onClose={() => setPaletteOpen(false)} onPick={(h, insert) => void pickCard(h, insert)}

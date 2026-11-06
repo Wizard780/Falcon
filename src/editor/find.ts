@@ -190,22 +190,25 @@ function reveal(view: EditorView) {
   }
 }
 
-/** Replace the current match and go on to the next one. */
-export function replaceOne(view: EditorView, text: string) {
+/** Replace the current match and go on to the next one. False if an AI edit's lock refused the change. */
+export function replaceOne(view: EditorView, text: string): boolean {
   const st = findKey.getState(view.state);
   const m = current(st);
-  if (!st || !m || isReading(view.state)) return;
+  if (!st || !m || isReading(view.state)) return true;
   const tr = text ? view.state.tr.insertText(text, m.from, m.to) : view.state.tr.delete(m.from, m.to);
+  const before = view.state.doc;
   view.dispatch(tr);
+  if (view.state.doc === before) return false;
   // the next match is the first one past the replacement, in the same order
   const now = findKey.getState(view.state)!;
   const past = keyOf({ ...m, from: m.from + text.length }, now.anchor, now.grouped);
   const i = now.order.findIndex((k) => cmp(keyOf(now.matches[k], now.anchor, now.grouped), past) >= 0);
   view.dispatch(view.state.tr.setMeta(findKey, { index: i < 0 ? 0 : i }));
   reveal(view);
+  return true;
 }
 
-/** Replace every match, as one undo step. Returns how many were replaced. */
+/** Replace every match, as one undo step. Returns how many were replaced, or -1 if an AI edit's lock refused the change. */
 export function replaceAll(view: EditorView, text: string): number {
   const st = findKey.getState(view.state);
   if (!st || !st.matches.length || isReading(view.state)) return 0;
@@ -213,8 +216,9 @@ export function replaceAll(view: EditorView, text: string): number {
   for (const m of [...st.matches].reverse()) {
     if (text) tr.insertText(text, m.from, m.to); else tr.delete(m.from, m.to);
   }
+  const before = view.state.doc;
   view.dispatch(tr.scrollIntoView());
-  return st.matches.length;
+  return view.state.doc === before ? -1 : st.matches.length;
 }
 
 export function clearFind(view: EditorView) {
@@ -226,6 +230,6 @@ export const findInfo = (state: EditorState) => findKey.getState(state);
 /** A key asked for the find bar: with the replace row, or in position order (read once by the bar). */
 export let findRequest: { replace?: boolean; byPosition?: boolean } = {};
 export function requestFind(req: { replace?: boolean; byPosition?: boolean }) {
-  findRequest = req;
+  findRequest = { ...req }; // the bar wipes it once read, and a key's request is used again
   window.dispatchEvent(new CustomEvent('falcon-find'));
 }
