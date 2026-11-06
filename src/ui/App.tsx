@@ -429,6 +429,8 @@ export function App() {
   useEffect(() => { saveRecents(recents); }, [recents]);
   // the list changed (switch, open, close, saved): refresh the crash-recovery copy once React has settled
   useEffect(() => { if (viewRef.current) whenIdle(() => { backup(); }); }, [docs, activeId, speechId, backup]);
+  // nothing clears the crash-recovery copy on the way out, so with it on these changes come back
+  const unsavedFate = () => (pref(P.crashRecovery) ? "They won't be saved to the file, but Falcon brings them back next time it opens." : "They'll be lost.");
   // quitting or closing the window with unsaved docs: the page blocks it, the main process passes
   // the question back here, and Falcon's own dialog asks it
   useEffect(() => bridge.onConfirmClose?.((quit) => {
@@ -437,7 +439,7 @@ export function App() {
     const what = quit ? 'Quit' : 'Close';
     void confirmAsk({
       title: `${what} Falcon without saving?`,
-      body: `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They won't be saved to the file, but Falcon brings them back next time it opens.`,
+      body: `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. ${unsavedFate()}`,
       ok: `${what} Without Saving`,
     }).then((yes) => { if (yes) bridge.forceClose?.(quit); });
   }), [confirmAsk]);
@@ -455,7 +457,7 @@ export function App() {
       const names = docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled');
       if (!(await confirmAsk({
         title: `Install Falcon ${update.version} and restart?`,
-        body: names.length ? `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. They won't be saved to the file, but Falcon brings them back when it reopens.` : 'Falcon will close and reopen on the new version.',
+        body: names.length ? `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. ${unsavedFate()}` : 'Falcon will close and reopen on the new version.',
         ok: names.length ? 'Restart Without Saving' : 'Install and Restart',
       }))) return;
     }

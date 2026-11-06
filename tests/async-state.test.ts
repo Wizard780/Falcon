@@ -254,3 +254,22 @@ describe('a linked app asking to connect', () => {
     expect(document.querySelector('.cf')).not.toBeNull();
   });
 });
+
+describe('quitting with unsaved work', () => {
+  const question = async (recovery: boolean) => {
+    await freshStorage();
+    const { P, setPref } = await import('../src/editor/prefs');
+    setPref(P.crashRecovery, recovery);
+    let closing!: (quit: boolean) => void;
+    const app = await mountApp({ onConfirmClose: (f: typeof closing) => { closing = f; return () => {}; } });
+    await app.type('unsaved');
+    await app.act(() => { closing(true); });
+    return document.querySelector('.cf')?.textContent ?? '';
+  };
+  it('says the work comes back, because crash recovery keeps it', async () => {
+    expect(await question(true)).toContain('Falcon brings them back next time it opens');
+  });
+  it("says it's lost when crash recovery is off, because it is", async () => {
+    expect(await question(false)).toContain("They'll be lost.");
+  });
+});
