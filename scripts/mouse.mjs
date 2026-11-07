@@ -13,6 +13,8 @@ await p.keyboard.press(`${MOD}+a`); await p.keyboard.press('Backspace');
 await p.keyboard.type('The rapid expansion of artificial intelligence workloads has pushed utilities to their limits.');
 await p.keyboard.press('Enter');
 await p.keyboard.type('Second paragraph of body text here.');
+await p.keyboard.press('Enter');
+await p.keyboard.type('Allies across the globe, had an impact on trade.');
 // pixel box of a substring
 const box = (text, off = 0) => p.evaluate(([text, off]) => {
   const root = document.querySelector('.ProseMirror');
@@ -41,6 +43,20 @@ z = await box('utilities', 3); await p.keyboard.down('Shift'); await p.mouse.cli
 out.shiftClickAfterDouble = await selected();
 a = await box('rapid', 2); await p.mouse.click(a.x, a.y); await p.mouse.down(); await p.mouse.up();
 out.clickCaret = JSON.stringify(await selected());
+// a press on a word's edge, dragged away from that word, leaves the word out
+const drag = async (from, to) => { await p.mouse.move(from.x, from.y); await p.mouse.down(); await p.mouse.move(to.x, to.y, { steps: 4 }); await p.mouse.up(); return selected(); };
+const edge = {
+  endToComma: [await drag(await box('globe,', 5), await box('globe,', 6)), ','],
+  commaBackToEnd: [await drag(await box('globe,', 6), await box('globe,', 5)), ','],
+  endAcrossWords: [await drag(await box('globe,', 5), await box('impact', 3)), ', had an impact'],
+  endOntoSpace: [await drag(await box('Second ', 6), await box('paragraph', 0)), ' '],
+  startOntoSpace: [await drag(await box('paragraph', 0), await box('Second ', 6)), ' '],
+  startAcrossWords: [await drag(await box('paragraph', 0), await box('Second', 2)), 'Second '],
+};
+a = await box('globe,', 5); await p.mouse.click(a.x, a.y);
+z = await box('impact', 3); await p.keyboard.down('Shift'); await p.mouse.click(z.x, z.y); await p.keyboard.up('Shift');
+edge.shiftFromEnd = [await selected(), ', had an impact'];
+for (const [k, [got, want]] of Object.entries(edge)) if (got !== want) { console.log(`EDGE ${k}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); process.exitCode = 1; }
 console.log(JSON.stringify(out, null, 1));
 if (which !== 'cm') {
   const fs = await import('node:fs');
