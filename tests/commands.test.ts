@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { Fragment, Slice, type Node as PMNode } from 'prosemirror-model';
 import { GapCursor } from 'prosemirror-gapcursor';
-import { Selection, type EditorState } from 'prosemirror-state';
+import { Selection, TextSelection, type EditorState } from 'prosemirror-state';
 import { falconKeys as K } from '../src/editor/keymap';
-import { insertPlainText } from '../src/editor/commands';
+import { insertPlainText, NO_BRIDGE } from '../src/editor/commands';
 import { createState, createView } from '../src/editor/editor';
 import { schema, type ParaStyle } from '../src/editor/schema';
 import { MultiSelection } from '../src/editor/multi';
@@ -13,6 +13,8 @@ import { P, resetPrefs, setPref } from '../src/editor/prefs';
 const BODY = 'The rapid expansion of AI has pushed utilities to their limits.';
 const card = () => make([['tag', 'Grid tag here'], ['normal', 'Smith 24, Professor at MIT'], ['normal', BODY]]);
 const body = (s: ReturnType<typeof card>) => map(s).split('\n')[2];
+/** Select from where `start` begins up to where `end` begins. */
+const range = (s: EditorState, start: string, end: string) => s.apply(s.tr.setSelection(TextSelection.create(s.doc, at(s, start), at(s, end))));
 
 describe('underline (F9)', () => {
   it('underlines the word at the cursor when nothing is selected', () => {
@@ -30,6 +32,29 @@ describe('underline (F9)', () => {
   });
   it('never underlines the spaces at the edges of the selection', () => {
     expect(body(run(select(card(), 'pushed utilities '), K.F9))).toBe('normal: The rapid expansion of AI has [pushed utilities]{underline} to their limits.');
+  });
+  // A space underlined on its own, as bridging would never leave it but an imported file can.
+  const spaced = () => {
+    const s = make([['normal', 'across the globe, had an impact.']]);
+    return s.apply(s.tr.addMark(at(s, ' had'), at(s, 'impact', 6), schema.marks.underline.create()).setMeta(NO_BRIDGE, true));
+  };
+  for (const key of ['F9', 'Mod-u'] as const) {
+    it(`${key} takes underline off a selected space, and a second press puts it back`, () => {
+      const on = spaced();
+      expect(map(on)).toBe('normal: across the globe,[ had an impact]{underline}.');
+      const off = run(range(on, ' had', 'had'), K[key]);
+      expect(map(off)).toBe('normal: across the globe, [had an impact]{underline}.');
+      expect(map(run(off, K[key]))).toBe('normal: across the globe,[ had an impact]{underline}.');
+    });
+  }
+  it('takes underline off a selected space between two underlined words', () => {
+    let s = run(select(card(), 'pushed utilities'), K.F9);
+    expect(body(run(range(s, ' utilities', 'utilities'), K.F9))).toBe('normal: The rapid expansion of AI has [pushed]{underline} [utilities]{underline} to their limits.');
+  });
+  it('takes underline off everything selected, spaces at the edges too', () => {
+    const s = make([['normal', 'Cold, hard facts']]);
+    const on = run(select(s, 'Cold, hard'), K.F9);
+    expect(map(run(range(on, ', hard', 'hard'), K.F9))).toBe('normal: [Cold]{underline}, [hard]{underline} facts');
   });
   it('replaces emphasis, taking the boxed spaces next to it', () => {
     let s = run(select(card(), 'pushed utilities to'), K.F10);
@@ -50,6 +75,12 @@ describe('emphasis (F10)', () => {
 describe('highlight (F11) and clear (F12)', () => {
   it('does nothing with no selection', () => {
     expect(body(run(caret(card(), 'pushed', 2), K.F11))).toBe(`normal: ${BODY}`);
+  });
+  it('comes off a selected space, and a second press puts it back', () => {
+    const s = run(select(card(), 'pushed utilities'), K.F11);
+    const off = run(range(s, ' utilities', 'utilities'), K.F11);
+    expect(body(off)).toBe('normal: The rapid expansion of AI has [pushed]{highlight:yellow} [utilities]{highlight:yellow} to their limits.');
+    expect(body(run(off, K.F11))).toBe('normal: The rapid expansion of AI has [pushed utilities]{highlight:yellow} to their limits.');
   });
   it('toggles, and F12 keeps it while clearing underline', () => {
     let s = run(select(card(), 'pushed utilities'), K.F9);

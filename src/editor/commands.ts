@@ -78,6 +78,12 @@ function trimRanges(doc: PMNode, ranges: Range[]): Range[] {
     .filter((r) => r.from < r.to);
 }
 
+/** What a toggle marks: the trimmed ranges, or a selection of nothing but spaces as it stands, since those spaces are what was picked. */
+const toggleRanges = (doc: PMNode, picked: Range[]) => {
+  const trimmed = trimRanges(doc, picked);
+  return trimmed.length ? trimmed : picked;
+};
+
 /** Underline cut into the middle of emphasis also takes the emphasized spaces next to it, so no box ends on a space. */
 function growOverEmphasizedSpace(doc: PMNode, r: Range): Range {
   let { from, to } = r;
@@ -114,23 +120,26 @@ const clearUnderStyle = (tr: Transaction, from: number, to: number) => { for (co
 const OFF_CLEARS = [...STYLE_CLEARS, M.unbold, M.highlight];
 
 /**
- * Verbatim-style toggle: if every character in scope already carries the mark, remove it;
- * otherwise apply it to all of it. With nothing selected, acts on the word at the cursor.
+ * Verbatim-style toggle: if every character in scope already carries the mark, remove it from the whole
+ * selection, spaces included; otherwise apply it to all of it. With nothing selected, acts on the word at the cursor.
  */
 export function toggleCharMark(type: MarkType, opts: { fallback?: 'word' | 'none'; skipHeadings?: boolean } = {}): Command {
   return (state, dispatch) => {
-    let ranges = trimRanges(state.doc, targetRanges(state, opts.fallback ?? 'word'));
+    let picked = targetRanges(state, opts.fallback ?? 'word');
+    let ranges = toggleRanges(state.doc, picked);
     if (!ranges.length) return false;
-    if (opts.skipHeadings) ranges = withoutHeadings(state.doc, ranges);
+    if (opts.skipHeadings) picked = ranges = withoutHeadings(state.doc, ranges);
     const has = allHave(state.doc, ranges, (ms) => !!type.isInSet(ms));
     const named = type === M.underline || type === M.cite;
     const tr = state.tr;
-    for (let r of ranges) {
-      if (has) {
+    if (has) {
+      for (const r of picked) {
         tr.removeMark(r.from, r.to, type);
         if (type === M.underline && pref(P.styleOffClears)) for (const m of OFF_CLEARS) tr.removeMark(r.from, r.to, m);
-        continue;
       }
+      return finish(state, tr, dispatch);
+    }
+    for (let r of ranges) {
       if (type === M.underline) r = growOverEmphasizedSpace(state.doc, r);
       tr.addMark(r.from, r.to, type.create());
       if (named) clearUnderStyle(tr, r.from, r.to);
@@ -177,16 +186,17 @@ function paintable(doc: PMNode, ranges: Range[], type: MarkType): Range[] {
 /** F11 / Mod-F11 and the paintbrush: toggle a color mark. `null` color is the "no color" pen, which strips the mark. */
 export function toggleColorMark(type: MarkType, color: string | null): Command {
   return (state, dispatch) => {
-    const ranges = trimRanges(state.doc, targetRanges(state, 'none'));
+    const picked = targetRanges(state, 'none');
+    const ranges = toggleRanges(state.doc, picked);
     if (!ranges.length) return false;
     const tr = state.tr;
     const paint = color === null ? [] : paintable(state.doc, ranges, type);
     // nothing paintable (or the no-color pen): clear the whole selection, so removal is never blocked
     if (!paint.length) {
-      for (const r of ranges) tr.removeMark(r.from, r.to, type);
+      for (const r of picked) tr.removeMark(r.from, r.to, type);
     } else {
       const has = allHave(state.doc, paint, (ms) => ms.some((m) => m.type === type && m.attrs.color === color));
-      if (has) for (const r of ranges) tr.removeMark(r.from, r.to, type);
+      if (has) for (const r of picked) tr.removeMark(r.from, r.to, type);
       else for (const r of paint) tr.addMark(r.from, r.to, type.create({ color }));
     }
     return finish(state, tr, dispatch);
