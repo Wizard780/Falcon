@@ -18,6 +18,7 @@ type Span = { from: number; to: number };
 /**
  * Word-style mouse selection:
  * - click-drag selects by character inside the first word, then snaps to whole words;
+ * - a press on a word's edge that drags away from the word leaves that word out;
  * - double-click selects a word (with its trailing space) and dragging extends by words;
  * - triple-click selects the paragraph and dragging extends by paragraphs;
  * - Shift-click extends by the unit of the last selection.
@@ -93,7 +94,9 @@ export function wordSelection() {
             if (lastUnit !== 'char') head = edge(view, hit.pos, lastUnit, forward);
             else {
               const aw = wordUnit(view, anchor);
-              if (aw && !(head >= aw.from && head <= aw.to)) {
+              const away = awayFromEdge(view, anchor, hit.pos);
+              if (away !== null) head = away;
+              else if (aw && !(head >= aw.from && head <= aw.to)) {
                 a = forward ? aw.from : aw.to;
                 head = edge(view, hit.pos, 'word', forward);
               }
@@ -134,6 +137,18 @@ function edge(view: EditorView, pos: number, unit: Unit, forward: boolean): numb
   if (unit === 'para') { const p = paraUnit(view, pos); return forward ? p.to : p.from; }
   const w = wordAt(view.state, pos);
   return w ? (forward ? w.to : w.from) : pos;
+}
+
+/**
+ * Where the moving end lands when the fixed end sits on a word's edge and the move goes away from that word,
+ * which stays out of the selection. Null when that isn't the case. The moving end snaps only from inside a word.
+ */
+function awayFromEdge(view: EditorView, pos: number, head: number): number | null {
+  const forward = head > pos;
+  const w = wordAt(view.state, pos);
+  if (!w || pos !== (forward ? w.to : w.from)) return null;
+  const h = wordAt(view.state, head);
+  return h && head > h.from && head < h.to ? (forward ? h.to : h.from) : head;
 }
 
 function startDrag(view: EditorView, pos: number, unit: Unit, setUnit: (u: Unit) => void, base?: MSpan[]) {
@@ -177,6 +192,8 @@ function startDrag(view: EditorView, pos: number, unit: Unit, setUnit: (u: Unit)
     if (inFirstWord || head === pos || !anchorWord) { setUnit('char'); return select(pos, head); }
     // past the first word: snap both ends to whole words
     setUnit('word');
+    const away = awayFromEdge(view, pos, head);
+    if (away !== null) return select(pos, away);
     const forward = head > pos;
     select(forward ? anchorWord.from : anchorWord.to, edge(view, head, 'word', forward));
   };
