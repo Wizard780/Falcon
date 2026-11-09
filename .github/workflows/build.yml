@@ -49,7 +49,7 @@ jobs:
           npx vite preview --port 5173 --strictPort &
           npx wait-on tcp:5173
           node scripts/probe.mjs falcon | tail -40
-          node scripts/mouse.mjs falcon | tail -1
+          node scripts/mouse.mjs falcon | tail -2
           node scripts/paste-word.mjs | tail -1
 
   package:

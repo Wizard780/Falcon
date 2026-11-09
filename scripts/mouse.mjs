@@ -56,7 +56,6 @@ const edge = {
 a = await box('globe,', 5); await p.mouse.click(a.x, a.y);
 z = await box('impact', 3); await p.keyboard.down('Shift'); await p.mouse.click(z.x, z.y); await p.keyboard.up('Shift');
 edge.shiftFromEnd = [await selected(), ', had an impact'];
-for (const [k, [got, want]] of Object.entries(edge)) if (got !== want) { console.log(`EDGE ${k}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); process.exitCode = 1; }
 console.log(JSON.stringify(out, null, 1));
 if (which !== 'cm') {
   const fs = await import('node:fs');
@@ -65,4 +64,8 @@ if (which !== 'cm') {
   console.log(diffs.length ? `MOUSE DIFFERS from CardMirror: ${diffs.join(', ')}` : `mouse: all ${Object.keys(cm).length} gestures match CardMirror`);
   if (diffs.length) process.exitCode = 1;
 }
+// Printed last: CI shows only the final line.
+const bad = Object.entries(edge).filter(([, [got, want]]) => got !== want).map(([k, [got, want]]) => `${k} got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+console.log(bad.length ? `MOUSE EDGE WRONG: ${bad.join('; ')}` : `mouse edge: all ${Object.keys(edge).length} edge gestures ok`);
+if (bad.length) process.exitCode = 1;
 await b.close();
