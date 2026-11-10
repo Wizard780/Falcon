@@ -20,3 +20,12 @@ it('times each part at its own speed, and a missing tag speed falls back to the 
   expect(readSeconds(r, 250)).toBe(120);
   expect(readSeconds(r, 250, 0)).toBe(120);
 });
+
+it('after an edit, the counts kept per paragraph add up to a fresh count of the edited doc', () => {
+  const d = doc();
+  expect(readSplit(d)).toEqual({ cards: 2, tags: 9 }); // fills the per-paragraph cache
+  // the untouched paragraphs are the same nodes, as after a real edit
+  const edited = d.type.create(null, [d.child(0), d.child(1), schema.node('paragraph', { style: 'normal' }, [schema.text('reefs feed millions', [schema.marks.highlight.create()])]), d.child(3)]);
+  expect(readSplit(edited)).toEqual({ cards: 3, tags: 9 });
+  expect(readSplit(edited)).toEqual(readSplit(schema.nodeFromJSON(edited.toJSON())));
+});
