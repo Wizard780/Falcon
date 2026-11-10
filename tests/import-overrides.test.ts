@@ -49,7 +49,7 @@ test('a run that switches its style\'s underline or box off shows without it', a
   expect(marksOf(doc, ' unread')).toBe('');
   expect(marksOf(doc, ' boxed')).toBe('emphasis');
   expect(marksOf(doc, ' shrunk')).toBe('size(8)');
-  expect(marksOf(doc, ' still boxed')).toBe('highlight(cyan) emphasis'); // Word still draws the box
+  expect(marksOf(doc, ' still boxed')).toBe('emphasis highlight(cyan)'); // Word still draws the box
   expect(marksOf(doc, ' unboxed')).toBe('underline');
   expect(marksOf(doc, ' direct')).toBe('underline');
 });
