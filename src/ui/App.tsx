@@ -5,7 +5,7 @@ import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
 import { Fragment, Node as PMNode } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
-import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
+import { createState, createView, brushKey, emptyDoc, swapState } from '../editor/editor';
 import { topChildAt } from '../editor/window';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
@@ -538,7 +538,7 @@ export function App() {
   const show = useCallback((id: number, state: EditorState, scroll: number) => {
     const v = viewRef.current!;
     stopScroll();
-    v.updateState(state);
+    swapState(v, state);
     lastDocs.current.set(v, v.state.doc);
     activeRef.current = id;
     setActiveId(id);
@@ -635,7 +635,7 @@ export function App() {
     if (fromMain) {
       // the main editor lets go of its doc (it would hold a second, stale copy) and hides
       const m = mainView.current!;
-      m.updateState(createState(emptyDoc()));
+      swapState(m, createState(emptyDoc()));
       lastDocs.current.set(m, m.state.doc);
       appRef.current!.dataset.split = '';
     }

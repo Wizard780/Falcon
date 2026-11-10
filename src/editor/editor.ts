@@ -190,6 +190,15 @@ export function docFromHTML(html: string): PMNode {
 }
 
 /** An editor in `mount`, on a new state for `doc`, or on `state` as it is (a split pane keeps its undo history). */
+/** Put another document in `view`. The DOM selection is let go of first: once its paragraph is gone it sits in the page
+ *  itself, at a child index, and the browser then counts the children before every one removed after it, 15k old
+ *  paragraphs after the new ones (~350 ms swapping out a 15k-paragraph file). ProseMirror sets it again from `state`. */
+export function swapState(view: EditorView, state: EditorState) {
+  const sel = view.dom.ownerDocument.getSelection();
+  if (sel?.rangeCount && view.dom.contains(sel.anchorNode)) sel.removeAllRanges();
+  view.updateState(state);
+}
+
 export function createView(mount: HTMLElement, onChange: (view: EditorView) => void, doc?: PMNode | EditorState) {
   const view: EditorView = new EditorView(mount, {
     state: doc instanceof EditorState ? doc : createState(doc),

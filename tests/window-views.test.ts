@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
-import { createView } from '../src/editor/editor';
+import { createState, createView, swapState } from '../src/editor/editor';
 import { topChildAt } from '../src/editor/window';
 import { schema } from '../src/editor/schema';
 
@@ -100,5 +100,15 @@ describe('far paragraphs are empty placeholders', () => {
     expect(topChildAt(v, 25)).toBe(start(1));
     expect(topChildAt(v, 31)).toBe(start(1));
     expect(topChildAt(v, 110)).toBe(v.state.doc.content.size);
+  });
+
+  it('swapState puts another doc in, with the DOM selection let go of first', () => {
+    const v = view(paras(300));
+    getSelection()!.collapse(v.dom.firstChild!.firstChild!, 1);
+    const next = createState(paras(5, (i) => p(`new ${i}`)));
+    swapState(v, next);
+    expect(v.state).toBe(next);
+    expect(v.dom.children.length).toBe(5);
+    expect(kid(v, 0).textContent).toBe('new 0');
   });
 });
