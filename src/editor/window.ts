@@ -97,16 +97,19 @@ const plain = (node: PMNode) => { let ok = true; node.forEach((c) => { if (!c.is
  *  tag and classes while far. Either one gives way to the other when the near mark comes or goes. */
 const paragraphView: NodeViewConstructor = (node, view, getPos, decos) => {
   const pos = getPos();
-  // anything else (cell paragraphs, pictures, footnotes, page breaks) draws the default way: null falls back to toDOM
-  if (pos === undefined || !topLevel(view.state.doc, pos, node) || (!isNear(decos) && !plain(node))) return null as unknown as NodeView;
+  // cell paragraphs draw the default way: null falls back to toDOM
+  if (pos === undefined || !topLevel(view.state.doc, pos, node)) return null as unknown as NodeView;
   const { dom, contentDOM } = DOMSerializer.renderSpec(document, node.type.spec.toDOM!(node));
   if (isNear(decos)) {
     let cur = node;
     return { dom, contentDOM, update: (n, d) => isNear(d) && n.sameMarkup(cur) && ((cur = n), true) };
   }
   const el = dom as HTMLElement;
-  el.classList.add('f-far');
   el.style.height = `${heightOf(node, view)}px`;
+  // one holding pictures, footnotes or breaks is built as before and skipped by content-visibility alone, at the
+  // height it drew at: it's a new element, which the browser has no remembered size for (it would be 1.3em)
+  if (!plain(node)) { el.style.boxSizing = 'border-box'; return { dom, contentDOM, update: (n, d) => n === node && !isNear(d) }; }
+  el.classList.add('f-far');
   return { dom, update: (n, d) => n === node && !isNear(d) };
 };
 

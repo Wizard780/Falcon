@@ -78,6 +78,9 @@ describe('far paragraphs are empty placeholders', () => {
     expect(v.dom.querySelectorAll('td .f-far, th .f-far').length).toBe(0);
     expect(isFar(v, 140)).toBe(false);
     expect(kid(v, 140).querySelector('br')).not.toBeNull();
+    // sized like a placeholder: a new element has no remembered size, and content-visibility alone would make it 1.3em
+    expect(parseFloat(kid(v, 140).style.height)).toBeGreaterThan(0);
+    expect(kid(v, 140).style.boxSizing).toBe('border-box');
   });
 
   it('the document model and its clipboard text are the same whatever is drawn', () => {
