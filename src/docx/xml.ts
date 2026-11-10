@@ -16,6 +16,9 @@ export class XEl {
   children: XEl[] = EMPTY;
   /** Direct text, entities decoded (the importer only reads text from leaf elements like <w:t>). */
   text = '';
+  /** The element's XML as written, for the local name parseXml was asked to keep it for (else ''). */
+  raw = '';
+  start = 0;
   constructor(readonly tagName: string, readonly localName: string, readonly attrs: string[], readonly ns: NS) {}
 
   getAttribute(qname: string): string | null {
@@ -94,8 +97,9 @@ function closes(src: string, from: number, to: number, name: string): boolean {
  * drops it from its parent. The importer reads the body one block at a time this way, so a big file's
  * element tree never exists all at once: each paragraph's elements die young instead of piling up in the
  * old generation, which is where most of the import's garbage-collection time and peak memory went.
+ * Elements named `rawOf` keep their source text in `raw` (the importer keys a cache on it).
  */
-export function parseXml(src: string, onClose?: (el: XEl, parents: readonly XEl[]) => boolean): XDoc {
+export function parseXml(src: string, onClose?: (el: XEl, parents: readonly XEl[]) => boolean, rawOf?: string): XDoc {
   const root = new XEl('#document', '#document', [], { xml: 'http://www.w3.org/XML/1998/namespace', xmlns: XMLNS });
   const stack: XEl[] = [root];
   let top = root;
@@ -111,6 +115,7 @@ export function parseXml(src: string, onClose?: (el: XEl, parents: readonly XEl[
       if (gt < 0 || stack.length < 2 || !closes(src, lt + 2, gt, top.tagName)) throw new Error('bad XML');
       const el = stack.pop()!;
       top = stack[stack.length - 1];
+      if (el.localName === rawOf) el.raw = src.slice(el.start, gt + 1);
       if (onClose?.(el, stack)) top.children.pop();
       i = gt + 1;
       continue;
@@ -152,6 +157,7 @@ export function parseXml(src: string, onClose?: (el: XEl, parents: readonly XEl[
     }
     const colon = tag.indexOf(':');
     const el = new XEl(tag, colon < 0 ? tag : tag.slice(colon + 1), attrs, ns);
+    if (el.localName === rawOf) { el.start = lt; if (selfClose) el.raw = src.slice(lt, j); }
     if (top.children === EMPTY) top.children = [];
     top.children.push(el);
     if (!selfClose) { stack.push(el); top = el; }

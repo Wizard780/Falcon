@@ -178,6 +178,23 @@ function runMarks(styles: Map<string, StyleInfo>, rpr: Element | undefined, para
   return marks;
 }
 
+/**
+ * runMarks memoized on the run's properties as written. A big file repeats a few dozen combinations across
+ * 100k+ runs; the same <w:rPr> text in the same namespace scope and paragraph style always gives the same marks.
+ */
+type MarksCache = Map<object, Map<ParaStyle, Map<string, Mark[]>>>;
+function runMarksCached(styles: Map<string, StyleInfo>, rpr: Element | undefined, paraStyle: ParaStyle, cache: Map<string, CharStyle>, memo: MarksCache): Mark[] {
+  if (!rpr) return [];
+  if (!rpr.raw) return runMarks(styles, rpr, paraStyle, cache);
+  let byStyle = memo.get(rpr.ns);
+  if (!byStyle) memo.set(rpr.ns, (byStyle = new Map()));
+  let byRaw = byStyle.get(paraStyle);
+  if (!byRaw) byStyle.set(paraStyle, (byRaw = new Map()));
+  let marks = byRaw.get(rpr.raw);
+  if (!marks) byRaw.set(rpr.raw, (marks = runMarks(styles, rpr, paraStyle, cache)));
+  return marks;
+}
+
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml', tif: 'image/tiff', tiff: 'image/tiff', emf: 'image/x-emf', wmf: 'image/x-wmf' };
 const EMU_PX = 9525; // 914400 EMU per inch, 96 px per inch
 
@@ -250,7 +267,7 @@ type Footnotes = Map<string, Element>;
 function readFootnotes(xml: string | undefined, tag = 'footnote'): Footnotes {
   const map: Footnotes = new Map();
   if (!xml) return map;
-  for (const f of kids(parseXml(xml).documentElement, tag)) {
+  for (const f of kids(parseXml(xml, undefined, 'rPr').documentElement, tag)) {
     const type = f.getAttributeNS(W, 'type') ?? f.getAttribute('w:type');
     const id = f.getAttributeNS(W, 'id') ?? f.getAttribute('w:id');
     if (id && (!type || type === 'normal')) map.set(id, f);
@@ -325,6 +342,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
   // endnotes come in as footnotes (Falcon has one kind of note), so their text is kept
   const noteSets = { footnoteReference: { notes: readFootnotes(str('word/footnotes.xml')), rels: relsOf('footnotes') }, endnoteReference: { notes: readFootnotes(str('word/endnotes.xml'), 'endnote'), rels: relsOf('endnotes') } };
   const cache = new Map<string, CharStyle>();
+  const memo: MarksCache = new Map();
   const pstyleCache = new Map<string, ParaStyle>();
 
   const styleOf = (ppr: Element | undefined): ParaStyle => {
@@ -346,8 +364,8 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
       for (const c of kids(parent)) {
         const ln = c.localName;
         if (ln === 'r') {
-          const marks = runMarks(styles, kid(c, 'rPr'), style, cache);
-          if (link) marks.push(link);
+          const runOwn = runMarksCached(styles, kid(c, 'rPr'), style, cache, memo);
+          const marks = link ? [...runOwn, link] : runOwn; // the cached list is shared, so it's never pushed to
           let text = '';
           const flush = () => { if (text) { inline.push(schema.text(own(text), marks)); text = ''; } };
           const readRun = (run: Element) => {
@@ -495,7 +513,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
     if (up.length !== 3 || up[1] !== up[0].children[0] || up[2] !== kid(up[1], 'body')) return false;
     readBlock(el, blocks, false);
     return true;
-  });
+  }, 'rPr');
   if (!blocks.length) blocks.push(schema.nodes.paragraph.create());
   return schema.node('doc', null, blocks);
 }
