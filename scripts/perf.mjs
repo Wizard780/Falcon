@@ -90,7 +90,6 @@ async function openRun(file) {
   const { ctx, page, cdp } = await freshPage();
   await editorReady(page);
   const chooser = await openChooser(page);
-  const before = await page.evaluate(() => window.__falconView.state.doc);
   await page.evaluate(() => { window.__t0 = performance.now(); });
   // first screen: the editor shows the new doc's first paragraphs and a frame has painted
   const first = page.evaluate(async () => {
@@ -109,7 +108,6 @@ async function openRun(file) {
   const settled = await settle(page);
   const settledMs = settled - (await page.evaluate(() => window.__t0));
   const blocks = await page.evaluate(() => window.__falconView.state.doc.childCount);
-  void before;
   // typing in the middle of the doc: real key presses, timed to the next frame, and the main thread's CPU per key
   await page.evaluate(() => {
     const v = window.__falconView, S = v.state.selection.constructor;
@@ -200,8 +198,6 @@ async function multi(list) {
   let n = 0;
   for (let round = 0; round < 2; round++) for (const name of names) {
     if (await page.evaluate((nm) => document.querySelector(`.doc-row[data-on] .doc-nm[aria-label="${nm}"], .doc-row.on .doc-nm[aria-label="${nm}"]`) !== null, name)) continue;
-    const before = await page.evaluate(() => { window.__k = performance.now(); return window.__falconView.state.doc; }).catch(() => null);
-    void before;
     await page.evaluate((nm) => { window.__k = performance.now(); document.querySelector(`.doc-nm[aria-label="${nm}"]`).click(); }, name);
     sw.push(await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(() => r(performance.now() - window.__k), 0)))));
     await settle(page);

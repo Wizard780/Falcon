@@ -820,6 +820,7 @@ export function App() {
         if (Math.hypot(m.clientX - x0, m.clientY - y0) < 5) return;
         on = true;
         src.toggleAttribute('data-drag', true);
+        document.documentElement.classList.add('f-dragging');
       }
       m.preventDefault();
       to = null;
@@ -834,6 +835,7 @@ export function App() {
       removeEventListener('pointerup', up);
       removeEventListener('pointercancel', cancel);
       removeEventListener('keydown', key, true);
+      document.documentElement.classList.remove('f-dragging');
       for (const p of panes.current.values()) { p.el.removeAttribute('data-drag'); p.el.removeAttribute('data-drop'); }
       const g = groupRef.current;
       if (!ok || to === null || !g?.includes(id) || !g.includes(to)) return;
@@ -1718,6 +1720,8 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
   // click, and the click after a real drag is swallowed
   const moving = useRef(false);
   const [dragId, setDragId] = useState<number | null>(null);
+  // a class, not `:root:has([data-drag])`: with :has, every element added anywhere restyles the whole page
+  useEffect(() => { document.documentElement.classList.toggle('f-dragging', dragId !== null); }, [dragId]);
   const [gap, setGap] = useState<number | null>(null); // the gap the line sits in: before row `gap`, or after the last
   const reorder = (id: number) => (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest('.doc-x, .files-x')) return;

@@ -87,7 +87,7 @@ svg { flex: none; }
 .files-r { position: relative; flex: none; }
 /* a file being dragged to a new slot (both lists): lifted, and the grab cursor everywhere till it drops */
 .doc-row[data-drag] .doc-nm, .files-r[data-drag] .files-b { background: var(--u-raised); box-shadow: var(--u-top), 0 4px 12px rgba(0, 0, 0, calc(.3 * var(--u-sh))); }
-:root:has([data-drag]), :root:has([data-drag]) * { cursor: grabbing !important; user-select: none !important; }
+:root.f-dragging, :root.f-dragging * { cursor: grabbing !important; user-select: none !important; }
 /* the line a dragged file will land on: in the 4px gap before this row, or after the last one */
 .doc-row[data-drop]::before, .files-r[data-drop]::before { content: ''; position: absolute; z-index: 2; left: 2px; right: 2px; height: 2px; border-radius: 1px; background: var(--ink); pointer-events: none; }
 .doc-row[data-drop="before"]::before, .files-r[data-drop="before"]::before { top: -3px; }
