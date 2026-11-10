@@ -10,7 +10,6 @@ const updater = require('./updater.cjs');
 const speechdrop = require('./speechdrop.cjs');
 const telemetry = require('./telemetry.cjs');
 const { createEditorBridge, bridgeDir } = require('./editor-bridge.cjs');
-const { createAi } = require('./ai.cjs');
 const { createSecrets, promptSecret } = require('./secrets.cjs');
 
 const DEV = process.env.FALCON_DEV === '1';
@@ -628,7 +627,8 @@ ipcMain.handle('falcon:secret-list', () => secrets().list());
 ipcMain.handle('falcon:secret-prompt', (e, id, look) => promptSecret({ BrowserWindow, parent: BrowserWindow.fromWebContents(e.sender), secrets: secrets(), id, look, show: !HEADLESS }));
 ipcMain.handle('falcon:secret-remove', (_e, id) => { secrets().remove(id); return secrets().list(); });
 let aiApi = null;
-const ai = () => (aiApi ??= createAi({ key: (id) => secrets().get(id) }));
+// required on first use: the model SDK takes about 30 ms to load, and the window waits on everything above
+const ai = () => (aiApi ??= require('./ai.cjs').createAi({ key: (id) => secrets().get(id) }));
 ipcMain.handle('falcon:ai-ask', (_e, r) => ai().ask({ provider: r?.provider === 'openrouter' ? 'openrouter' : 'anthropic', system: String(r?.system ?? ''), text: String(r?.text ?? '').slice(0, 20000), model: String(r?.model ?? ''), maxTokens: Number(r?.maxTokens) }));
 ipcMain.handle('falcon:bridge-apps', () => linkedApps());
 ipcMain.handle('falcon:bridge-allow', (_e, appId, on) => { if (typeof appId === 'string') { if (on === null) editorBridge?.forget(appId); else editorBridge?.setAllowed(appId, on === true); } return linkedApps(); });
