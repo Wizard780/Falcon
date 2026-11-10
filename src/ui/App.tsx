@@ -221,16 +221,19 @@ const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestId
 let stopScroll = () => {};
 function scrollToPos(view: EditorView, pos: number) {
   const sc = view.dom.closest('.f-scroll') as HTMLElement | null;
-  const el = view.nodeDOM(pos) as HTMLElement | null;
-  if (!sc || !el) return;
+  // looked up each frame: a far paragraph's placeholder is replaced by the real one as the page nears it (window.ts).
+  // Null once that paragraph is gone (another file shown, the paragraph edited, the pane closed), which ends the scroll
+  const want = view.state.doc.nodeAt(pos);
+  const node = () => (!view.isDestroyed && view.state.doc.nodeAt(pos) === want ? view.nodeDOM(pos) as HTMLElement | null : null);
+  if (!sc || !node()) return;
   stopScroll();
-  const target = () => Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 16));
+  const target = () => Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, (node()?.getBoundingClientRect().top ?? 0) - sc.getBoundingClientRect().top + sc.scrollTop - 16));
   if (reducedMotion()) { for (let i = 0; i < 4; i++) sc.scrollTop = target(); return; }
   const from = sc.scrollTop, t0 = performance.now();
   const dur = Math.min(700, 300 + Math.abs(target() - from) / 20);
   let raf = 0, still = 0;
   const step = (now: number) => {
-    if (!el.isConnected) { stopScroll(); return; }
+    if (!node()) { stopScroll(); return; }
     const t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 3);
     const goal = target();
     sc.scrollTop = from + (goal - from) * e;

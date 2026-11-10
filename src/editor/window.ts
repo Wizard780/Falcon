@@ -1,6 +1,7 @@
 import { Plugin, PluginKey, type Transaction } from 'prosemirror-state';
-import type { Node as PMNode } from 'prosemirror-model';
-import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
+import { DOMSerializer, type Node as PMNode } from 'prosemirror-model';
+import { Decoration, DecorationSet, type EditorView, type NodeView, type NodeViewConstructor } from 'prosemirror-view';
+import { isReading } from './read';
 
 /**
  * The paragraphs near the screen, drawn; the rest skipped (styles.css: `content-visibility: hidden`
@@ -9,7 +10,12 @@ import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
  * and a scroll frame on a 15k-paragraph file. Here one scroll handler picks the range.
  *
  * The range is top-level child indices [from, to), snapped to STEP so small scrolls don't redraw.
- * Skipped paragraphs keep the height they last drew at (contain-intrinsic-size: auto).
+ *
+ * A skipped plain paragraph isn't built at all: it is an empty element of its own tag and style (a node
+ * view with no content), sized to the height it last drew at, or to an estimate from its text. Building
+ * every paragraph's spans was most of the cost of a big file: 428k DOM nodes for 15k paragraphs, and
+ * every style recalc, GC and tab switch walked them. Paragraphs holding pictures or footnotes, and
+ * tables, are built as before and skipped by content-visibility alone.
  */
 type Win = { from: number; to: number; decos: DecorationSet };
 export const windowKey = new PluginKey<Win>('window');
@@ -17,13 +23,103 @@ const FIRST = 80; // drawn before the first measure: the top of a just-opened fi
 const STEP = 24;
 const MARGIN = 1; // screens drawn above and below the visible one
 
+/** Spec of the decorations that make a paragraph drawn for real: f-near here, f-live (the selection's paragraphs) in editor.ts. */
+export const NEAR = { near: true };
+const isNear = (decos: readonly Decoration[]) => decos.some((d) => d.spec.near);
+
+/** Heights (unzoomed CSS px, border box) of paragraphs drawn before, and the page width then. Keyed by
+ *  node: an unchanged paragraph keeps its node across edits and tab switches, so a file switched back to
+ *  comes back at the same heights and its scroll position lands on the same text. Estimates are kept
+ *  too, for the same reason. */
+const heights = new WeakMap<PMNode, { h: number; w: number }>();
+/** Each view's page width at its last measure (read there: reading layout while building would force it per paragraph). */
+const widths = new WeakMap<EditorView, number>();
+/** Per paragraph style: one line's height, and height × page width per character (`r`), learned from drawn paragraphs.
+ *  The defaults were measured on real files at 11pt Calibri. */
+const learned: Record<string, { h1: number; r: number; hs: number; cs: number }> = {};
+const DEFAULT = { h1: 19, r: 137 };
+
+/** Characters, each scaled by its font size (a card's shrunk text fits more on a line). */
+function chars(node: PMNode): number {
+  let c = 0;
+  node.forEach((t) => {
+    const size = t.marks.find((m) => m.type.name === 'size');
+    c += (t.text?.length ?? 0) * (size ? size.attrs.pt / 11 : 1);
+  });
+  return c;
+}
+
+function heightOf(node: PMNode, view: EditorView): number {
+  const w = widths.get(view) ?? 0, known = heights.get(node);
+  if (known && (!w || known.w === w)) return known.h;
+  const s = learned[node.attrs.style] ?? DEFAULT, width = w || 650;
+  const h = Math.max(s.h1, (s.r * chars(node)) / width);
+  heights.set(node, { h, w: width });
+  return h;
+}
+
+/** Remember the drawn heights of paragraphs [from, to) that are about to be skipped. */
+function remember(view: EditorView, from: number, to: number, keep: { from: number; to: number }) {
+  if (isReading(view.state)) return; // read mode hides most text and runs paragraphs together: its heights aren't the page's
+  const doc = view.state.doc, kids = view.dom.children, w = widths.get(view)!;
+  const box = view.dom.getBoundingClientRect(), z = box.height / (view.dom.offsetHeight || 1) || 1; // the page's CSS zoom
+  for (let i = from; i < Math.min(to, doc.childCount); i++) {
+    if (i >= keep.from && i < keep.to) continue;
+    const el = kids[i] as HTMLElement, n = doc.child(i);
+    if (n.type.name !== 'paragraph' || el.classList.contains('f-far')) continue;
+    const h = el.getBoundingClientRect().height / z, c = chars(n);
+    heights.set(n, { h, w });
+    const s = (learned[n.attrs.style] ??= { h1: h || DEFAULT.h1, r: DEFAULT.r, hs: 0, cs: 0 });
+    if (h > 0) s.h1 = Math.min(s.h1, h);
+    // only paragraphs of a few lines teach the per-character rate: a one-liner's length says little about its height
+    if (h > 2.5 * s.h1) { s.hs += h * w; s.cs += c; s.r = s.hs / s.cs; }
+  }
+}
+
+/** Top-level children's start positions, per doc: a paragraph view has to know it isn't in a table cell. */
+const starts = new WeakMap<PMNode, Uint32Array>();
+function topLevel(doc: PMNode, pos: number, node: PMNode): boolean {
+  let s = starts.get(doc);
+  if (!s) {
+    s = new Uint32Array(doc.childCount);
+    let p = 0;
+    for (let i = 0; i < s.length; i++) { s[i] = p; p += doc.child(i).nodeSize; }
+    starts.set(doc, s);
+  }
+  let lo = 0, hi = s.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (s[mid] < pos) lo = mid + 1; else if (s[mid] > pos) hi = mid - 1; else return doc.child(mid) === node;
+  }
+  return false;
+}
+
+const plain = (node: PMNode) => { let ok = true; node.forEach((c) => { if (!c.isText) ok = false; }); return ok; };
+
+/** A top-level paragraph: drawn (its own DOM, with content) while near, an empty placeholder of the same
+ *  tag and classes while far. Either one gives way to the other when the near mark comes or goes. */
+const paragraphView: NodeViewConstructor = (node, view, getPos, decos) => {
+  const pos = getPos();
+  // anything else (cell paragraphs, pictures, footnotes, page breaks) draws the default way: null falls back to toDOM
+  if (pos === undefined || !topLevel(view.state.doc, pos, node) || (!isNear(decos) && !plain(node))) return null as unknown as NodeView;
+  const { dom, contentDOM } = DOMSerializer.renderSpec(document, node.type.spec.toDOM!(node));
+  if (isNear(decos)) {
+    let cur = node;
+    return { dom, contentDOM, update: (n, d) => isNear(d) && n.sameMarkup(cur) && ((cur = n), true) };
+  }
+  const el = dom as HTMLElement;
+  el.classList.add('f-far');
+  el.style.height = `${heightOf(node, view)}px`;
+  return { dom, update: (n, d) => n === node && !isNear(d) };
+};
+
 function decorate(doc: PMNode, from: number, to: number): DecorationSet {
   const decos: Decoration[] = [];
   const end = Math.min(to, doc.childCount);
   let pos = 0;
   for (let i = 0; i < end; i++) {
     const n = doc.child(i);
-    if (i >= from) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-near' }));
+    if (i >= from) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-near' }, NEAR));
     pos += n.nodeSize;
   }
   return DecorationSet.create(doc, decos);
@@ -53,14 +149,15 @@ function remark(tr: Transaction, v: Win): DecorationSet {
     const n = doc.child(i);
     // find() also returns the neighbours' marks that only touch this paragraph's edges
     decos = decos.remove(decos.find(pos, pos + n.nodeSize).filter((d) => d.from < pos + n.nodeSize && d.to > pos));
-    if (i >= v.from && i < v.to) add.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-near' }));
+    if (i >= v.from && i < v.to) add.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-near' }, NEAR));
     pos += n.nodeSize;
   }
   return add.length ? decos.add(doc, add) : decos;
 }
 
-/** The top-level child range near the screen, or null when it can't be measured (not laid out). */
-function nearRange(view: EditorView, sc: HTMLElement): { from: number; to: number } | null {
+/** The top-level child range near the screen, or null when it can't be measured (not laid out). `top` is the
+ *  first child starting on screen, the one kept in place when the range changes. */
+function nearRange(view: EditorView, sc: HTMLElement): { from: number; to: number; top: number } | null {
   const doc = view.state.doc, n = doc.childCount;
   const kids = view.dom.children;
   // the footnote list is a widget after the last paragraph; anything else extra and we can't index by DOM
@@ -79,7 +176,7 @@ function nearRange(view: EditorView, sc: HTMLElement): { from: number; to: numbe
     return lo;
   };
   const a = search(top, 'bottom'), b = search(bottom, 'top');
-  return { from: Math.max(0, Math.floor(a / STEP) * STEP), to: Math.min(n, Math.ceil((b + 1) / STEP) * STEP) };
+  return { from: Math.max(0, Math.floor(a / STEP) * STEP), to: Math.min(n, Math.ceil((b + 1) / STEP) * STEP), top: Math.min(search(box.top, 'top'), n - 1) };
 }
 
 export const WINDOW_META = 'falcon-window';
@@ -94,7 +191,7 @@ export const windowPlugin = new Plugin<Win>({
       return tr.docChanged ? { ...v, decos: remark(tr, v) } : v;
     },
   },
-  props: { decorations: (state) => windowKey.getState(state)!.decos },
+  props: { decorations: (state) => windowKey.getState(state)!.decos, nodeViews: { paragraph: paragraphView } },
   view(view) {
     let raf = 0;
     const measure = () => {
@@ -104,14 +201,25 @@ export const windowPlugin = new Plugin<Win>({
       if (!sc || !view.dom.isConnected) return;
       const r = nearRange(view, sc);
       const cur = windowKey.getState(view.state)!;
-      if (r && (r.from !== cur.from || r.to !== cur.to)) view.dispatch(view.state.tr.setMeta(windowKey, r).setMeta(WINDOW_META, true).setMeta('addToHistory', false));
+      widths.set(view, view.dom.clientWidth);
+      if (!r || (r.from === cur.from && r.to === cur.to)) return;
+      remember(view, cur.from, cur.to, r);
+      const anchor = view.dom.children[r.top] as HTMLElement, y = anchor.getBoundingClientRect().top;
+      view.dispatch(view.state.tr.setMeta(windowKey, { from: r.from, to: r.to }).setMeta(WINDOW_META, true).setMeta('addToHistory', false));
+      // paragraphs above the screen just changed from estimates to real heights: keep the text on screen where it was.
+      // By index, since the anchor itself may have been a placeholder that got replaced (a scrollbar drag)
+      const now = view.dom.children[r.top] as HTMLElement | undefined;
+      const d = now ? now.getBoundingClientRect().top - y : 0;
+      if (Math.abs(d) >= 1) sc.scrollTop += d;
     };
     const soon = () => { if (!raf) raf = requestAnimationFrame(measure); };
     // scroll events come before the frame is drawn: measuring here draws the new paragraphs in that same frame
     const onScroll = (e: Event) => { if (e.target instanceof Node && e.target.contains(view.dom)) measure(); };
     document.addEventListener('scroll', onScroll, { capture: true, passive: true });
-    // the page changed height (typing, zoom, a new window width, another doc swapped in)
-    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(soon);
+    // the page changed height (typing, zoom, a new window width, another doc swapped in, real paragraphs replacing
+    // estimates). Measured at once: the callback comes after layout and before paint, so a screen that came up short
+    // of drawn paragraphs fills in before it is ever shown blank
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     ro?.observe(view.dom);
     soon();
     return {

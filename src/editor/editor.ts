@@ -25,7 +25,7 @@ import { docToolPlugins } from './doc-tools';
 import { tablePlugins } from './tables';
 import { imagePlugin } from './images';
 import { footnotePlugin } from './footnotes';
-import { WINDOW_META, windowPlugin } from './window';
+import { NEAR, WINDOW_META, windowPlugin } from './window';
 import { smartQuotesPlugin } from './quotes';
 
 /** Paintbrush: while armed, every mouse selection gets the active color, or loses it if it's already all that color. */
@@ -69,8 +69,8 @@ const brush = new Plugin<{ kind: 'highlight' | 'shading' | null }>({
 
 /**
  * Two paragraph classes driven by the selection:
- * - f-live on the paragraphs holding the cursor, which always lay out normally (the off-screen
- *   layout skip in styles.css would otherwise misplace the caret in a just-created paragraph);
+ * - f-live on the paragraphs holding the cursor, which are always built and laid out (window.ts would
+ *   otherwise leave an off-screen one an empty placeholder, with nowhere for the caret);
  * - f-cur-card on the card (tag/analytic and its body) that holds the cursor, for the left bar.
  */
 const selectionClasses = new Plugin({
@@ -80,7 +80,7 @@ const selectionClasses = new Plugin({
       const decos: Decoration[] = [];
       const live = new Set<number>();
       for (const $p of [state.selection.$anchor, state.selection.$head]) if ($p.depth >= 1) live.add($p.before(1));
-      for (const pos of live) decos.push(Decoration.node(pos, pos + doc.nodeAt(pos)!.nodeSize, { class: 'f-live' }));
+      for (const pos of live) decos.push(Decoration.node(pos, pos + doc.nodeAt(pos)!.nodeSize, { class: 'f-live' }, NEAR));
       const c = cardAround(doc, state.selection.head);
       const head = c && doc.child(c.head);
       if (c && head && (head.attrs.style === 'tag' || head.attrs.style === 'analytic')) {
