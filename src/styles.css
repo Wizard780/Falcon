@@ -483,9 +483,10 @@ button.b:active { transform: scale(.97); }
 .ProseMirror > :first-child { margin-top: 0 !important; }
 .f-cite { font-size: 13pt; font-weight: 700; }
 .f-underline { text-decoration: underline; }
-.f-emphasis { font-weight: 700; text-decoration: underline; border: 1pt solid #000; -webkit-box-decoration-break: clone; box-decoration-break: clone; position: relative; } /* positioned so its border paints over the next line's highlight; it sits inside highlight and shading, which fill it */
+.f-emphasis { font-weight: 700; text-decoration: underline; border: 1pt solid transparent; outline: 1pt solid #000; outline-offset: -1pt; -webkit-box-decoration-break: clone; box-decoration-break: clone; } /* the border holds the box's room; the outline drawn on it paints after every line of the paragraph (so the next line's highlight can't cover it) without positioning the box, whose fill would then cover the caret */
 .f-unbold { font-weight: 400 !important; }
 .ProseMirror .f-size .f-underline, .ProseMirror .f-underline .f-size { text-decoration: underline; }
+.ProseMirror :is(.f-underline, .f-emphasis) :is(.f-highlight, .f-shading) { text-decoration: underline; } /* the line takes the highlight's ink (an underline is drawn in the color of the element that declares it) */
 .ProseMirror .f-highlight { color: #000; } /* a highlight sets its own ink, like Word: black on a light color, white on a dark one */
 .ProseMirror .f-highlight:is([data-color=blue], [data-color=darkBlue], [data-color=darkCyan], [data-color=darkGreen], [data-color=darkMagenta], [data-color=darkRed], [data-color=darkYellow], [data-color=darkGray], [data-color=black]) { color: #fff; }
 .ProseMirror ::selection { background: rgba(80, 140, 255, 0.35); }

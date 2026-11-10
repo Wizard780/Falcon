@@ -16,14 +16,15 @@
 
 /* dark page (the theme's paper is dark; theme.ts sets the class and the colors): light ink, and dark ink on highlighted or shaded text so it stays readable */
 .page-dark .ProseMirror:not(.f-read) { caret-color: #fff; }
-.page-dark .ProseMirror .f-pocket, .page-dark .ProseMirror .f-emphasis { border-color: currentColor; }
+.page-dark .ProseMirror .f-pocket { border-color: currentColor; }
+.page-dark .ProseMirror .f-emphasis { outline-color: currentColor; }
 .page-dark .ProseMirror .f-highlight, .page-dark .ProseMirror .f-shading { color: #111; }
 .page-dark .ProseMirror .f-analytic { color: var(--c-analytic, #8aa4d6); }
 .page-dark .ProseMirror .f-undertag { color: var(--c-undertag, #8fae7a); }
 .page-dark .f-cur-card::before { background: #4a4a50; }
 
 .cite-plain .ProseMirror .f-cite { font-weight: 400; }
-.emph-nobox .ProseMirror .f-emphasis { border: 0; }
+.emph-nobox .ProseMirror .f-emphasis { border: 0; outline: 0; }
 .pocket-nobox .ProseMirror .f-pocket { border: 0; }
 .hat-single .ProseMirror .f-hat { text-decoration: underline; }
 .shade-dots .ProseMirror .f-shading { background-image: radial-gradient(rgba(0, 0, 0, .3) .7px, transparent .9px); background-size: 3px 3px; }
