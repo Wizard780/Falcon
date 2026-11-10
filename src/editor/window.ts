@@ -77,7 +77,7 @@ function remember(view: EditorView, from: number, to: number, keep: { from: numb
 
 /** Top-level children's start positions, per doc: a paragraph view has to know it isn't in a table cell. */
 const starts = new WeakMap<PMNode, Uint32Array>();
-function topLevel(doc: PMNode, pos: number, node: PMNode): boolean {
+function startsOf(doc: PMNode): Uint32Array {
   let s = starts.get(doc);
   if (!s) {
     s = new Uint32Array(doc.childCount);
@@ -85,6 +85,10 @@ function topLevel(doc: PMNode, pos: number, node: PMNode): boolean {
     for (let i = 0; i < s.length; i++) { s[i] = p; p += doc.child(i).nodeSize; }
     starts.set(doc, s);
   }
+  return s;
+}
+function topLevel(doc: PMNode, pos: number, node: PMNode): boolean {
+  const s = startsOf(doc);
   let lo = 0, hi = s.length - 1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
@@ -189,6 +193,20 @@ function nearRange(view: EditorView, sc: HTMLElement): { a: number; b: number; f
   };
   const a = search(top, 'bottom'), b = Math.min(n, search(bottom, 'top') + 1);
   return { a, b, from: Math.max(0, Math.floor(a / STEP) * STEP), to: Math.min(n, Math.ceil(b / STEP) * STEP), top: Math.min(search(box.top, 'top'), n - 1) };
+}
+
+/** Start of the top-level child at height `y` (client px): the first one whose bottom is below it, as the browser's own
+ *  hit test picks in the gap between two (where text would land, the outline wants only the paragraph). The end of the
+ *  doc below the last one; null when children can't be indexed by DOM. A few rects, not posAtCoords's hit test. */
+export function topChildAt(view: EditorView, y: number): number | null {
+  const doc = view.state.doc, n = doc.childCount, kids = view.dom.children;
+  if (kids.length < n) return null;
+  let lo = 0, hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (kids[mid].getBoundingClientRect().bottom <= y) lo = mid + 1; else hi = mid;
+  }
+  return lo >= n ? doc.content.size : startsOf(doc)[lo];
 }
 
 export const WINDOW_META = 'falcon-window';

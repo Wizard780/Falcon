@@ -4,6 +4,7 @@ import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { createView } from '../src/editor/editor';
+import { topChildAt } from '../src/editor/window';
 import { schema } from '../src/editor/schema';
 
 // jsdom lays nothing out, so the window stays at the first 80 paragraphs: everything past them is far
@@ -88,5 +89,16 @@ describe('far paragraphs are empty placeholders', () => {
     const v = view(doc);
     expect(v.state.doc.eq(doc)).toBe(true);
     expect(v.state.doc.textBetween(0, v.state.doc.content.size, '\n\n')).toContain('para 150');
+  });
+
+  it('topChildAt: the paragraph at a height, the next one in the gap below a paragraph, the doc end past the last', () => {
+    const v = view(paras(4));
+    // laid out by hand: 20 px paragraphs with 10 px gaps
+    [...v.dom.children].forEach((el, i) => { (el as HTMLElement).getBoundingClientRect = () => ({ top: i * 30, bottom: i * 30 + 20 }) as DOMRect; });
+    const start = (i: number) => { let pos = 0; for (let k = 0; k < i; k++) pos += v.state.doc.child(k).nodeSize; return pos; };
+    expect(topChildAt(v, 5)).toBe(start(0));
+    expect(topChildAt(v, 25)).toBe(start(1));
+    expect(topChildAt(v, 31)).toBe(start(1));
+    expect(topChildAt(v, 110)).toBe(v.state.doc.content.size);
   });
 });

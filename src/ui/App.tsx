@@ -6,6 +6,7 @@ import { TextSelection, type EditorState } from 'prosemirror-state';
 import { Fragment, Node as PMNode } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
+import { topChildAt } from '../editor/window';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
 import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
@@ -1373,8 +1374,8 @@ export function App() {
     if (caret.bottom > box.top && caret.top < box.bottom) { mark(head); return; }
     const pm = v.dom.getBoundingClientRect(), top = box.top + 90;
     if (pm.top > top) { mark(0); return; }
-    const hit = v.posAtCoords({ left: pm.left + 4, top: Math.min(top, pm.bottom - 2) });
-    mark(hit ? hit.pos : v.state.doc.content.size);
+    const y = Math.min(top, pm.bottom - 2), at = topChildAt(v, y); // outline rows are top-level paragraphs: which one is enough
+    mark(at ?? v.posAtCoords({ left: pm.left + 4, top: y })?.pos ?? v.state.doc.content.size);
   }, []);
   measureRef.current = measureRead;
   useEffect(() => {
