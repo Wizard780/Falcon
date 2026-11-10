@@ -64,12 +64,14 @@ function heightOf(node: PMNode, view: EditorView): number {
 function remember(view: EditorView, from: number, to: number, keep: { from: number; to: number }) {
   if (isReading(view.state)) return; // read mode hides most text and runs paragraphs together: its heights aren't the page's
   const doc = view.state.doc, kids = view.dom.children, w = widths.get(view)!;
-  const box = view.dom.getBoundingClientRect(), z = box.height / (view.dom.offsetHeight || 1) || 1; // the page's CSS zoom
+  // the page's CSS zoom. Exactly: rect / offsetHeight is off by up to half a pixel in the whole page's height, and that
+  // error in 24 stored heights moves everything below a fraction of a pixel, which redraws every tile on screen
+  const z = (view.dom as { currentCSSZoom?: number }).currentCSSZoom ?? (view.dom.getBoundingClientRect().height / (view.dom.offsetHeight || 1) || 1);
   for (let i = from; i < Math.min(to, doc.childCount); i++) {
     if (i >= keep.from && i < keep.to) continue;
     const el = kids[i] as HTMLElement, n = doc.child(i);
     if (n.type.name !== 'paragraph' || el.classList.contains('f-far')) continue;
-    heights.set(n, { h: el.getBoundingClientRect().height / z, w });
+    heights.set(n, { h: Math.round((el.getBoundingClientRect().height / z) * 64) / 64, w }); // layout's own unit, 1/64 px
   }
 }
 
