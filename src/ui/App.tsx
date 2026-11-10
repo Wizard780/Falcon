@@ -24,6 +24,7 @@ import { insertContent, insertLabel } from '../editor/linked-insert';
 import { selectionState } from './selection-state';
 import { Stopwatch, SvgIcon } from './icons';
 import { newFileName, openDocument, speechFileName, openPath, saveDocument, type DocMeta } from './files';
+import { trimSoon } from './quiet';
 import type { Ctx } from './cc-sources';
 import type { FileHit } from './file-search';
 import { clearFind, findInfo, requestFind, setQuery as setFindQuery } from '../editor/find';
@@ -457,6 +458,9 @@ export function App() {
   useEffect(() => { saveRecents(recents); }, [recents]);
   // the list changed (switch, open, close, saved): refresh the crash-recovery copy once React has settled
   useEffect(() => { if (viewRef.current) whenIdle(() => { backup(); }); }, [docs, activeId, speechId, backup]);
+  // a file closed or another one shows: what it held (its old page, the import, the backup's copy) can go
+  const shown = useRef('');
+  useEffect(() => { const k = `${activeId} ${docs.length}`; if (k !== shown.current) { shown.current = k; trimSoon(); } }, [docs.length, activeId]);
   // nothing clears the crash-recovery copy on the way out, so with it on these changes come back
   const unsavedFate = () => (pref(P.crashRecovery) ? "They won't be saved to the file, but Falcon brings them back next time it opens." : "They'll be lost.");
   // quitting or closing the window with unsaved docs: the page blocks it, the main process passes

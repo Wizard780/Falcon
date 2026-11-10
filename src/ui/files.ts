@@ -1,6 +1,7 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { bridge } from '../editor/host';
 import { P, pref } from '../editor/prefs';
+import { trimSoon } from './quiet';
 
 export type DocMeta = { name: string; path?: string };
 
@@ -11,6 +12,7 @@ export async function openDocument(): Promise<{ doc: PMNode; meta: DocMeta } | n
   else file = await pickFile();
   if (!file) return null;
   const doc = await (await import('../docx/import')).docxToDoc(file.data);
+  trimSoon(); // the import's leftovers: the zip, the XML text, the parse
   return { doc, meta: { name: file.name.replace(/\.docx$/i, ''), path: file.path } };
 }
 
@@ -19,6 +21,7 @@ export async function openPath(path: string): Promise<{ doc: PMNode; meta: DocMe
   if (!bridge.openPath) throw new Error('Use Open to pick this file');
   const file = await bridge.openPath(path);
   const doc = await (await import('../docx/import')).docxToDoc(file.data);
+  trimSoon(); // the import's leftovers: the zip, the XML text, the parse
   return { doc, meta: { name: file.name.replace(/\.docx$/i, ''), path: file.path } };
 }
 

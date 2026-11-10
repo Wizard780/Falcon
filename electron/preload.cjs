@@ -1,10 +1,12 @@
 // The only bridge between the page and the OS. The page gets these functions and nothing else.
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 const utf8 = new TextEncoder(); // the crash-recovery copy goes to the main process as bytes (see falcon:recovery-write)
 
 contextBridge.exposeInMainWorld('falcon', {
   platform: process.platform,
+  // let go of what the page no longer uses (a full GC, Blink's caches): the page asks once it's quiet after a file opens, closes or swaps in
+  trimMemory: () => webFrame.clearCache(),
   readClipboardText: () => ipcRenderer.invoke('falcon:read-clipboard-text'),
   openFile: () => ipcRenderer.invoke('falcon:open-file'),
   openPath: (p) => ipcRenderer.invoke('falcon:open-path', p),
