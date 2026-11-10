@@ -56,6 +56,14 @@ describe('Read Doc', () => {
     // the marker's own space stands in for the cut text: no double space in Word
     expect(lines(readDoc(d))).toEqual(['tag: T', 'normal: read Marked 3:15 ']);
   });
+  it('joins indented body paragraphs flush, like read mode', () => {
+    const ind = (indent: number, t: string) => schema.node('paragraph', { style: 'normal', indent }, [schema.text(t, [hl()])]);
+    const r = readDoc(doc(p('tag', 'T'), p('normal', ['Smith 24', [cite()]]), ind(0, 'one'), ind(1, 'two'), ind(2, 'three')))!;
+    expect(lines(r)).toEqual(['tag: T', 'normal: Smith 24', 'normal: one two three']);
+    expect(r.child(2).attrs.indent).toBe(0);
+    const first = readDoc(doc(p('tag', 'T'), p('normal', ['Smith 24', [cite()]]), ind(1, 'one'), ind(0, 'two')))!;
+    expect(first.child(2).attrs.indent).toBe(0);
+  });
   it('round-trips through .docx with only the read text', async () => {
     const d = doc(p('tag', 'T'), p('normal', 'hidden ', ['shown', [hl()]], ' hidden'));
     const back = await docxToDoc(await docToDocx(readDoc(d)!));
