@@ -69,8 +69,10 @@ const brush = new Plugin<{ kind: 'highlight' | 'shading' | null }>({
 
 /**
  * Two paragraph classes driven by the selection:
- * - f-live on the paragraphs holding the cursor, which are always built and laid out (window.ts would
- *   otherwise leave an off-screen one an empty placeholder, with nowhere for the caret);
+ * - f-live on the paragraphs holding the cursor, the ones either side and the doc's first and last,
+ *   which are always built and laid out: window.ts leaves an off-screen paragraph an empty placeholder,
+ *   and the browser's own caret moves (arrows, Mod-Up/Down to the doc's ends) skip those, so they would
+ *   land paragraphs or a whole screen away;
  * - f-cur-card on the card (tag/analytic and its body) that holds the cursor, for the left bar.
  */
 const selectionClasses = new Plugin({
@@ -78,8 +80,14 @@ const selectionClasses = new Plugin({
     decorations(state) {
       const doc = state.doc;
       const decos: Decoration[] = [];
-      const live = new Set<number>();
-      for (const $p of [state.selection.$anchor, state.selection.$head]) if ($p.depth >= 1) live.add($p.before(1));
+      const live = new Set<number>([0, doc.content.size - doc.lastChild!.nodeSize]);
+      for (const $p of [state.selection.$anchor, state.selection.$head]) {
+        if ($p.depth < 1) continue;
+        const i = $p.index(0), at = $p.before(1);
+        live.add(at);
+        if (i > 0) live.add(at - doc.child(i - 1).nodeSize);
+        if (i + 1 < doc.childCount) live.add($p.after(1));
+      }
       for (const pos of live) decos.push(Decoration.node(pos, pos + doc.nodeAt(pos)!.nodeSize, { class: 'f-live' }, NEAR));
       const c = cardAround(doc, state.selection.head);
       const head = c && doc.child(c.head);

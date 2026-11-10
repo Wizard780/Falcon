@@ -34,10 +34,12 @@ const isNear = (decos: readonly Decoration[]) => decos.some((d) => d.spec.near);
 const heights = new WeakMap<PMNode, { h: number; w: number }>();
 /** Each view's page width at its last measure (read there: reading layout while building would force it per paragraph). */
 const widths = new WeakMap<EditorView, number>();
-/** Per paragraph style: one line's height, and height × page width per character (`r`), learned from drawn paragraphs.
- *  The defaults were measured on real files at 11pt Calibri. */
-const learned: Record<string, { h1: number; r: number; hs: number; cs: number }> = {};
-const DEFAULT = { h1: 19, r: 137 };
+/** Per paragraph style: one line's height (px), and height × page width per character. Fitted to five real
+ *  files (31k paragraphs) at the default font: the estimated page comes out within 4% of the real one. */
+const EST: Record<string, { h1: number; r: number }> = {
+  normal: { h1: 19, r: 130 }, undertag: { h1: 19, r: 130 }, tag: { h1: 19.9, r: 169 }, analytic: { h1: 22.5, r: 211 },
+  block: { h1: 23.5, r: 260 }, hat: { h1: 32.2, r: 400 }, pocket: { h1: 56.9, r: 700 },
+};
 
 /** Characters, each scaled by its font size (a card's shrunk text fits more on a line). */
 function chars(node: PMNode): number {
@@ -52,7 +54,7 @@ function chars(node: PMNode): number {
 function heightOf(node: PMNode, view: EditorView): number {
   const w = widths.get(view) ?? 0, known = heights.get(node);
   if (known && (!w || known.w === w)) return known.h;
-  const s = learned[node.attrs.style] ?? DEFAULT, width = w || 650;
+  const s = EST[node.attrs.style] ?? EST.normal, width = w || 1000;
   const h = Math.max(s.h1, (s.r * chars(node)) / width);
   heights.set(node, { h, w: width });
   return h;
@@ -67,12 +69,7 @@ function remember(view: EditorView, from: number, to: number, keep: { from: numb
     if (i >= keep.from && i < keep.to) continue;
     const el = kids[i] as HTMLElement, n = doc.child(i);
     if (n.type.name !== 'paragraph' || el.classList.contains('f-far')) continue;
-    const h = el.getBoundingClientRect().height / z, c = chars(n);
-    heights.set(n, { h, w });
-    const s = (learned[n.attrs.style] ??= { h1: h || DEFAULT.h1, r: DEFAULT.r, hs: 0, cs: 0 });
-    if (h > 0) s.h1 = Math.min(s.h1, h);
-    // only paragraphs of a few lines teach the per-character rate: a one-liner's length says little about its height
-    if (h > 2.5 * s.h1) { s.hs += h * w; s.cs += c; s.r = s.hs / s.cs; }
+    heights.set(n, { h: el.getBoundingClientRect().height / z, w });
   }
 }
 
@@ -199,27 +196,29 @@ export const windowPlugin = new Plugin<Win>({
       raf = 0;
       const sc = view.dom.closest('.f-scroll') as HTMLElement | null;
       if (!sc || !view.dom.isConnected) return;
-      const r = nearRange(view, sc);
-      const cur = windowKey.getState(view.state)!;
       widths.set(view, view.dom.clientWidth);
-      if (!r || (r.from === cur.from && r.to === cur.to)) return;
-      remember(view, cur.from, cur.to, r);
-      const anchor = view.dom.children[r.top] as HTMLElement, y = anchor.getBoundingClientRect().top;
-      view.dispatch(view.state.tr.setMeta(windowKey, { from: r.from, to: r.to }).setMeta(WINDOW_META, true).setMeta('addToHistory', false));
-      // paragraphs above the screen just changed from estimates to real heights: keep the text on screen where it was.
-      // By index, since the anchor itself may have been a placeholder that got replaced (a scrollbar drag)
-      const now = view.dom.children[r.top] as HTMLElement | undefined;
-      const d = now ? now.getBoundingClientRect().top - y : 0;
-      if (Math.abs(d) >= 1) sc.scrollTop += d;
+      // real paragraphs drawn over estimates move the page, so the range is measured again until it holds, here
+      // rather than on the next frame: a screen that came up short of drawn paragraphs fills in before it's shown blank
+      for (let k = 0; k < 3; k++) {
+        const r = nearRange(view, sc);
+        const cur = windowKey.getState(view.state)!;
+        if (!r || (r.from === cur.from && r.to === cur.to)) return;
+        remember(view, cur.from, cur.to, r);
+        const y = view.dom.children[r.top].getBoundingClientRect().top;
+        view.dispatch(view.state.tr.setMeta(windowKey, { from: r.from, to: r.to }).setMeta(WINDOW_META, true).setMeta('addToHistory', false));
+        // paragraphs above the screen just changed from estimates to real heights: keep the text on screen where it was.
+        // By index, since the anchor itself may have been a placeholder that got replaced (a scrollbar drag)
+        const now = view.dom.children[r.top];
+        const d = now ? now.getBoundingClientRect().top - y : 0;
+        if (Math.abs(d) >= 1) sc.scrollTop += d;
+      }
     };
     const soon = () => { if (!raf) raf = requestAnimationFrame(measure); };
     // scroll events come before the frame is drawn: measuring here draws the new paragraphs in that same frame
     const onScroll = (e: Event) => { if (e.target instanceof Node && e.target.contains(view.dom)) measure(); };
     document.addEventListener('scroll', onScroll, { capture: true, passive: true });
-    // the page changed height (typing, zoom, a new window width, another doc swapped in, real paragraphs replacing
-    // estimates). Measured at once: the callback comes after layout and before paint, so a screen that came up short
-    // of drawn paragraphs fills in before it is ever shown blank
-    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    // the page changed height (typing, zoom, a new window width, another doc swapped in)
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(soon);
     ro?.observe(view.dom);
     soon();
     return {
