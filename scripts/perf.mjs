@@ -40,6 +40,24 @@ async function freshPage() {
   return { ctx, page, cdp };
 }
 const metrics = async (cdp) => Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map((m) => [m.name, m.value]));
+// Rendering work off the main thread's script: a trace over `fn`, summed by event name (ms).
+// paint = the main thread drawing (pre-paint, paint, layerize, commit); gpu = raster tasks plus the GPU process's tasks.
+const PAINT = new Set(['PrePaint', 'Paint', 'Layerize', 'Commit', 'UpdateLayerTree']);
+const GPU = new Set(['RasterTask', 'GPUTask', 'ImageDecodeTask']);
+const LAYOUT = new Set(['Layout', 'UpdateLayoutTree']);
+async function traced(page, fn) {
+  await browser.startTracing(page, { categories: ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'gpu'] });
+  await fn();
+  const events = JSON.parse((await browser.stopTracing()).toString()).traceEvents;
+  let paint = 0, gpu = 0, layout = 0, frames = 0;
+  for (const e of events) {
+    if (e.ph !== 'X') { if (e.name === 'DrawFrame') frames++; continue; }
+    const ms = (e.dur ?? 0) / 1000;
+    if (PAINT.has(e.name)) paint += ms; else if (GPU.has(e.name)) gpu += ms; else if (LAYOUT.has(e.name)) layout += ms;
+  }
+  return { paint, gpu, layout, frames };
+}
+const heapAfterGc = async (cdp) => { await cdp.send('HeapProfiler.collectGarbage'); return (await metrics(cdp)).JSHeapUsedSize / 1048576; };
 const settle = (page) => page.evaluate(async () => {
   // fully settled: no main-thread task over 20 ms for 300 ms
   let last = performance.now();
@@ -58,9 +76,7 @@ async function editorReady(page) {
   await settle(page);
 }
 
-async function openRun(file) {
-  const { ctx, page, cdp } = await freshPage();
-  await editorReady(page);
+async function openChooser(page) {
   // Cmd-O can land before the page has focus: try again
   let chooser = null;
   for (let i = 0; i < 4 && !chooser; i++) {
@@ -68,6 +84,12 @@ async function openRun(file) {
     chooser = await Promise.all([page.waitForEvent('filechooser', { timeout: 5000 }), page.keyboard.press('Meta+o')]).then(([c]) => c, () => null);
   }
   if (!chooser) throw new Error('no file chooser');
+  return chooser;
+}
+async function openRun(file) {
+  const { ctx, page, cdp } = await freshPage();
+  await editorReady(page);
+  const chooser = await openChooser(page);
   const before = await page.evaluate(() => window.__falconView.state.doc);
   await page.evaluate(() => { window.__t0 = performance.now(); });
   // first screen: the editor shows the new doc's first paragraphs and a frame has painted
@@ -107,18 +129,24 @@ async function openRun(file) {
   const m1 = await metrics(cdp);
   const cpuPerKey = ((m1.TaskDuration - m0.TaskDuration) * 1000) / KEYS;
   const scriptPerKey = ((m1.ScriptDuration - m0.ScriptDuration) * 1000) / KEYS;
-  const heapMB = (await metrics(cdp)).JSHeapUsedSize / 1048576;
+  const heapMB = await heapAfterGc(cdp);
+  const domNodes = (await metrics(cdp)).Nodes;
   // scrolling: main-thread CPU per frame while the page scrolls 400px a frame for 90 frames
   await settle(page);
   const s0 = await metrics(cdp);
   const FRAMES = 90;
-  await page.evaluate(async (n) => {
+  const scroll = () => page.evaluate(async (n) => {
     const sc = document.querySelector('.f-scroll');
     sc.scrollTop = 0;
     for (let i = 0; i < n; i++) { sc.scrollTop += 400; await new Promise((r) => requestAnimationFrame(r)); }
   }, FRAMES);
+  await scroll();
   const s1 = await metrics(cdp);
   const cpuPerScrollFrame = ((s1.TaskDuration - s0.TaskDuration) * 1000) / FRAMES;
+  // the same scroll again under a trace (tracing itself costs CPU, so it's kept out of the number above)
+  await settle(page);
+  const tr = await traced(page, scroll);
+  const paintPerScrollFrame = tr.paint / FRAMES, gpuPerScrollFrame = tr.gpu / FRAMES;
   // save: how long the window is frozen (the longest main-thread block while saving)
   await settle(page);
   const freeze = await page.evaluate(async () => {
@@ -138,7 +166,50 @@ async function openRun(file) {
   });
   await ctx.close();
   lat.sort((a, b) => a - b);
-  return { firstMs, settledMs, blocks, keyMedian: lat[KEYS >> 1], keyP90: lat[Math.floor(KEYS * 0.9)], cpuPerKey, scriptPerKey, cpuPerScrollFrame, heapMB, saveFreeze: freeze.worst, saveTotal: freeze.total };
+  return { firstMs, settledMs, blocks, keyMedian: lat[KEYS >> 1], keyP90: lat[Math.floor(KEYS * 0.9)], cpuPerKey, scriptPerKey, cpuPerScrollFrame, paintPerScrollFrame, gpuPerScrollFrame, heapMB, domNodes, saveFreeze: freeze.worst, saveTotal: freeze.total };
+}
+
+async function multi(list) {
+  // many files at once: open every file in one window, then sit idle, then walk the tabs
+  const { ctx, page, cdp } = await freshPage();
+  await editorReady(page);
+  const t0 = Date.now();
+  const m0 = await metrics(cdp);
+  for (const f of list) {
+    const chooser = await openChooser(page);
+    const name = basename(f).replace(/\.docx$/, '');
+    await chooser.setFiles(f);
+    await page.waitForFunction((n) => document.querySelector(`.doc-nm[aria-label="${n}"]`) && window.__falconView.state.doc.childCount > 20, name, { timeout: 120000 });
+    await settle(page);
+  }
+  const openAllMs = Date.now() - t0;
+  const m1 = await metrics(cdp);
+  const openAllCpu = (m1.TaskDuration - m0.TaskDuration) * 1000;
+  const heapMB = await heapAfterGc(cdp);
+  const domNodes = (await metrics(cdp)).Nodes;
+  await page.waitForTimeout(1500);
+  const a = await metrics(cdp);
+  let idleTrace;
+  idleTrace = await traced(page, () => page.waitForTimeout(5000));
+  const b = await metrics(cdp);
+  const idleMsPerSec = ((b.TaskDuration - a.TaskDuration) * 1000) / 5;
+  // tab switches: click each open file's row twice round; time to the frame that shows it, and the CPU it took
+  const names = list.map((f) => basename(f).replace(/\.docx$/, ''));
+  const sw = [];
+  const c0 = await metrics(cdp);
+  let n = 0;
+  for (let round = 0; round < 2; round++) for (const name of names) {
+    if (await page.evaluate((nm) => document.querySelector(`.doc-row[data-on] .doc-nm[aria-label="${nm}"], .doc-row.on .doc-nm[aria-label="${nm}"]`) !== null, name)) continue;
+    const before = await page.evaluate(() => { window.__k = performance.now(); return window.__falconView.state.doc; }).catch(() => null);
+    void before;
+    await page.evaluate((nm) => { window.__k = performance.now(); document.querySelector(`.doc-nm[aria-label="${nm}"]`).click(); }, name);
+    sw.push(await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(() => r(performance.now() - window.__k), 0)))));
+    await settle(page);
+    n++;
+  }
+  const c1 = await metrics(cdp);
+  await ctx.close();
+  return { files: list.length, openAllMs, openAllCpu, heapMB, domNodes, idleMsPerSec, idleGpuMsPerSec: (idleTrace.gpu + idleTrace.paint) / 5, switchMedian: median(sw), switchCpu: ((c1.TaskDuration - c0.TaskDuration) * 1000) / n };
 }
 
 async function idle() {
@@ -206,6 +277,10 @@ for (const f of files) {
   const runs = [];
   for (let i = 0; i < RUNS; i++) { const r = await openRun(f); runs.push(r); console.error(basename(f), i, JSON.stringify(r)); }
   result.files[basename(f)] = Object.fromEntries(Object.keys(runs[0]).map((k) => [k, median(runs.map((r) => r[k]))]));
+}
+if (files.length > 1) {
+  const ms = []; for (let i = 0; i < Math.min(RUNS, 3); i++) { const r = await multi(files); ms.push(r); console.error('multi', i, JSON.stringify(r)); }
+  result.multi = Object.fromEntries(Object.keys(ms[0]).map((k) => [k, median(ms.map((r) => r[k]))]));
 }
 const idles = []; for (let i = 0; i < 3; i++) idles.push(await idle());
 result.idle = { editorMsPerSec: median(idles.map((x) => x.editorMsPerSec)), homeMsPerSec: median(idles.map((x) => x.homeMsPerSec)) };

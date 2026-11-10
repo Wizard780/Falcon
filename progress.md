@@ -234,3 +234,16 @@ Bug hunt: opening either NATO block file said "too big for crash recovery, so sa
 - [x] vitest tests/big-recovery.test.ts (3 of 4 fail on main); scripts/electron-recovery.mjs kills the real app mid-edit and relaunches: the edit is back, unsaved, on a generated file and on a copy of NATO AT Neg; electron-smoke passes with `recovery` added to the bridge
 - Note: in the app tests, a backup taken inside the same `act` as the typing records the doc as saved, because the render that marks it unsaved waits for the act to end. Not an app bug; wait in a second act (`typeAndBackUp`)
 
+
+## Stage: performance, round 2 (2026-11-09, branch perf-2)
+User ask: big files open faster; lightweight, less CPU and GPU even with many files open; at least 50% better in every category; a before/after chart.
+Before = origin/main e43ebaca built in its own worktree. Both builds measured by this branch's `scripts/perf.mjs` (headless Chromium) and `scripts/perf-electron.mjs` (real app, all processes), runs interleaved.
+Done means (30 MB Nordics file, 15k paragraphs, unless noted), each at least 50% better:
+- open: `firstMs`
+- CPU: `cpuPerKey`, `cpuPerScrollFrame`
+- GPU and drawing: `paintPerScrollFrame + gpuPerScrollFrame` (trace: paint, layerize, commit, raster, GPU tasks)
+- many files (all fixtures in one window): `openAllMs`, `switchCpu`, `idleMsPerSec`
+- weight: `heapMB`, `domNodes`, Electron `memMB` with three big files open
+Guards: import toJSON identical old vs new on the real-file corpus; saved parts byte-identical; vitest, tsc, build, Electron smoke and the verify-falcon journeys pass. The bench's meaning of "first screen" and "settled" stays as it is.
+Baseline (1 run, to be re-measured interleaved): open 1.2 s; 43 ms CPU a key (5 ms script); 32 ms a scroll frame; 428k DOM nodes; a tab switch to the big file ~0.9 s of CPU; Electron 1.5 GB with three files.
+Profile: every paragraph has DOM (content-visibility only skips layout and paint), so open, switch, memory and style recalc all scale with file size; each key forces layout (getClientRects, offsetHeight); each scroll frame calls caretPositionFromPoint and getBoundingClientRect.
