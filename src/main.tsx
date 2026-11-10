@@ -12,7 +12,10 @@ import '@fontsource-variable/figtree';
 import './ui/fonts/fonts.css';
 import './styles.css';
 import { bridge } from './editor/host';
+import { installQuiet } from './ui/quiet';
 
 if (bridge.platform) document.documentElement.classList.add('desktop', bridge.platform === 'darwin' ? 'mac' : 'win');
+
+installQuiet(); // the caret stops blinking when nothing's happening (see quiet.ts)
 
 createRoot(document.getElementById('root')!).render(<ErrorBoundary><App /></ErrorBoundary>);

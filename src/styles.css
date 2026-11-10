@@ -87,7 +87,7 @@ svg { flex: none; }
 .files-r { position: relative; flex: none; }
 /* a file being dragged to a new slot (both lists): lifted, and the grab cursor everywhere till it drops */
 .doc-row[data-drag] .doc-nm, .files-r[data-drag] .files-b { background: var(--u-raised); box-shadow: var(--u-top), 0 4px 12px rgba(0, 0, 0, calc(.3 * var(--u-sh))); }
-:root:has([data-drag]), :root:has([data-drag]) * { cursor: grabbing !important; user-select: none !important; }
+:root.f-dragging, :root.f-dragging * { cursor: grabbing !important; user-select: none !important; }
 /* the line a dragged file will land on: in the 4px gap before this row, or after the last one */
 .doc-row[data-drop]::before, .files-r[data-drop]::before { content: ''; position: absolute; z-index: 2; left: 2px; right: 2px; height: 2px; border-radius: 1px; background: var(--ink); pointer-events: none; }
 .doc-row[data-drop="before"]::before, .files-r[data-drop="before"]::before { top: -3px; }
@@ -326,7 +326,7 @@ button.b:active { transform: scale(.97); }
 .toast { position: fixed; left: 50%; bottom: 72px; z-index: 3000; display: flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 10px; background: var(--u-raised); color: var(--u-tx); font-size: 13px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, calc(.32 * var(--u-sh))); transform: translate(-50%, 8px); opacity: 0; pointer-events: none; transition: transform 200ms cubic-bezier(.23, 1, .32, 1), opacity 150ms ease-out; }
 .toast.show { transform: translate(-50%, 0); opacity: 1; }
-.toast:empty { visibility: hidden; }
+.toast:empty { visibility: hidden; transition: none; } /* the message and the class go together: its fade-out would play hidden, a quarter second of frames for nothing */
 .toast.has-action { gap: 12px; padding-right: 8px; pointer-events: auto; }
 .toast button { height: 24px; padding: 0 10px; border-radius: 6px; color: var(--u-tx); font: 500 13px var(--ui-font); cursor: pointer; transition: background 150ms var(--u-ease); }
 .toast button:hover { background: var(--u-hover); }
@@ -406,6 +406,7 @@ button.b:active { transform: scale(.97); }
 .hm-desk::before { content: ''; position: absolute; z-index: -1; inset: -100px -40px -40px; pointer-events: none;
   background: radial-gradient(closest-side, color-mix(in srgb, var(--ink-ui) 15%, transparent), transparent); animation: hm-breathe 9s ease-in-out infinite alternate; }
 @keyframes hm-breathe { from { opacity: .65; } to { opacity: 1; } }
+.home:not(.open) .hm-desk::before { animation-play-state: paused; } /* hidden Home: no frames for a glow nobody sees */
 .hm-sheet { position: absolute; top: 0; bottom: 56px; left: 50%; width: min(100%, 480px); translate: -50% 0; border-radius: 3px; background: var(--page); }
 .hm-under { transform: rotate(2.6deg) translate(16px, 8px); opacity: .5; box-shadow: 0 24px 60px rgba(0, 0, 0, calc(.4 * var(--u-sh))); }
 .hm-page { overflow: hidden; padding: 34px 38px; color: var(--doc-ink); font-family: var(--doc-font); cursor: default;
@@ -500,6 +501,15 @@ button.b:active { transform: scale(.97); }
    The page's editor only: the footnote editor is a ProseMirror too, and a hidden paragraph there takes no caret. */
 .f-page-text > * { content-visibility: hidden; contain-intrinsic-size: auto 1.3em; overflow-clip-margin: 0.5em; }
 .f-page-text > .f-near, .f-page-text > .f-live, .f-page-text > .ProseMirror-widget { content-visibility: visible; }
+/* a far plain paragraph is an empty placeholder (window.ts) whose inline height is the border box it drew at. Not
+   display-locked: there's nothing in it to skip, and 15k locked children make every caret hit test (posAtCoords) ~3 ms.
+   In read mode it stays a block even where its paragraph would run into the one above, or its height would count for nothing */
+.f-page-text > .f-far { box-sizing: border-box; content-visibility: visible; }
+.f-page-text > .f-far.f-read-flow { display: block; }
+
+/* nothing typed, clicked or scrolled for a few seconds (src/ui/quiet.ts): the caret stays shown without blinking,
+   so an idle window draws no frames. Only where a caret can be: the caret's paragraph, the footnote editor, text boxes. */
+.f-rest :is(.f-live, .f-note-text, input, textarea) { caret-animation: manual; }
 
 /* the card the cursor is in gets a thin bar on its left */
 .f-cur-card { position: relative; }

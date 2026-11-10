@@ -178,10 +178,30 @@ function runMarks(styles: Map<string, StyleInfo>, rpr: Element | undefined, para
   return marks;
 }
 
+/**
+ * runMarks memoized on the run's properties as written. A big file repeats a few dozen combinations across
+ * 100k+ runs; the same <w:rPr> text in the same namespace scope and paragraph style always gives the same marks.
+ */
+type MarksCache = Map<object, Map<ParaStyle, Map<string, Mark[]>>>;
+function runMarksCached(styles: Map<string, StyleInfo>, rpr: Element | undefined, paraStyle: ParaStyle, cache: Map<string, CharStyle>, memo: MarksCache): Mark[] {
+  if (!rpr) return [];
+  if (!rpr.raw) return runMarks(styles, rpr, paraStyle, cache);
+  let byStyle = memo.get(rpr.ns);
+  if (!byStyle) memo.set(rpr.ns, (byStyle = new Map()));
+  let byRaw = byStyle.get(paraStyle);
+  if (!byRaw) byStyle.set(paraStyle, (byRaw = new Map()));
+  let marks = byRaw.get(rpr.raw);
+  if (!marks) byRaw.set(rpr.raw, (marks = runMarks(styles, rpr, paraStyle, cache)));
+  return marks;
+}
+
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml', tif: 'image/tiff', tiff: 'image/tiff', emf: 'image/x-emf', wmf: 'image/x-wmf' };
 const EMU_PX = 9525; // 914400 EMU per inch, 96 px per inch
 
 function dataUrl(bytes: Uint8Array, mime: string): string {
+  // the native encoder is many times faster than building a binary string for btoa (a big file's pictures add up to megabytes)
+  const native = (bytes as Uint8Array & { toBase64?: () => string }).toBase64;
+  if (native) return `data:${mime};base64,${native.call(bytes)}`;
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return `data:${mime};base64,${btoa(bin)}`;
@@ -206,6 +226,13 @@ function readImageRels(xml: string | undefined, files: Record<string, Uint8Array
   return map;
 }
 
+/**
+ * A copy of a string that shares no memory with the XML it was read from. Text sliced out of document.xml
+ * is a V8 "sliced string" that keeps the whole decoded file (tens of MB) alive for as long as the document
+ * is open; flattening a concatenation makes a fresh copy, and the slice then points into that copy.
+ */
+const own = (s: string) => (s.length < 13 ? s : (' ' + s).slice(1));
+
 const descendant = (el: Element, name: string) => el.getElementsByTagNameNS('*', name)[0] as Element | undefined;
 const rAttr = (el: Element | undefined, name: string) => el?.getAttributeNS(R, name) ?? el?.getAttribute(`r:${name}`) ?? null;
 
@@ -217,7 +244,7 @@ function readPicture(el: Element, images: Map<string, string>): PMNode | null {
     if (!src) return null;
     const ext = descendant(el, 'extent');
     const cx = Number(ext?.getAttribute('cx')), cy = Number(ext?.getAttribute('cy'));
-    const alt = descendant(el, 'docPr')?.getAttribute('descr') ?? '';
+    const alt = own(descendant(el, 'docPr')?.getAttribute('descr') ?? '');
     // Word's crop, in thousandths of a percent cut from each side
     const rect = descendant(el, 'srcRect');
     const cut = (k: string) => Math.max(0, Math.min(0.99, Number(rect?.getAttribute(k) ?? 0) / 100000)) || 0;
@@ -240,7 +267,7 @@ type Footnotes = Map<string, Element>;
 function readFootnotes(xml: string | undefined, tag = 'footnote'): Footnotes {
   const map: Footnotes = new Map();
   if (!xml) return map;
-  for (const f of kids(parseXml(xml).documentElement, tag)) {
+  for (const f of kids(parseXml(xml, undefined, 'rPr').documentElement, tag)) {
     const type = f.getAttributeNS(W, 'type') ?? f.getAttribute('w:type');
     const id = f.getAttributeNS(W, 'id') ?? f.getAttribute('w:id');
     if (id && (!type || type === 'normal')) map.set(id, f);
@@ -248,11 +275,63 @@ function readFootnotes(xml: string | undefined, tag = 'footnote'): Footnotes {
   return map;
 }
 
+const u16 = (d: Uint8Array, i: number) => d[i] | (d[i + 1] << 8);
+const u32 = (d: Uint8Array, i: number) => (d[i] | (d[i + 1] << 8) | (d[i + 2] << 16) | (d[i + 3] << 24)) >>> 0;
+
+/** One zip entry inflated by the platform's zlib; null when it doesn't come out at the size the zip records. */
+async function inflateNative(raw: Uint8Array, size: number): Promise<Uint8Array | null> {
+  const ds = new DecompressionStream('deflate-raw');
+  const w = ds.writable.getWriter();
+  w.write(raw as Uint8Array<ArrayBuffer>).catch(() => {});
+  w.close().catch(() => {});
+  const out = new Uint8Array(size), reader = ds.readable.getReader();
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (n + value.length > size) { reader.cancel().catch(() => {}); return null; }
+    out.set(value, n);
+    n += value.length;
+  }
+  return n === size ? out : null;
+}
+
+/**
+ * The zip's wanted parts, inflated natively: fflate's JS inflate was the biggest single cost of opening a
+ * big file (a 30 MB document.xml). Reads the central directory the way fflate's unzipSync does; anything
+ * unusual (zip64, another compression method, no DecompressionStream, a size mismatch) goes to unzipSync.
+ */
+async function unzipParts(data: Uint8Array, want: (name: string) => boolean): Promise<Record<string, Uint8Array>> {
+  const viaFflate = () => unzipSync(data, { filter: (f) => want(f.name) });
+  if (typeof DecompressionStream === 'undefined') return viaFflate();
+  let e = data.length - 22;
+  while (e > 0 && data.length - e <= 65558 && u32(data, e) !== 0x06054b50) e--;
+  if (e <= 0 || u32(data, e) !== 0x06054b50 || u32(data, e - 20) === 0x07064b50) return viaFflate();
+  const parts: [string, Promise<Uint8Array | null>][] = [];
+  for (let i = 0, count = u16(data, e + 8), o = u32(data, e + 16); i < count; i++) {
+    if (o + 46 > data.length || u32(data, o) !== 0x02014b50) return viaFflate();
+    const method = u16(data, o + 10), csize = u32(data, o + 20), size = u32(data, o + 24), nl = u16(data, o + 28), off = u32(data, o + 42);
+    const name = strFromU8(data.subarray(o + 46, o + 46 + nl), !(u16(data, o + 8) & 2048));
+    o += 46 + nl + u16(data, o + 30) + u16(data, o + 32);
+    if (!want(name)) continue;
+    if (csize === 0xffffffff || size === 0xffffffff || off === 0xffffffff || (method !== 0 && method !== 8)) return viaFflate();
+    const b = off + 30 + u16(data, off + 26) + u16(data, off + 28);
+    if (b + csize > data.length) return viaFflate();
+    const part = method === 0 ? Promise.resolve(data.slice(b, b + csize)) : inflateNative(data.subarray(b, b + csize), size);
+    part.catch(() => {}); // a failure is handled below; this keeps the parts not yet awaited from reporting it as unhandled
+    parts.push([name, part]);
+  }
+  const files: Record<string, Uint8Array> = {};
+  try {
+    for (const [name, p] of parts) { const bytes = await p; if (!bytes) return viaFflate(); files[name] = bytes; }
+  } catch { return viaFflate(); }
+  return files;
+}
+
 /** Convert a .docx (zip bytes) into a Falcon document. */
 export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
-  const files = unzipSync(data, { filter: (f) => f.name === 'word/document.xml' || f.name === 'word/styles.xml' || f.name === 'word/_rels/document.xml.rels' || f.name === 'word/footnotes.xml' || f.name === 'word/_rels/footnotes.xml.rels' || f.name === 'word/endnotes.xml' || f.name === 'word/_rels/endnotes.xml.rels' || f.name.startsWith('word/media/') || f.name.startsWith('media/') });
-  const docXml = files['word/document.xml'];
-  if (!docXml) throw new Error('not a Word document');
+  const files = await unzipParts(data, (n) => n === 'word/document.xml' || n === 'word/styles.xml' || n === 'word/_rels/document.xml.rels' || n === 'word/footnotes.xml' || n === 'word/_rels/footnotes.xml.rels' || n === 'word/endnotes.xml' || n === 'word/_rels/endnotes.xml.rels' || n.startsWith('word/media/') || n.startsWith('media/'));
+  if (!files['word/document.xml']) throw new Error('not a Word document');
   const str = (name: string) => (files[name] ? strFromU8(files[name]) : undefined);
   const styles = readStyles(str('word/styles.xml'));
   // each part numbers its own relationships: the body's, the footnotes' and the endnotes' links differ
@@ -261,8 +340,8 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
   const bodyRels = relsOf('document');
   // endnotes come in as footnotes (Falcon has one kind of note), so their text is kept
   const noteSets = { footnoteReference: { notes: readFootnotes(str('word/footnotes.xml')), rels: relsOf('footnotes') }, endnoteReference: { notes: readFootnotes(str('word/endnotes.xml'), 'endnote'), rels: relsOf('endnotes') } };
-  const body = kid(parseXml(strFromU8(docXml)).documentElement, 'body');
   const cache = new Map<string, CharStyle>();
+  const memo: MarksCache = new Map();
   const pstyleCache = new Map<string, ParaStyle>();
 
   const styleOf = (ppr: Element | undefined): ParaStyle => {
@@ -284,10 +363,10 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
       for (const c of kids(parent)) {
         const ln = c.localName;
         if (ln === 'r') {
-          const marks = runMarks(styles, kid(c, 'rPr'), style, cache);
-          if (link) marks.push(link);
+          const runOwn = runMarksCached(styles, kid(c, 'rPr'), style, cache, memo);
+          const marks = link ? [...runOwn, link] : runOwn; // the cached list is shared, so it's never pushed to
           let text = '';
-          const flush = () => { if (text) { inline.push(schema.text(text, marks)); text = ''; } };
+          const flush = () => { if (text) { inline.push(schema.text(own(text), marks)); text = ''; } };
           const readRun = (run: Element) => {
             for (const t of kids(run)) {
               const tl = t.localName;
@@ -362,16 +441,15 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
   };
 
   /** Block content: paragraphs, with content controls opened up and (inside a cell) nested tables flattened. */
-  const readBlocks = (el: Element, out: PMNode[], flattenTables: boolean) => {
-    for (const c of kids(el)) {
-      if (c.localName === 'p') readPara(c, out);
-      else if (c.localName === 'tbl') {
-        if (flattenTables) { for (const tr of kids(c, 'tr')) for (const tc of kids(tr, 'tc')) readBlocks(tc, out, true); }
-        else { const t = readTable(c); if (t) out.push(t); }
-      } else if (c.localName === 'sdt') readBlocks(kid(c, 'sdtContent') ?? c, out, flattenTables);
-      else if (c.localName === 'customXml') readBlocks(c, out, flattenTables);
-    }
+  const readBlock = (c: Element, out: PMNode[], flattenTables: boolean) => {
+    if (c.localName === 'p') readPara(c, out);
+    else if (c.localName === 'tbl') {
+      if (flattenTables) { for (const tr of kids(c, 'tr')) for (const tc of kids(tr, 'tc')) readBlocks(tc, out, true); }
+      else { const t = readTable(c); if (t) out.push(t); }
+    } else if (c.localName === 'sdt') readBlocks(kid(c, 'sdtContent') ?? c, out, flattenTables);
+    else if (c.localName === 'customXml') readBlocks(c, out, flattenTables);
   };
+  const readBlocks = (el: Element, out: PMNode[], flattenTables: boolean) => { for (const c of kids(el)) readBlock(c, out, flattenTables); };
 
   /** A Word table: grid widths, column spans (gridSpan), row spans (vMerge), cell shading and header rows. */
   const readTable = (tbl: Element): PMNode | null => {
@@ -426,8 +504,15 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
     return T.table.create({ borders }, rows.map((r) => T.table_row.create(null, r.map((c) => (c.header ? T.table_header : T.table_cell).create(c.attrs, c.paras)))));
   };
 
+  // the body is read block by block as the parser finishes each one (the document's first <w:body>, as before)
   const blocks: PMNode[] = [];
-  if (body) readBlocks(body, blocks, false);
+  const xml = strFromU8(files['word/document.xml']);
+  delete files['word/document.xml']; // the bytes aren't needed once decoded
+  parseXml(xml, (el, up) => {
+    if (up.length !== 3 || up[1] !== up[0].children[0] || up[2] !== kid(up[1], 'body')) return false;
+    readBlock(el, blocks, false);
+    return true;
+  }, 'rPr');
   if (!blocks.length) blocks.push(schema.nodes.paragraph.create());
   return schema.node('doc', null, blocks);
 }

@@ -173,6 +173,7 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
   }, [items, hits]);
   const hitSet = useMemo(() => new Set(hits ?? []), [hits]);
 
+  const rows = useMemo(() => {
   const rows: { item: OutlineItem; i: number; open: boolean }[] = [];
   let hideBelow = Infinity;
   const parents: { level: number; byHand: boolean }[] = [];
@@ -190,6 +191,8 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
     parents.push({ level: item.level, byHand: open && item.level >= depth });
     if (!open && hideBelow === Infinity) hideBelow = item.level;
   });
+  return rows;
+  }, [items, depth, folded, opened, keep, hide]);
   const toggle = (item: OutlineItem, open: boolean) => {
     const k = keyOf(item);
     if (open) { setFolded((s) => new Set(s).add(k)); setOpened((s) => { const n = new Set(s); n.delete(k); return n; }); }
@@ -214,7 +217,8 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
   useLayoutEffect(() => {
     const list = listRef.current, act = actRef.current;
     if (!list || !act) return;
-    const row = list.querySelector<HTMLElement>(`[data-i="${lit}"]`);
+    const row = list.querySelector<HTMLElement>(`[data-i="${lit}"]`), was = list.querySelector('.sb-row.ol[data-on]');
+    if (was !== row) { was?.removeAttribute('data-on'); row?.setAttribute('data-on', ''); } // not rendered: see `list`
     if (!row) { act.style.opacity = '0'; return; }
     act.style.height = `${row.offsetHeight}px`;
     act.style.transform = `translateY(${row.offsetTop}px)`;
@@ -419,25 +423,31 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
       </div>, document.body);
   })();
 
+  // The rows, rendered again only when they change, not when the lit row moves: that happens at every heading the page
+  // scrolls past, and diffing ~800 rows for it took ~30 ms a time. The lit row's data-on is set in the effect above, and
+  // the rows call the handlers of the latest render
+  const on = useRef({ click, openMenu, toggle });
+  on.current = { click, openMenu, toggle };
+  const list = useMemo(() => rows.map(({ item, i, open }) => (
+    <button key={item.pos} data-i={i} className={`sb-row ol l${item.level}`} aria-expanded={item.hasKids ? open : undefined}
+      aria-selected={sel.size > 1 ? sel.has(i) : undefined} data-hit={hitSet.has(i) || undefined}
+      style={{ paddingLeft: 6 + (item.level - 1) * 14 }}
+      onMouseDown={(e) => on.current.click(e, item, i, open)}
+      onContextMenu={(e) => on.current.openMenu(e, i)}
+      onDoubleClick={(e) => item.hasKids && !(keep && hide) && !(e.target as HTMLElement).closest('[data-tw]') && on.current.toggle(item, open)}>
+      {item.hasKids ? <span className="ic tw" data-tw><SvgIcon name="chev" /></span> : <span className="ic sp" />}
+      {numbers[i] && <span className="num">{numbers[i]}</span>}
+      <span className={`nm${item.text ? '' : ' empty'}`}>{tidyHeading(item.text) || 'Untitled'}</span>
+      {item.level < 4 && item.cards > 0 && <span className="ct">{item.cards}</span>}
+    </button>
+  )), [rows, sel, hitSet, numbers, keep, hide]);
+
   if (!rows.length) return <div className="ol-none">{hits ? 'Nothing in this file matches.' : 'Pockets, hats, blocks and tags show up here.'}</div>;
-  const multi = sel.size > 1;
   return (
     <div ref={listRef} className="sb-list" data-ready={ready || undefined}>
       <span ref={actRef} className="sb-act" />
       {drop && <span className="ol-drop" style={{ transform: `translateY(${drop.top - 1}px)` }} />}
-      {rows.map(({ item, i, open }) => (
-        <button key={item.pos} data-i={i} className={`sb-row ol l${item.level}`} data-on={i === lit || undefined} aria-expanded={item.hasKids ? open : undefined}
-          aria-selected={multi ? sel.has(i) : undefined} data-hit={hitSet.has(i) || undefined}
-          style={{ paddingLeft: 6 + (item.level - 1) * 14 }}
-          onMouseDown={(e) => click(e, item, i, open)}
-          onContextMenu={(e) => openMenu(e, i)}
-          onDoubleClick={(e) => item.hasKids && !(keep && hide) && !(e.target as HTMLElement).closest('[data-tw]') && toggle(item, open)}>
-          {item.hasKids ? <span className="ic tw" data-tw><SvgIcon name="chev" /></span> : <span className="ic sp" />}
-          {numbers[i] && <span className="num">{numbers[i]}</span>}
-          <span className={`nm${item.text ? '' : ' empty'}`}>{tidyHeading(item.text) || 'Untitled'}</span>
-          {item.level < 4 && item.cards > 0 && <span className="ct">{item.cards}</span>}
-        </button>
-      ))}
+      {list}
       {menuEl}
     </div>
   );

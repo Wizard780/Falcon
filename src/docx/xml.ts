@@ -8,10 +8,17 @@
 const XMLNS = 'http://www.w3.org/2000/xmlns/';
 type NS = Record<string, string>;
 
+/** Shared by every element without children or attributes until it gets some: most elements in a
+ *  document.xml are leaves (<w:sz/>, <w:b/>), so this saves an array or two per element. */
+const EMPTY: never[] = [];
+
 export class XEl {
-  readonly children: XEl[] = [];
+  children: XEl[] = EMPTY;
   /** Direct text, entities decoded (the importer only reads text from leaf elements like <w:t>). */
   text = '';
+  /** The element's XML as written, for the local name parseXml was asked to keep it for (else ''). */
+  raw = '';
+  start = 0;
   constructor(readonly tagName: string, readonly localName: string, readonly attrs: string[], readonly ns: NS) {}
 
   getAttribute(qname: string): string | null {
@@ -71,9 +78,28 @@ function decode(s: string): string {
 }
 
 const isSpace = (c: number) => c === 32 || c === 10 || c === 13 || c === 9;
+const plain = (c: number) => c > 32 && c < 127;
 
-/** Parse XML text into XEl objects. Malformed input throws, like a DOMParser parse error would make the import fail. */
-export function parseXml(src: string): XDoc {
+/** Whether src[from, to) is `name` once trimmed, compared in place for the usual tag (no substring per
+ *  closing tag); a name that starts or ends outside printable ASCII takes the plain trim() comparison. */
+function closes(src: string, from: number, to: number, name: string): boolean {
+  let k = from + name.length;
+  if (name && plain(name.charCodeAt(0)) && plain(name.charCodeAt(name.length - 1)) && k <= to && src.startsWith(name, from)) {
+    while (k < to && isSpace(src.charCodeAt(k))) k++;
+    if (k === to) return true;
+  }
+  return src.slice(from, to).trim() === name;
+}
+
+/**
+ * Parse XML text into XEl objects. Malformed input throws, like a DOMParser parse error would make the import fail.
+ * `onClose` sees each element as it ends, with its open ancestors (the document node first); returning true
+ * drops it from its parent. The importer reads the body one block at a time this way, so a big file's
+ * element tree never exists all at once: each paragraph's elements die young instead of piling up in the
+ * old generation, which is where most of the import's garbage-collection time and peak memory went.
+ * Elements named `rawOf` keep their source text in `raw` (the importer keys a cache on it).
+ */
+export function parseXml(src: string, onClose?: (el: XEl, parents: readonly XEl[]) => boolean, rawOf?: string): XDoc {
   const root = new XEl('#document', '#document', [], { xml: 'http://www.w3.org/XML/1998/namespace', xmlns: XMLNS });
   const stack: XEl[] = [root];
   let top = root;
@@ -86,9 +112,11 @@ export function parseXml(src: string): XDoc {
     const c1 = src.charCodeAt(lt + 1);
     if (c1 === 47) { // </name>
       const gt = src.indexOf('>', lt);
-      if (gt < 0 || stack.length < 2 || src.slice(lt + 2, gt).trim() !== top.tagName) throw new Error('bad XML');
-      stack.pop();
+      if (gt < 0 || stack.length < 2 || !closes(src, lt + 2, gt, top.tagName)) throw new Error('bad XML');
+      const el = stack.pop()!;
       top = stack[stack.length - 1];
+      if (el.localName === rawOf) el.raw = src.slice(el.start, gt + 1);
+      if (onClose?.(el, stack)) top.children.pop();
       i = gt + 1;
       continue;
     }
@@ -102,7 +130,7 @@ export function parseXml(src: string): XDoc {
     let j = lt + 1;
     while (j < n) { const c = src.charCodeAt(j); if (isSpace(c) || c === 47 || c === 62) break; j++; }
     const tag = src.slice(lt + 1, j);
-    const attrs: string[] = [];
+    let attrs: string[] = EMPTY;
     let ns = top.ns, own = false;
     let selfClose = false;
     for (;;) {
@@ -123,13 +151,17 @@ export function parseXml(src: string): XDoc {
         if (!own) { ns = Object.create(ns) as NS; own = true; }
         ns[name === 'xmlns' ? '' : name.slice(6)] = value;
       }
+      if (attrs === EMPTY) attrs = [];
       attrs.push(name, value);
       j = end + 1;
     }
     const colon = tag.indexOf(':');
     const el = new XEl(tag, colon < 0 ? tag : tag.slice(colon + 1), attrs, ns);
+    if (el.localName === rawOf) { el.start = lt; if (selfClose) el.raw = src.slice(lt, j); }
+    if (top.children === EMPTY) top.children = [];
     top.children.push(el);
     if (!selfClose) { stack.push(el); top = el; }
+    else if (onClose?.(el, stack)) top.children.pop();
     i = j;
   }
   const documentElement = root.children[0];

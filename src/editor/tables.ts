@@ -136,7 +136,7 @@ class TableBar {
   }
   private place() {
     const table = this.view.editable && !isReading(this.view.state) ? this.tableDom() : null;
-    if (!table) { this.dom.hidden = true; return; }
+    if (!table) { if (!this.dom.hidden) this.dom.hidden = true; return; } // every scroll frame: writing it again would still restyle
     const r = table.getBoundingClientRect();
     const h = this.dom.offsetHeight || 30;
     this.dom.hidden = false;

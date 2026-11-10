@@ -7,7 +7,7 @@ import { history } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { DOMParser as PMDOMParser, Fragment, Slice, type Node as PMNode } from 'prosemirror-model';
 import { EditorState, Plugin, PluginKey, TextSelection } from 'prosemirror-state';
-import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
+import { Decoration, EditorView } from 'prosemirror-view';
 import { cardAround, pastedText, toggleColorMark } from './commands';
 import { activeColors, disarmPlainPaste, plainPasteArmed } from './host';
 import { falconKeymap } from './keymap';
@@ -25,7 +25,7 @@ import { docToolPlugins } from './doc-tools';
 import { tablePlugins } from './tables';
 import { imagePlugin } from './images';
 import { footnotePlugin } from './footnotes';
-import { WINDOW_META, windowPlugin } from './window';
+import { NEAR, WINDOW_META, topSet, windowPlugin } from './window';
 import { smartQuotesPlugin } from './quotes';
 
 /** Paintbrush: while armed, every mouse selection gets the active color, or loses it if it's already all that color. */
@@ -69,8 +69,10 @@ const brush = new Plugin<{ kind: 'highlight' | 'shading' | null }>({
 
 /**
  * Two paragraph classes driven by the selection:
- * - f-live on the paragraphs holding the cursor, which always lay out normally (the off-screen
- *   layout skip in styles.css would otherwise misplace the caret in a just-created paragraph);
+ * - f-live on the paragraphs holding the cursor, the ones either side and the doc's first and last,
+ *   which are always built and laid out: window.ts leaves an off-screen paragraph an empty placeholder,
+ *   and the browser's own caret moves (arrows, Mod-Up/Down to the doc's ends) skip those, so they would
+ *   land paragraphs or a whole screen away;
  * - f-cur-card on the card (tag/analytic and its body) that holds the cursor, for the left bar.
  */
 const selectionClasses = new Plugin({
@@ -78,9 +80,15 @@ const selectionClasses = new Plugin({
     decorations(state) {
       const doc = state.doc;
       const decos: Decoration[] = [];
-      const live = new Set<number>();
-      for (const $p of [state.selection.$anchor, state.selection.$head]) if ($p.depth >= 1) live.add($p.before(1));
-      for (const pos of live) decos.push(Decoration.node(pos, pos + doc.nodeAt(pos)!.nodeSize, { class: 'f-live' }));
+      const live = new Set<number>([0, doc.content.size - doc.lastChild!.nodeSize]);
+      for (const $p of [state.selection.$anchor, state.selection.$head]) {
+        if ($p.depth < 1) continue;
+        const i = $p.index(0), at = $p.before(1);
+        live.add(at);
+        if (i > 0) live.add(at - doc.child(i - 1).nodeSize);
+        if (i + 1 < doc.childCount) live.add($p.after(1));
+      }
+      for (const pos of live) decos.push(Decoration.node(pos, pos + doc.nodeAt(pos)!.nodeSize, { class: 'f-live' }, NEAR));
       const c = cardAround(doc, state.selection.head);
       const head = c && doc.child(c.head);
       if (c && head && (head.attrs.style === 'tag' || head.attrs.style === 'analytic')) {
@@ -91,7 +99,7 @@ const selectionClasses = new Plugin({
           pos += n.nodeSize;
         }
       }
-      return DecorationSet.create(doc, decos);
+      return topSet(decos); // all on top-level paragraphs
     },
   },
 });
@@ -182,6 +190,15 @@ export function docFromHTML(html: string): PMNode {
 }
 
 /** An editor in `mount`, on a new state for `doc`, or on `state` as it is (a split pane keeps its undo history). */
+/** Put another document in `view`. The DOM selection is let go of first: once its paragraph is gone it sits in the page
+ *  itself, at a child index, and the browser then counts the children before every one removed after it, 15k old
+ *  paragraphs after the new ones (~350 ms swapping out a 15k-paragraph file). ProseMirror sets it again from `state`. */
+export function swapState(view: EditorView, state: EditorState) {
+  const sel = view.dom.ownerDocument.getSelection();
+  if (sel?.rangeCount && view.dom.contains(sel.anchorNode)) sel.removeAllRanges();
+  view.updateState(state);
+}
+
 export function createView(mount: HTMLElement, onChange: (view: EditorView) => void, doc?: PMNode | EditorState) {
   const view: EditorView = new EditorView(mount, {
     state: doc instanceof EditorState ? doc : createState(doc),

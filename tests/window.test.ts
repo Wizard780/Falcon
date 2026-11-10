@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import { joinBackward, splitBlockKeepMarks } from 'prosemirror-commands';
+import { DecorationSet } from 'prosemirror-view';
 import { schema } from '../src/editor/schema';
 import { windowKey, windowPlugin } from '../src/editor/window';
 
@@ -62,6 +63,17 @@ describe('near-screen window', () => {
       s.doc.forEach((n) => { want.push(`${pos}-${pos + n.nodeSize}`); pos += n.nodeSize; });
       expect(decos.map((d) => `${d.from}-${d.to}`).sort()).toEqual(want.sort());
     }
+  });
+  it('the near marks answer ProseMirror the way a stock DecorationSet of them does', () => {
+    // topSet skips DecorationSet's scan for each child's own decorations; the answers must be the same
+    let s = EditorState.create({ doc: schema.nodes.doc.create(null, Array.from({ length: 120 }, (_, i) => p(`p${i}`))), plugins: [windowPlugin] });
+    s = s.apply(s.tr.setMeta(windowKey, { from: 10, to: 60 }));
+    s = s.apply(s.tr.insertText('x', 200).split(300).delete(400, 420));
+    const fast = windowKey.getState(s)!.decos, stock = DecorationSet.create(s.doc, fast.find());
+    const str = (set: DecorationSet) => set.find().map((d) => `${d.from}-${d.to}:${JSON.stringify((d as unknown as { type: { attrs: unknown } }).type.attrs)}`);
+    expect(str(fast)).toEqual(str(stock));
+    expect((fast as unknown as { eq(o: DecorationSet): boolean }).eq(stock)).toBe(true);
+    s.doc.forEach((n, off) => { expect(fast.forChild(off, n)).toBe(stock.forChild(off, n)); });
   });
   it('an edit outside the near range leaves those paragraphs skipped', () => {
     let s = start();

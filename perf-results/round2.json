@@ -1,0 +1,97 @@
+{
+ "note": "Round 2 (2026-11-10): [before, after], median of 3 alternated runs at e5ac047d. before = origin/main e43ebaca. Web numbers: scripts/perf.mjs on d_nordics (15k paragraphs); open20 = c_impactturns; openAll, multi*, switch* = nordics + impactturns + spark in one window. el* = scripts/perf-electron.mjs with the same three files (idle measured 4-9 s after the opens); rest* = the same with SETTLE_MS=12000 (idle once the caret has come to rest).",
+ "metrics": {
+  "open30": [
+   1112,
+   503.6
+  ],
+  "open20": [
+   790.6,
+   368.2
+  ],
+  "cpuKey": [
+   36.98,
+   14.32
+  ],
+  "cpuScroll": [
+   28.04,
+   9.11
+  ],
+  "paint": [
+   7.24,
+   3.99
+  ],
+  "gpu": [
+   2.27,
+   1.99
+  ],
+  "heap": [
+   103.89,
+   42.85
+  ],
+  "dom": [
+   427997,
+   27057
+  ],
+  "saveFreeze": [
+   215.8,
+   238.1
+  ],
+  "openAll": [
+   5390,
+   1900
+  ],
+  "multiIdle": [
+   11.04,
+   5.87
+  ],
+  "multiIdleGpu": [
+   7.34,
+   2.15
+  ],
+  "switchMs": [
+   434.4,
+   243.7
+  ],
+  "switchCpu": [
+   383.54,
+   231.6
+  ],
+  "elMem": [
+   1627.17,
+   807.66
+  ],
+  "elRenderer": [
+   1244.83,
+   437.47
+  ],
+  "elOpen": [
+   5178,
+   1477
+  ],
+  "elIdle": [
+   18.25,
+   5.8
+  ],
+  "elIdleGpu": [
+   7.83,
+   3.86
+  ],
+  "restIdle": [
+   14.89,
+   1.06
+  ],
+  "restIdleGpu": [
+   5.44,
+   0.02
+  ],
+  "restMem": [
+   1725.42,
+   812.72
+  ],
+  "paintGpu": [
+   9.51,
+   5.98
+  ]
+ }
+}

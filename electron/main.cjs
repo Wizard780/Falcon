@@ -10,7 +10,6 @@ const updater = require('./updater.cjs');
 const speechdrop = require('./speechdrop.cjs');
 const telemetry = require('./telemetry.cjs');
 const { createEditorBridge, bridgeDir } = require('./editor-bridge.cjs');
-const { createAi } = require('./ai.cjs');
 const { createSecrets, promptSecret } = require('./secrets.cjs');
 
 const DEV = process.env.FALCON_DEV === '1';
@@ -160,6 +159,17 @@ function contextMenu(wc, p) {
 globalThis.falconContextMenu = contextMenu; // the smoke test checks the menu a misspelled word gets
 
 const DOCX = [{ name: 'Word documents', extensions: ['docx'] }];
+// A backfile's bytes wait here for a GC after they're sent, and this process's heap is too small to start one on its
+// own for a long while: 40 MB more after three backfiles open. So ask for one when the opens stop. Not after each
+// crash-recovery write (every typing pause in a big file, and a full GC grows with the card index): V8 collects
+// those itself once they add up. --expose-gc set now reaches a new context's globals.
+require('node:v8').setFlagsFromString('--expose-gc');
+const collect = require('node:vm').runInNewContext('gc');
+let collectTimer = null;
+const collectSoon = () => { clearTimeout(collectTimer); collectTimer = setTimeout(collect, 1000); };
+// A file's bytes for the page: the Buffer read, not a copy (a 16 MB backfile would sit here twice). Copied only when
+// it's a slice of a shared pool, since IPC sends a view's whole ArrayBuffer
+const readBytes = async (p) => { const b = await fs.readFile(p); collectSoon(); return b.byteOffset === 0 && b.byteLength === b.buffer.byteLength ? new Uint8Array(b.buffer) : new Uint8Array(b); };
 // Files picked in a dialog in earlier sessions, so Home and the files panel can reopen them.
 // Only paths in this list (and only .docx) can be opened without a dialog.
 const MAX_RECENT = 50;
@@ -253,14 +263,14 @@ ipcMain.handle('falcon:open-file', async (e) => {
   if (r.canceled || !r.filePaths[0]) return null;
   const p = path.resolve(r.filePaths[0]);
   await rememberPath(p);
-  return { name: path.basename(p), path: p, data: new Uint8Array(await fs.readFile(p)) };
+  return { name: path.basename(p), path: p, data: await readBytes(p) };
 });
 ipcMain.handle('falcon:open-path', async (_e, p) => {
   if (typeof p !== 'string') throw new Error('bad open request');
   const abs = path.resolve(p);
   if (!abs.toLowerCase().endsWith('.docx')) throw new Error('Falcon only opens .docx files');
   if (!(await loadRecent()).includes(abs) && !(await templatePaths()).has(abs) && !(await index().allows(abs))) throw new Error('Open this file with Open first');
-  const data = new Uint8Array(await fs.readFile(abs));
+  const data = await readBytes(abs);
   await rememberPath(abs);
   return { name: path.basename(abs), path: abs, data };
 });
@@ -354,7 +364,9 @@ ipcMain.handle('falcon:save-file', (e, opts) => {
 
 // Crash recovery for docs too big for the page's localStorage (about 5M characters, so any block file): the
 // page sends their backup here and it's kept in userData. Only the newest copy waits while one is written, and
-// each write goes through a temp file so a crash mid-write keeps the last good copy. '' removes the file.
+// each write goes through a temp file so a crash mid-write keeps the last good copy. Empty removes the file.
+// The preload sends it as UTF-8 bytes: a string would arrive as a second two-byte copy (60 MB for a 30 MB
+// backfile) and be encoded again for the write.
 // Each window has its own file, named by its slot.
 const recoveryFile = (slot = '') => path.join(app.getPath('userData'), slot ? `recovery-${slot}.json` : 'recovery.json');
 const recoveryQueues = new Map(); // slot -> { next, busy }
@@ -368,14 +380,14 @@ function writeRecovery(slot, text) {
       q.next = null;
       const p = recoveryFile(slot), tmp = `${p}.tmp`;
       try {
-        if (!t) await fs.rm(p, { force: true });
+        if (!t.length) await fs.rm(p, { force: true });
         else { await fs.writeFile(tmp, t); await fs.rename(tmp, p); }
       } catch { /* a full disk: the next backup tries again */ }
     }
     q.busy = null;
   })();
 }
-ipcMain.on('falcon:recovery-write', (e, text) => { if (typeof text === 'string') writeRecovery(windows.get(e.sender)?.slot ?? '', text); });
+ipcMain.on('falcon:recovery-write', (e, text) => { if (typeof text === 'string' || text instanceof Uint8Array) writeRecovery(windows.get(e.sender)?.slot ?? '', text); });
 // read once, as the page starts: synchronous, so these docs come back with the rest before the first render
 ipcMain.on('falcon:recovery-read', (e) => {
   try { e.returnValue = fsSync.readFileSync(recoveryFile(windows.get(e.sender)?.slot), 'utf8'); } catch { e.returnValue = ''; }
@@ -521,7 +533,7 @@ ipcMain.handle('falcon:sd-pick', sdSafe(async (e) => {
   if (r.canceled) return [];
   return Promise.all(r.filePaths.map(async (p) => {
     const s = await fs.stat(p);
-    return s.size > speechdrop.MAX_BYTES ? { name: path.basename(p), size: s.size } : { name: path.basename(p), size: s.size, data: new Uint8Array(await fs.readFile(p)) };
+    return s.size > speechdrop.MAX_BYTES ? { name: path.basename(p), size: s.size } : { name: path.basename(p), size: s.size, data: await readBytes(p) };
   }));
 }));
 // Open: a .docx becomes a Falcon tab (a recent, so openPath may read it); other documents open in their app
@@ -628,7 +640,8 @@ ipcMain.handle('falcon:secret-list', () => secrets().list());
 ipcMain.handle('falcon:secret-prompt', (e, id, look) => promptSecret({ BrowserWindow, parent: BrowserWindow.fromWebContents(e.sender), secrets: secrets(), id, look, show: !HEADLESS }));
 ipcMain.handle('falcon:secret-remove', (_e, id) => { secrets().remove(id); return secrets().list(); });
 let aiApi = null;
-const ai = () => (aiApi ??= createAi({ key: (id) => secrets().get(id) }));
+// required on first use: the model SDK takes about 30 ms to load, and the window waits on everything above
+const ai = () => (aiApi ??= require('./ai.cjs').createAi({ key: (id) => secrets().get(id) }));
 ipcMain.handle('falcon:ai-ask', (_e, r) => ai().ask({ provider: r?.provider === 'openrouter' ? 'openrouter' : 'anthropic', system: String(r?.system ?? ''), text: String(r?.text ?? '').slice(0, 20000), model: String(r?.model ?? ''), maxTokens: Number(r?.maxTokens) }));
 ipcMain.handle('falcon:bridge-apps', () => linkedApps());
 ipcMain.handle('falcon:bridge-allow', (_e, appId, on) => { if (typeof appId === 'string') { if (on === null) editorBridge?.forget(appId); else editorBridge?.setAllowed(appId, on === true); } return linkedApps(); });

@@ -53,15 +53,24 @@ export const readWords = (doc: PMNode): number => { const r = readSplit(doc); re
 export type ReadSplit = { cards: number; tags: number };
 export function readSplit(doc: PMNode): ReadSplit {
   const r: ReadSplit = { cards: 0, tags: 0 };
-  const body = (p: PMNode) => { const [all, cites] = bodyWords(p); r.tags += cites; r.cards += all - cites; };
   doc.forEach((para) => {
-    // a table's highlighted and cited text is read too
-    if (!para.isTextblock) { para.descendants((p) => { if (p.isTextblock) body(p); return !p.isTextblock; }); return; }
-    const level = levelOf(para);
-    if (level === 4) { r.tags += count(para.textContent); return; }
-    if (level > 0) return;
-    body(para);
+    let s = splits.get(para);
+    if (!s) splits.set(para, (s = splitOf(para)));
+    r.cards += s.cards;
+    r.tags += s.tags;
   });
+  return r;
+}
+/** Each top-level child's share, by node: an edit keeps every paragraph it didn't touch, so a key recounts one, not 15k. */
+const splits = new WeakMap<PMNode, ReadSplit>();
+function splitOf(para: PMNode): ReadSplit {
+  const r: ReadSplit = { cards: 0, tags: 0 };
+  const body = (p: PMNode) => { const [all, cites] = bodyWords(p); r.tags += cites; r.cards += all - cites; };
+  // a table's highlighted and cited text is read too
+  if (!para.isTextblock) { para.descendants((p) => { if (p.isTextblock) body(p); return !p.isTextblock; }); return r; }
+  const level = levelOf(para);
+  if (level === 4) r.tags += count(para.textContent);
+  else if (level === 0) body(para);
   return r;
 }
 /** [read words, how many of them are cite words] in one body paragraph. */

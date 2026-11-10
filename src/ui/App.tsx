@@ -5,7 +5,8 @@ import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
 import { Fragment, Node as PMNode } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
-import { createState, createView, brushKey, emptyDoc } from '../editor/editor';
+import { createState, createView, brushKey, emptyDoc, swapState } from '../editor/editor';
+import { topChildAt } from '../editor/window';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
 import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
@@ -24,6 +25,7 @@ import { insertContent, insertLabel } from '../editor/linked-insert';
 import { selectionState } from './selection-state';
 import { Stopwatch, SvgIcon } from './icons';
 import { newFileName, openDocument, speechFileName, openPath, saveDocument, type DocMeta } from './files';
+import { trimSoon } from './quiet';
 import type { Ctx } from './cc-sources';
 import type { FileHit } from './file-search';
 import { clearFind, findInfo, requestFind, setQuery as setFindQuery } from '../editor/find';
@@ -221,16 +223,19 @@ const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestId
 let stopScroll = () => {};
 function scrollToPos(view: EditorView, pos: number) {
   const sc = view.dom.closest('.f-scroll') as HTMLElement | null;
-  const el = view.nodeDOM(pos) as HTMLElement | null;
-  if (!sc || !el) return;
+  // looked up each frame: a far paragraph's placeholder is replaced by the real one as the page nears it (window.ts).
+  // Null once that paragraph is gone (another file shown, the paragraph edited, the pane closed), which ends the scroll
+  const want = view.state.doc.nodeAt(pos);
+  const node = () => (!view.isDestroyed && view.state.doc.nodeAt(pos) === want ? view.nodeDOM(pos) as HTMLElement | null : null);
+  if (!sc || !node()) return;
   stopScroll();
-  const target = () => Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 16));
+  const target = () => Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, (node()?.getBoundingClientRect().top ?? 0) - sc.getBoundingClientRect().top + sc.scrollTop - 16));
   if (reducedMotion()) { for (let i = 0; i < 4; i++) sc.scrollTop = target(); return; }
   const from = sc.scrollTop, t0 = performance.now();
   const dur = Math.min(700, 300 + Math.abs(target() - from) / 20);
   let raf = 0, still = 0;
   const step = (now: number) => {
-    if (!el.isConnected) { stopScroll(); return; }
+    if (!node()) { stopScroll(); return; }
     const t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 3);
     const goal = target();
     sc.scrollTop = from + (goal - from) * e;
@@ -454,6 +459,9 @@ export function App() {
   useEffect(() => { saveRecents(recents); }, [recents]);
   // the list changed (switch, open, close, saved): refresh the crash-recovery copy once React has settled
   useEffect(() => { if (viewRef.current) whenIdle(() => { backup(); }); }, [docs, activeId, speechId, backup]);
+  // a file closed or another one shows: what it held (its old page, the import, the backup's copy) can go
+  const shown = useRef('');
+  useEffect(() => { const k = `${activeId} ${docs.length}`; if (k !== shown.current) { shown.current = k; trimSoon(); } }, [docs.length, activeId]);
   // nothing clears the crash-recovery copy on the way out, so with it on these changes come back
   const unsavedFate = () => (pref(P.crashRecovery) ? "They won't be saved to the file, but Falcon brings them back next time it opens." : "They'll be lost.");
   // quitting or closing the window with unsaved docs: the page blocks it, the main process passes
@@ -530,7 +538,7 @@ export function App() {
   const show = useCallback((id: number, state: EditorState, scroll: number) => {
     const v = viewRef.current!;
     stopScroll();
-    v.updateState(state);
+    swapState(v, state);
     lastDocs.current.set(v, v.state.doc);
     activeRef.current = id;
     setActiveId(id);
@@ -627,7 +635,7 @@ export function App() {
     if (fromMain) {
       // the main editor lets go of its doc (it would hold a second, stale copy) and hides
       const m = mainView.current!;
-      m.updateState(createState(emptyDoc()));
+      swapState(m, createState(emptyDoc()));
       lastDocs.current.set(m, m.state.doc);
       appRef.current!.dataset.split = '';
     }
@@ -817,6 +825,7 @@ export function App() {
         if (Math.hypot(m.clientX - x0, m.clientY - y0) < 5) return;
         on = true;
         src.toggleAttribute('data-drag', true);
+        document.documentElement.classList.add('f-dragging');
       }
       m.preventDefault();
       to = null;
@@ -831,6 +840,7 @@ export function App() {
       removeEventListener('pointerup', up);
       removeEventListener('pointercancel', cancel);
       removeEventListener('keydown', key, true);
+      document.documentElement.classList.remove('f-dragging');
       for (const p of panes.current.values()) { p.el.removeAttribute('data-drag'); p.el.removeAttribute('data-drop'); }
       const g = groupRef.current;
       if (!ok || to === null || !g?.includes(id) || !g.includes(to)) return;
@@ -1364,8 +1374,8 @@ export function App() {
     if (caret.bottom > box.top && caret.top < box.bottom) { mark(head); return; }
     const pm = v.dom.getBoundingClientRect(), top = box.top + 90;
     if (pm.top > top) { mark(0); return; }
-    const hit = v.posAtCoords({ left: pm.left + 4, top: Math.min(top, pm.bottom - 2) });
-    mark(hit ? hit.pos : v.state.doc.content.size);
+    const y = Math.min(top, pm.bottom - 2), at = topChildAt(v, y); // outline rows are top-level paragraphs: which one is enough
+    mark(at ?? v.posAtCoords({ left: pm.left + 4, top: y })?.pos ?? v.state.doc.content.size);
   }, []);
   measureRef.current = measureRead;
   useEffect(() => {
@@ -1715,6 +1725,8 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
   // click, and the click after a real drag is swallowed
   const moving = useRef(false);
   const [dragId, setDragId] = useState<number | null>(null);
+  // a class, not `:root:has([data-drag])`: with :has, every element added anywhere restyles the whole page
+  useEffect(() => { document.documentElement.classList.toggle('f-dragging', dragId !== null); return () => document.documentElement.classList.remove('f-dragging'); }, [dragId]);
   const [gap, setGap] = useState<number | null>(null); // the gap the line sits in: before row `gap`, or after the last
   const reorder = (id: number) => (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest('.doc-x, .files-x')) return;

@@ -234,3 +234,40 @@ Bug hunt: opening either NATO block file said "too big for crash recovery, so sa
 - [x] vitest tests/big-recovery.test.ts (3 of 4 fail on main); scripts/electron-recovery.mjs kills the real app mid-edit and relaunches: the edit is back, unsaved, on a generated file and on a copy of NATO AT Neg; electron-smoke passes with `recovery` added to the bridge
 - Note: in the app tests, a backup taken inside the same `act` as the typing records the doc as saved, because the render that marks it unsaved waits for the act to end. Not an app bug; wait in a second act (`typeAndBackUp`)
 
+
+## Stage: performance, round 2 (2026-11-09, branch perf-2)
+User ask: big files open faster; lightweight, less CPU and GPU even with many files open; at least 50% better in every category; a before/after chart.
+Before = origin/main e43ebaca built in its own worktree. Both builds measured by this branch's `scripts/perf.mjs` (headless Chromium) and `scripts/perf-electron.mjs` (real app, all processes), runs interleaved.
+Done means (30 MB Nordics file, 15k paragraphs, unless noted), each at least 50% better:
+- open: `firstMs`
+- CPU: `cpuPerKey`, `cpuPerScrollFrame`
+- GPU and drawing: `paintPerScrollFrame + gpuPerScrollFrame` (trace: paint, layerize, commit, raster, GPU tasks)
+- many files (all fixtures in one window): `openAllMs`, `switchCpu`, `idleMsPerSec`
+- weight: `heapMB`, `domNodes`, Electron `memMB` with three big files open
+Guards: import toJSON identical old vs new on the real-file corpus; saved parts byte-identical; vitest, tsc, build, Electron smoke and the verify-falcon journeys pass. The bench's meaning of "first screen" and "settled" stays as it is.
+Baseline (1 run, to be re-measured interleaved): open 1.2 s; 43 ms CPU a key (5 ms script); 32 ms a scroll frame; 428k DOM nodes; a tab switch to the big file ~0.9 s of CPU; Electron 1.5 GB with three files.
+Profile: every paragraph has DOM (content-visibility only skips layout and paint), so open, switch, memory and style recalc all scale with file size; each key forces layout (getClientRects, offsetHeight); each scroll frame calls caretPositionFromPoint and getBoundingClientRect.
+Results (median of 3 alternated runs at the final commit, before -> after; perf-results/round2.json):
+- [x] open: 30 MB file 1.11 -> 0.50 s (-55%); 20 MB file 0.79 -> 0.37 s (-53%)
+- [x] CPU: per key 37 -> 14 ms (-61%); per scroll frame 28 -> 9 ms (-68%)
+- [~] drawing + raster per scroll frame 9.5 -> 6.0 ms (-37%): paint 7.2 -> 4.0 (-45%), raster 2.3 -> 2.0. Raster is at the floor a 1,289-paragraph file also pays (2.1 ms: 400 px of new text a frame)
+- [x] many files: three opened in a row 5.4 -> 1.9 s (-65%)
+- [~] tab switch 384 -> 232 ms CPU (-40%), 434 -> 244 ms to the frame. What's left is mostly the crash-recovery copy of the doc switched to (data safety, left alone)
+- [x] weight: heap 104 -> 43 MB (-59%); DOM nodes 428k -> 27k (-94%); Electron with three files 1627 -> 808 MB (-50%), launch to all open 5.2 -> 1.5 s
+- [x] idle, Electron, three files open, all processes: 14.9 -> 1.1 ms/s (-93%) once the caret has rested (12 s after the opens), GPU process 5.4 -> 0.02; in the first seconds after the opens 18.3 -> 5.8 (-68%), GPU 7.8 -> 3.9 (-51%)
+- [~] idle, headless, three files, 1.5-6.5 s after the opens: 11.0 -> 5.9 ms/s (-47%)
+- [!] save freeze 216 -> 238 ms (+10%), in both passes; cause not found
+- unchanged: bundle size, cold load, small files (already at the frame floor)
+What did it:
+- far paragraphs are empty placeholders with a kept or estimated height (window.ts node views); only text near the screen, the caret's neighbours and the doc's ends have DOM
+- import: platform unzip and base64, the body read block by block, text copied out of the XML, marks cached per distinct rPr (1,508 real files import identically)
+- `:root:has([data-drag])` restyled the whole page on every inserted element; now a class
+- scroll: each end of the drawn range moves on its own; exact zoom (a sub-pixel shift redrew every tile); outline tracking from a few rects; the outline doesn't re-render every row
+- idle: the hidden Home glow and the toast's hidden fade no longer draw frames; the caret stops blinking after 5 s without input (stays shown); a GC after opens, in the page and in main
+Decisions:
+- The caret resting after 5 s is the one thing a user can see. It is most of an idle window's CPU and GPU.
+- Far text isn't in the DOM: spellcheck and screen readers see only what's near the screen (before, it was hidden from them too).
+Guards: vitest 589 pass, tsc clean, 33 verify-falcon journeys pass, Electron smoke and recovery scripts pass, tests/window-big-file.mjs 21/21 + split 3/3, recovery.json byte-identical, export code untouched.
+Open:
+- Home showing costs 112 ms/s in Electron (93 GPU): the breathing glow redraws the window every frame. Stepping it or pausing it when minimised would change intended motion; not done.
+- A typing pause in a big file re-serialises the whole doc for crash recovery (29 MB of JSON for Nordics).
