@@ -209,6 +209,13 @@ function readImageRels(xml: string | undefined, files: Record<string, Uint8Array
   return map;
 }
 
+/**
+ * A copy of a string that shares no memory with the XML it was read from. Text sliced out of document.xml
+ * is a V8 "sliced string" that keeps the whole decoded file (tens of MB) alive for as long as the document
+ * is open; flattening a concatenation makes a fresh copy, and the slice then points into that copy.
+ */
+const own = (s: string) => (s.length < 13 ? s : (' ' + s).slice(1));
+
 const descendant = (el: Element, name: string) => el.getElementsByTagNameNS('*', name)[0] as Element | undefined;
 const rAttr = (el: Element | undefined, name: string) => el?.getAttributeNS(R, name) ?? el?.getAttribute(`r:${name}`) ?? null;
 
@@ -220,7 +227,7 @@ function readPicture(el: Element, images: Map<string, string>): PMNode | null {
     if (!src) return null;
     const ext = descendant(el, 'extent');
     const cx = Number(ext?.getAttribute('cx')), cy = Number(ext?.getAttribute('cy'));
-    const alt = descendant(el, 'docPr')?.getAttribute('descr') ?? '';
+    const alt = own(descendant(el, 'docPr')?.getAttribute('descr') ?? '');
     // Word's crop, in thousandths of a percent cut from each side
     const rect = descendant(el, 'srcRect');
     const cut = (k: string) => Math.max(0, Math.min(0.99, Number(rect?.getAttribute(k) ?? 0) / 100000)) || 0;
@@ -342,7 +349,7 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
           const marks = runMarks(styles, kid(c, 'rPr'), style, cache);
           if (link) marks.push(link);
           let text = '';
-          const flush = () => { if (text) { inline.push(schema.text(text, marks)); text = ''; } };
+          const flush = () => { if (text) { inline.push(schema.text(own(text), marks)); text = ''; } };
           const readRun = (run: Element) => {
             for (const t of kids(run)) {
               const tl = t.localName;
@@ -482,7 +489,9 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
 
   // the body is read block by block as the parser finishes each one (the document's first <w:body>, as before)
   const blocks: PMNode[] = [];
-  parseXml(strFromU8(docXml), (el, up) => {
+  const xml = strFromU8(docXml);
+  delete files['word/document.xml']; // the bytes aren't needed once decoded (and docXml goes out of use here)
+  parseXml(xml, (el, up) => {
     if (up.length !== 3 || up[1] !== up[0].children[0] || up[2] !== kid(up[1], 'body')) return false;
     readBlock(el, blocks, false);
     return true;
