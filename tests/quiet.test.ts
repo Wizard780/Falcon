@@ -51,6 +51,16 @@ describe('caret rest', () => {
     vi.advanceTimersByTime(WAKE_PAUSE);
     expect(anim()).toBe('');
   });
+
+  it('a drag puts off waking until it stops', () => {
+    q.installQuiet();
+    vi.advanceTimersByTime(REST_AFTER);
+    window.dispatchEvent(new MouseEvent('pointerdown'));
+    for (let i = 0; i < 10; i++) { vi.advanceTimersByTime(100); window.dispatchEvent(new MouseEvent('pointermove', { buttons: 1 })); }
+    expect(anim()).toBe('manual');
+    vi.advanceTimersByTime(WAKE_PAUSE);
+    expect(anim()).toBe('');
+  });
 });
 
 describe('trimSoon', () => {

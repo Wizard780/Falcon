@@ -6,7 +6,7 @@ const REST_AFTER = 5000; // no key, click or scroll for this long: the caret sto
 const WAKE_PAUSE = 500; // ...and blinks again at the first pause in what woke it (not on the key itself: see wake)
 const TRIM_QUIET = 1500;
 
-let last = 0; // the last key, click, wheel or scroll
+let last = 0; // the last key, click, drag, wheel or scroll
 let resting = false, timer = 0;
 const idleFor = () => performance.now() - last;
 
@@ -38,6 +38,7 @@ export function installQuiet() {
   if (installed) return;
   installed = true;
   for (const t of ['keydown', 'pointerdown', 'wheel', 'scroll', 'compositionstart']) addEventListener(t, poke, { capture: true, passive: true });
+  addEventListener('pointermove', (e) => { if (e.buttons) poke(); }, { capture: true, passive: true }); // a drag: no restyle mid-gesture
   poke();
 }
 

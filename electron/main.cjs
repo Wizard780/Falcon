@@ -159,15 +159,17 @@ function contextMenu(wc, p) {
 globalThis.falconContextMenu = contextMenu; // the smoke test checks the menu a misspelled word gets
 
 const DOCX = [{ name: 'Word documents', extensions: ['docx'] }];
-// What a big transfer leaves here (a backfile's bytes, a crash-recovery copy) waits for a GC, and this process's heap
-// is too small to start one on its own for a long while: 40 MB more after three backfiles open. So ask for one when
-// the transfers stop (about 3 ms). --expose-gc set now reaches a new context's globals.
+// A backfile's bytes wait here for a GC after they're sent, and this process's heap is too small to start one on its
+// own for a long while: 40 MB more after three backfiles open. So ask for one when the opens stop. Not after each
+// crash-recovery write (every typing pause in a big file, and a full GC grows with the card index): V8 collects
+// those itself once they add up. --expose-gc set now reaches a new context's globals.
 require('node:v8').setFlagsFromString('--expose-gc');
 const collect = require('node:vm').runInNewContext('gc');
 let collectTimer = null;
 const collectSoon = () => { clearTimeout(collectTimer); collectTimer = setTimeout(collect, 1000); };
-// A file's bytes for the page: a view of the Buffer read, not a copy (a 16 MB backfile would sit here twice)
-const readBytes = async (p) => { const b = await fs.readFile(p); collectSoon(); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
+// A file's bytes for the page: the Buffer read, not a copy (a 16 MB backfile would sit here twice). Copied only when
+// it's a slice of a shared pool, since IPC sends a view's whole ArrayBuffer
+const readBytes = async (p) => { const b = await fs.readFile(p); collectSoon(); return b.byteOffset === 0 && b.byteLength === b.buffer.byteLength ? new Uint8Array(b.buffer) : new Uint8Array(b); };
 // Files picked in a dialog in earlier sessions, so Home and the files panel can reopen them.
 // Only paths in this list (and only .docx) can be opened without a dialog.
 const MAX_RECENT = 50;
@@ -383,7 +385,6 @@ function writeRecovery(slot, text) {
       } catch { /* a full disk: the next backup tries again */ }
     }
     q.busy = null;
-    collectSoon();
   })();
 }
 ipcMain.on('falcon:recovery-write', (e, text) => { if (typeof text === 'string' || text instanceof Uint8Array) writeRecovery(windows.get(e.sender)?.slot ?? '', text); });
