@@ -30,7 +30,7 @@ async function run() {
     document.head.append(s); document.body.append(d);
   });
   if (process.env.HOME_OPEN) await win.evaluate(() => document.querySelector('.sb-logo')?.click());
-  await win.waitForTimeout(4000);
+  await win.waitForTimeout(Number(process.env.SETTLE_MS ?? 4000)); // SETTLE_MS=12000: idle once the caret has come to rest
   // per process type: resident memory (MB) and CPU seconds used so far
   const snap = () => app.evaluate(({ app }) => app.getAppMetrics().map((m) => ({ pid: m.pid, type: m.type, name: m.name ?? m.serviceName ?? '', mb: m.memory.workingSetSize / 1024, cpu: m.cpu.cumulativeCPUUsage ?? 0 })));
   const sum = (s, pick, type) => s.filter((m) => !type || m.type === type).reduce((a, m) => a + pick(m), 0);
