@@ -1,6 +1,8 @@
 // The only bridge between the page and the OS. The page gets these functions and nothing else.
 const { contextBridge, ipcRenderer } = require('electron');
 
+const utf8 = new TextEncoder(); // the crash-recovery copy goes to the main process as bytes (see falcon:recovery-write)
+
 contextBridge.exposeInMainWorld('falcon', {
   platform: process.platform,
   readClipboardText: () => ipcRenderer.invoke('falcon:read-clipboard-text'),
@@ -101,5 +103,5 @@ contextBridge.exposeInMainWorld('falcon', {
   },
   speechAsk: (kind, payload) => ipcRenderer.invoke('falcon:speech-ask', kind, payload),
   // crash recovery for docs too big for localStorage: read once as the page starts, written on every backup
-  recovery: { read: () => ipcRenderer.sendSync('falcon:recovery-read'), write: (text) => ipcRenderer.send('falcon:recovery-write', String(text)), orphans: () => ipcRenderer.sendSync('falcon:recovery-orphans') },
+  recovery: { read: () => ipcRenderer.sendSync('falcon:recovery-read'), write: (text) => ipcRenderer.send('falcon:recovery-write', utf8.encode(String(text))), orphans: () => ipcRenderer.sendSync('falcon:recovery-orphans') },
 });
