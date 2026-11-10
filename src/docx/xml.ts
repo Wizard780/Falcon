@@ -72,8 +72,14 @@ function decode(s: string): string {
 
 const isSpace = (c: number) => c === 32 || c === 10 || c === 13 || c === 9;
 
-/** Parse XML text into XEl objects. Malformed input throws, like a DOMParser parse error would make the import fail. */
-export function parseXml(src: string): XDoc {
+/**
+ * Parse XML text into XEl objects. Malformed input throws, like a DOMParser parse error would make the import fail.
+ * `onClose` sees each element as it ends, with its open ancestors (the document node first); returning true
+ * drops it from its parent. The importer reads the body one block at a time this way, so a big file's
+ * element tree never exists all at once: each paragraph's elements die young instead of piling up in the
+ * old generation, which is where most of the import's garbage-collection time and peak memory went.
+ */
+export function parseXml(src: string, onClose?: (el: XEl, parents: readonly XEl[]) => boolean): XDoc {
   const root = new XEl('#document', '#document', [], { xml: 'http://www.w3.org/XML/1998/namespace', xmlns: XMLNS });
   const stack: XEl[] = [root];
   let top = root;
@@ -87,8 +93,9 @@ export function parseXml(src: string): XDoc {
     if (c1 === 47) { // </name>
       const gt = src.indexOf('>', lt);
       if (gt < 0 || stack.length < 2 || src.slice(lt + 2, gt).trim() !== top.tagName) throw new Error('bad XML');
-      stack.pop();
+      const el = stack.pop()!;
       top = stack[stack.length - 1];
+      if (onClose?.(el, stack)) top.children.pop();
       i = gt + 1;
       continue;
     }
@@ -130,6 +137,7 @@ export function parseXml(src: string): XDoc {
     const el = new XEl(tag, colon < 0 ? tag : tag.slice(colon + 1), attrs, ns);
     top.children.push(el);
     if (!selfClose) { stack.push(el); top = el; }
+    else if (onClose?.(el, stack)) top.children.pop();
     i = j;
   }
   const documentElement = root.children[0];

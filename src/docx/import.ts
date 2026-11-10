@@ -480,9 +480,13 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
     return T.table.create({ borders }, rows.map((r) => T.table_row.create(null, r.map((c) => (c.header ? T.table_header : T.table_cell).create(c.attrs, c.paras)))));
   };
 
-  const body = kid(parseXml(strFromU8(docXml)).documentElement, 'body');
+  // the body is read block by block as the parser finishes each one (the document's first <w:body>, as before)
   const blocks: PMNode[] = [];
-  if (body) readBlocks(body, blocks, false);
+  parseXml(strFromU8(docXml), (el, up) => {
+    if (up.length !== 3 || up[1] !== up[0].children[0] || up[2] !== kid(up[1], 'body')) return false;
+    readBlock(el, blocks, false);
+    return true;
+  });
   if (!blocks.length) blocks.push(schema.nodes.paragraph.create());
   return schema.node('doc', null, blocks);
 }
