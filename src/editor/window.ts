@@ -167,9 +167,9 @@ function remark(tr: Transaction, v: Win): DecorationSet {
   return topSet((add.length ? decos.add(doc, add) : decos).find());
 }
 
-/** The top-level child range near the screen, or null when it can't be measured (not laid out). `top` is the
- *  first child starting on screen, the one kept in place when the range changes. */
-function nearRange(view: EditorView, sc: HTMLElement): { from: number; to: number; top: number } | null {
+/** The top-level child range near the screen, or null when it can't be measured (not laid out): [a, b) unsnapped,
+ *  [from, to) snapped. `top` is the first child starting on screen, the one kept in place when the range changes. */
+function nearRange(view: EditorView, sc: HTMLElement): { a: number; b: number; from: number; to: number; top: number } | null {
   const doc = view.state.doc, n = doc.childCount;
   const kids = view.dom.children;
   // the footnote list is a widget after the last paragraph; anything else extra and we can't index by DOM
@@ -187,8 +187,8 @@ function nearRange(view: EditorView, sc: HTMLElement): { from: number; to: numbe
     }
     return lo;
   };
-  const a = search(top, 'bottom'), b = search(bottom, 'top');
-  return { from: Math.max(0, Math.floor(a / STEP) * STEP), to: Math.min(n, Math.ceil((b + 1) / STEP) * STEP), top: Math.min(search(box.top, 'top'), n - 1) };
+  const a = search(top, 'bottom'), b = Math.min(n, search(bottom, 'top') + 1);
+  return { a, b, from: Math.max(0, Math.floor(a / STEP) * STEP), to: Math.min(n, Math.ceil(b / STEP) * STEP), top: Math.min(search(box.top, 'top'), n - 1) };
 }
 
 export const WINDOW_META = 'falcon-window';
@@ -217,10 +217,16 @@ export const windowPlugin = new Plugin<Win>({
       for (let k = 0; k < 3; k++) {
         const r = nearRange(view, sc);
         const cur = windowKey.getState(view.state)!;
-        if (!r || (r.from === cur.from && r.to === cur.to)) return;
-        remember(view, cur.from, cur.to, r);
+        // The range stays while it covers what's near and isn't two steps too wide at either end; each end moves on its
+        // own, one redraw (every redraw walks all 15k paragraphs) when it runs out or gets too wide. Not both ends in one
+        // frame: on a 15k-paragraph file that rasters ~40% more tiles, as if what the frame redraws became one box from
+        // the text dropped above the screen to the text added below it, the screen included
+        const keep = (slack: number) => slack >= 0 && slack < 2 * STEP;
+        if (!r || (keep(r.a - cur.from) && keep(cur.to - r.b))) return;
+        const next = { from: keep(r.a - cur.from) ? cur.from : r.from, to: keep(cur.to - r.b) ? cur.to : r.to };
+        remember(view, cur.from, cur.to, next);
         const y = view.dom.children[r.top].getBoundingClientRect().top;
-        view.dispatch(view.state.tr.setMeta(windowKey, { from: r.from, to: r.to }).setMeta(WINDOW_META, true).setMeta('addToHistory', false));
+        view.dispatch(view.state.tr.setMeta(windowKey, next).setMeta(WINDOW_META, true).setMeta('addToHistory', false));
         // paragraphs above the screen just changed from estimates to real heights: keep the text on screen where it was.
         // By index, since the anchor itself may have been a placeholder that got replaced (a scrollbar drag)
         const now = view.dom.children[r.top];
