@@ -60,9 +60,12 @@ function heightOf(node: PMNode, view: EditorView): number {
   return h;
 }
 
+/** A gap cursor is a widget among the page's children: while it shows, child i of the DOM isn't child i of the doc. */
+const gapShown = (view: EditorView) => !!view.dom.querySelector(':scope > .ProseMirror-gapcursor');
+
 /** Remember the drawn heights of paragraphs [from, to) that are about to be skipped. */
 function remember(view: EditorView, from: number, to: number, keep: { from: number; to: number }) {
-  if (isReading(view.state)) return; // read mode hides most text and runs paragraphs together: its heights aren't the page's
+  if (isReading(view.state) || gapShown(view)) return; // read mode hides most text and runs paragraphs together: its heights aren't the page's
   const doc = view.state.doc, kids = view.dom.children, w = widths.get(view)!;
   // the page's CSS zoom, exactly: rect / offsetHeight is off by up to half a pixel in the whole page's height, and that
   // error in 24 stored heights moves everything below a fraction of a pixel, which redraws every tile on screen
@@ -177,7 +180,7 @@ function nearRange(view: EditorView, sc: HTMLElement): { a: number; b: number; f
   const doc = view.state.doc, n = doc.childCount;
   const kids = view.dom.children;
   // the footnote list is a widget after the last paragraph; anything else extra and we can't index by DOM
-  if (kids.length < n) return null;
+  if (kids.length < n || gapShown(view)) return null;
   const box = sc.getBoundingClientRect();
   if (!box.height) return null;
   const top = box.top - box.height * MARGIN, bottom = box.bottom + box.height * MARGIN;
@@ -201,7 +204,7 @@ function nearRange(view: EditorView, sc: HTMLElement): { a: number; b: number; f
  *  read mode, which hides paragraphs (no box: the rects stop being in order) and runs others inline. */
 export function topChildAt(view: EditorView, y: number): number | null {
   const doc = view.state.doc, n = doc.childCount, kids = view.dom.children;
-  if (kids.length < n || isReading(view.state)) return null;
+  if (kids.length < n || isReading(view.state) || gapShown(view)) return null;
   let lo = 0, hi = n;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;

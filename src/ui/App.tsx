@@ -1726,7 +1726,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
   const moving = useRef(false);
   const [dragId, setDragId] = useState<number | null>(null);
   // a class, not `:root:has([data-drag])`: with :has, every element added anywhere restyles the whole page
-  useEffect(() => { document.documentElement.classList.toggle('f-dragging', dragId !== null); }, [dragId]);
+  useEffect(() => { document.documentElement.classList.toggle('f-dragging', dragId !== null); return () => document.documentElement.classList.remove('f-dragging'); }, [dragId]);
   const [gap, setGap] = useState<number | null>(null); // the gap the line sits in: before row `gap`, or after the last
   const reorder = (id: number) => (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest('.doc-x, .files-x')) return;

@@ -1,0 +1,137 @@
+{
+ "note": "Round 2 (2026-11-10): [before, after], median of 3 alternated runs. before = origin/main e43ebaca. Web numbers: scripts/perf.mjs on d_nordics (15k paragraphs) unless named; multi = nordics + impactturns + spark in one window; el = scripts/perf-electron.mjs with the same three files.",
+ "metrics": {
+  "open big file ms": [
+   1126.2,
+   506.8
+  ],
+  "open 20MB file ms": [
+   807.5,
+   375
+  ],
+  "cpu/key": [
+   38.27,
+   14.11
+  ],
+  "key->frame median": [
+   32.8,
+   16.4
+  ],
+  "cpu/scroll frame": [
+   28.66,
+   9.15
+  ],
+  "paint/frame": [
+   7.41,
+   3.94
+  ],
+  "gpu/frame": [
+   2.7,
+   1.97
+  ],
+  "heap MB": [
+   103.91,
+   42.85
+  ],
+  "dom nodes": [
+   427997,
+   27057
+  ],
+  "saveFreeze": [
+   223.2,
+   241.2
+  ],
+  "small cpu/key": [
+   6.35,
+   5.03
+  ],
+  "small paint": [
+   2.07,
+   1.94
+  ],
+  "small gpu": [
+   2.17,
+   2.13
+  ],
+  "multi openAllMs": [
+   5511,
+   1917
+  ],
+  "multi openAllCpu": [
+   4680.22,
+   976.62
+  ],
+  "multi heap": [
+   68.1,
+   63.21
+  ],
+  "multi idle ms/s": [
+   10.63,
+   3.78
+  ],
+  "multi idle gpu": [
+   6.75,
+   1.74
+  ],
+  "multi switchMedian": [
+   432,
+   260.1
+  ],
+  "multi switchCpu": [
+   391.57,
+   240.08
+  ],
+  "idle editor": [
+   2.26,
+   0.74
+  ],
+  "idle home": [
+   0.16,
+   0.34
+  ],
+  "cold ready": [
+   4891,
+   4920
+  ],
+  "jsGz initial": [
+   201460,
+   203185
+  ],
+  "el memMB": [
+   1705.58,
+   821.22
+  ],
+  "el rendererMB": [
+   1268.39,
+   450.62
+  ],
+  "el gpuMB": [
+   112.03,
+   123.11
+  ],
+  "el openMs": [
+   5346,
+   1533
+  ],
+  "el shellMs": [
+   516,
+   292
+  ],
+  "el idle cpu": [
+   16.64,
+   6.06
+  ],
+  "el idle gpu": [
+   8.23,
+   4.38
+  ],
+  "el scroll cpu": [
+   11.33,
+   9.89
+  ],
+  "el scroll gpu": [
+   1.53,
+   1.34
+  ]
+ }
+}
