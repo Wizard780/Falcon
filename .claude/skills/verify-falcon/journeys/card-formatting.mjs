@@ -17,10 +17,10 @@ want((await line('Temperatures')).includes('[rose]{highlight:yellow+underline}')
 await f.select('needle'); await page.keyboard.press('F10');
 want((await line('Temperatures')).includes('[needle]{emphasis}'), 'F10 applies emphasis');
 await page.keyboard.press('F11');
-const box = await page.evaluate(() => { const e = [...document.querySelectorAll('.f-emphasis')].find((x) => x.textContent === 'needle'); const h = e.querySelector('.f-highlight'); const r = h.getBoundingClientRect(), b = e.getBoundingClientRect(), w = parseFloat(getComputedStyle(e).borderTopWidth); return [getComputedStyle(h).backgroundColor, getComputedStyle(e).position, [r.left - b.left, b.right - r.right, r.top - b.top, b.bottom - r.bottom].every((d) => Math.abs(d - w) < 0.5)]; });
-const ink = await page.evaluate(() => { const e = [...document.querySelectorAll('.f-emphasis')].find((x) => x.textContent === 'needle'); return [getComputedStyle(e.querySelector('.f-highlight')).color, getComputedStyle(e).borderTopColor]; });
+const box = await page.evaluate(() => { const e = [...document.querySelectorAll('.f-emphasis')].find((x) => x.textContent === 'needle'); const h = e.querySelector('.f-highlight'); const r = h.getBoundingClientRect(), b = e.getBoundingClientRect(), w = parseFloat(getComputedStyle(e).borderTopWidth); const c = getComputedStyle(e); return [getComputedStyle(h).backgroundColor, c.outlineStyle + ' ' + c.position, [r.left - b.left, b.right - r.right, r.top - b.top, b.bottom - r.bottom].every((d) => Math.abs(d - w) < 0.5)]; });
+const ink = await page.evaluate(() => { const e = [...document.querySelectorAll('.f-emphasis')].find((x) => x.textContent === 'needle'); return [getComputedStyle(e.querySelector('.f-highlight')).color, getComputedStyle(e).outlineColor]; });
 want(ink[0] === 'rgb(0, 0, 0)' && ink[1] === 'rgb(0, 0, 0)', `highlighted text and its box are black (${ink})`);
-want(box[0] === 'rgb(255, 255, 0)' && box[1] === 'relative' && box[2], `the highlight fills the box to its border and the box paints over the next line (${box})`);
+want(box[0] === 'rgb(255, 255, 0)' && box[1] === 'solid static' && box[2], `the highlight fills the box to its border, and the box is an outline (painted over the next line) on an unpositioned span (so the fill can't cover the caret) (${box})`);
 await page.keyboard.press('F11');
 await f.select('this line'); await page.click('.toolbar button[title^="Cite (F8)"]');
 want((await line('Temperatures')).includes('[this line]{cite}'), 'the Cite button in the grid applies cite');
