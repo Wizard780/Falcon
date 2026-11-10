@@ -247,14 +247,17 @@ Done means (30 MB Nordics file, 15k paragraphs, unless noted), each at least 50%
 Guards: import toJSON identical old vs new on the real-file corpus; saved parts byte-identical; vitest, tsc, build, Electron smoke and the verify-falcon journeys pass. The bench's meaning of "first screen" and "settled" stays as it is.
 Baseline (1 run, to be re-measured interleaved): open 1.2 s; 43 ms CPU a key (5 ms script); 32 ms a scroll frame; 428k DOM nodes; a tab switch to the big file ~0.9 s of CPU; Electron 1.5 GB with three files.
 Profile: every paragraph has DOM (content-visibility only skips layout and paint), so open, switch, memory and style recalc all scale with file size; each key forces layout (getClientRects, offsetHeight); each scroll frame calls caretPositionFromPoint and getBoundingClientRect.
-Results (median of 3 alternated runs, before -> after; perf-results/round2.json):
-- [x] open: 30 MB file 1.13 -> 0.51 s (-55%); 20 MB file 0.81 -> 0.38 s (-54%)
-- [x] CPU: per key 38 -> 14 ms (-63%), key to screen 33 -> 16 ms (the frame floor); per scroll frame 29 -> 9 ms (-68%)
-- [~] drawing + raster per scroll frame 10.1 -> 5.9 ms (-42%): paint 7.4 -> 3.9, raster 2.7 -> 2.0. Raster is at the floor a 1,289-paragraph file also pays (2.1 ms: 400 px of new text a frame)
-- [x] many files: three opened in a row 5.5 -> 1.9 s (-65%); idle with all open 10.6 -> 3.8 ms/s (-64%)
-- [~] tab switch 392 -> 240 ms CPU (-39%), 432 -> 260 ms to the frame. What's left is mostly the crash-recovery copy of the doc switched to (data safety, left alone)
-- [x] weight: heap 104 -> 43 MB (-59%); DOM nodes 428k -> 27k (-94%); Electron with three files 1706 -> 821 MB (-52%), idle CPU all processes 16.6 -> 6.1 ms/s (-64%), GPU process idle 8.2 -> 4.4 ms/s (-47%), launch to all open 5.3 -> 1.5 s
-- unchanged: save freeze, bundle size, cold load, small files (already at the frame floor)
+Results (median of 3 alternated runs at the final commit, before -> after; perf-results/round2.json):
+- [x] open: 30 MB file 1.11 -> 0.50 s (-55%); 20 MB file 0.79 -> 0.37 s (-53%)
+- [x] CPU: per key 37 -> 14 ms (-61%); per scroll frame 28 -> 9 ms (-68%)
+- [~] drawing + raster per scroll frame 9.5 -> 6.0 ms (-37%): paint 7.2 -> 4.0 (-45%), raster 2.3 -> 2.0. Raster is at the floor a 1,289-paragraph file also pays (2.1 ms: 400 px of new text a frame)
+- [x] many files: three opened in a row 5.4 -> 1.9 s (-65%)
+- [~] tab switch 384 -> 232 ms CPU (-40%), 434 -> 244 ms to the frame. What's left is mostly the crash-recovery copy of the doc switched to (data safety, left alone)
+- [x] weight: heap 104 -> 43 MB (-59%); DOM nodes 428k -> 27k (-94%); Electron with three files 1627 -> 808 MB (-50%), launch to all open 5.2 -> 1.5 s
+- [x] idle, Electron, three files open, all processes: 14.9 -> 1.1 ms/s (-93%) once the caret has rested (12 s after the opens), GPU process 5.4 -> 0.02; in the first seconds after the opens 18.3 -> 5.8 (-68%), GPU 7.8 -> 3.9 (-51%)
+- [~] idle, headless, three files, 1.5-6.5 s after the opens: 11.0 -> 5.9 ms/s (-47%)
+- [!] save freeze 216 -> 238 ms (+10%), in both passes; cause not found
+- unchanged: bundle size, cold load, small files (already at the frame floor)
 What did it:
 - far paragraphs are empty placeholders with a kept or estimated height (window.ts node views); only text near the screen, the caret's neighbours and the doc's ends have DOM
 - import: platform unzip and base64, the body read block by block, text copied out of the XML, marks cached per distinct rPr (1,508 real files import identically)

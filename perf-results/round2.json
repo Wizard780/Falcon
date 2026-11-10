@@ -1,137 +1,97 @@
 {
- "note": "Round 2 (2026-11-10): [before, after], median of 3 alternated runs. before = origin/main e43ebaca. Web numbers: scripts/perf.mjs on d_nordics (15k paragraphs) unless named; multi = nordics + impactturns + spark in one window; el = scripts/perf-electron.mjs with the same three files.",
+ "note": "Round 2 (2026-11-10): [before, after], median of 3 alternated runs at e5ac047d. before = origin/main e43ebaca. Web numbers: scripts/perf.mjs on d_nordics (15k paragraphs); open20 = c_impactturns; openAll, multi*, switch* = nordics + impactturns + spark in one window. el* = scripts/perf-electron.mjs with the same three files (idle measured 4-9 s after the opens); rest* = the same with SETTLE_MS=12000 (idle once the caret has come to rest).",
  "metrics": {
-  "open big file ms": [
-   1126.2,
-   506.8
+  "open30": [
+   1112,
+   503.6
   ],
-  "open 20MB file ms": [
-   807.5,
-   375
+  "open20": [
+   790.6,
+   368.2
   ],
-  "cpu/key": [
-   38.27,
-   14.11
+  "cpuKey": [
+   36.98,
+   14.32
   ],
-  "key->frame median": [
-   32.8,
-   16.4
+  "cpuScroll": [
+   28.04,
+   9.11
   ],
-  "cpu/scroll frame": [
-   28.66,
-   9.15
+  "paint": [
+   7.24,
+   3.99
   ],
-  "paint/frame": [
-   7.41,
-   3.94
+  "gpu": [
+   2.27,
+   1.99
   ],
-  "gpu/frame": [
-   2.7,
-   1.97
-  ],
-  "heap MB": [
-   103.91,
+  "heap": [
+   103.89,
    42.85
   ],
-  "dom nodes": [
+  "dom": [
    427997,
    27057
   ],
   "saveFreeze": [
-   223.2,
-   241.2
+   215.8,
+   238.1
   ],
-  "small cpu/key": [
-   6.35,
-   5.03
+  "openAll": [
+   5390,
+   1900
   ],
-  "small paint": [
-   2.07,
-   1.94
+  "multiIdle": [
+   11.04,
+   5.87
   ],
-  "small gpu": [
-   2.17,
-   2.13
+  "multiIdleGpu": [
+   7.34,
+   2.15
   ],
-  "multi openAllMs": [
-   5511,
-   1917
+  "switchMs": [
+   434.4,
+   243.7
   ],
-  "multi openAllCpu": [
-   4680.22,
-   976.62
+  "switchCpu": [
+   383.54,
+   231.6
   ],
-  "multi heap": [
-   68.1,
-   63.21
+  "elMem": [
+   1627.17,
+   807.66
   ],
-  "multi idle ms/s": [
-   10.63,
-   3.78
+  "elRenderer": [
+   1244.83,
+   437.47
   ],
-  "multi idle gpu": [
-   6.75,
-   1.74
+  "elOpen": [
+   5178,
+   1477
   ],
-  "multi switchMedian": [
-   432,
-   260.1
+  "elIdle": [
+   18.25,
+   5.8
   ],
-  "multi switchCpu": [
-   391.57,
-   240.08
+  "elIdleGpu": [
+   7.83,
+   3.86
   ],
-  "idle editor": [
-   2.26,
-   0.74
+  "restIdle": [
+   14.89,
+   1.06
   ],
-  "idle home": [
-   0.16,
-   0.34
+  "restIdleGpu": [
+   5.44,
+   0.02
   ],
-  "cold ready": [
-   4891,
-   4920
+  "restMem": [
+   1725.42,
+   812.72
   ],
-  "jsGz initial": [
-   201460,
-   203185
-  ],
-  "el memMB": [
-   1705.58,
-   821.22
-  ],
-  "el rendererMB": [
-   1268.39,
-   450.62
-  ],
-  "el gpuMB": [
-   112.03,
-   123.11
-  ],
-  "el openMs": [
-   5346,
-   1533
-  ],
-  "el shellMs": [
-   516,
-   292
-  ],
-  "el idle cpu": [
-   16.64,
-   6.06
-  ],
-  "el idle gpu": [
-   8.23,
-   4.38
-  ],
-  "el scroll cpu": [
-   11.33,
-   9.89
-  ],
-  "el scroll gpu": [
-   1.53,
-   1.34
+  "paintGpu": [
+   9.51,
+   5.98
   ]
  }
 }
