@@ -331,8 +331,7 @@ async function unzipParts(data: Uint8Array, want: (name: string) => boolean): Pr
 /** Convert a .docx (zip bytes) into a Falcon document. */
 export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
   const files = await unzipParts(data, (n) => n === 'word/document.xml' || n === 'word/styles.xml' || n === 'word/_rels/document.xml.rels' || n === 'word/footnotes.xml' || n === 'word/_rels/footnotes.xml.rels' || n === 'word/endnotes.xml' || n === 'word/_rels/endnotes.xml.rels' || n.startsWith('word/media/') || n.startsWith('media/'));
-  const docXml = files['word/document.xml'];
-  if (!docXml) throw new Error('not a Word document');
+  if (!files['word/document.xml']) throw new Error('not a Word document');
   const str = (name: string) => (files[name] ? strFromU8(files[name]) : undefined);
   const styles = readStyles(str('word/styles.xml'));
   // each part numbers its own relationships: the body's, the footnotes' and the endnotes' links differ
@@ -507,8 +506,8 @@ export async function docxToDoc(data: Uint8Array): Promise<PMNode> {
 
   // the body is read block by block as the parser finishes each one (the document's first <w:body>, as before)
   const blocks: PMNode[] = [];
-  const xml = strFromU8(docXml);
-  delete files['word/document.xml']; // the bytes aren't needed once decoded (and docXml goes out of use here)
+  const xml = strFromU8(files['word/document.xml']);
+  delete files['word/document.xml']; // the bytes aren't needed once decoded
   parseXml(xml, (el, up) => {
     if (up.length !== 3 || up[1] !== up[0].children[0] || up[2] !== kid(up[1], 'body')) return false;
     readBlock(el, blocks, false);
