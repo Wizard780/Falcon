@@ -10,13 +10,12 @@ let last = 0; // the last key, click, drag, wheel or scroll
 let resting = false, timer = 0;
 const idleFor = () => performance.now() - last;
 
-/** Stop or restart the blink. The property is inherited, so changing it restyles the whole page (about 50 ms
- *  with a big backfile showing): it's only ever done while the user is still, never in a keystroke. A caret
- *  that doesn't blink is drawn steadily, and it doesn't blink while you type anyway. */
+/** Stop or restart the blink: a class on the root that styles.css turns into `caret-animation: manual` on the
+ *  caret's own paragraph and on text boxes. Not the property on the root: it's inherited, so that restyled the
+ *  whole page (about 50 ms with a big backfile showing). A caret that doesn't blink is drawn steadily. */
 function setRest(on: boolean) {
   resting = on;
-  if (on) document.documentElement.style.setProperty('caret-animation', 'manual');
-  else document.documentElement.style.removeProperty('caret-animation');
+  document.documentElement.classList.toggle('f-rest', on);
 }
 
 function tick() {

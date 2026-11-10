@@ -507,6 +507,10 @@ button.b:active { transform: scale(.97); }
 .f-page-text > .f-far { box-sizing: border-box; content-visibility: visible; }
 .f-page-text > .f-far.f-read-flow { display: block; }
 
+/* nothing typed, clicked or scrolled for a few seconds (src/ui/quiet.ts): the caret stays shown without blinking,
+   so an idle window draws no frames. Only where a caret can be: the caret's paragraph, the footnote editor, text boxes. */
+.f-rest :is(.f-live, .f-note-text, input, textarea) { caret-animation: manual; }
+
 /* the card the cursor is in gets a thin bar on its left */
 .f-cur-card { position: relative; }
 .f-cur-card::before { content: ''; position: absolute; left: -14px; top: 0; bottom: 0; width: 1px; background: #c8c8cc; }

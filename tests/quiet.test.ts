@@ -7,7 +7,7 @@ beforeAll(async () => {
   (globalThis as unknown as { falcon: object }).falcon = { trimMemory }; // the desktop bridge, read as host.ts loads
   q = await import('../src/ui/quiet');
 });
-const anim = () => document.documentElement.style.getPropertyValue('caret-animation');
+const anim = () => (document.documentElement.classList.contains('f-rest') ? 'manual' : '');
 const key = () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
 const REST_AFTER = 5000, WAKE_PAUSE = 500, TRIM_QUIET = 1500; // quiet.ts's
 
