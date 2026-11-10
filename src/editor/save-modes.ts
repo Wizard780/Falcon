@@ -49,7 +49,8 @@ export function readDoc(doc: PMNode): PMNode | null {
     // on screen a flowing paragraph is inline: it starts a new line after the cite, and the next ones join it
     if (flow && prev?.flow) { for (const r of runs) glue(prev.content, r); return; }
     flush();
-    prev = { attrs: para.attrs, content: runs, flow };
+    // flowing text starts flush left on screen, indent or not
+    prev = { attrs: flow ? { ...para.attrs, indent: 0 } : para.attrs, content: runs, flow };
   });
   flush();
   return docOf(keep);

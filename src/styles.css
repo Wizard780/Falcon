@@ -523,6 +523,9 @@ button.b:active { transform: scale(.97); }
 .f-read .f-read-gap { display: inline; font-size: 0; }
 .f-read .f-read-gap::after { content: ' '; font-size: 11pt; }
 .f-read p.f-read-flow { display: inline; }
+/* flowing paragraphs join one line: an indent's margin (an inline style) or the card bar would open a gap mid-line */
+.f-read p.f-read-flow { margin-left: 0 !important; }
+.f-read p.f-read-flow.f-cur-card::before { content: none; }
 .f-read p.f-read-flow::after { content: ' '; }
 /* a styled run whose text is all hidden must not leave an empty box or underline behind */
 .f-read :is(p.f-normal, p.f-undertag) :is(.f-emphasis, .f-underline, .f-highlight, .f-shading, .f-cite, .f-size, strong, em):not(:has(.f-read-shown, .f-read-gap)) { display: none; }
