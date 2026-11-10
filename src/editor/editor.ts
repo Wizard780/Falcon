@@ -7,7 +7,7 @@ import { history } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { DOMParser as PMDOMParser, Fragment, Slice, type Node as PMNode } from 'prosemirror-model';
 import { EditorState, Plugin, PluginKey, TextSelection } from 'prosemirror-state';
-import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
+import { Decoration, EditorView } from 'prosemirror-view';
 import { cardAround, pastedText, toggleColorMark } from './commands';
 import { activeColors, disarmPlainPaste, plainPasteArmed } from './host';
 import { falconKeymap } from './keymap';
@@ -25,7 +25,7 @@ import { docToolPlugins } from './doc-tools';
 import { tablePlugins } from './tables';
 import { imagePlugin } from './images';
 import { footnotePlugin } from './footnotes';
-import { NEAR, WINDOW_META, windowPlugin } from './window';
+import { NEAR, WINDOW_META, topSet, windowPlugin } from './window';
 import { smartQuotesPlugin } from './quotes';
 
 /** Paintbrush: while armed, every mouse selection gets the active color, or loses it if it's already all that color. */
@@ -99,7 +99,7 @@ const selectionClasses = new Plugin({
           pos += n.nodeSize;
         }
       }
-      return DecorationSet.create(doc, decos);
+      return topSet(decos); // all on top-level paragraphs
     },
   },
 });

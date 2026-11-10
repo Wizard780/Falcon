@@ -115,6 +115,16 @@ const paragraphView: NodeViewConstructor = (node, view, getPos, decos) => {
   return { dom, update: (n, d) => n === node && !isNear(d) };
 };
 
+/** A set of node decorations on top-level paragraphs only. On every redraw ProseMirror asks each set, for each top-level
+ *  child, for the decorations inside it, and a DecorationSet answers by scanning all of its own: 15k children times
+ *  ~70 near marks a key. A node decoration is never inside its node, so here the answer is always none. */
+class TopSet extends (DecorationSet as unknown as new (local: Decoration[], children: never[]) => DecorationSet) {
+  forChild() { return DecorationSet.empty; }
+}
+/** `decos`: node decorations, each exactly on one top-level child (as DecorationSet.create would check). */
+export const topSet = (decos: Decoration[]): DecorationSet =>
+  decos.length ? new TopSet(decos.sort((x, y) => x.from - y.from || x.to - y.to), []) : DecorationSet.empty;
+
 function decorate(doc: PMNode, from: number, to: number): DecorationSet {
   const decos: Decoration[] = [];
   const end = Math.min(to, doc.childCount);
@@ -124,13 +134,13 @@ function decorate(doc: PMNode, from: number, to: number): DecorationSet {
     if (i >= from) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-near' }, NEAR));
     pos += n.nodeSize;
   }
-  return DecorationSet.create(doc, decos);
+  return topSet(decos);
 }
 
 /** Typing maps the marks along (the next measure squares the range up), then re-marks the paragraphs
  *  the edit touched: mapping drops the mark from a paragraph Enter splits or Backspace joins (its edge
  *  moves), and the next measure finds the range unchanged, so it stayed skipped (blank) once the caret
- *  left it. Not decorate(): DecorationSet.create costs ~4 ms a key on a 15k-paragraph file. */
+ *  left it. Not decorate(): it marks by index, so paragraphs added above the screen would move the marks off it. */
 function remark(tr: Transaction, v: Win): DecorationSet {
   const doc = tr.doc;
   let decos = v.decos.map(tr.mapping, doc);
@@ -140,7 +150,7 @@ function remark(tr: Transaction, v: Win): DecorationSet {
     lo = Math.min(lo, rest.map(start, -1));
     hi = Math.max(hi, rest.map(end, 1));
   }));
-  if (lo > hi || !doc.childCount) return decos;
+  if (lo > hi || !doc.childCount) return topSet(decos.find());
   const a = doc.resolve(Math.min(lo, doc.content.size)).index(0);
   const b = Math.min(doc.resolve(Math.min(hi, doc.content.size)).index(0), doc.childCount - 1);
   // a wide edit (replace all, a long paste): each find/remove below scans every mark, so rebuild once
@@ -154,7 +164,7 @@ function remark(tr: Transaction, v: Win): DecorationSet {
     if (i >= v.from && i < v.to) add.push(Decoration.node(pos, pos + n.nodeSize, { class: 'f-near' }, NEAR));
     pos += n.nodeSize;
   }
-  return add.length ? decos.add(doc, add) : decos;
+  return topSet((add.length ? decos.add(doc, add) : decos).find());
 }
 
 /** The top-level child range near the screen, or null when it can't be measured (not laid out). `top` is the
