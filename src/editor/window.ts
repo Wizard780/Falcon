@@ -64,14 +64,14 @@ function heightOf(node: PMNode, view: EditorView): number {
 function remember(view: EditorView, from: number, to: number, keep: { from: number; to: number }) {
   if (isReading(view.state)) return; // read mode hides most text and runs paragraphs together: its heights aren't the page's
   const doc = view.state.doc, kids = view.dom.children, w = widths.get(view)!;
-  // the page's CSS zoom. Exactly: rect / offsetHeight is off by up to half a pixel in the whole page's height, and that
+  // the page's CSS zoom, exactly: rect / offsetHeight is off by up to half a pixel in the whole page's height, and that
   // error in 24 stored heights moves everything below a fraction of a pixel, which redraws every tile on screen
   const z = (view.dom as { currentCSSZoom?: number }).currentCSSZoom ?? (view.dom.getBoundingClientRect().height / (view.dom.offsetHeight || 1) || 1);
   for (let i = from; i < Math.min(to, doc.childCount); i++) {
     if (i >= keep.from && i < keep.to) continue;
     const el = kids[i] as HTMLElement, n = doc.child(i);
     if (n.type.name !== 'paragraph' || el.classList.contains('f-far')) continue;
-    heights.set(n, { h: Math.round((el.getBoundingClientRect().height / z) * 64) / 64, w }); // layout's own unit, 1/64 px
+    heights.set(n, { h: el.getBoundingClientRect().height / z, w });
   }
 }
 
@@ -197,10 +197,11 @@ function nearRange(view: EditorView, sc: HTMLElement): { a: number; b: number; f
 
 /** Start of the top-level child at height `y` (client px): the first one whose bottom is below it, as the browser's own
  *  hit test picks in the gap between two (where text would land, the outline wants only the paragraph). The end of the
- *  doc below the last one; null when children can't be indexed by DOM. A few rects, not posAtCoords's hit test. */
+ *  doc below the last one. A few rects, not posAtCoords's hit test. Null when children can't be indexed by DOM, or in
+ *  read mode, which hides paragraphs (no box: the rects stop being in order) and runs others inline. */
 export function topChildAt(view: EditorView, y: number): number | null {
   const doc = view.state.doc, n = doc.childCount, kids = view.dom.children;
-  if (kids.length < n) return null;
+  if (kids.length < n || isReading(view.state)) return null;
   let lo = 0, hi = n;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
