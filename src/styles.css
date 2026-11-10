@@ -500,12 +500,12 @@ button.b:active { transform: scale(.97); }
    The page's editor only: the footnote editor is a ProseMirror too, and a hidden paragraph there takes no caret. */
 .f-page-text > * { content-visibility: hidden; contain-intrinsic-size: auto 1.3em; overflow-clip-margin: 0.5em; }
 .f-page-text > .f-near, .f-page-text > .f-live, .f-page-text > .ProseMirror-widget { content-visibility: visible; }
-
 /* a far plain paragraph is an empty placeholder (window.ts) whose inline height is the border box it drew at. Not
    display-locked: there's nothing in it to skip, and 15k locked children make every caret hit test (posAtCoords) ~3 ms.
    In read mode it stays a block even where its paragraph would run into the one above, or its height would count for nothing */
 .f-page-text > .f-far { box-sizing: border-box; content-visibility: visible; }
 .f-page-text > .f-far.f-read-flow { display: block; }
+
 /* the card the cursor is in gets a thin bar on its left */
 .f-cur-card { position: relative; }
 .f-cur-card::before { content: ''; position: absolute; left: -14px; top: 0; bottom: 0; width: 1px; background: #c8c8cc; }
