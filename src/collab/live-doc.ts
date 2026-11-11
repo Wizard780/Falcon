@@ -33,12 +33,25 @@ export type Binding = {
 /** Remote carets that stopped moving stay shown this long; leaving the room removes them at once (live.ts). */
 const PRESENCE_TIMEOUT = 10 * 60_000;
 
+/**
+ * The binding's caret store, minus one slip: when the text under someone else's caret is deleted, the binding's
+ * cursor plugin writes that caret's new place into this peer's own state (the next frame would show my caret at theirs).
+ * Only this peer's own caret, which the plugin sets with the `me` it was given, goes in.
+ */
+class Cursors extends CursorEphemeralStore {
+  mine?: Peer;
+  setLocal(s: Parameters<CursorEphemeralStore['setLocal']>[0]) {
+    if ((s.anchor || s.focus) && s.user !== this.mine) return;
+    super.setLocal(s);
+  }
+}
+
 export function newBinding(doc = new LoroDoc()): Binding {
   // edits close together (typing a word) undo together, as prosemirror-history's 500 ms did
   const undoManager = new UndoManager(doc, { mergeInterval: 500, maxUndoSteps: 200 });
   undoManager.addExcludeOriginPrefix('sys:');
   styleMarks(doc);
-  return { doc, undo: undoManager, presence: new CursorEphemeralStore(doc.peerIdStr, PRESENCE_TIMEOUT), fixer: () => true };
+  return { doc, undo: undoManager, presence: new Cursors(doc.peerIdStr, PRESENCE_TIMEOUT), fixer: () => true };
 }
 
 /**
@@ -80,6 +93,7 @@ function caret(b: Binding, peer: string) {
 
 /** The state `state` becomes in a live session: same doc and selection, Loro's sync, undo and carets in place of history. */
 export function liveState(state: EditorState, b: Binding, me: Peer): EditorState {
+  (b.presence as Cursors).mine = me;
   const keep = state.plugins.filter((p) => !isHistory(p) && !isLive(p)).map((p) => guard(p, b));
   return state.reconfigure({
     plugins: [
