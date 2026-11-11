@@ -90,7 +90,7 @@ function createWindow(start = null) {
     },
   });
   const page = win.webContents;
-  const entry = { win, slot: windows.size ? `${Date.now().toString(36)}-${nextSlot++}` : '', paths: start?.path ? [start.path] : [], speech: start?.speech ?? null, start, listening: false, isReady: () => {} };
+  const entry = { win, slot: windows.size ? `${Date.now().toString(36)}-${nextSlot++}` : '', paths: start?.path ? [start.path] : [], unsaved: [], speech: start?.speech ?? null, start, listening: false, isReady: () => {} };
   entry.ready = new Promise((resolve) => { entry.isReady = resolve; });
   windows.set(page, entry);
   if (entry.speech) { speechHolder = page; tellWindows(); } // now, not when its page is up: a send meanwhile must find it
@@ -365,6 +365,9 @@ ipcMain.handle('falcon:dict-remove', async (e, w) => {
 });
 ipcMain.handle('falcon:index-files', () => index().files());
 ipcMain.handle('falcon:card-search', (_e, q, hidden) => searchCards(typeof q === 'string' ? q.slice(0, 200) : '', 60, Array.isArray(hidden) ? hidden.filter((h) => typeof h === 'string') : []));
+// the same file whatever the case of its name, on the Mac's and Windows' case-insensitive disks
+const samePath = (a, b) => (process.platform === 'linux' ? a === b : a.toLowerCase() === b.toLowerCase());
+const openElsewhere = (sender, p) => [...windows].some(([wc, w]) => wc !== sender && w.paths.some((q) => samePath(q, p)));
 async function saveFile(e, opts) {
   if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
   // Save writes straight into the document's own file, wherever it lives, as long as it's still there.
@@ -379,6 +382,8 @@ async function saveFile(e, opts) {
     const r = await dialog.showSaveDialog(win, { defaultPath: dir ? path.join(dir, name) : name, filters: DOCX });
     if (r.canceled || !r.filePath) return null;
     p = path.resolve(r.filePath.toLowerCase().endsWith('.docx') ? r.filePath : `${r.filePath}.docx`);
+    // a file open in another window: that window would write its own copy over this one on its next Save
+    if (openElsewhere(e.sender, p)) throw new Error(`${path.basename(p)} is open in another window. Close it there first, or save under another name.`);
     await rememberPath(p);
   }
   if (!p.toLowerCase().endsWith('.docx')) throw new Error('Falcon only saves .docx files');
@@ -463,6 +468,9 @@ ipcMain.on('falcon:window-open', (e, r) => {
     e.returnValue = true;
     return;
   }
+  // a file that's gone (moved or deleted since a template or the last session listed it) gets no window of its
+  // own: the page tries it itself and says it couldn't open it, or skips it, instead of leaving an empty window
+  if (r?.alone && p && !r.backup && !fsSync.statSync(p, { throwIfNoEntry: false })?.isFile()) { e.returnValue = false; return; }
   if (r?.alone) createWindow({ path: p, card: r.card, backup: typeof r.backup === 'string' ? r.backup : undefined, speech: typeof r.speech === 'string' ? r.speech : null, inactive: r.inactive === true, caretEnd: r.caretEnd === true });
   e.returnValue = r?.alone === true;
 });
@@ -487,8 +495,11 @@ ipcMain.on('falcon:window-report', (e, r) => {
   else if (!speech && speechHolder === e.sender) speechHolder = null;
   w.speech = speech;
   w.paths = Array.isArray(r?.paths) ? r.paths.filter((p) => typeof p === 'string') : [];
+  w.unsaved = Array.isArray(r?.unsaved) ? r.unsaved.filter((n) => typeof n === 'string').slice(0, 200) : [];
   tellWindows();
 });
+// the names of unsaved docs in the app's other windows: an update restarts every window, so its question lists them too
+ipcMain.on('falcon:window-unsaved', (e) => { e.returnValue = [...windows].flatMap(([wc, w]) => (wc === e.sender ? [] : w.unsaved)); });
 // Send to speech from a window that doesn't hold the speech doc: the page that does puts it in
 ipcMain.handle('falcon:speech-ask', (e, kind, payload) => (speechHolder && speechHolder !== e.sender ? askPage(kind, payload, speechHolder) : { ok: false, error: 'no-target-doc' }));
 

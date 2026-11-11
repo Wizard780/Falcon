@@ -77,6 +77,15 @@ describe('the update spot in the rail', () => {
     expect(asked).toBe('9.9.9');
   });
 
+  it('names the unsaved docs in the other windows too: the restart closes every window', async () => {
+    let installs = 0;
+    const app = await mountApp({ onUpdate: (f: (u: UpdateInfo | null) => void) => { f(ready); return () => {}; }, installUpdate: async () => { installs++; }, unsavedElsewhere: () => ['AT Neg'] });
+    await app.act(() => (app.el.querySelector('.fs-b.upd') as HTMLButtonElement).click());
+    expect(app.el.querySelector('.cf')?.textContent).toContain('AT Neg');
+    expect(app.el.querySelector('.cf-ok')?.textContent).toBe('Restart Without Saving');
+    await app.act(() => (app.el.querySelector('.cf-btns button') as HTMLButtonElement).click());
+    expect(installs).toBe(0);
+  });
   it('opens the disk image with no warning when nothing restarts', async () => {
     let installs = 0;
     const app = await mountApp({ onUpdate: (f: (u: UpdateInfo | null) => void) => { f({ ...ready, manual: true }); return () => {}; }, installUpdate: async () => { installs++; } });

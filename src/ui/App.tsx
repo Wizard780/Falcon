@@ -499,7 +499,8 @@ export function App() {
   const installUpdate = useCallback(async () => {
     if (!update) return;
     if (!update.manual) { // manual only opens the disk image: nothing restarts
-      const names = docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled');
+      // the restart closes every window, so the unsaved docs in the others count too
+      const names = [...docsRef.current.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled'), ...(bridge.unsavedElsewhere?.() ?? [])];
       if (!(await confirmAsk({
         title: `Install Falcon ${update.version} and restart?`,
         body: names.length ? `${nameList(names)} ${names.length > 1 ? 'have' : 'has'} unsaved changes. ${unsavedFate()}` : 'Falcon will close and reopen on the new version.',
@@ -1543,7 +1544,7 @@ export function App() {
   reportRef.current = () => {
     const paths = docs.flatMap((d) => (d.meta.path ? [d.meta.path] : []));
     if (!bridge.reportWindow) { safeSet('falcon.session', JSON.stringify(paths)); return; }
-    bridge.reportWindow({ paths: loadingPath.current ? [loadingPath.current, ...paths] : paths, speech: docs.find((d) => d.id === speechId) ? docs.find((d) => d.id === speechId)!.meta.name || 'Speech' : null });
+    bridge.reportWindow({ paths: loadingPath.current ? [loadingPath.current, ...paths] : paths, speech: docs.find((d) => d.id === speechId) ? docs.find((d) => d.id === speechId)!.meta.name || 'Speech' : null, unsaved: docs.filter((d) => d.dirty).map((d) => d.meta.name || 'Untitled') });
   };
   useEffect(() => { if (hasView) reportRef.current(); }, [docs, speechId, hasView]);
   useEffect(() => bridge.onWindows?.((w) => {

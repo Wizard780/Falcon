@@ -62,7 +62,9 @@ export async function saveDocument(doc: PMNode, meta: DocMeta, saveAs: boolean):
   const untitled = !meta.path && (meta.name || 'Untitled') === 'Untitled';
   const name = `${untitled ? newFileName() : meta.name}.docx`;
   if (bridge.saveFile) {
-    const r = await bridge.saveFile({ path: saveAs ? undefined : meta.path, name, data });
+    // the desktop app's own reason, without Electron's "Error invoking remote method" wrapper
+    const r = await bridge.saveFile({ path: saveAs ? undefined : meta.path, name, data })
+      .catch((e: Error) => { throw new Error(String(e?.message ?? e).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '')); });
     return r ? { name: r.name.replace(/\.docx$/i, ''), path: r.path } : null;
   }
   const blob = new Blob([data as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
