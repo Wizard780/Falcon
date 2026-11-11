@@ -69,6 +69,7 @@ export const P = {
   reduceMotion: def('reduceMotion', false),
   launchFalcon: def('launchFalcon', true), // the falcon sweeps in over Home when Falcon starts
   // Editor
+  cardLinks: def<'quiet' | 'page' | 'off'>('cardLinks', 'quiet'), // a card's cite typed in the file links to it (card-links.ts)
   spellcheck: def('spellcheck', true),
   condense: def<CondenseMode>('condense', 'integrity'),
   smallPilcrows: def('smallPilcrows', false),

@@ -310,6 +310,8 @@ button.b:active { transform: scale(.97); }
 .status button:hover { color: var(--u-tx); background: var(--u-hover); }
 .status .zoom { font-family: var(--mono); min-width: 42px; text-align: center; }
 .status .lit { color: var(--u-tx); }
+.status .back { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; margin-left: 0; color: var(--u-tx); background: var(--u-raised); box-shadow: var(--u-top); }
+.status .back kbd { font: 11px var(--mono); color: var(--u-mut); }
 /* the selection's count, set off from the whole doc's by a thin line */
 .status .sel { display: inline-flex; align-items: center; gap: 16px; color: var(--u-tx2); }
 .status .sel::before { content: ''; width: 1px; height: 12px; background: var(--u-ctl-on); }

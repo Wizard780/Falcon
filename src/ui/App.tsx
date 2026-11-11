@@ -32,6 +32,7 @@ import { clearFind, findInfo, requestFind, setQuery as setFindQuery } from '../e
 import { readSetting } from '../editor/tools';
 import { findOrderSetting } from '../editor/nav-keys';
 import { isReading, toggleRead } from '../editor/read';
+import { canGoBack, linkBack } from '../editor/card-links';
 import { Home } from './Home';
 import { SHOW_EVENT, SpeechDrop, type SdTab } from './SpeechDrop';
 import './display'; // the display settings (fonts, sizes, root classes) apply at startup
@@ -1460,6 +1461,12 @@ export function App() {
   const peek = useCallback((item: OutlineItem) => { const v = viewRef.current; if (v) scrollToPos(v, item.pos); }, []);
   // Find and Replace and find-by-position keys live in the editor keymap and ask for the bar here
   useEffect(() => { addEventListener('falcon-find', openFind); return () => removeEventListener('falcon-find', openFind); }, [openFind]);
+  // a card link's jump (card-links.ts) scrolls the way an outline click does
+  useEffect(() => {
+    const go = (e: Event) => { const { view: v, pos } = (e as CustomEvent<{ view: EditorView; pos: number }>).detail; e.preventDefault(); scrollToPos(v, pos); };
+    addEventListener('falcon-scroll-to', go);
+    return () => removeEventListener('falcon-scroll-to', go);
+  }, []);
 
   const colorButton = (kind: 'highlight' | 'shading') => {
     const v = viewRef.current;
@@ -1473,6 +1480,7 @@ export function App() {
 
   const ink = activeColors.highlight === null ? '#00e5ff' : HIGHLIGHTS[activeColors.highlight] ?? activeColors.highlight;
   const reading = view ? isReading(view.state) : false;
+  const linkedFrom = view ? canGoBack(view.state) : false;
   const name = meta.name || 'Untitled';
   const docList = docs.map((d) => ({ id: d.id, name: d.meta.name || 'Untitled', path: d.meta.path, dirty: d.dirty, speech: d.id === speechId }));
 
@@ -1690,6 +1698,8 @@ export function App() {
         {sel && sel.selRead > 0 && <span className="sel" title="Words you'd read aloud in the selection (highlighted text, tags, analytics and cites), and how long Reader 1 and Reader 2 take">Sel: {sel.selRead.toLocaleString('en-US')} {sel.selRead === 1 ? 'word' : 'words'} · {r1(sel.selSplit)} / {r2(sel.selSplit)}</span>}
         {brush && <span className="lit">Paintbrush on · Esc to stop</span>}
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
+        {linkedFrom && <button className="back" title={titled('Back', 'linkBack', 'to where you clicked the card link')}
+          onClick={() => { const v = viewRef.current; if (v) linkBack(v.state, v.dispatch, v); }}>← Back{keyLabel('linkBack') && <kbd>{keyLabel('linkBack')}</kbd>}</button>}
         <span className="grow" />
         <button title={titled('Zoom out', 'zoomOut', 'make the page smaller')} onClick={() => zoomBy(-0.1)}>−</button>
         <button className="zoom" title={titled('Actual size', 'zoomReset', 'back to 100%')} onClick={() => zoomTo(1)}>{Math.round(zoom * 100)}%</button>

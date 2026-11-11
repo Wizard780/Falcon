@@ -27,6 +27,7 @@ import { imagePlugin } from './images';
 import { footnotePlugin } from './footnotes';
 import { NEAR, WINDOW_META, topSet, windowPlugin } from './window';
 import { smartQuotesPlugin } from './quotes';
+import { cardLinksPlugin } from './card-links';
 
 /** Paintbrush: while armed, every mouse selection gets the active color, or loses it if it's already all that color. */
 export const brushKey = new PluginKey<{ kind: 'highlight' | 'shading' | null }>('brush');
@@ -168,6 +169,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       brush,
       pastePlugin,
       ...docToolPlugins, // before wordSelection: Cmd/Ctrl-click on a link opens it
+      cardLinksPlugin, // before wordSelection too: a click on a card's name goes to the card
       imagePlugin,
       footnotePlugin,
       wordSelection(),

@@ -527,6 +527,10 @@ export function Settings(props: Props) {
           seg('Outline depth', [1, 2, 3, 4].map((n) => [String(n), props.depth === n, () => props.onDepth(n)])) },
         pickNum(P.openDepth, 'Depth for opened files', 'The depth a file opens at. Keep leaves it as it is.', [[0, 'Keep'], [1, '1'], [2, '2'], [3, '3'], [4, '4']]),
       ]],
+      ['Card links', [
+        pick(P.cardLinks, 'Card links', `Type a card's cite, like Clare 23, and it links to the card: hover to preview it, click to go there, ${keyLabel('linkBack')} to come back. Page slice also dots every linked name.`,
+          [['quiet', 'Quiet'], ['page', 'Page slice'], ['off', 'Off']]),
+      ]],
       ['Reading', [
         tog(P.readParas, 'Keep paragraphs apart', 'In read mode, each paragraph stays on its own line.'),
         tog(P.readWholeCite, 'Show the whole cite', 'All of a cite line, not just its cite-marked words.'),
