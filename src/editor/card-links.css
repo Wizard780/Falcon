@@ -7,7 +7,9 @@
 
 .cl-pv { position: fixed; z-index: 2500; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity .14s, transform .18s var(--u-ease); }
 .cl-pv.cl-on { opacity: 1; transform: none; pointer-events: auto; cursor: pointer; }
-@media (prefers-reduced-motion: reduce) { .cl-pv { transition: none; transform: none; } }
+/* open, and the pointer went to another name: it glides there (card-links.ts: show) */
+.cl-pv.cl-on.cl-glide { pointer-events: none; transition: opacity .14s, transform .18s var(--u-ease), left .26s var(--u-ease), top .26s var(--u-ease); }
+@media (prefers-reduced-motion: reduce) { .cl-pv, .cl-pv.cl-on.cl-glide { transition: none; transform: none; } }
 .cl-pv .cl-h { display: flex; justify-content: space-between; gap: 16px; font: 500 11px/1 var(--mono); }
 .cl-pv .cl-h span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cl-pv .cl-h span:last-child { flex: none; }

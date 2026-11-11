@@ -193,12 +193,13 @@ function section(doc: PMNode, pos: number): string {
   return s;
 }
 
-function previewOne(doc: PMNode, card: CardRef, m: Mode): HTMLElement {
+function previewOne(doc: PMNode, card: { pos: number; end: number }, m: Mode, hint = 'Click to open'): HTMLElement {
   const box = document.createElement('div');
   const head = document.createElement('div');
   head.className = 'cl-h';
-  head.innerHTML = '<span></span><span>Click to open</span>';
+  head.innerHTML = '<span></span><span></span>';
   (head.firstChild as HTMLElement).textContent = section(doc, card.pos);
+  (head.lastChild as HTMLElement).textContent = hint;
   const page = document.createElement('div');
   page.className = 'cl-card';
   let n = 0;
@@ -210,6 +211,21 @@ function previewOne(doc: PMNode, card: CardRef, m: Mode): HTMLElement {
   });
   if (m === 'page') box.append(page, head); else box.append(head, page);
   return box;
+}
+
+/** The card whose tag is at `pos`, cite or no cite, as the preview draws it: the outline shows it beside a hovered row.
+ *  `page` is true when it is a piece of the page (Card links: Page slice), false for the dark one. */
+export function cardPreview(doc: PMNode, pos: number): { box: HTMLElement; page: boolean } {
+  const page = mode() === 'page';
+  let end = pos + (doc.nodeAt(pos)?.nodeSize ?? 0);
+  for (let i = doc.resolve(pos).index(0) + 1; i < doc.childCount && !levelOf(doc.child(i)); i++) end += doc.child(i).nodeSize;
+  return { box: previewOne(doc, { pos, end }, page ? 'page' : 'quiet', ''), page };
+}
+
+const calm = () => pref(P.reduceMotion) || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+/** A preview's new content arrives from the side the pointer went (1 down the file, -1 up); the old one is already gone. */
+export function slideIn(box: HTMLElement, dir: number) {
+  if (!calm()) box.animate?.([{ opacity: 0, transform: `translateY(${dir * 12}px)` }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.22, 1, .36, 1)' });
 }
 
 function previewMany(view: EditorView, cards: CardRef[], pick: (c: CardRef) => void): HTMLElement {
@@ -243,6 +259,7 @@ class LinkView {
   shown: Ref | null = null;
   timer = 0;
   hideTimer = 0;
+  glide = 0;
   raf = 0;
   typing = 0;
   sc: HTMLElement | null;
@@ -301,9 +318,16 @@ class LinkView {
   }
   show(ref: Ref, range: Range) {
     const m = mode();
+    // open already, on another name: the box glides there and the card slides in, instead of jumping
+    const from = this.shown && this.shown.from !== ref.from && !calm() ? this.shown.from : null;
     this.shown = ref;
-    this.pv.className = `cl-pv ${m === 'page' ? 'cl-page' : 'cl-quiet'}${ref.cards.length > 1 ? ' cl-many' : ''}`;
-    this.pv.replaceChildren(ref.cards.length > 1 ? previewMany(this.view, ref.cards, (c) => this.go(c)) : previewOne(this.view.state.doc, ref.cards[0], m));
+    // gliding, it takes no pointer: passing under one would read as the pointer leaving the page
+    this.pv.className = `cl-pv ${m === 'page' ? 'cl-page' : 'cl-quiet'}${ref.cards.length > 1 ? ' cl-many' : ''}${from !== null ? ' cl-glide' : ''}`;
+    clearTimeout(this.glide);
+    if (from !== null) this.glide = window.setTimeout(() => this.pv.classList.remove('cl-glide'), 280);
+    const box = ref.cards.length > 1 ? previewMany(this.view, ref.cards, (c) => this.go(c)) : previewOne(this.view.state.doc, ref.cards[0], m);
+    this.pv.replaceChildren(box);
+    if (from !== null) slideIn(box, ref.from > from ? 1 : -1);
     const rects = [...range.getClientRects()];
     const r = rects[rects.length - 1] ?? range.getBoundingClientRect();
     const w = this.pv.offsetWidth, h = this.pv.offsetHeight;
@@ -315,7 +339,7 @@ class LinkView {
     this.pv.classList.add('cl-on');
   }
   hideSoon() { clearTimeout(this.hideTimer); this.hideTimer = window.setTimeout(() => this.hide(), 200); }
-  hide() { clearTimeout(this.timer); this.shown = null; this.pv.classList.remove('cl-on'); }
+  hide() { clearTimeout(this.timer); clearTimeout(this.glide); this.shown = null; this.pv.classList.remove('cl-on', 'cl-glide'); }
 
   /** Page slice: dot every linked name in the paragraphs on screen. */
   paintSoon() { if (!this.raf) this.raf = requestAnimationFrame(() => { this.raf = 0; this.paint(); }); }
@@ -342,7 +366,7 @@ class LinkView {
     if (mode() === 'page') { clearTimeout(this.typing); this.typing = window.setTimeout(() => this.paintSoon(), 150); }
   }
   destroy() {
-    clearTimeout(this.timer); clearTimeout(this.hideTimer); clearTimeout(this.typing); cancelAnimationFrame(this.raf);
+    clearTimeout(this.timer); clearTimeout(this.hideTimer); clearTimeout(this.glide); clearTimeout(this.typing); cancelAnimationFrame(this.raf);
     this.sc?.removeEventListener('scroll', this.onScroll);
     this.pv.remove();
     document.removeEventListener('mouseup', this.up);

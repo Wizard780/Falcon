@@ -157,6 +157,22 @@ await command(B, 'theme light');
 await command(B, 'card sharing');
 await B.shot('b-panel-light');
 await B.page.keyboard.press('Escape');
+
+// ---------- a contact that is removed folds shut where it is, then goes ----------
+await command(B, 'card sharing');
+await wait(B, 200);
+await B.page.hover('.co-ct');
+await B.page.click('[aria-label="Remove Avery"]');
+await wait(B, 120);
+want(await B.page.locator('.co-fold[data-gone] .co-ct').count() === 1, 'B: the removed contact is still there, folding shut');
+const mid = await B.page.$eval('.co-fold[data-gone]', (e) => e.getBoundingClientRect().height);
+want(mid > 0 && mid < 36, `B: part way shut (${mid}px of 36)`);
+await wait(B, 600);
+want(await B.page.locator('.co-ct').count() === 0 && (await B.page.textContent('.cf.co')).includes('No one yet'), 'B: then it is gone');
+want((await toast(B)) === 'Removed Avery', `B: and says so (${await toast(B)})`);
+await B.shot('b-contact-removed');
+await B.page.keyboard.press('Escape');
+
 await command(A, 'theme light');
 await command(A, 'send card');
 await A.shot('a-send-picker-light');

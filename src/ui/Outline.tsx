@@ -15,6 +15,7 @@ import { SvgIcon } from './icons';
 import { tidyHeading } from './recents';
 import { safeSet } from './storage';
 import { reducedMotion } from './motion';
+import { outlinePreview } from './outline-preview';
 import { OL_DEFAULT, OL_MAX, OL_MIN, loadOutlineWidth, outlineMax, outlineWidth, saveOutlineWidth } from './outline-width';
 import { IS_MAC } from '../editor/keybinds';
 import './outline.css';
@@ -231,6 +232,13 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
   });
   // the pill only animates after the first placement
   useEffect(() => { const r = requestAnimationFrame(() => requestAnimationFrame(() => setReady(true))); return () => cancelAnimationFrame(r); }, []);
+  // a tag's card beside the pane (the list isn't there while the outline is empty; hiding the pane takes the preview with it)
+  const some = rows.length > 0;
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    return outlinePreview(list, getView, (row) => { const it = itemsRef.current[Number(row.dataset.i)]; return it?.level === 4 ? it.pos : null; });
+  }, [some, getView, visible]);
 
   // ---- acting on headings ----
   /** The rows an action covers: the selection when the row is part of it, else the row alone. */

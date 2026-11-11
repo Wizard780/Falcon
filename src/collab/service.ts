@@ -201,16 +201,25 @@ export async function addContact(codeText: string, name: string): Promise<string
   if (p.code === state.code) return "That's your own code";
   const nm = name.trim();
   if (!nm) return 'Give them a name';
-  const contacts = [...state.contacts.filter((c) => c.code !== p.code), { code: p.code, name: nm.slice(0, 60) }];
-  set({ contacts });
-  await saved(store.saveContacts(contacts));
+  await inTurn(async () => {
+    const contacts = [...state.contacts.filter((c) => c.code !== p.code), { code: p.code, name: nm.slice(0, 60) }];
+    set({ contacts });
+    await saved(store.saveContacts(contacts));
+  });
   return null;
 }
-export async function removeContact(code: string) {
-  const contacts = state.contacts.filter((c) => c.code !== code);
-  set({ contacts });
-  await saved(store.saveContacts(contacts));
+let turn: Promise<unknown> = Promise.resolve();
+/** Contact saves, one at a time: each writes the whole list, so each works from what the last one left. */
+function inTurn<T>(f: () => Promise<T>): Promise<T> {
+  const mine = turn.then(f);
+  turn = mine.catch(() => {});
+  return mine;
 }
+/** Remove a contact. It leaves the list once the save went through, so a save that fails (it rejects) keeps them. */
+export const removeContact = (code: string): Promise<void> => inTurn(async () => {
+  await saved(store.saveContacts(state.contacts.filter((c) => c.code !== code)));
+  set({ contacts: state.contacts.filter((c) => c.code !== code) }); // the list as it is now: another window may have changed it meanwhile
+});
 export async function setName(name: string) {
   set({ name });
   await saved(store.saveName(name.slice(0, 60)));
@@ -222,10 +231,11 @@ export async function newCode() {
   relisten();
   told({ t: 'changed' });
 }
-/** Done with a card that came in (inserted, copied and let go, or dismissed). */
+/** Done with a card that came in (inserted, copied and let go, or dismissed). It leaves the list once the save went
+ *  through, so a save that fails (it rejects) keeps the card. */
 export async function drop(id: string) {
-  set({ cards: state.cards.filter((c) => c.id !== id) });
   await saved(store.dropCard(id));
+  set({ cards: state.cards.filter((c) => c.id !== id) });
   roomAgain();
 }
 
