@@ -176,7 +176,7 @@ describe('card edges', () => {
     expect(map(run(caret(make([['tag', 'Tag'], ['normal', '  '], ['normal', 'body']]), 'Tag', 3), K.Delete))).toBe('tag: Tag\nnormal: body');
     expect(map(run(caret(make([['normal', 'body'], ['tag', ' ']]), 'body', 4), K.Delete))).toBe('normal: body');
   });
-  it('Backspace at the start of a tag leaves an image or table above alone', () => {
+  it('Backspace at the start of a tag leaves a table above alone', () => {
     const p = (t: string, style: ParaStyle = 'normal') => schema.node('paragraph', { style }, [schema.text(t)]);
     const table = schema.node('table', null, [schema.node('table_row', null, [schema.node('table_cell', null, [p('cell')])])]);
     const s = createState(schema.node('doc', null, [p('above'), table, p('Tag', 'tag')]));
