@@ -51,6 +51,23 @@ await page.mouse.click(at.x, at.y);
 await page.waitForTimeout(600);
 want(!(await pv()), 'a click closes it');
 want(await page.evaluate(() => window.__falconView.state.selection.$head.parent.textContent) === 'Warming is real', 'and still goes to the card: the preview took no click');
+await page.mouse.move(at.x + 3, at.y + 1); // a hand never holds still after a click
+await page.waitForTimeout(600);
+want(!(await pv()), 'and it stays closed on the clicked row, so it does not cover the card the page went to');
+let back = await row('Growth is slowing');
+await page.mouse.move(back.x, back.y, { steps: 4 });
+await page.waitForTimeout(600);
+want((await pv())?.text.includes('Growth is slowing'), 'another row shows its card again');
+// Card links set to Page slice: the preview is a piece of the page
+await page.click('.fstrip [aria-label="Settings"]');
+await page.click('[aria-label="Settings sections"] button:has-text("Editor")');
+await page.locator('[role="group"][aria-label="Card links"]').getByRole('button', { name: 'Page slice' }).click();
+await page.click('[aria-label="Close settings"]');
+await page.waitForTimeout(300);
+await page.mouse.move(back.x - 20, back.y); await page.mouse.move(back.x, back.y);
+await page.waitForTimeout(600);
+want(await page.locator('.ol-pv.cl-on.cl-page').count() === 1, 'with Card links on Page slice it is a piece of the page');
+await f.shot('preview-page-slice');
 // a block is not a card
 at = await row('Economy Block');
 await page.mouse.move(at.x - 20, at.y); await page.mouse.move(at.x, at.y);

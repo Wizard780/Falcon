@@ -16,7 +16,7 @@ export function outlinePreview(list: HTMLElement, getView: () => EditorView | nu
   const pv = document.createElement('div');
   pv.setAttribute('aria-hidden', 'true');
   document.body.appendChild(pv);
-  let shown = false, pos: number | null = null, doc: unknown = null, rest = 0, raf = 0, y = 0, to = 0, h = 0, at = { pos: 0, y: 0 };
+  let shown = false, pos: number | null = null, doc: unknown = null, rest = 0, raf = 0, y = 0, to = 0, h = 0, at = { pos: 0, y: 0 }, used: number | null = null;
 
   const place = (v: number) => { y = v; pv.style.transform = `translateY(${v.toFixed(1)}px)`; };
   const step = () => { // ease toward the pointer: a fifth of the gap each frame, and stop once there
@@ -46,7 +46,8 @@ export function outlinePreview(list: HTMLElement, getView: () => EditorView | nu
   };
   const move = (e: MouseEvent) => {
     const row = (e.target as HTMLElement).closest<HTMLElement>('.sb-row.ol'), p = row && posOf(row), view = getView();
-    if (p == null || !view || e.buttons || !pref(P.outlinePreview) || 'dragging' in list.dataset || document.querySelector('.ol-menu')) return hide();
+    if (p !== used) used = null;
+    if (p == null || p === used || !view || e.buttons || !pref(P.outlinePreview) || 'dragging' in list.dataset || document.querySelector('.ol-menu')) return hide();
     at = { pos: p, y: e.clientY };
     if (shown) {
       if (p !== pos || view.state.doc !== doc) draw(p, view);
@@ -65,17 +66,19 @@ export function outlinePreview(list: HTMLElement, getView: () => EditorView | nu
       pv.classList.add('cl-on');
     }, REST);
   };
+  // a row that was just clicked stays quiet till the pointer goes to another: the page went to that card, so don't cover it
+  const press = (e: MouseEvent) => { const row = (e.target as HTMLElement).closest<HTMLElement>('.sb-row.ol'); used = row && posOf(row); hide(); };
   const scroller = list.closest('.sb-scroll');
   list.addEventListener('mousemove', move);
   list.addEventListener('mouseleave', hide);
-  list.addEventListener('mousedown', hide, true);
+  list.addEventListener('mousedown', press, true);
   list.addEventListener('contextmenu', hide, true);
   scroller?.addEventListener('scroll', hide, { passive: true });
   return () => {
     hide();
     list.removeEventListener('mousemove', move);
     list.removeEventListener('mouseleave', hide);
-    list.removeEventListener('mousedown', hide, true);
+    list.removeEventListener('mousedown', press, true);
     list.removeEventListener('contextmenu', hide, true);
     scroller?.removeEventListener('scroll', hide);
     pv.remove();
