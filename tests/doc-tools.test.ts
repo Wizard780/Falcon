@@ -4,8 +4,8 @@ import { TextSelection } from 'prosemirror-state';
 import { docToDocx } from '../src/docx/export';
 import { docxToDoc } from '../src/docx/import';
 import { commandOf, falconKeys as K } from '../src/editor/keymap';
-import { createView } from '../src/editor/editor';
-import { DOC_TOOLS, analyticsToTags, docToolSettings, selectSimilar, standardize } from '../src/editor/doc-tools';
+import { createState, createView } from '../src/editor/editor';
+import { DOC_TOOLS, analyticsToTags, docToolSettings, removeEmptyHeadings, selectSimilar, standardize } from '../src/editor/doc-tools';
 import { fixFormattingGaps } from '../src/editor/doc-tools/gaps';
 import { findUrls, linkUrls, removeHyperlinks } from '../src/editor/doc-tools/links';
 import { MultiSelection } from '../src/editor/multi';
@@ -189,6 +189,37 @@ describe('Convert Analytics to Tags', () => {
   it('with a selection, only the analytics it touches (or whose card it is in)', () => {
     const s = run(select(doc(), 'text'), analyticsToTags(false));
     expect(map(s).split('\n').map((l) => l.split(':')[0])).toEqual(['tag', 'normal', 'analytic', 'normal', 'normal']);
+  });
+});
+
+describe('Remove Empty Headings', () => {
+  const styles = (s: ReturnType<typeof make>) => map(s).split('\n').map((l) => l.split(':')[0]);
+  const doc = () => make([['pocket', 'Pocket'], ['block', ''], ['block', '   '], ['hat', ''], ['tag', 'Tag'], ['normal', ''], ['tag', ''], ['analytic', ''], ['normal', 'body']]);
+  it('drops every heading with no text (the outline\'s "Untitled" rows), keeping body blank lines', () => {
+    const s = run(caret(doc(), 'body'), removeEmptyHeadings);
+    expect(styles(s)).toEqual(['pocket', 'tag', 'normal', 'normal']);
+    expect(map(run(s, undo))).toBe(map(doc()));
+  });
+  it('with a selection, only the empty headings inside it', () => {
+    const s = run(select(doc(), 'Pocket', 'Tag'), removeEmptyHeadings);
+    expect(styles(s)).toEqual(['pocket', 'tag', 'normal', 'tag', 'analytic', 'normal']);
+  });
+  it('keeps a heading that holds a picture or footnote, and never empties the document', () => {
+    const note = schema.node('doc', null, [schema.node('paragraph', { style: 'block' }, [schema.nodes.footnote.create()])]);
+    const s = run(createState(note), removeEmptyHeadings);
+    expect(s.doc.childCount).toBe(1);
+    const only = run(make([['block', ''], ['tag', '']]), removeEmptyHeadings);
+    expect(only.doc.childCount).toBe(1);
+  });
+  it('is in the Doc menu and does nothing when there is nothing to remove', () => {
+    expect(DOC_TOOLS.flatMap((s) => s.items).some((i) => i.id === 'removeEmptyHeadings')).toBe(true);
+    expect(removeEmptyHeadings(make([['tag', 'Tag'], ['normal', 'x']]))).toBe(false);
+  });
+  it('removes the blank headings in an imported file', async () => {
+    const blob = await docToDocx(make([['block', 'Block'], ['block', ''], ['block', ''], ['tag', 'Tag'], ['normal', 'body']]).doc);
+    const back = await docxToDoc(blob);
+    const s = run(createState(back), removeEmptyHeadings);
+    expect(styles(s)).toEqual(['block', 'tag', 'normal']);
   });
 });
 
