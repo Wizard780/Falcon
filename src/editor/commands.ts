@@ -370,11 +370,16 @@ export const shrink: Command = (state, dispatch) => {
   return finish(state, tr, dispatch);
 };
 
-/** Mod-Shift-8: regrow the card's shrunk text to normal size. */
+/**
+ * Mod-Shift-8: regrow the card's shrunk text to normal size. Only the text Mod-8 shrinks (unread text outside
+ * headings) changes: a tag's, a cite's or read text's own size stays, as it came from the file.
+ */
 export const regrow: Command = (state, dispatch) => {
   const r = cardBodyRange(state);
   if (!r) return false;
-  return finish(state, state.tr.removeMark(r.from, r.to, M.size), dispatch);
+  const tr = state.tr;
+  for (const p of unreadPieces(state.doc, r)) if (p.pt !== null) tr.removeMark(p.from, p.to, M.size);
+  return finish(state, tr, dispatch);
 };
 
 /** Shift-F3: lowercase → UPPERCASE → Title Case → lowercase. */
