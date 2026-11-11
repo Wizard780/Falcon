@@ -1,7 +1,8 @@
 /** Command center (Mod-Shift-Space): what a query asks for and how rows rank. Pure, so it's unit tested. */
+import type { FileHit } from './file-search';
 
-/** Where a row comes from. The card library isn't here yet: it gets its own source later. */
-export type SourceId = 'arg' | 'cmd' | 'set' | 'doc' | 'file' | 'tpl' | 'help';
+/** Where a row comes from; 'blk' is a heading inside another file, listed to insert from (Search blocks). */
+export type SourceId = 'arg' | 'cmd' | 'set' | 'doc' | 'file' | 'tpl' | 'help' | 'blk';
 
 /** One choice under a setting (Theme > Light). */
 export type Option = { label: string; on: boolean; pick: () => void };
@@ -38,6 +39,10 @@ export type Entry = {
   fill?: string;
   /** the short tag at the row's left, CardMirror style: CMD, TOG, CYC, SET, TAG… */
   badge?: string;
+  /** a file row's file: Enter asks open or search its blocks, Mod-Enter opens it */
+  file?: FileHit;
+  /** picking it moves to another list instead of closing (the open-or-blocks choice) */
+  keep?: boolean;
 };
 
 export const PREFIXES: { prefix: string; source: SourceId; label: string }[] = [
@@ -131,7 +136,7 @@ export function noteRecent(key: string) {
 }
 
 // commands edge out settings, which edge out headings, when they match equally well
-const WEIGHT: Record<SourceId, number> = { arg: 40, cmd: 6, set: 3, file: 5, tpl: 6, doc: 0, help: 0 };
+const WEIGHT: Record<SourceId, number> = { arg: 40, cmd: 6, set: 3, file: 5, tpl: 6, doc: 0, help: 0, blk: 0 };
 
 /** Rank `entries` against `text`: every word has to hit the label, or (weaker) the group or keywords. */
 export function rank(entries: Entry[], text: string, recent: string[] = [], limit = 80): Entry[] {

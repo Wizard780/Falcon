@@ -2,14 +2,19 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { redo, undo } from 'prosemirror-history';
 import { IS_MAC, keyParts } from '../editor/keybinds';
 import { PREFIXES, loadRecent, matchRanges, noteRecent, parseArgs, parseQuery, rank, type Entry, type SourceId } from './command-center';
-import { argEntries, commandEntries, fileEntries, headingEntries, settingEntries, templateEntries, textEntries, type Ctx } from './cc-sources';
-import { collectHits } from './file-search';
+import { argEntries, blockEntries, canFold, commandEntries, fileEntries, headingEntries, settingEntries, startFolded, templateEntries, textEntries, visibleTree, type Ctx } from './cc-sources';
+import { collectHits, type FileHit } from './file-search';
+import type { Node as PMNode } from 'prosemirror-model';
+import { cardContent } from './card-search';
+import { insertAtEnd, insertIntoSpeech } from '../editor/speech';
+import { isReading } from '../editor/read';
+import { levelOf } from '../editor/schema';
 import { bridge, type IndexedFile } from '../editor/host';
 import { SvgIcon } from './icons';
 import './command-center.css';
 
-const SOURCE_NAME: Record<SourceId, string> = { arg: '', cmd: 'Commands', set: 'Settings', doc: 'In this file', file: 'Files', tpl: 'Templates', help: 'Help' };
-const BADGE: Record<SourceId, string> = { arg: 'GO', cmd: 'CMD', set: 'SET', doc: '', file: 'DOCX', tpl: 'TPL', help: '?' };
+const SOURCE_NAME: Record<SourceId, string> = { arg: '', cmd: 'Commands', set: 'Settings', doc: 'In this file', file: 'Files', tpl: 'Templates', help: 'Help', blk: 'Blocks' };
+const BADGE: Record<SourceId, string> = { arg: 'GO', cmd: 'CMD', set: 'SET', doc: '', file: 'DOCX', tpl: 'TPL', help: '?', blk: '' };
 const badgeOf = (e: Entry) => e.badge ?? (e.key === 'find' || e.key === 'replace' ? 'FIND' : BADGE[e.source]);
 // like CardMirror: 50 rows at a time, arrowing past the end shows the next 50
 const PAGE = 50;
@@ -19,6 +24,10 @@ const DOC_CAP = 8;
 const FILE_CAP = 10;
 
 type Row = { e: Entry; head?: string };
+/** Where Esc goes back to: the file list as it was. */
+type Back = { query: string; at: number };
+/** Search blocks: another file's headings, to insert from. `doc` is unset while it's read. */
+type Inside = { hit: FileHit; back: Back; doc?: PMNode; err?: string };
 
 const HELP: Entry[] = [
   ...PREFIXES.filter((p) => p.prefix !== '?').map((p): Entry => ({ key: `help:${p.prefix}`, source: 'help', label: `${p.prefix} then a space: ${p.label.toLowerCase()}`, group: 'Narrow it down', fill: `${p.prefix} ` })),
@@ -36,13 +45,19 @@ const HELP: Entry[] = [
  * Mod-Shift-Space, CardMirror's Search Everything: a bar over the bottom of the page with results above it.
  * Runs any command, toggles or cycles any setting, and jumps to any heading or card in the file.
  */
-export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: Ctx; flash: (m: string) => void; saveScroll: () => () => void }) {
+export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: Ctx; flash: (m: string) => void; saveScroll: () => () => void; start?: FileHit | null }) {
   const { open, ctx } = props;
   const [query, setQuery] = useState('');
   const [at, setAt] = useState(0);
   const [limit, setLimit] = useState(PAGE);
   // a setting's choices, listed in place of the results (Esc goes back)
   const [sub, setSub] = useState<{ entry: Entry; back: string } | null>(null);
+  // a file row's Enter: open it, or search its blocks (Mod-Enter skips this and opens)
+  const [choose, setChoose] = useState<{ hit: FileHit; back: Back } | null>(null);
+  const [inside, setInside] = useState<Inside | null>(null);
+  const [folded, setFolded] = useState<Set<number>>(new Set());
+  // bumped whenever a read stops mattering (Esc, close, another file), so a slow read can't land late
+  const reading = useRef(0);
   const [tick, setTick] = useState(0);
   const [place, setPlace] = useState<{ left: number; width: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -56,8 +71,10 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
 
   useLayoutEffect(() => {
     if (!open) return;
-    setQuery(''); setAt(0); setSub(null); setLimit(PAGE);
+    setQuery(''); setAt(0); setSub(null); setLimit(PAGE); setChoose(null); setInside(null);
     peeked.current = false;
+    // Cmd-K's Search blocks lands straight in the file, and Esc goes to the files list
+    if (props.start) enterBlocks(props.start, { query: 'f ', at: 0 });
     restore.current = props.saveScroll();
     inputRef.current?.focus();
     let live = true;
@@ -70,9 +87,24 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     };
     fit();
     addEventListener('resize', fit);
-    return () => { live = false; removeEventListener('resize', fit); };
+    return () => { live = false; reading.current++; removeEventListener('resize', fit); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  /** Read `hit` and list its headings. A function declaration, so the open effect above can call it. */
+  function enterBlocks(hit: FileHit, back: Back) {
+    const id = ++reading.current;
+    setChoose(null); setSub(null); setInside({ hit, back }); setQuery(''); setAt(0); setLimit(PAGE);
+    const failed = (why: string) => { if (reading.current === id) setInside((s) => s && { ...s, err: why }); };
+    Promise.resolve(ctx.fileDoc ? ctx.fileDoc(hit) : null).then((d) => {
+      if (reading.current !== id) return;
+      if (!d) { failed(`Couldn't read ${hit.name}.`); return; }
+      const ls: number[] = [];
+      d.forEach((n) => { const l = levelOf(n); if (l) ls.push(l); }); // the outline's levels, as blockEntries will list them
+      setFolded(startFolded(ls));
+      setInside((s) => s && { ...s, doc: d });
+    }, (e: unknown) => failed(`Couldn't read ${hit.name}: ${(e as Error).message}`));
+  }
 
   const doc = ctx.view?.state.doc;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -88,8 +120,12 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const templates = useMemo(() => (open ? templateEntries(ctx) : []), [open]);
 
-  const { source, text } = parseQuery(query);
+  // in a list of its own the box only filters it: "t subs" or "c china" there are words, not prefixes
+  const { source, text } = sub || choose || inside ? { source: undefined, text: query } : parseQuery(query);
   const typed = !!text.trim();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const blocks = useMemo(() => (inside?.doc ? blockEntries(inside.doc) : null), [inside?.doc]);
+  const levels = useMemo(() => blocks?.items.map((it) => it.level) ?? [], [blocks]);
   const rows: Row[] = useMemo(() => {
     if (!open) return [];
     if (sub) {
@@ -97,6 +133,19 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
         key: `opt:${i}`, source: 'set', badge: 'SET', label: o.label, group: sub.entry.label, state: o.on ? 'Now' : undefined, run: () => { o.pick(); },
       }));
       return rank(opts, query, [], 500).map((e) => ({ e }));
+    }
+    if (choose) {
+      const h = choose.hit, fileKey = `file:${h.path ?? h.key}`;
+      const opts: Entry[] = [
+        { key: 'pick:blocks', source: 'blk', badge: 'BLK', label: `Search blocks in ${h.name}`, group: '', keep: true, run: () => { noteRecent(fileKey); enterBlocks(h, choose.back); } },
+        { key: fileKey, source: 'file', badge: 'DOCX', label: `Open ${h.name}`, group: '', hint: h.path, run: () => { ctx.openFile?.(h); } },
+      ];
+      return rank(opts, query, [], 10).map((e) => ({ e }));
+    }
+    if (inside) {
+      if (!blocks) return [];
+      if (!typed) return visibleTree(levels, folded).map((i) => ({ e: blocks.entries[i] }));
+      return rank(blocks.entries, text, [], 100000).map((e) => ({ e }));
     }
     if (source === 'help') return rank(HELP, text, [], 50).map((e) => ({ e }));
     // c is commands plus the setting toggles and cycles, as in CardMirror
@@ -131,7 +180,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     const tail = !source || source === 'doc' ? textEntries(ctx, text) : [];
     return [...args, ...ranked, ...tail].map((e) => ({ e }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sub, query, base, headings, files, templates, recent]);
+  }, [open, sub, choose, inside, blocks, folded, query, base, headings, files, templates, recent]);
 
   const shown = rows.slice(0, limit);
   const cur = Math.max(0, Math.min(at, shown.length - 1));
@@ -170,8 +219,31 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
   };
   const settingsFor = (e: Entry) => { if (e.settings) { close(true); ctx.openSettings(e.settings.page, e.settings.query); } };
   const drill = (e: Entry) => { setSub({ entry: e, back: query }); setQuery(''); setAt(Math.max(0, e.options!().findIndex((o) => o.on))); setLimit(PAGE); };
-  const activate = (e: Entry | undefined, stay: boolean) => {
+  const canDive = (h?: FileHit) => !!h && !!ctx.fileDoc && !!ctx.readable?.(h);
+  /** Put the heading's whole section (a hat brings its blocks and cards) into the open doc. The box stays open for more, as in CardMirror. */
+  const insertBlock = (e: Entry, atEnd: boolean) => {
+    const d = inside?.doc, it = blocks?.items[Number(e.key.slice(4))];
+    const content = d && it ? cardContent(d, it.pos) : null;
+    if (!content) return;
+    const v = ctx.view;
+    if (!v) { props.flash('Open a file to insert into'); return; }
+    if (isReading(v.state)) { props.flash('Turn read mode off to insert'); return; }
+    ctx.run((state, dispatch) => { dispatch?.(atEnd ? insertAtEnd(state, content) : insertIntoSpeech(state, content).scrollIntoView()); return true; });
+    peeked.current = false; // the page moved on purpose: closing keeps it there
+    props.flash(`Inserted ${e.label}${atEnd ? ' at the end' : ''}`);
+    inputRef.current?.focus();
+  };
+  const toggleFold = (e: Entry) => {
+    const i = Number(e.key.slice(4));
+    if (!canFold(levels, i)) return;
+    setFolded((f) => { const n = new Set(f); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  };
+  const activate = (e: Entry | undefined, stay: boolean, mod = false, alt = false) => {
     if (!e) return;
+    if (inside) { if (e.source === 'blk') insertBlock(e, alt); return; }
+    if (e.keep) { e.run?.(); return; }
+    // a file: ask open or search its blocks; Mod-Enter opens it straight away
+    if (e.file && !mod && canDive(e.file)) { setChoose({ hit: e.file, back: { query, at: cur } }); setQuery(''); setAt(0); setLimit(PAGE); return; }
     if (e.fill !== undefined) { if (e.fill) { setQuery(e.fill); setAt(0); } inputRef.current?.focus(); return; }
     if (!e.run) return;
     if (e.source === 'cmd' || e.source === 'set' || e.source === 'file' || e.source === 'tpl') noteRecent(sub ? sub.entry.key : e.key);
@@ -180,7 +252,13 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     if (did === false) props.flash(e.can && !e.can() ? `${e.label}: nothing to do here` : `${e.label} didn't change anything`);
     if (stay) { setTick((t) => t + 1); inputRef.current?.focus(); }
   };
-  const back = () => { const q = sub!.back; setSub(null); setQuery(q); setAt(0); };
+  const back = () => {
+    if (sub) { const q = sub.back; setSub(null); setQuery(q); setAt(0); return; }
+    const b = (choose ?? inside)!.back;
+    reading.current++;
+    setChoose(null); setInside(null); setQuery(b.query); setAt(b.at); setLimit(Math.max(PAGE, b.at + 1));
+  };
+  const nested = !!(sub || choose || inside);
   const move = (d: number) => {
     const n = shown.length;
     if (!n) return;
@@ -194,11 +272,24 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     const mod = IS_MAC ? e.metaKey : e.ctrlKey;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); move(e.key === 'ArrowDown' ? 1 : -1); }
     else if (e.key === 'PageDown' || e.key === 'PageUp') { e.preventDefault(); setAt(Math.max(0, Math.min(shown.length - 1, cur + (e.key === 'PageDown' ? 8 : -8)))); }
-    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); activate(row, e.shiftKey); }
-    else if (e.key === 'Tab') { e.preventDefault(); if (row?.options) drill(row); else if (row) settingsFor(row); }
+    else if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation();
+      // in the open-or-blocks choice Mod-Enter still means open
+      if (choose && mod) { const h = choose.hit; noteRecent(`file:${h.path ?? h.key}`); close(false); ctx.openFile?.(h); return; }
+      if (inside && e.repeat) return; // a held Enter inserts once, not once per key repeat
+      activate(row, e.shiftKey, mod, e.altKey);
+    }
+    else if (e.key === 'Tab') { e.preventDefault(); if (row?.options) drill(row); else if (!nested && row?.file && canDive(row.file)) enterBlocks(row.file, { query, at: cur }); else if (row) settingsFor(row); }
     else if (e.key === 'ArrowRight' && row?.options && e.currentTarget.selectionStart === query.length) { e.preventDefault(); drill(row); }
-    else if (e.key === 'Backspace' && sub && !query) { e.preventDefault(); back(); }
-    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (sub) back(); else close(false); }
+    // → on a file goes straight to its blocks, like CardMirror's Tab
+    else if (e.key === 'ArrowRight' && !nested && row?.file && canDive(row.file) && e.currentTarget.selectionStart === query.length) { e.preventDefault(); enterBlocks(row.file, { query, at: cur }); }
+    // the file's tree, nothing typed: → opens a heading, ← closes it
+    else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && inside && !typed && row?.source === 'blk') {
+      const i = Number(row.key.slice(4));
+      if (canFold(levels, i) && folded.has(i) === (e.key === 'ArrowRight')) { e.preventDefault(); toggleFold(row); }
+    }
+    else if (e.key === 'Backspace' && nested && !query) { e.preventDefault(); back(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (nested) back(); else close(false); }
     else if (mod && /^[zy]$/i.test(e.key)) {
       // undo and redo reach the document, so a command run with Shift-Enter can be taken back from here
       e.preventDefault();
@@ -209,7 +300,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
   };
 
   const label = (e: Entry): ReactNode => {
-    const ranges = e.source === 'help' ? [] : matchRanges(e.label, sub ? query : text);
+    const ranges = e.source === 'help' || e.keep || choose ? [] : matchRanges(e.label, text);
     if (!ranges.length) return e.label;
     const out: ReactNode[] = [];
     let i = 0;
@@ -218,16 +309,24 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     return out;
   };
   // the hint strip says what each key does for the row you're on
-  const verb = (e: Entry) => e.fill !== undefined ? 'type it' : e.badge === 'TOG' ? 'toggle' : e.badge === 'CYC' ? 'cycle' : e.source === 'doc' || e.source === 'arg' ? 'go' : e.source === 'file' || e.source === 'tpl' ? 'open' : 'run';
+  const verb = (e: Entry) => e.fill !== undefined ? 'type it' : e.keep ? 'search' : inside ? 'insert' : e.file && canDive(e.file) && !choose ? 'open or search' : e.badge === 'TOG' ? 'toggle' : e.badge === 'CYC' ? 'cycle' : e.source === 'doc' || e.source === 'arg' ? 'go' : e.source === 'file' || e.source === 'tpl' ? 'open' : 'run';
   const hints: [string, string][] = [];
-  if (row) {
+  const modKey = IS_MAC ? '⌘' : 'Ctrl';
+  if (row && inside) {
+    hints.push(['↵', 'insert'], [IS_MAC ? '⌥↵' : 'Alt ↵', 'at end']);
+    if (!typed && canFold(levels, Number(row.key.slice(4)))) hints.push(['→←', 'fold']);
+  } else if (row && (choose || (row.file && canDive(row.file)))) {
+    hints.push(['↵', verb(row)], [`${modKey}↵`, 'open']);
+    if (!choose) hints.push(['→', 'blocks']);
+  } else if (row) {
     hints.push(['↵', verb(row)]);
     if (row.run && row.source !== 'doc' && row.source !== 'help' && row.source !== 'arg') hints.push(['⇧↵', 'keep open']);
     if (row.options) hints.push(['⇥', 'choices']);
     else if (row.settings) hints.push(['⇥', row.settings.page === 'keys' ? 'change key' : 'settings']);
   }
-  hints.push(['esc', sub ? 'back' : 'close']);
-  const empty = sub ? `No choice matches “${query.trim()}”.` : source === 'doc' && !typed ? 'This file has no headings yet.' : source === 'tpl' && !typed ? 'No templates yet. Make one in Settings > Templates.' : typed ? `Nothing matches “${text.trim()}”.` : '';
+  hints.push(['esc', nested ? 'back' : 'close']);
+  const empty = inside ? (inside.err ?? (!blocks ? `Reading ${inside.hit.name}…` : typed ? `Nothing in ${inside.hit.name} matches “${text.trim()}”.` : `${inside.hit.name} has no headings.`))
+    : sub || choose ? `No choice matches “${query.trim()}”.` : source === 'doc' && !typed ? 'This file has no headings yet.' : source === 'tpl' && !typed ? 'No templates yet. Make one in Settings > Templates.' : typed ? `Nothing matches “${text.trim()}”.` : '';
   const fill = (q: string) => { setQuery(q); setAt(0); inputRef.current?.focus(); };
 
   /** What a setting is now: a little switch for toggles, now → next for cycles, a tick for the current choice. */
@@ -244,7 +343,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
       <div className="cc" role="dialog" aria-label="Command center" style={place ? { left: place.left, width: place.width } : undefined}>
         <div ref={listRef} id="cc-list" className="cc-list" role="listbox" aria-label="Results" data-ready={ready || undefined} onMouseDown={(e) => e.preventDefault()}>
           <span ref={actRef} className="cc-act" />
-          {!typed && !sub && !source && (
+          {!typed && !nested && !source && (
             <div className="cc-start">
               <span>Type to search everything, or narrow it down</span>
               <span className="cc-chips">
@@ -262,14 +361,18 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
                 {head && <div className="cc-head">{head}</div>}
                 <div id={`cc-${i}`} className="cc-row" role="option" aria-selected={i === cur} aria-disabled={dim || undefined}
                   data-on={i === cur || undefined} data-dim={dim || undefined} data-src={e.source}
-                  style={e.level && source === 'doc' && !typed ? { paddingLeft: 10 + (e.level - 1) * 16 } : undefined}
+                  style={e.level && (source === 'doc' || (inside && e.source === 'blk')) && !typed ? { paddingLeft: 10 + (e.level - 1) * 16 } : undefined}
                   title={e.hint} onMouseMove={() => { if (i !== cur) setAt(i); }}
-                  onClick={(ev) => activate(e, ev.shiftKey)}
-                  onContextMenu={(ev) => { ev.preventDefault(); settingsFor(e); }}>
+                  onClick={(ev) => activate(e, ev.shiftKey, IS_MAC ? ev.metaKey : ev.ctrlKey, ev.altKey)}
+                  onContextMenu={(ev) => { ev.preventDefault(); if (inside) toggleFold(e); else settingsFor(e); }}>
+                  {inside && !typed && (canFold(levels, Number(e.key.slice(4)))
+                    ? <svg className="cc-fold" data-open={!folded.has(Number(e.key.slice(4))) || undefined} viewBox="0 0 16 16" aria-label={folded.has(Number(e.key.slice(4))) ? 'Open' : 'Close'}
+                      onClick={(ev) => { ev.stopPropagation(); setAt(i); toggleFold(e); }}><path d="m6.5 4.5 3.5 3.5-3.5 3.5" /></svg>
+                    : <span className="cc-fold" />)}
                   {b && <span className="cc-badge" data-b={b}>{b}</span>}
                   <span className="cc-nm">{label(e)}</span>
-                  {e.source === 'doc' && e.hint && <span className="cc-meta">{e.hint}</span>}
-                  {typed && e.group && e.source !== 'doc' && <span className="cc-meta">{e.group}</span>}
+                  {(e.source === 'doc' || (e.source === 'blk' && !e.keep)) && e.hint && <span className="cc-meta">{e.hint}</span>}
+                  {typed && e.group && e.source !== 'doc' && e.source !== 'blk' && <span className="cc-meta">{e.group}</span>}
                   {state(e)}
                   {e.shortcut && <span className="cc-keys">{keyParts(e.shortcut).map((p, k) => <kbd key={k}>{p}</kbd>)}</span>}
                   {e.options && <svg className="cc-go" viewBox="0 0 16 16" aria-hidden="true"><path d="m6.5 4.5 3.5 3.5-3.5 3.5" /></svg>}
@@ -286,14 +389,14 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
         </div>
         <label className="cc-bar">
           <SvgIcon name="search" />
-          {sub && <button className="cc-chip" onMouseDown={(e) => { e.preventDefault(); back(); }} title="Back (Esc)">{sub.entry.label.replace(/^Cycle /, '')}</button>}
-          {!sub && source && <span className="cc-chip src">{SOURCE_NAME[source]}</span>}
-          <input ref={inputRef} className="cc-input" placeholder={sub ? 'Pick one…' : 'Search…'} aria-label="Command center" spellCheck={false} value={query}
+          {nested && <button className="cc-chip" onMouseDown={(e) => { e.preventDefault(); back(); }} title="Back (Esc)">{sub ? sub.entry.label.replace(/^Cycle /, '') : (choose ?? inside)!.hit.name}</button>}
+          {!nested && source && <span className="cc-chip src">{SOURCE_NAME[source]}</span>}
+          <input ref={inputRef} className="cc-input" placeholder={inside ? `Search in ${inside.hit.name}…` : sub || choose ? 'Pick one…' : 'Search…'} aria-label="Command center" spellCheck={false} value={query}
             role="combobox" aria-expanded="true" aria-controls="cc-list" aria-activedescendant={row ? `cc-${cur}` : undefined}
             onChange={(e) => { setQuery(e.target.value); setAt(0); setLimit(PAGE); }} onKeyDown={onKey} />
         </label>
         <div className="cc-hints">
-          <span className="cc-why">{row?.hint && row.source !== 'doc' ? row.hint : ''}</span>
+          <span className="cc-why">{row?.hint && row.source !== 'doc' && row.source !== 'blk' ? row.hint : ''}</span>
           {hints.map(([k, what]) => <span key={what} className="cc-hint"><kbd>{k}</kbd>{what}</span>)}
         </div>
       </div>

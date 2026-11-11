@@ -349,6 +349,8 @@ export function App() {
   // Search files (Cmd-K) or Search cards: one box at a time
   const [paletteOpen, setPaletteOpen] = useState<false | 'files' | 'cards'>(false);
   const [ccOpen, setCcOpen] = useState(false);
+  // Cmd-K's Search blocks: the file the command center opens into
+  const [ccStart, setCcStart] = useState<FileHit | null>(null);
   const [settingsQuery, setSettingsQuery] = useState<string | undefined>();
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
@@ -994,6 +996,14 @@ export function App() {
     try { if (!elsewhere(h.path)) opened(await openPath(h.path), 'search'); return true; }
     catch (e) { openFailed(h.name, h.path, e); return false; }
   }, [opened, fileOpen, switchTo, openFailed, elsewhere]);
+  /** Search blocks reads a file that's open (with its unsaved edits) or, on the desktop, any file by its path. */
+  const openId = (h: FileHit) => (h.docId !== undefined && docsRef.current.some((d) => d.id === h.docId) ? h.docId : openedPath(h.path)?.id);
+  const blocksReadable = (h: FileHit) => openId(h) !== undefined || (!!h.path && !!bridge.openPath);
+  const blocksDoc = async (h: FileHit): Promise<PMNode | null> => {
+    const id = openId(h);
+    if (id !== undefined) return liveState(id)?.doc ?? null;
+    return h.path ? (await openPath(h.path)).doc : null;
+  };
   /** Put the caret on a card in the file on screen. */
   const gotoCard = useCallback((c: CardSpot) => {
     const v = viewRef.current!;
@@ -1552,6 +1562,7 @@ export function App() {
     },
     openSettings: openSettingsAt,
     docs: docList, recents, openFile: (h) => void openHit(h), openTemplate: bridge.openPath ? openTemplate : undefined,
+    readable: blocksReadable, fileDoc: blocksDoc,
   };
   const saveScroll = useCallback(() => {
     const sc = scrollRef.current, top = sc?.scrollTop ?? 0;
@@ -1650,6 +1661,7 @@ export function App() {
           setRecents((cur) => [...cur, ...clearedRecents.current.filter((k) => !cur.some((c) => c.name === k.name && c.path === k.path))]);
         }} />
       <Palette open={paletteOpen === 'files'} onClose={() => setPaletteOpen(false)} docs={docList} recents={recents} onPick={(h) => void openHit(h)}
+        canBlocks={blocksReadable} onBlocks={(h) => { setPaletteOpen(false); setCcStart(h); setCcOpen(true); }}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
       <CardSearch open={paletteOpen === 'cards'} onClose={() => setPaletteOpen(false)} onPick={(h, insert) => void pickCard(h, insert)}
         onSettings={() => { setSettingsPage('search'); setSettingsOpen(true); }} />
@@ -1658,7 +1670,7 @@ export function App() {
           const d = docs.find((x) => x.id === id), doc = liveState(id)?.doc;
           return d && doc ? [{ id, name: d.meta.name || 'Untitled', dirty: d.dirty, doc, top: tops.current.get(id) ?? 0 }] : [];
         })} />}
-      <CommandCenter open={ccOpen} onClose={() => setCcOpen(false)} ctx={ccCtx} flash={flash} saveScroll={saveScroll} />
+      <CommandCenter open={ccOpen} onClose={() => { setCcOpen(false); setCcStart(null); }} ctx={ccCtx} flash={flash} saveScroll={saveScroll} start={ccStart} />
       <Settings open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsPage(undefined); setSettingsQuery(undefined); }} startPage={settingsPage} startQuery={settingsQuery}
         zoom={zoom} onZoom={setZoom} speechMin={speechMin} onSpeechMin={setSpeechMin}
         showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth}

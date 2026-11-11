@@ -28,7 +28,8 @@ describe('a recent file that was moved or deleted', () => {
     const app = await mountApp({ openPath });
     await app.press('k', { ctrlKey: true });
     const row = [...document.querySelectorAll('.pk-row')].find((r) => r.querySelector('.pk-nm')?.textContent === 'Gone');
-    await app.click(row ?? null);
+    // Mod-click opens it (a plain click first asks open or search its blocks)
+    await app.act(() => row!.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true })), 100);
     expect(app.toast()).toMatch(/^Couldn't open Gone/);
     expect(stored()).toEqual(['Here']);
   });
