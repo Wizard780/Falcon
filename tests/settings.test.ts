@@ -6,6 +6,8 @@ import { cleanPastedHTML } from '../src/editor/paste';
 import { readKey, toggleMarker, toggleRead } from '../src/editor/read';
 import { P, pref, resetPrefs, setPref } from '../src/editor/prefs';
 import { caret, make, map, run, select } from './helpers';
+import { createState } from '../src/editor/editor';
+import { schema } from '../src/editor/schema';
 
 afterEach(() => resetPrefs());
 
@@ -90,6 +92,16 @@ describe('editing settings', () => {
     // nothing underlined in the selection: the key clears instead
     s = run(select(s, 'The rapid'), K.F11);
     expect(body(s)).toContain('The rapid expansion');
+  });
+  it('with underlined-only highlighting, taking yellow off underlined text keeps another color on the words between', () => {
+    const M = schema.marks;
+    const s0 = createState(schema.node('doc', null, [schema.node('paragraph', { style: 'tag' }, [schema.text('Tag')]), schema.node('paragraph', null, [
+      schema.text('The '), schema.text('rapid', [M.highlight.create({ color: 'green' })]), schema.text(' expansion '),
+      schema.text('pushed utilities', [M.underline.create(), M.highlight.create({ color: 'yellow' })]),
+    ])]));
+    setPref(P.hlUnderlined, true);
+    const off = run(select(s0, 'The rapid', 'utilities'), K.F11);
+    expect(map(off).split('\n')[1]).toBe('normal: The [rapid]{highlight:green} expansion [pushed utilities]{underline}');
   });
   it('Copy previous cite takes the cite lines after the first when "first line only" is off', () => {
     const doc = () => {
