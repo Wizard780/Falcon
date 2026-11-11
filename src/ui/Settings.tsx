@@ -2,6 +2,7 @@ import { MAX_PRESETS, aiService, citePresets, currentPreset, deletePreset, editP
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { version } from '../../package.json';
 import { HIGHLIGHTS, HIGHLIGHT_NAMES } from '../editor/schema';
+import { DEFAULT_RELAY } from '../collab/relay';
 import { SvgIcon } from './icons';
 import { docToolSettings } from '../editor/doc-tools';
 import { cardToolSettings } from '../editor/card-tools';
@@ -384,6 +385,12 @@ export function Settings(props: Props) {
             <button className="sb-ico" aria-label={`Forget ${a.name}`} title="Forget it: it asks again next time" onClick={() => void bridge.allowLinkedApp!(a.id, null).then(setLinked)}><SvgIcon name="x" /></button>
           </span>) }))
         : [{ label: 'No linked apps yet', search: 'linked apps nimbus bridge cards send', hint: 'Debate apps like Nimbus can send cards into your open docs, the way they do with CardMirror. The first time one tries, Falcon asks you.', control: null }]] as [string, Row[]]] : []),
+      ['Card sharing', [
+        { label: 'Relay', wide: true, search: 'card sharing relay send card pairing code collaboration server url',
+          hint: `Where sent cards wait until the other person's Falcon picks them up. It only ever sees them sealed. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: paste the address of one you set up (relay/README.md in Falcon\'s source).'} Your code and contacts are in the command center: Card sharing.`,
+          control: <input className="st-text st-wide" aria-label="Relay address" spellCheck={false} maxLength={200} placeholder={DEFAULT_RELAY || 'https://falcon-relay.example.workers.dev'} value={pref(P.relayUrl)}
+            onChange={(e) => setPref(P.relayUrl, e.target.value.trim())} /> },
+      ]],
       ['Privacy', [
         tog(P.usageStats, 'Share usage statistics', 'Send anonymous counts of which features get used, like opening and saving files. Never file names or anything you type. Desktop app only.'),
       ]],

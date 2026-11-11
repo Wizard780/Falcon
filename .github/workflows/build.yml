@@ -22,6 +22,21 @@ jobs:
       - run: npx tsc
       - run: npm test
 
+  # The card relay (relay/): its Worker under wrangler dev, driven by the app's own client crypto
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: '**/package-lock.json' }
+      - run: npm ci
+      - run: npm ci
+        working-directory: relay
+      - run: npm run typecheck
+        working-directory: relay
+      - run: npm test
+        working-directory: relay
+
   # The editing mechanics compared with CardMirror's recorded behavior (tests/cardmirror), on each OS.
   parity:
     strategy:
