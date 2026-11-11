@@ -160,22 +160,29 @@ function touched(trs: readonly Transaction[], doc: PMNode): [number, number][] {
  * One pass over the doc points it back; the docs are equal, so nothing is written to Loro.
  */
 function attached(b: Binding) {
+  // Whether the binding has rebuilt the doc from Loro since it went into this editor. Until then the doc can be the one
+  // its tab held when it was put away, without what came in since: an edit to that would write the old doc into Loro
+  // (taking out paragraphs others added), so doc changes wait for it. It's a timeout of 0, so nothing a person types.
+  let ready = false;
   return new Plugin({
     key: ATTACHED,
+    filterTransaction: (tr) => ready || !tr.docChanged || !!tr.getMeta(loroSyncPluginKey),
     view(view) {
-      let sub: (() => void) | null = null, mapped: unknown = null;
-      const grab = () => {
-        const s = loroSyncPluginKey.getState(view.state);
-        sub = (s?.docSubscription as (() => void) | null | undefined) ?? sub;
-        if (s?.docSubscription && s.mapping !== mapped) {
-          mapped = s.mapping;
-          updateLoroToPmState(b.doc as LoroDocType, s.mapping, view.state);
-        }
-      };
+      ready = false;
+      // the binding's attach gives it a new node map: until then the state's map is the stale one it came in with
+      let mapped: unknown = loroSyncPluginKey.getState(view.state)?.mapping, sub: (() => void) | null = null;
       return {
-        update: grab,
+        update: () => {
+          const s = loroSyncPluginKey.getState(view.state);
+          if (!s || s.doc !== b.doc || s.mapping === mapped) return;
+          mapped = s.mapping;
+          sub = (s.docSubscription as (() => void) | null | undefined) ?? null;
+          ready = true;
+          updateLoroToPmState(b.doc as LoroDocType, s.mapping, view.state);
+        },
+        // view.state is the incoming doc by now: everything here comes from what update saw
         destroy: () => {
-          grab();
+          ready = false;
           sub?.();
           b.presence.setLocal({}); // not in an editor: no caret to show the others
         },

@@ -5,11 +5,11 @@ import { TextSelection, type Command } from 'prosemirror-state';
 import { addColumnAfter, addRowAfter, TableMap } from 'prosemirror-tables';
 import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
-import { createState, createView, markMap } from '../src/editor/editor';
+import { createState, createView, markMap, swapState } from '../src/editor/editor';
 import { falconKeys as K } from '../src/editor/keymap';
 import { schema } from '../src/editor/schema';
 import { redo, undo } from '../src/editor/live-hooks';
-import { docOf, liveState, narrowLoroReplace, newBinding, seed, type Binding } from '../src/collab/live-doc';
+import { docOf, isLiveState, liveState, localState, narrowLoroReplace, newBinding, seed, type Binding } from '../src/collab/live-doc';
 import { loroSyncPluginKey } from 'loro-prosemirror';
 
 const tick = (ms = 0) => new Promise<void>((r) => setTimeout(r, ms));
@@ -212,6 +212,71 @@ describe('two editors through Loro', () => {
   });
 });
 
+describe('a live doc going in and out of the editor', () => {
+  const insertPara = (s: Side, text: string) => s.view.dispatch(s.view.state.tr.insert(s.view.state.doc.content.size, P('normal', text)));
+
+  it('put away while others edit, then shown again: what came in is there, and an edit before the binding is back is held off', async () => {
+    const { A, B } = await pair(card());
+    const other = createState(schema.node('doc', null, [P('tag', 'Another file')]));
+    const live = B.view.state;
+    swapState(B.view, other);
+    insertPara(A, 'Added while B was away');
+    await flush(A, B);
+    expect(mm(B)).toBe('tag: Another file'); // the other doc is untouched
+    swapState(B.view, live);
+    B.view.dispatch(B.view.state.tr.setSelection(TextSelection.atStart(B.view.state.doc))); // selection only: goes through
+    B.view.dispatch(B.view.state.tr.insertText('stale ')); // a doc change before the binding is back: dropped
+    expect(mm(B)).not.toContain('stale');
+    await tick();
+    await flush(A, B);
+    expect(mm(B)).toContain('Added while B was away');
+    expect(mm(A)).toContain('Added while B was away');
+    expect(mm(B)).toBe(mm(A));
+    caret(B, 'Temperatures'); type(B, 'back ');
+    await flush(A, B);
+    expect(mm(A)).toContain('back Temperatures');
+  });
+
+  it('two live docs in one editor, switched between, each keep to their own Loro doc', async () => {
+    const one = await pair(card());
+    const two = await pair(schema.node('doc', null, [P('tag', 'Second doc'), P('normal', 'Its body')]));
+    const first = one.B.view.state, second = two.B.view.state;
+    two.B.view.destroy(); // the second doc leaves its own editor and goes into the first one's
+    swapState(one.B.view, second);
+    await tick();
+    insertPara(one.A, 'One more in the first');
+    insertPara(two.A, 'One more in the second');
+    await flush(one.A, one.B);
+    await flush(two.A, two.B);
+    expect(mm(one.B)).toContain('One more in the second');
+    expect(mm(one.B)).not.toContain('One more in the first');
+    swapState(one.B.view, first);
+    await tick();
+    expect(mm(one.B)).toContain('One more in the first');
+    expect(mm(one.B)).not.toContain('Second doc');
+    expect(one.B.b.doc.toJSON()).toEqual(one.A.b.doc.toJSON());
+    expect(two.B.b.doc.toJSON()).toEqual(two.A.b.doc.toJSON());
+  });
+
+  it('leaving: the doc stays, undo is prosemirror-history again, and nothing more goes into Loro', async () => {
+    const { A, B } = await pair(card());
+    const plain = createState(card()).plugins;
+    caret(A, 'Temperatures'); type(A, 'shared ');
+    await flush(A, B);
+    const before = mm(B);
+    B.view.updateState(localState(B.view.state, plain));
+    expect(isLiveState(B.view.state)).toBe(false);
+    expect(mm(B)).toBe(before);
+    await tick(600);
+    caret(B, 'Global'); type(B, 'mine ');
+    expect(B.out.length).toBe(0);
+    run(B, undo);
+    expect(mm(B)).toBe(before);
+    run(B, undo); // history began at leaving: the shared typing before it isn't undone
+    expect(mm(B)).toContain('shared ');
+  });
+});
+
 describe('a remote change replaces only what differs', () => {
   const doc = schema.node('doc', null, Array.from({ length: 40 }, (_, i) => P(i % 5 ? 'normal' : 'tag', `Paragraph ${i} text`)));
   const whole = (b: PMNode) => { const s = createState(doc); return { s, tr: s.tr.replace(0, s.doc.content.size, b.slice(0, b.content.size)).setMeta(loroSyncPluginKey, { type: 'non-local-updates' }) }; };
@@ -296,6 +361,6 @@ describe('a large block file', () => {
     expect(mm(B)).toBe(mm(A));
     const report = { paragraphs: doc.childCount, seedMs, snapshotKB: snap.length / 1024, joinMs, keyMs: { start, middle, end }, remoteBatchMs: remoteMs };
     console.log('live big file', JSON.stringify(report, (_k, v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : v)));
-    expect(Math.max(start, middle, end)).toBeLessThan(50);
+    expect(Math.max(start, middle, end)).toBeLessThan(150); // ~4 ms here: headroom for slow CI machines
   }, 120_000);
 });
