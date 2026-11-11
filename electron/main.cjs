@@ -243,7 +243,10 @@ let fileIndex = null;
 const index = () => (fileIndex ??= createIndex(path.join(app.getPath('userData'), 'index-folders.json')));
 // Search cards: the cards in those same folders (see cards.cjs)
 let cardIndex = null;
-const cards = () => (cardIndex ??= createCardIndex(path.join(app.getPath('userData'), 'card-index.json'), () => index().files()));
+const cards = () => (cardIndex ??= createCardIndex(path.join(app.getPath('userData'), 'card-index.json'), () => index().files(), {
+  // a plain GC frees the index but keeps its pages (a gigabyte); the last-resort one hands them back, and is quick with it gone
+  onRelease: () => collect({ type: 'major', execution: 'sync', flavor: 'last-resort' }),
+}));
 
 let quitting = false; // the window is closing because the app is quitting (Cmd-Q), not just the window
 // a quit keeps the list of open files, for Restore open files. Windows close while others still ask about unsaved

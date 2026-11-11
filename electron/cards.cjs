@@ -194,8 +194,9 @@ function rank(hay, query, limit = 60, memo) {
 
 const flat = (p) => p.replace(/\\/g, '/').replace(/\/+$/, '');
 
-/** `listFiles` gives every .docx in the allowed folders ([{ path, mtime }]); `storeFile` keeps the index. */
-function createCardIndex(storeFile, listFiles, { idleMs = IDLE_MS } = {}) {
+/** `listFiles` gives every .docx in the allowed folders ([{ path, mtime }]); `storeFile` keeps the index.
+ *  `onRelease` runs once it's let go: a quiet process may not collect the garbage for a long while on its own. */
+function createCardIndex(storeFile, listFiles, { idleMs = IDLE_MS, onRelease } = {}) {
   let files = new Map(); // path -> { mtime, size, bad, cards }
   let hay = null; // lowercase copies for searching, built on the first search after a change
   let hidden = []; // files and folders kept out of the search, as forward-slash paths
@@ -209,6 +210,7 @@ function createCardIndex(storeFile, listFiles, { idleMs = IDLE_MS } = {}) {
     if (scanning) return rest();
     files = new Map(); hay = null; loaded = null;
     memo.hay = null; memo.ws = []; memo.hits = [];
+    onRelease?.();
   }
   function rest() {
     clearTimeout(idle);

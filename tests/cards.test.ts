@@ -129,7 +129,8 @@ describe('createCardIndex', () => {
     await createCardIndex(store, list).scan();
     const saved = fs.readFileSync(store, 'utf8');
 
-    const idx = createCardIndex(store, list, { idleMs: 40 });
+    let released = 0;
+    const idx = createCardIndex(store, list, { idleMs: 40, onRelease: () => released++ });
     expect(idx.status()).toMatchObject({ files: 0, cards: 0 }); // made, but nothing read yet
     const first = await idx.search('chen nature');
     expect(first.hits).toHaveLength(1);
@@ -141,6 +142,7 @@ describe('createCardIndex', () => {
     // the search's background scan finishes, then nothing for a while: let go
     await new Promise((r) => setTimeout(r, 150));
     expect(idx.status()).toMatchObject({ files: 0, cards: 0, scanning: false });
+    expect(released).toBe(1); // so the app can ask for the garbage to be collected
     expect(fs.readFileSync(store, 'utf8')).toBe(saved); // letting go never touches the file
     expect((await idx.search('chen nature')).hits).toEqual(first.hits);
     fs.rmSync(dir, { recursive: true });
