@@ -124,6 +124,21 @@ describe('card edges', () => {
     expect(map(run(caret(make([['analytic', 'One '], ['analytic', 'Two']]), 'Two'), K.Backspace))).toBe('analytic: One Two');
     expect(map(run(caret(make([['tag', 'Tag '], ['analytic', 'Two']]), 'Two'), K.Backspace))).toBe('tag: Tag Two');
   });
+  it('Backspace at the start of an analytic under a table leaves the table alone', () => {
+    const p = (t: string, style: ParaStyle = 'normal') => schema.node('paragraph', { style }, [schema.text(t)]);
+    const table = schema.node('table', null, [schema.node('table_row', null, [schema.node('table_cell', null, [p('cell')])])]);
+    const mount = document.createElement('div');
+    document.body.appendChild(mount);
+    const view = createView(mount, () => {}, schema.node('doc', null, [p('above'), table, p('Two', 'analytic')]));
+    try {
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at(view.state, 'Two'))));
+      const before = map(view.state);
+      // the whole keydown chain, as a real key goes: Falcon's keys, then the editor's own
+      for (let i = 0; i < 2; i++) view.someProp('handleKeyDown', (f) => f(view, new KeyboardEvent('keydown', { key: 'Backspace' })));
+      expect(map(view.state)).toBe(before);
+      expect(view.state.selection.empty).toBe(true);
+    } finally { view.destroy(); mount.remove(); }
+  });
   it('Backspace at the start of an analytic takes out a blank line above first', () => {
     expect(map(run(caret(make([['normal', 'para'], ['normal', ''], ['analytic', 'Two']]), 'Two'), K.Backspace))).toBe('normal: para\nanalytic: Two');
   });
