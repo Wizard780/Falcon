@@ -36,7 +36,11 @@ export function linkLine(s: collab.CollabState): string {
 function useEsc(open: boolean, close: () => void) {
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+    const onKey = (e: KeyboardEvent) => {
+      // a Confirm over the panel (New code…) answers its own Esc
+      if (e.key !== 'Escape' || document.querySelector('.cf[role="alertdialog"]')) return;
+      e.preventDefault(); e.stopPropagation(); close();
+    };
     addEventListener('keydown', onKey, true);
     return () => removeEventListener('keydown', onKey, true);
   }, [open, close]);

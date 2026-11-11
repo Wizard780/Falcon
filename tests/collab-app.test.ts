@@ -17,7 +17,8 @@ beforeEach(async () => {
   relay = fakeRelay();
   relay.install();
   // each test is a fresh install: no identity, no contacts
-  await new Promise<void>((r) => { const q = indexedDB.deleteDatabase('falcon-collab'); q.onsuccess = q.onerror = q.onblocked = () => r(); });
+  // only once it's really gone: a delete blocked by the last test's open connection finishes later and would wipe this one's
+  await new Promise<void>((r, j) => { const q = indexedDB.deleteDatabase('falcon-collab'); q.onsuccess = () => r(); q.onerror = () => j(q.error); });
 });
 afterEach(async () => { await unmountAll(); vi.unstubAllGlobals(); });
 
@@ -181,6 +182,56 @@ describe('card sharing in the app', () => {
     expect(nextUtcMidnight() - Date.now()).toBeLessThanOrEqual(24 * 3600_000);
     await app.type(' and more');
     expect(app.text()).toContain(' and more');
+  });
+
+  it('New code… asks first (Esc keeps the panel), then listens on the new inbox; the old code goes dead', async () => {
+    const app = await setup();
+    await until(() => relay.proven() === 1, 'connected');
+    await openPanel(app);
+    const old = collab.current().code;
+    await app.click(button('New code…'));
+    expect($('.cf[role="alertdialog"] #cf-t')?.textContent).toBe('Make a new pairing code?');
+    await app.press('Escape');
+    expect($('.cf[role="alertdialog"]')).toBeNull(); // Esc answered the question
+    expect($('.cf.co')).not.toBeNull(); // and left the panel up
+    expect(collab.current().code).toBe(old);
+    await app.click(button('New code…'));
+    await app.click($('.cf-ok'));
+    await until(() => collab.current().code !== old, 'a new code');
+    const fresh = collab.current().code;
+    expect($('.co-code')?.textContent).toBe(fresh);
+    const pubOf = (c: string) => (parseCode(c) as { pub: Uint8Array }).pub;
+    const newInbox = await inboxId(pubOf(fresh)), oldInbox = await inboxId(pubOf(old));
+    await until(() => relay.provenOn(newInbox) === 1, 'the socket on the new inbox');
+    expect(relay.provenOn(oldInbox)).toBe(0);
+    const sam = await makeIdentity();
+    await relay.post(oldInbox, await seal(sam, pubOf(old), { name: 'Sam', at: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'To the old code' }] }] }));
+    await relay.post(newInbox, await seal(sam, pubOf(fresh), { name: 'Sam', at: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'To the new code' }] }] }));
+    await until(() => collab.current().cards.length === 1, 'the card to the new code');
+    await app.act(() => {}, 100);
+    expect(collab.current().cards.map((c) => c.label)).toEqual(['To the new code']);
+    expect(relay.inboxes.get(oldInbox)).toHaveLength(1); // nobody collects it; the relay expires it
+    // and the new code is the one kept
+    await unmountAll();
+    await mountApp();
+    await until(() => collab.current().status === 'ready', 'reload');
+    expect(collab.current().code).toBe(fresh);
+  });
+
+  it('Remove takes a contact off for good', async () => {
+    const app = await setup({});
+    const pat = await makeIdentity(), kim = await makeIdentity();
+    expect(await collab.addContact(encodeCode(pat.pub), 'Pat')).toBeNull();
+    expect(await collab.addContact(encodeCode(kim.pub), 'Kim')).toBeNull();
+    await openPanel(app);
+    expect($('.cf.co')).not.toBeNull();
+    expect([...document.querySelectorAll('.co-ct .nm')].map((n) => n.textContent)).toEqual(['Pat', 'Kim']);
+    await app.click($('[aria-label="Remove Pat"]'));
+    expect([...document.querySelectorAll('.co-ct .nm')].map((n) => n.textContent)).toEqual(['Kim']);
+    await unmountAll();
+    await mountApp();
+    await until(() => collab.current().status === 'ready', 'reload');
+    expect(collab.current().contacts.map((c) => c.name)).toEqual(['Kim']);
   });
 
   it('junk sent to the code is dropped (and acked, so it never comes back); a card it already has is not shown twice', async () => {

@@ -91,5 +91,6 @@ export function fakeRelay() {
     /** the relay goes away: sockets drop and nothing connects */
     down: () => { up = false; for (const s of [...sockets]) s.close(); },
     proven: () => [...sockets].filter((s) => s.proven).length,
+    provenOn: (inbox: string) => [...sockets].filter((s) => s.proven && s.inbox === inbox).length,
   };
 }

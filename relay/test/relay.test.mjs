@@ -203,12 +203,12 @@ describe('relay', () => {
 });
 
 describe('expiry', () => {
-  test('an undelivered card is deleted by the inbox alarm once it expires', async () => {
-    const short = await startRelay({ EXPIRY_MS: '3000' }); // 3 hours in production; seconds here
+  test('an undelivered card is deleted by the inbox alarm once it expires', { timeout: 60_000 }, async () => {
+    const short = await startRelay({ EXPIRY_MS: '10000' }); // 3 hours in production; seconds here
     const a = await makeIdentity(), b = await makeIdentity(), inbox = await inboxId(b.pub);
     assert.equal((await post(short.url, inbox, await seal(a, b.pub, card('Stale')))).status, 201);
-    await wait(1500);
-    assert.equal((await post(short.url, inbox, await seal(a, b.pub, card('Fresh')))).status, 201);
+    await wait(4000);
+    assert.equal((await post(short.url, inbox, await seal(a, b.pub, card('Fresh')))).status, 201); // due at 14 s
     const rows = () => {
       const dir = join(short.persist, 'v3', 'do', 'falcon-relay-Inbox');
       return readdirSync(dir).filter((f) => f.endsWith('.sqlite')).reduce((n, f) => {
@@ -221,13 +221,13 @@ describe('expiry', () => {
       }, 0);
     };
     assert.equal(rows(), 2);
-    await wait(2500); // the first is past 3 s and the alarm has run; the second is not due yet
+    await wait(7500); // 11.5 s: the first is 1.5 s past due and its alarm has run; the second has 2.5 s to go
     assert.equal(rows(), 1);
     let o = await owner(short.url, b);
-    await o.until(() => o.got.cards.length === 1);
+    await o.until(() => o.got.cards.length === 1, 1000);
     assert.equal((await open(b, o.got.cards[0].env)).card.content[0].content[0].text, 'Fresh');
     o.ws.close();
-    await wait(2500); // the alarm set itself again for the second card
+    await wait(4000); // about 16 s, past 14: the alarm set itself again for the second card
     assert.equal(rows(), 0);
     o = await owner(short.url, b);
     await wait(400);

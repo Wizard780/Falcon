@@ -2,9 +2,11 @@
 
 Falcon's Send Card goes through this relay. It is a Cloudflare Worker with one SQLite-backed Durable
 Object per inbox. It holds sealed card envelopes until the recipient's Falcon connects, proves it
-holds the inbox's private key, and acks them. It only ever sees ciphertext and the inbox id (a hash
-of a public key): never a card, a name or a pairing code. Envelopes nobody collects are deleted after
-3 hours.
+holds the inbox's private key, and acks them. It never sees a card or a name: those are sealed. It
+does see public keys. The sender's rides in each envelope's header (that is how the recipient knows
+who sent it), and the recipient's is sent when it connects (to prove it owns the inbox). A pairing
+code is that public key plus a checksum, so the relay could tell which codes talk to which. It can't
+read or forge anything with them. Envelopes nobody collects are deleted after 3 hours.
 
 It is built to stay on the **Workers Free plan**, and it never needs a paid one.
 
@@ -53,6 +55,12 @@ npm run typecheck
 ```
 
 `EXPIRY_MS` (a Worker var) changes the 3-hour expiry. Only the tests set it.
+
+When a free-plan daily cap runs out, Cloudflare fails the Durable Object call with an error. Its
+text isn't documented; it is reported as `Exceeded allowed rows written in Durable Objects free tier`
+(or rows read, duration, volume of requests). The Worker answers 429 for that and 503 for anything
+else. When the Worker's own 100,000 requests run out, Cloudflare answers with its error 1027 page
+before the Worker runs. That page has no CORS header, so Falcon sees it as the relay being unreachable.
 
 ## Protocol v1
 

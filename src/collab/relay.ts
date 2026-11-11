@@ -14,8 +14,8 @@ export const DEFAULT_RELAY = '';
 export type SendError = 'unreachable' | 'too_large' | 'inbox_full' | 'daily_limit' | 'bad_envelope' | 'relay_error';
 export type SendResult = { ok: true } | { ok: false; error: SendError };
 
-/** The listening socket: live, on its way, waiting to try again (at a time), or paused for the day (until a time). */
-export type Link = { kind: 'off' } | { kind: 'connecting' } | { kind: 'live' } | { kind: 'retry'; at: number } | { kind: 'paused'; until: number };
+/** The listening socket: off, on its way, live, or waiting to try again (at a time). */
+export type Link = { kind: 'off' } | { kind: 'connecting' } | { kind: 'live' } | { kind: 'retry'; at: number };
 
 export type Me = { pub: Uint8Array; inbox: string; prove: (eph: Uint8Array, nonce: Uint8Array) => Promise<Uint8Array> };
 export type Handlers = {

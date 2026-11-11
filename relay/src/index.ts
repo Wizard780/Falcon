@@ -44,8 +44,12 @@ async function expectedProof(eph: CryptoKey, inboxPub: Uint8Array, nonce: Uint8A
   return new Uint8Array(await crypto.subtle.sign('HMAC', key, msg));
 }
 
-/** The free plan's daily caps (requests, rows) fail calls with an error; anything else is the relay breaking. */
-const overLimit = (e: unknown) => /exceeded|limit|quota/i.test(String((e as Error)?.message ?? e));
+/**
+ * The free plan's daily caps fail calls with "Exceeded allowed rows written in Durable Objects free tier"
+ * (or rows read, duration, volume of requests). Cloudflare doesn't document the text; this is what it is
+ * reported to say. Anything else (CPU, memory, a bug) is the relay breaking, not the day's allowance.
+ */
+const overLimit = (e: unknown) => /exceeded allowed .* free tier/i.test(String((e as Error)?.message ?? e));
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {

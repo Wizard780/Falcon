@@ -86,9 +86,8 @@ async function reload() {
 
 let leading = false;
 let stopListen: (() => void) | null = null;
-/** Only for tests: the transport to use in place of the relay. */
-let transportFor: (url: string) => Transport = relayTransport;
-export const setTransport = (f: (url: string) => Transport) => { transportFor = f; };
+/** The one transport there is so far; a LAN host would be picked here. */
+const transportFor = (url: string): Transport => relayTransport(url);
 
 async function onCard(id: string, envelope: Uint8Array) {
   if (!me) throw new Error('no identity yet');
@@ -123,6 +122,7 @@ function relisten() {
  */
 export function start(listen: boolean): () => void {
   if (!store.storeAvailable()) { set({ status: 'unavailable' }); return () => {}; }
+  set({ status: 'loading' }); // until this start's own load is in (a restart must not read the last one's)
   let live = true;
   const hold = new AbortController();
   let release = () => {};

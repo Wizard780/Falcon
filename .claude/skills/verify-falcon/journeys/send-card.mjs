@@ -8,7 +8,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { openFalcon, SEED, MOD } from '../lib/falcon.mjs';
+import { openFalcon, SEED, MOD, URL as FALCON } from '../lib/falcon.mjs';
+
+const { inboxId, parseCode } = await import(new globalThis.URL('../../../../src/collab/code.ts', import.meta.url).pathname);
 
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..');
 const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-relay-journey-'));
@@ -158,6 +160,28 @@ await command(A, 'theme light');
 await command(A, 'send card');
 await A.shot('a-send-picker-light');
 await A.page.keyboard.press('Escape');
+
+// ---------- one socket per launch: a second window waits, and takes over when the first closes ----------
+const inboxB = await inboxId(parseCode(codeB).pub);
+const upgrades = () => (relayLog.match(new RegExp(`GET /v1/inbox/${inboxB}`, 'g')) ?? []).length;
+const before = upgrades();
+want(before >= 1, `the relay log shows B's socket (${before})`);
+const B2 = await B.page.context().newPage();
+B2.on('pageerror', (e) => B.errors.push(e.message));
+await B2.goto(FALCON);
+await B2.waitForSelector('.ProseMirror');
+await B2.keyboard.press('Escape');
+await B2.waitForTimeout(3000);
+want(upgrades() === before, `a second B window opens no socket of its own (${upgrades()} upgrades, was ${before})`);
+await command({ page: B2 }, 'card sharing');
+want((await B2.textContent('.co-line')) === 'Cards sent to your code arrive in another Falcon window', `the second window says the first has the socket (${await B2.textContent('.co-line')})`);
+await B2.keyboard.press('Escape');
+await B.page.close();
+await command({ page: B2 }, 'card sharing');
+want(await B2.waitForFunction(() => document.querySelector('.co-line')?.textContent?.startsWith('Connected'), null, { timeout: 15000 }).then(() => true, () => false), 'closing the first window hands the socket to the second');
+want(upgrades() === before + 1, `exactly one new socket (${upgrades()} upgrades)`);
+await B2.screenshot({ path: path.join(B.out, '06-b-second-window-took-over.png') });
+await B2.keyboard.press('Escape');
 
 // ---------- the relay stops ----------
 stopRelay();
