@@ -4,7 +4,7 @@ import { NO_BRIDGE, cardAround, selectedParas } from './commands';
 import { activeColors } from './host';
 import { MultiSelection, spansOf, type Span } from './multi';
 import { isReading } from './read';
-import { HIGHLIGHTS, HIGHLIGHT_NAMES, SHADES, schema } from './schema';
+import { HIGHLIGHTS, HIGHLIGHT_NAMES, SHADES, levelOf, schema } from './schema';
 import { readSetting, type SettingSpec, type ToolSection } from './tools';
 import { autoBridgePlugin, autoBridgeSetting, fixFormattingGaps, gapClassSetting, scopeOf } from './doc-tools/gaps';
 import { linkClickPlugin, linkUrls, removeHyperlinks } from './doc-tools/links';
@@ -92,6 +92,28 @@ export function analyticsToTags(onlyCited: boolean): Command {
 }
 
 /**
+ * Remove Empty Headings: pockets, hats, blocks, tags and analytics with no text (the outline's "Untitled"
+ * rows, and the tall blank gaps they leave on the page), in the selection or the whole document. A heading
+ * holding a picture or footnote stays, and one is kept if nothing else would be left.
+ */
+export const removeEmptyHeadings: Command = (state, dispatch) => {
+  if (isReading(state)) return false;
+  const doc = state.doc, spans = scopeOf(state), drop: [number, number][] = [];
+  doc.forEach((n, pos) => {
+    if (!levelOf(n) || n.textContent.trim()) return;
+    let bare = true;
+    n.forEach((c) => { if (!c.isText && c.type !== schema.nodes.hard_break) bare = false; });
+    if (bare && spans.some((r) => r.from < pos + n.nodeSize && r.to > pos)) drop.push([pos, pos + n.nodeSize]);
+  });
+  if (drop.length === doc.childCount) drop.shift();
+  if (!drop.length) return false;
+  const tr = state.tr;
+  for (const [a, b] of drop.reverse()) tr.delete(a, b);
+  dispatch?.(tr);
+  return true;
+};
+
+/**
  * Select Similar Formatting: every run with the same paragraph style and the same marks as the one at the
  * cursor (the run before it, as typing would continue), in the whole document. With a selection, the first
  * selected run is the sample and only the selection is searched. The matches become one multi-selection.
@@ -128,6 +150,7 @@ export const DOC_TOOLS: ToolSection[] = [
   { title: 'Cleanup', items: [
     { id: 'analyticsToTags', label: 'Convert Analytics to Tags', run: analyticsToTags(false), hint: 'Turn analytics into tags: the selected ones, or every one in the document' },
     { id: 'citedAnalyticsToTags', label: 'Convert Cited Analytics to Tags', run: analyticsToTags(true), hint: 'Turn analytics into tags, only those with a cite under them' },
+    { id: 'removeEmptyHeadings', label: 'Remove Empty Headings', run: removeEmptyHeadings, hint: 'Delete the headings with no text, the "Untitled" rows in the outline and the blank gaps they leave' },
     { id: 'fixFormattingGaps', label: 'Fix Formatting Gaps', run: fixFormattingGaps, hint: 'Give the space between two formatted words the formatting both share, and take off what they don\'t' },
     { id: 'removeHyperlinks', label: 'Remove Hyperlinks', run: removeHyperlinks, hint: 'Drop the links, keeping the text' },
     { id: 'linkUrls', label: 'Link URLs', run: linkUrls, hint: 'Turn written web addresses into links' },
