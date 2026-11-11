@@ -5,6 +5,8 @@ on:
     paths-ignore: ['**/*.md', '.claude/**']
   pull_request:
     paths-ignore: ['**/*.md', '.claude/**']
+  # run by hand (Actions tab or `gh workflow run build.yml --ref main`) when a run is lost, e.g. in a GitHub outage
+  workflow_dispatch:
 
 # a new push to a PR cancels that PR's older run, so stale runs don't hold the scarce macOS runners
 concurrency:
