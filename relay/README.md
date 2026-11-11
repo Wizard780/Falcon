@@ -45,6 +45,19 @@ paused until then (shown in the user's local time). Nothing is charged.
 Falcon never polls. It keeps one socket per app launch, idle sockets hibernate (no duration charged),
 and it reconnects with backoff capped at 5 minutes.
 
+### What a stranger can do
+
+Posting to an inbox needs no key, only the code. So someone who wants to can use up the day's
+allowance for everyone (it takes tens of thousands of junk cards), or fill one person's inbox with 50 junk
+cards so real ones are turned away for up to 3 hours. Either way the worst case is that sharing
+pauses until 00:00 UTC. It never costs money and never exposes a card. The fix for a targeted
+person is New code… in Falcon. If it ever happens for real, put a per-address limit in front of
+the Worker; nothing in the relay does that today.
+
+When the Worker's own request limit is used up, Cloudflare answers before the relay runs, in a way
+a page can't tell from having no connection. Falcon then says it can't reach the relay and that
+the daily limit may be why.
+
 ## Develop
 
 ```sh
