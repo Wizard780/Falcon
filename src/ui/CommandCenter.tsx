@@ -275,7 +275,8 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
     else if (e.key === 'Enter') {
       e.preventDefault(); e.stopPropagation();
       // in the open-or-blocks choice Mod-Enter still means open
-      if (choose && mod) { activate(rows.find((r) => r.e.source === 'file')?.e, false); return; }
+      if (choose && mod) { const h = choose.hit; noteRecent(`file:${h.path ?? h.key}`); close(false); ctx.openFile?.(h); return; }
+      if (inside && e.repeat) return; // a held Enter inserts once, not once per key repeat
       activate(row, e.shiftKey, mod, e.altKey);
     }
     else if (e.key === 'Tab') { e.preventDefault(); if (row?.options) drill(row); else if (!nested && row?.file && canDive(row.file)) enterBlocks(row.file, { query, at: cur }); else if (row) settingsFor(row); }
@@ -366,7 +367,7 @@ export function CommandCenter(props: { open: boolean; onClose: () => void; ctx: 
                   onContextMenu={(ev) => { ev.preventDefault(); if (inside) toggleFold(e); else settingsFor(e); }}>
                   {inside && !typed && (canFold(levels, Number(e.key.slice(4)))
                     ? <svg className="cc-fold" data-open={!folded.has(Number(e.key.slice(4))) || undefined} viewBox="0 0 16 16" aria-label={folded.has(Number(e.key.slice(4))) ? 'Open' : 'Close'}
-                      onClick={(ev) => { ev.stopPropagation(); toggleFold(e); }}><path d="m6.5 4.5 3.5 3.5-3.5 3.5" /></svg>
+                      onClick={(ev) => { ev.stopPropagation(); setAt(i); toggleFold(e); }}><path d="m6.5 4.5 3.5 3.5-3.5 3.5" /></svg>
                     : <span className="cc-fold" />)}
                   {b && <span className="cc-badge" data-b={b}>{b}</span>}
                   <span className="cc-nm">{label(e)}</span>
