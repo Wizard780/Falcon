@@ -59,6 +59,7 @@ async function setRelay(f, url) {
   await f.page.fill('[aria-label="Search settings"]', 'relay');
   await wait(f, 200);
   await f.page.fill('input[aria-label="Relay address"]', url);
+  await f.page.press('input[aria-label="Relay address"]', 'Enter'); // the address is saved on Enter, not as it's typed
   await wait(f, 100);
   await f.page.keyboard.press('Escape'); // clears the search
   await f.page.keyboard.press('Escape'); // closes Settings
@@ -189,10 +190,10 @@ await wait(A, 1500);
 await command(A, 'send card');
 await A.page.keyboard.press('Enter');
 await A.page.waitForFunction(() => !document.querySelector('.toast')?.textContent?.startsWith('Sending'), null, { timeout: 10000 }).catch(() => {});
-want((await toast(A)) === "Couldn't reach the relay. Check the wifi. The card wasn't sent", `relay stopped: the send says it failed (${await toast(A)})`);
+want((await toast(A)) === "Couldn't reach the relay. Check the wifi, then send it again", `relay stopped: the send says it failed (${await toast(A)})`);
 await command(A, 'card sharing');
 await A.page.waitForFunction(() => /^Can't reach the relay/.test(document.querySelector('.co-line')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {});
-want(/^Can't reach the relay\. Trying again in/.test(await status(A)), `relay stopped: the panel says so (${await status(A)})`);
+want(/^Can't reach the relay: .*Trying again in/.test(await status(A)), `relay stopped: the panel says so (${await status(A)})`);
 await A.shot('a-relay-stopped');
 await A.page.keyboard.press('Escape');
 await A.page.click('.ProseMirror:not(.hm-doc) :text("Temperatures")');

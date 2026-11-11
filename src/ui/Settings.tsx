@@ -79,6 +79,25 @@ function CountField({ p, label, min, max, unit }: { p: Pref<number>; label: stri
 }
 
 /**
+ * The relay's address, saved on Enter or leaving the box, never as it's typed: each half-typed address
+ * would be connected to, and told this Falcon's code. One typed without https:// gets it.
+ */
+function RelayField() {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    const u = draft.trim();
+    setPref(P.relayUrl, !u || /^https?:\/\//i.test(u) ? u : `https://${u}`);
+  };
+  return (
+    <input className="st-text st-wide" aria-label="Relay address" spellCheck={false} maxLength={200} placeholder={DEFAULT_RELAY || 'https://falcon-relay.example.workers.dev'}
+      value={draft ?? pref(P.relayUrl)} onChange={(e) => setDraft(e.target.value)} data-draft={draft === null ? undefined : ''} onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') setDraft(null); }} />
+  );
+}
+
+/**
  * A reading speed typed as a number, saved on Enter or leaving the box. Escape while typing puts the saved one
  * back (App lets that Escape through instead of closing Settings: `data-draft`).
  * With `blank`, an empty box saves 0, which the read time takes as "same as cards".
@@ -388,8 +407,7 @@ export function Settings(props: Props) {
       ['Card sharing', [
         { label: 'Relay', wide: true, search: 'card sharing relay send card pairing code collaboration server url',
           hint: `Where sent cards wait until the other person's Falcon picks them up. It only ever sees them sealed. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: paste the address of one you set up (relay/README.md in Falcon\'s source).'} Your code and contacts are in the command center: Card sharing.`,
-          control: <input className="st-text st-wide" aria-label="Relay address" spellCheck={false} maxLength={200} placeholder={DEFAULT_RELAY || 'https://falcon-relay.example.workers.dev'} value={pref(P.relayUrl)}
-            onChange={(e) => setPref(P.relayUrl, e.target.value.trim())} /> },
+          control: <RelayField /> },
       ]],
       ['Privacy', [
         tog(P.usageStats, 'Share usage statistics', 'Send anonymous counts of which features get used, like opening and saving files. Never file names or anything you type. Desktop app only.'),

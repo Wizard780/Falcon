@@ -165,11 +165,11 @@ describe('card sharing in the app', () => {
     relay.down();
     await until(() => collab.current().link.kind === 'retry', 'the socket to back off');
     await openPanel(app);
-    expect($('.co-line')?.textContent).toMatch(/^Can't reach the relay\. Trying again in under a minute$/);
+    expect($('.co-line')?.textContent).toMatch(/^Can't reach the relay: no connection, or it's over its daily limit until .+\. Trying again in under a minute$/);
     await app.click(button('Close'));
     await app.press('F1', { ctrlKey: true, shiftKey: true }, 100);
     await app.click($('.co-pk'), 200);
-    expect(app.toast()).toBe("Couldn't reach the relay. Check the wifi. The card wasn't sent");
+    expect(app.toast()).toBe("Couldn't reach the relay. Check the wifi, then send it again");
 
     relay.answer(429);
     // back up, but over the free plan's daily limit
@@ -246,6 +246,14 @@ describe('card sharing in the app', () => {
     for (const e of [bad, notACard, good]) await relay.post(inbox, e);
     await until(() => relay.acks.length === 3, 'all three acked');
     await app.act(() => {}, 50);
+    // the tampered one is gone; the one this Falcon can't open is shown so it isn't lost without a word, with only Dismiss
+    expect(collab.current().cards.map((c) => c.label)).toEqual(["A card this Falcon can't open", 'Fine card']);
+    await openPanel(app);
+    const odd = document.querySelectorAll('.co-card')[0];
+    expect([...odd.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Add contact', 'Dismiss']);
+    expect(odd.textContent).toContain('It may need a newer Falcon');
+    await app.click(button('Dismiss', odd));
+    await app.click(button('Close'));
     expect(collab.current().cards.map((c) => c.label)).toEqual(['Fine card']);
     // the same card delivered again (its ack was lost): stored once
     const id = collab.current().cards[0].id;
@@ -261,5 +269,78 @@ describe('card sharing in the app', () => {
     expect(collab.current().cards).toEqual([]);
     expect(shown).not.toHaveBeenCalled();
     off();
+  });
+
+  it('a send that may have got through is sent again under the same id, so it arrives once', async () => {
+    const app = await setup();
+    await until(() => relay.proven() === 1, 'connected');
+    const me = parseCode(collab.current().code) as { pub: Uint8Array };
+    const inbox = await inboxId(me.pub);
+    const sam = await makeIdentity();
+    const content = [{ type: 'paragraph', content: [{ type: 'text', text: 'Sent twice' }] }];
+    // Sam's first POST was stored but its answer was lost, so Sam's Falcon sent the card again
+    for (let i = 0; i < 2; i++) await relay.post(inbox, await seal(sam, me.pub, { name: 'Sam', at: 1, content, mid: 'same-send' }));
+    // someone else using the same id is a different card
+    await relay.post(inbox, await seal(await makeIdentity(), me.pub, { name: 'Eve', at: 1, content, mid: 'same-send' }));
+    await until(() => relay.acks.length === 3, 'all acked');
+    await app.act(() => {}, 50);
+    expect(collab.current().cards.map((c) => c.claimed)).toEqual(['Sam', 'Eve']);
+
+    // and this Falcon does the same: no answer, then the same card again → the same id inside both envelopes
+    const bo = await makeIdentity();
+    await collab.addContact(encodeCode(bo.pub), 'Bo');
+    const frag = (await import('prosemirror-model')).Fragment.fromJSON(schema, content);
+    relay.answer('down');
+    const first = await collab.send(collab.current().contacts[0], frag);
+    expect(first.ok).toBe(false);
+    expect(first.message).toContain("Couldn't reach the relay");
+    expect(first.message).not.toContain("wasn't sent"); // it can't know that
+    relay.answer(null);
+    expect((await collab.send(collab.current().contacts[0], frag)).ok).toBe(true);
+    expect((await collab.send(collab.current().contacts[0], frag)).ok).toBe(true); // a new send of the same card is a new card
+    const mids = await Promise.all(relay.posted.filter((p) => p.inbox !== inbox).map(async (p) => (await open(bo, p.data)).card.mid));
+    expect(mids.length).toBe(2); // the failed one never reached the relay
+    expect(mids[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(mids[1]).not.toBe(mids[0]);
+  });
+
+  it('holds at most 50 cards: more wait on the relay, unacked, and come in once some are dealt with', async () => {
+    const app = await setup();
+    await until(() => relay.proven() === 1, 'connected');
+    const me = parseCode(collab.current().code) as { pub: Uint8Array };
+    const inbox = await inboxId(me.pub);
+    const eve = await makeIdentity();
+    const card = (i: number) => seal(eve, me.pub, { name: 'E', at: i, content: [{ type: 'paragraph', content: [{ type: 'text', text: `Card ${i}` }] }], mid: `m${i}` });
+    for (let i = 0; i < 52; i++) await relay.post(inbox, await card(i));
+    await until(() => relay.acks.length === 50, 'fifty stored and acked', 8000);
+    await app.act(() => {}, 200);
+    expect(collab.current().cards.length).toBe(50);
+    expect(relay.acks.length).toBe(50);
+    expect(relay.inboxes.get(inbox)!.length).toBe(2); // not lost: still on the relay
+    // room for one: the app asks the relay again and takes one more
+    await app.act(() => collab.drop(collab.current().cards[0].id), 50);
+    await until(() => relay.acks.length === 51, 'one more taken in', 8000);
+    await app.act(() => {}, 200);
+    expect(collab.current().cards.length).toBe(50);
+    expect(relay.inboxes.get(inbox)!.length).toBe(1);
+  }, 30_000);
+
+  it("the relay's address is saved on Enter, not as it's typed, and one without https:// gets it", async () => {
+    const app = await setup({});
+    await app.menu('settings');
+    await app.fill($('input[aria-label="Search settings"]'), 'relay');
+    const box = () => $('input[aria-label="Relay address"]') as HTMLInputElement;
+    const sockets = vi.fn();
+    const Real = globalThis.WebSocket;
+    vi.stubGlobal('WebSocket', class extends (Real as unknown as new (u: string) => object) { constructor(u: string) { super(u); sockets(u); } });
+    await app.fill(box(), 'relay.te');
+    await app.fill(box(), 'relay.test');
+    expect(localStorage.getItem('falcon.relayUrl') ?? '').toBe('');
+    expect(collab.current().relay).toBe('');
+    expect(sockets).not.toHaveBeenCalled(); // no half-typed address was connected to
+    await app.act(() => { box().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); }, 100);
+    expect(box().value).toBe('https://relay.test');
+    await until(() => relay.proven() === 1, 'connected to the address once it was entered');
+    expect(sockets.mock.calls.every(([u]) => String(u).startsWith('wss://relay.test/'))).toBe(true);
   });
 });

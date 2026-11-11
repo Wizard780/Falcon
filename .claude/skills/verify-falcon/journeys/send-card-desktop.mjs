@@ -64,6 +64,7 @@ await win.click('.fstrip [aria-label="Settings"]');
 await win.fill('[aria-label="Search settings"]', 'relay');
 await win.waitForTimeout(200);
 await win.fill('input[aria-label="Relay address"]', RELAY);
+await win.press('input[aria-label="Relay address"]', 'Enter'); // the address is saved on Enter, not as it's typed
 await win.keyboard.press('Escape'); await win.keyboard.press('Escape');
 await win.waitForTimeout(300);
 await command(win, 'card sharing');

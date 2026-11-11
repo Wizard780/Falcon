@@ -17,8 +17,8 @@ const HEAD = 1 + KEY_LEN + SALT_LEN + IV_LEN;
 export const MIN_ENVELOPE = HEAD + TAG_LEN;
 /** The relay turns away anything bigger (relay/src/index.ts); a card with pictures can get there. */
 export const MAX_ENVELOPE = 1_000_000;
-/** A card unpacks to at most this, so a tiny envelope can't unpack into gigabytes. */
-const MAX_PLAIN = 8 * 1024 * 1024;
+/** A card unpacks to at most this, so a tiny envelope can't unpack into gigabytes. Sealing refuses past it too. */
+export const MAX_PLAIN = 2 * MAX_ENVELOPE;
 const te = new TextEncoder(), td = new TextDecoder();
 const CARD_INFO = te.encode('falcon card v1');
 const PROOF_INFO = te.encode('falcon relay proof v1');
@@ -47,13 +47,18 @@ async function derive(priv: CryptoKey, pub: Uint8Array, salt: Uint8Array, info: 
 
 const aad = (from: Uint8Array, to: Uint8Array) => { const a = new Uint8Array(1 + 2 * KEY_LEN); a[0] = ENVELOPE_VERSION; a.set(from, 1); a.set(to, 1 + KEY_LEN); return a; };
 
-/** What a card envelope carries: who it says it's from, when it was sent, and the card (a ProseMirror Fragment's JSON). */
-export type Card = { name: string; at: number; content: unknown };
+/** What a card envelope carries: who it says it's from, when it was sent, the card (a ProseMirror Fragment's JSON),
+ *  and the sender's own id for this send, so one that reaches the relay twice is shown once. */
+export type Card = { name: string; at: number; content: unknown; mid?: string };
+/** A card too big to send: thrown by seal. */
+export class TooBig extends Error {}
 
 export async function seal(me: Identity, to: Uint8Array, card: Card): Promise<Uint8Array> {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_LEN)), iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
   const key = await derive(me.priv, to, salt, CARD_INFO, 'aes');
-  const plain = deflateSync(te.encode(JSON.stringify({ v: 1, name: card.name, at: card.at, content: card.content })));
+  const json = te.encode(JSON.stringify({ v: 1, name: card.name, at: card.at, content: card.content, mid: card.mid }));
+  if (json.length > MAX_PLAIN) throw new TooBig();
+  const plain = deflateSync(json);
   const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv, additionalData: aad(me.pub, to) }, key, plain));
   const out = new Uint8Array(HEAD + ct.length);
   out[0] = ENVELOPE_VERSION;
@@ -82,7 +87,7 @@ export async function open(me: Identity, env: Uint8Array): Promise<{ from: Uint8
     if (out.length > MAX_PLAIN) throw new Error('too big');
     const j = JSON.parse(td.decode(out));
     if (j?.v !== 1 || typeof j.name !== 'string' || typeof j.at !== 'number' || !Array.isArray(j.content)) throw new Error('shape');
-    card = { name: j.name.slice(0, 80), at: j.at, content: j.content };
+    card = { name: j.name.slice(0, 80), at: j.at, content: j.content, mid: typeof j.mid === 'string' && j.mid.length <= 64 ? j.mid : undefined };
   } catch { throw new BadEnvelope('content'); }
   return { from, card };
 }
