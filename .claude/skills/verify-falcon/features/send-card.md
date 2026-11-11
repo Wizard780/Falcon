@@ -28,6 +28,7 @@ Preconditions:
 - `falcon-verify doctor` is all `ok`, and `npm ci` has been run in `relay/` (the journey starts its own `wrangler dev`, no account needed).
 
 - **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/send-card.mjs`. It exits 0 with 32 `ok` lines. It opens three browser contexts (A, B, and C with no relay), so three identities.
+- **Desktop.** After `npm run build`, run `$V run .claude/skills/verify-falcon/journeys/send-card-desktop.mjs`. It exits 0 with 12 `ok` lines. The hidden Electron window (file://) connects and proves its key, takes a card from the script (the partner, using `src/collab` itself), inserts it with its marks, sends one back that the partner opens and verifies, and keeps the same code and contacts after a relaunch.
 - **Relay.** In Settings, fill `input[aria-label="Relay address"]`. `localStorage['falcon.relayUrl']` holds it, and the panel's `.co-line` reads `Connected. Cards sent to your code arrive here`.
 - **Code.** `.co-code` is the code. `.co-me button` copies it and the toast reads `Copied your pairing code`.
 - **Contact.** Fill `input[aria-label="Their pairing code"]` and `input[aria-label="Their name"]`, then click `.co-add button[type="submit"]`. A bad code shows in `.co-hint`. Saved contacts are `.co-ct .nm`.
