@@ -15,6 +15,10 @@
 .sb-row.ol[aria-selected="true"] { background: var(--u-raised); }
 .sb-row.ol[data-hit] .nm { color: var(--u-tx); font-weight: 600; }
 .sb-row.ol .num { flex: none; font: 12px var(--mono); color: var(--u-mut); font-variant-numeric: tabular-nums; }
+/* a tag's cite, shown on hover like CardMirror: the tag gives up width so the cite fits */
+.sb-row.ol .cite { display: none; flex: none; max-width: 45%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 600 12px var(--ui-font); color: var(--u-mut); }
+.sb-row.ol:hover .cite { display: block; }
+.sb-list[data-dragging] .sb-row.ol .cite { display: none; }
 .ol-drop { position: absolute; left: 4px; right: 4px; top: 0; height: 2px; border-radius: 1px; background: var(--ink); z-index: 2; pointer-events: none; }
 .sb-list[data-dragging] .sb-row { cursor: grabbing; }
 .sb-list[data-dragging] .sb-row:hover { background: none; }
