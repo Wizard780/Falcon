@@ -51,6 +51,17 @@ async function expectedProof(eph: CryptoKey, inboxPub: Uint8Array, nonce: Uint8A
  */
 const overLimit = (e: unknown) => /exceeded allowed .* free tier/i.test(String((e as Error)?.message ?? e));
 
+/** The body, or null once it runs past `max` (a body sent without a length isn't read to its end first). */
+async function readCapped(req: Request, max: number): Promise<Uint8Array | null> {
+  const parts: Uint8Array[] = [];
+  let n = 0;
+  if (req.body) for await (const c of req.body) { n += c.length; if (n > max) return null; parts.push(c); }
+  const out = new Uint8Array(n);
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
@@ -65,8 +76,8 @@ export default {
       }
       if (req.method !== 'POST') return reply(405, { error: 'method' });
       if (Number(req.headers.get('Content-Length') ?? 0) > MAX_ENVELOPE) return reply(413, { error: 'too_large', max: MAX_ENVELOPE });
-      const body = new Uint8Array(await req.arrayBuffer());
-      if (body.length > MAX_ENVELOPE) return reply(413, { error: 'too_large', max: MAX_ENVELOPE });
+      const body = await readCapped(req, MAX_ENVELOPE);
+      if (!body) return reply(413, { error: 'too_large', max: MAX_ENVELOPE });
       if (body.length < MIN_ENVELOPE || body[0] !== 1) return reply(400, { error: 'bad_envelope' });
       const r = await stub.put(inbox, body);
       return reply(r.status, r.body);
@@ -97,7 +108,8 @@ export class Inbox extends DurableObject<Env> {
     // one alarm per inbox: set only when none is pending (each setAlarm is a row write)
     if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(now + this.expiry);
     const frame = this.frame(id, data);
-    for (const ws of this.ctx.getWebSockets()) if (this.att(ws)?.proven && this.att(ws)?.inbox === inbox) ws.send(frame);
+    // the card is stored: a socket that's closing mustn't turn that into a failed send
+    for (const ws of this.ctx.getWebSockets()) if (this.att(ws)?.proven && this.att(ws)?.inbox === inbox) try { ws.send(frame); } catch { /* it gets it when it reconnects */ }
     return { status: 201, body: { id } };
   }
 

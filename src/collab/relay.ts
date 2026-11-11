@@ -35,6 +35,10 @@ export const nextUtcMidnight = (now = Date.now()) => { const d = new Date(now); 
 
 const FIRST_RETRY = 2_000;
 const MAX_RETRY = 5 * 60_000;
+/** A link that lasted this long was a good one: the next retry starts short again. One that keeps dropping keeps backing off. */
+const STABLE = 60_000;
+/** The clock jumping this far between ticks means the computer slept: the socket is likely dead without knowing it. */
+const TICK = 30_000, SLEPT = 150_000;
 const ID_LEN = 36;
 
 export function relayTransport(base: string): Transport {
@@ -51,7 +55,7 @@ export function relayTransport(base: string): Transport {
     },
 
     listen(me, on) {
-      let ws: WebSocket | null = null, timer = 0, stopped = false, delay = FIRST_RETRY;
+      let ws: WebSocket | null = null, timer = 0, stopped = false, delay = FIRST_RETRY, liveAt = 0, ticked = Date.now();
       let chain = Promise.resolve(), acks: string[] = [], pending = 0;
       const flush = () => { if (acks.length && ws?.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ t: 'ack', ids: acks })); acks = []; } };
       const later = () => {
@@ -76,7 +80,7 @@ export function relayTransport(base: string): Transport {
             try { m = JSON.parse(e.data); } catch { return; }
             if (m.t === 'challenge' && m.eph && m.nonce) {
               void me.prove(unb64url(m.eph), unb64url(m.nonce)).then((mac) => sock.send(JSON.stringify({ t: 'proof', mac: b64url(mac) })), () => sock.close());
-            } else if (m.t === 'ready') { delay = FIRST_RETRY; on.link({ kind: 'live' }); flush(); } // acks a dropped socket didn't get to send
+            } else if (m.t === 'ready') { liveAt = Date.now(); on.link({ kind: 'live' }); flush(); } // acks a dropped socket didn't get to send
             return;
           }
           const b = new Uint8Array(e.data as ArrayBuffer);
@@ -87,15 +91,33 @@ export function relayTransport(base: string): Transport {
           chain = chain.then(() => on.card(id, env)).then(() => { acks.push(id); }, () => { /* not stored: it stays on the relay for next time */ })
             .then(() => { if (!--pending) flush(); });
         };
-        sock.onclose = () => { if (ws === sock) { ws = null; later(); } };
+        sock.onclose = () => {
+          if (ws !== sock) return;
+          ws = null;
+          if (liveAt && Date.now() - liveAt >= STABLE) delay = FIRST_RETRY;
+          liveAt = 0;
+          later();
+        };
       };
       // back online after a dropped connection: try now instead of waiting out the backoff
       const online = () => { if (!ws && !stopped) { delay = FIRST_RETRY; connect(); } };
       addEventListener('online', online);
+      // after a sleep the socket can sit dead while looking open (nothing is ever sent on it to find out): start a new one.
+      // A local clock check, not a ping: it costs the relay nothing until the computer really slept.
+      const wake = window.setInterval(() => {
+        const now = Date.now(), slept = now - ticked > SLEPT;
+        ticked = now;
+        if (!slept || stopped || !ws) return;
+        const s = ws;
+        ws = null; liveAt = 0;
+        s.close();
+        connect();
+      }, TICK);
       connect();
       return () => {
         stopped = true;
         window.clearTimeout(timer);
+        window.clearInterval(wake);
         removeEventListener('online', online);
         const s = ws;
         ws = null;

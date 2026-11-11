@@ -3,11 +3,11 @@
  * Every window reads the same IndexedDB and hears the others' changes over a BroadcastChannel; only
  * one window per launch (whoever holds a Web Lock) keeps the relay socket open.
  */
-import { DOMParser, DOMSerializer, Fragment } from 'prosemirror-model';
-import { schema } from '../editor/schema';
+import { DOMParser, DOMSerializer, Fragment, type Node as PMNode } from 'prosemirror-model';
+import { noteNodes, schema } from '../editor/schema';
 import { P, onPrefs, pref } from '../editor/prefs';
 import { encodeCode, inboxId, parseCode } from './code';
-import { BadEnvelope, MAX_ENVELOPE, open, proveKey, seal, type Identity } from './crypto';
+import { BadEnvelope, MAX_ENVELOPE, TooBig, open, proveKey, seal, type Identity } from './crypto';
 import { DEFAULT_RELAY, nextUtcMidnight, relayTransport, type Link, type Transport } from './relay';
 import * as store from './store';
 import type { Contact, Received } from './store';
@@ -32,7 +32,8 @@ let me: (Identity & { inbox: string }) | null = null;
 const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('falcon-collab') : null;
 const told = (m: { t: 'changed' } | { t: 'card'; id: string }) => channel?.postMessage(m);
 
-export const relayUrl = () => (pref(P.relayUrl).trim() || DEFAULT_RELAY).replace(/\/+$/, '');
+/** The relay's address, or '' for none: anything that isn't an http(s) address counts as none. */
+export const relayUrl = () => { const u = (pref(P.relayUrl).trim() || DEFAULT_RELAY).replace(/\/+$/, ''); return /^https?:\/\/\S+$/i.test(u) ? u : ''; };
 export const contactFor = (code: string) => state.contacts.find((c) => c.code === code);
 
 /** "Warming causes war", cut to fit a toast or a row. */
@@ -58,15 +59,35 @@ function embeddedOnly(nodes: unknown): unknown {
  */
 export function cardFragment(content: unknown): Fragment | null {
   try {
-    const raw = Fragment.fromJSON(schema, embeddedOnly(content) as object[]);
-    const inert = document.implementation.createHTMLDocument('');
-    const box = inert.createElement('div');
-    box.appendChild(DOMSerializer.fromSchema(schema).serializeFragment(raw, { document: inert }));
-    const f = DOMParser.fromSchema(schema).parse(box, { preserveWhitespace: 'full' }).content;
+    const f = withCleanNotes(repaste(Fragment.fromJSON(schema, embeddedOnly(content) as object[])));
     if (!f.childCount || !f.textBetween(0, f.size, ' ', ' ').trim()) return null;
+    let sane = true;
+    // a cell spanning millions of columns (or none, or half of one) breaks the table code when it's laid out
+    f.descendants((n) => { for (const k of ['colspan', 'rowspan']) { const v = n.attrs[k]; if (v !== undefined && !(Number.isInteger(v) && v >= 1 && v <= MAX_SPAN)) sane = false; } return sane; });
+    if (!sane) return null;
     schema.topNodeType.create(null, f).check();
     return f;
   } catch { return null; }
+}
+const MAX_SPAN = 63;
+/** Draw nodes as the clipboard does and read them back through the paste rules. */
+function repaste(raw: Fragment): Fragment {
+  const inert = document.implementation.createHTMLDocument('');
+  const box = inert.createElement('div');
+  box.appendChild(DOMSerializer.fromSchema(schema).serializeFragment(raw, { document: inert }));
+  return DOMParser.fromSchema(schema).parse(box, { preserveWhitespace: 'full' }).content;
+}
+/** A footnote's text rides in an attribute, which the paste rules don't look inside: give it the same pass. */
+function withCleanNotes(f: Fragment): Fragment {
+  const out: PMNode[] = [];
+  f.forEach((n) => {
+    if (n.type === schema.nodes.footnote) {
+      const text = noteNodes(n.attrs.content);
+      const clean = text.length ? noteNodes(repaste(Fragment.from(schema.nodes.paragraph.create(null, text))).firstChild?.content.toJSON() ?? []) : [];
+      out.push(n.type.create({ ...n.attrs, content: clean.map((x) => x.toJSON()) }, null, n.marks));
+    } else out.push(n.isLeaf ? n : n.copy(withCleanNotes(n.content)));
+  });
+  return Fragment.fromArray(out);
 }
 
 async function loadMe() {
@@ -86,6 +107,9 @@ async function reload() {
 
 let leading = false;
 let stopListen: (() => void) | null = null;
+/** Cards were left on the relay because MAX_WAITING are waiting here: fetch them once there's room. */
+let full = false;
+const roomAgain = () => { if (full && leading && state.cards.length < store.MAX_WAITING) { full = false; relisten(); } };
 /** The one transport there is so far; a LAN host would be picked here. */
 const transportFor = (url: string): Transport => relayTransport(url);
 
@@ -94,10 +118,16 @@ async function onCard(id: string, envelope: Uint8Array) {
   let got;
   try { got = await open(me, envelope); } catch (e) { if (e instanceof BadEnvelope) return; throw e; } // junk is acked and dropped
   const content = cardFragment(got.card.content);
-  if (!content) return;
   const from = encodeCode(got.from);
-  const card: Received = { id, from, claimed: got.card.name, sentAt: got.card.at, gotAt: Date.now(), label: cardLabel(content), content: got.card.content as unknown[] };
-  if (!(await store.keepCard(card))) return; // had it already (an ack that didn't make it)
+  // the sender's id for this send (theirs alone: another sender can't claim it), so a resend isn't a second card
+  const key = got.card.mid ? `${from}:${got.card.mid}` : id;
+  // one this Falcon can't open (a newer Falcon's, say) is still shown, so it isn't lost without a word
+  const card: Received = content
+    ? { id: key, from, claimed: got.card.name, sentAt: got.card.at, gotAt: Date.now(), label: cardLabel(content), content: got.card.content as unknown[] }
+    : { id: key, from, claimed: got.card.name, sentAt: got.card.at, gotAt: Date.now(), label: "A card this Falcon can't open", content: [], unreadable: true };
+  let kept;
+  try { kept = await store.keepCard(card); } catch (e) { if (e instanceof store.InboxFull) full = true; throw e; } // not acked: it waits on the relay
+  if (!kept) return; // had it already (an ack that didn't make it, or a resend)
   set({ cards: [...state.cards, card] });
   told({ t: 'card', id });
   for (const f of arrivals) f(card, contactFor(from));
@@ -122,13 +152,14 @@ function relisten() {
  */
 export function start(listen: boolean): () => void {
   if (!store.storeAvailable()) { set({ status: 'unavailable' }); return () => {}; }
-  set({ status: 'loading' }); // until this start's own load is in (a restart must not read the last one's)
+  set({ status: 'loading', pausedUntil: 0 }); // until this start's own load is in (a restart must not read the last one's)
   let live = true;
   const hold = new AbortController();
   let release = () => {};
   const onMsg = async (e: MessageEvent<{ t: string; id?: string }>) => {
     if (!live) return;
     await reload().catch(() => {});
+    roomAgain(); // another window dismissed some
     const c = e.data.t === 'card' ? state.cards.find((x) => x.id === e.data.id) : null;
     if (c) for (const f of arrivals) f(c, contactFor(c.from));
   };
@@ -195,10 +226,14 @@ export async function newCode() {
 export async function drop(id: string) {
   set({ cards: state.cards.filter((c) => c.id !== id) });
   await saved(store.dropCard(id));
+  roomAgain();
 }
 
 /** The local time the daily limits reset (00:00 UTC): "7:00 PM". */
 export const resetTime = (until: number) => new Date(until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+/** The last send whose fate isn't known (no answer came back): the same card sent again keeps its id. */
+let unsure: { what: string; mid: string } | null = null;
 
 /** Seal a card to a contact and hand it to the relay. Resolves with what to tell the user, and whether it went. */
 export async function send(contact: Contact, content: Fragment): Promise<{ ok: boolean; message: string }> {
@@ -208,10 +243,16 @@ export async function send(contact: Contact, content: Fragment): Promise<{ ok: b
   if (state.pausedUntil > Date.now()) return { ok: false, message: `Card sharing is paused until ${resetTime(state.pausedUntil)}, when the relay's daily limit resets. The card wasn't sent` };
   const p = parseCode(contact.code);
   if (!p.ok || !me) return { ok: false, message: "Couldn't send: card sharing isn't ready yet" };
+  const json = content.toJSON() ?? [];
+  // sending the same card again after a send that may have got through reuses its id, so it arrives once
+  const what = `${contact.code}\n${JSON.stringify(json)}`;
+  const mid = unsure?.what === what ? unsure.mid : crypto.randomUUID();
+  const tooBig = { ok: false, message: 'That card is too big to send (over 1 MB, usually from pictures). It wasn\'t sent' };
   let env: Uint8Array;
-  try { env = await seal(me, p.pub, { name: state.name.trim(), at: Date.now(), content: content.toJSON() ?? [] }); } catch { return { ok: false, message: "Couldn't seal the card. It wasn't sent" }; }
-  if (env.length > MAX_ENVELOPE) return { ok: false, message: 'That card is too big to send (over 1 MB, usually from pictures). It wasn\'t sent' };
+  try { env = await seal(me, p.pub, { name: state.name.trim(), at: Date.now(), content: json, mid }); } catch (e) { return e instanceof TooBig ? tooBig : { ok: false, message: "Couldn't seal the card. It wasn't sent" }; }
+  if (env.length > MAX_ENVELOPE) return tooBig;
   const r = await transportFor(url).send(await inboxId(p.pub), env);
+  unsure = !r.ok && (r.error === 'unreachable' || r.error === 'relay_error') ? { what, mid } : null;
   if (r.ok) return { ok: true, message: `Sent “${label}” to ${contact.name}` };
   if (r.error === 'daily_limit') {
     const until = nextUtcMidnight();
@@ -219,11 +260,12 @@ export async function send(contact: Contact, content: Fragment): Promise<{ ok: b
     return { ok: false, message: `Card sharing is paused until ${resetTime(until)}, when the relay's daily limit resets. The card wasn't sent` };
   }
   const why: Record<string, string> = {
-    unreachable: "Couldn't reach the relay. Check the wifi. The card wasn't sent",
+    // no answer came back, so whether it got there isn't known: sent again, it still arrives once
+    unreachable: "Couldn't reach the relay. Check the wifi, then send it again",
     too_large: "That card is too big for the relay. It wasn't sent",
     inbox_full: `${contact.name} has too many cards waiting. The card wasn't sent`,
     bad_envelope: "The relay turned the card down. It wasn't sent",
-    relay_error: "The relay had a problem. The card wasn't sent",
+    relay_error: "The relay had a problem. Send the card again later",
   };
   return { ok: false, message: why[r.error] };
 }

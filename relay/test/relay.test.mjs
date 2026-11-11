@@ -194,6 +194,14 @@ describe('relay', () => {
     assert.equal((await post(relay.url, inbox2, env(200))).status, 507);
   });
 
+  test('a body sent without a length is cut off at the cap, not read to its end', async () => {
+    const inbox = await inboxId((await makeIdentity()).pub);
+    let sent = 0;
+    const body = new ReadableStream({ pull(c) { if (sent >= 3_000_000) return c.close(); const b = new Uint8Array(65536); b[0] = 1; sent += b.length; c.enqueue(b); } });
+    const r = await fetch(`${relay.url}/v1/inbox/${inbox}`, { method: 'POST', body, duplex: 'half' });
+    assert.equal(r.status, 413);
+  });
+
   test('a CORS preflight is answered for any origin, and a plain POST needs none', async () => {
     const r = await fetch(`${relay.url}/v1/inbox/${'a'.repeat(64)}`, { method: 'OPTIONS', headers: { Origin: 'https://example.com', 'Access-Control-Request-Method': 'POST' } });
     assert.equal(r.status, 204);

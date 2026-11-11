@@ -82,7 +82,7 @@ await win.waitForSelector('.pk input', { timeout: 5000 });
 await win.keyboard.type('zebra cp');
 await win.waitForSelector('.pk-row[data-on]:has-text("Zebra Counterplan")', { timeout: 5000 }).catch(() => {});
 await win.screenshot({ path: `shots/electron-file-search-${process.platform}.png`, timeout: 15000 }).catch(() => {});
-await win.keyboard.press(`${mod}+Enter`);
+await win.keyboard.press(`${mod}+Enter`); // plain Enter asks: search its blocks, or open it. Mod-Enter opens straight away
 const openedByPalette = await win.waitForSelector('.doc-nm[aria-label="Zebra Counterplan"]', { timeout: 8000 }).then(() => true, () => false);
 const paletteGone = !(await win.$('.pk'));
 // Search cards: the same folder's cards. Enter opens the file at the card (from a blank doc), Mod-Enter puts a copy of it in the open doc

@@ -29,7 +29,7 @@ Preconditions:
 
 - **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/send-card.mjs`. It exits 0 with 37 `ok` lines. It opens three browser contexts (A, B, and C with no relay), so three identities, plus a second window in B that waits for the socket and takes it over when the first closes.
 - **Desktop.** After `npm run build`, run `$V run .claude/skills/verify-falcon/journeys/send-card-desktop.mjs`. It exits 0 with 12 `ok` lines. The hidden Electron window (file://) connects and proves its key, takes a card from the script (the partner, using `src/collab` itself), inserts it with its marks, sends one back that the partner opens and verifies, and keeps the same code and contacts after a relaunch.
-- **Relay.** In Settings, fill `input[aria-label="Relay address"]`. `localStorage['falcon.relayUrl']` holds it, and the panel's `.co-line` reads `Connected. Cards sent to your code arrive here`.
+- **Relay.** In Settings, fill `input[aria-label="Relay address"]` and press Enter (it is saved on Enter or on leaving the box, not as it is typed; an address without `https://` gets it). `localStorage['falcon.relayUrl']` holds it, and the panel's `.co-line` reads `Connected. Cards sent to your code arrive here`.
 - **Code.** `.co-code` is the code. `.co-me button` copies it and the toast reads `Copied your pairing code`.
 - **Contact.** Fill `input[aria-label="Their pairing code"]` and `input[aria-label="Their name"]`, then click `.co-add button[type="submit"]`. A bad code shows in `.co-hint`. Saved contacts are `.co-ct .nm`.
 - **Send.** Put the caret in a card, run `Send Card to…`. `#co-st` reads `Send “<tag>” to…`. Enter sends to the lit `.co-pk`, and the toast reads `Sent “<tag>” to <name>`. The page makes one POST and no OPTIONS preflight.

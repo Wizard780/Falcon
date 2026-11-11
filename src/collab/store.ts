@@ -8,10 +8,15 @@ import { makeIdentity, type Identity } from './crypto';
 
 export type Contact = { code: string; name: string };
 /** A card that came in: who sent it (their code), what they call themselves, and the card itself. */
-export type Received = { id: string; from: string; claimed: string; sentAt: number; gotAt: number; label: string; content: unknown[] };
+export type Received = { id: string; from: string; claimed: string; sentAt: number; gotAt: number; label: string; content: unknown[]; /** this Falcon can't open it (a newer Falcon's card): it can only be dismissed */ unreadable?: boolean };
 
 const NAME = 'falcon-collab';
 const GONE_KEEP = 300; // ids of cards dismissed or inserted, so one delivered twice isn't shown twice
+/** Cards waiting, at most. Past it they stay on the relay (which holds 50 more, then turns senders away),
+ *  so a stranger with the code can't fill this disk. */
+export const MAX_WAITING = 50;
+/** keepCard's refusal when MAX_WAITING are waiting. */
+export class InboxFull extends Error {}
 
 /** WebCrypto (a secure page: https, localhost or the app) and IndexedDB are both here. */
 export const storeAvailable = () => typeof indexedDB !== 'undefined' && !!globalThis.crypto?.subtle;
@@ -30,7 +35,8 @@ function db(): Promise<IDBDatabase> {
 
 /** Run `f` in one transaction; resolves with its result once the transaction has committed (is on disk). */
 async function tx<T>(stores: string[], mode: IDBTransactionMode, f: (t: IDBTransaction) => IDBRequest<T> | void): Promise<T> {
-  const t = (await db()).transaction(stores, mode);
+  // strict: complete means flushed to disk, which is what lets the relay forget a card
+  const t = (await db()).transaction(stores, mode, mode === 'readwrite' ? { durability: 'strict' } : undefined);
   const r = f(t);
   return new Promise<T>((resolve, reject) => {
     t.oncomplete = () => resolve(r ? r.result : (undefined as T));
@@ -67,18 +73,24 @@ export const saveContacts = (list: Contact[]) => put('contacts', list);
 
 export const loadCards = () => tx<Received[]>(['cards'], 'readonly', (t) => t.objectStore('cards').getAll() as IDBRequest<Received[]>).then((l) => l.sort((a, b) => a.gotAt - b.gotAt));
 
-/** Keep a card that came in. Resolves once it is saved, which is when the relay may forget it. False: already had it. */
+/** Keep a card that came in. Resolves once it is saved, which is when the relay may forget it. False: already had it.
+ *  Rejects with InboxFull when MAX_WAITING are waiting: the card stays on the relay. */
 export async function keepCard(card: Received): Promise<boolean> {
-  let added = false;
+  let added = false, full = false;
   await tx(['meta', 'cards'], 'readwrite', (t) => {
     const gone = t.objectStore('meta').get('gone');
     gone.onsuccess = () => {
       if ((gone.result as string[] | undefined)?.includes(card.id)) return;
       const cards = t.objectStore('cards');
       const had = cards.getKey(card.id);
-      had.onsuccess = () => { if (had.result === undefined) { cards.put(card); added = true; } };
+      had.onsuccess = () => {
+        if (had.result !== undefined) return;
+        const n = cards.count();
+        n.onsuccess = () => { if (n.result >= MAX_WAITING) full = true; else { cards.put(card); added = true; } };
+      };
     };
   });
+  if (full) throw new InboxFull();
   return added;
 }
 /** Done with a card (inserted or dismissed). */

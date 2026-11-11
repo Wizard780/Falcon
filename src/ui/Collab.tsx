@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as collab from '../collab/service';
 import { shortCode } from '../collab/code';
+import { nextUtcMidnight } from '../collab/relay';
 import type { Contact, Received } from '../collab/service';
 import type { Ask } from './Confirm';
 import { SvgIcon } from './icons';
@@ -27,7 +28,8 @@ export function linkLine(s: collab.CollabState): string {
   if (s.pausedUntil > Date.now()) return `Paused until ${collab.resetTime(s.pausedUntil)}, when the relay's daily limit resets`;
   const l = s.link;
   if (l.kind === 'live') return 'Connected. Cards sent to your code arrive here';
-  if (l.kind === 'retry') { const m = Math.max(1, Math.round((l.at - Date.now()) / 60_000)); return `Can't reach the relay. Trying again in ${l.at - Date.now() < 60_000 ? 'under a minute' : `${m} min`}`; }
+  if (l.kind === 'retry') { const m = Math.max(1, Math.round((l.at - Date.now()) / 60_000)); // the relay's own daily request limit answers in a way a page can't tell from no connection
+    return `Can't reach the relay: no connection, or it's over its daily limit until ${collab.resetTime(nextUtcMidnight())}. Trying again in ${l.at - Date.now() < 60_000 ? 'under a minute' : `${m} min`}`; }
   if (l.kind === 'connecting') return 'Connecting to the relay…';
   return 'Cards sent to your code arrive in another Falcon window';
 }
@@ -101,11 +103,11 @@ export function CollabPanel(props: {
                 <div key={c.id} className="co-card">
                   <div className="co-what">
                     <b>{c.label}</b>
-                    <span>{who ? `From ${who.name}` : `From a code not in your contacts${c.claimed ? `, who says they're ${c.claimed}` : ''}`} · {when(c.gotAt)}</span>
+                    <span>{c.unreadable ? 'It may need a newer Falcon. Ask them to send it another way. ' : ''}{who ? `From ${who.name}` : `From a code not in your contacts${c.claimed ? `, who says they're ${c.claimed}` : ''}`} · {when(c.gotAt)}</span>
                   </div>
                   <div className="co-acts">
-                    <button ref={i === 0 ? first : undefined} className="co-main" onClick={() => { const why = props.onInsert(c); if (why) flash(why); else { void collab.drop(c.id); onClose(); } }}>Insert</button>
-                    <button onClick={() => void props.onCopy(c).then((ok) => flash(ok ? `Copied “${c.label}”` : "Couldn't copy it"))}>Copy</button>
+                    {!c.unreadable && <button ref={i === 0 ? first : undefined} className="co-main" onClick={() => { const why = props.onInsert(c); if (why) flash(why); else { void collab.drop(c.id); onClose(); } }}>Insert</button>}
+                    {!c.unreadable && <button onClick={() => void props.onCopy(c).then((ok) => flash(ok ? `Copied “${c.label}”` : "Couldn't copy it"))}>Copy</button>}
                     {!who && <button onClick={() => fromUnknown(c)}>Add contact</button>}
                     <button onClick={() => void collab.drop(c.id)}>Dismiss</button>
                   </div>
