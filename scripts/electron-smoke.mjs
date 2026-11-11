@@ -82,7 +82,7 @@ await win.waitForSelector('.pk input', { timeout: 5000 });
 await win.keyboard.type('zebra cp');
 await win.waitForSelector('.pk-row[data-on]:has-text("Zebra Counterplan")', { timeout: 5000 }).catch(() => {});
 await win.screenshot({ path: `shots/electron-file-search-${process.platform}.png`, timeout: 15000 }).catch(() => {});
-await win.keyboard.press('Enter');
+await win.keyboard.press(`${mod}+Enter`);
 const openedByPalette = await win.waitForSelector('.doc-nm[aria-label="Zebra Counterplan"]', { timeout: 8000 }).then(() => true, () => false);
 const paletteGone = !(await win.$('.pk'));
 // Search cards: the same folder's cards. Enter opens the file at the card (from a blank doc), Mod-Enter puts a copy of it in the open doc
@@ -193,7 +193,7 @@ want(wordListed && wordGone && wordsAfter.length === 0, `Add to Dictionary lists
 want(folderRow, 'Settings > File search > Add folder lists the folder with its file count');
 want(indexed.join() === 'Zebra Counterplan.docx', `indexed files are the allowed folder's .docx files: ${indexed}`);
 want(outsideOpen.startsWith('refused'), `openPath refuses a .docx outside the allowed folders: ${outsideOpen}`);
-want(openedByPalette && paletteGone, 'Cmd-K, typing and Enter opens the indexed file and closes the palette');
+want(openedByPalette && paletteGone, 'Cmd-K, typing and Mod-Enter opens the indexed file and closes the palette');
 want(cardRow && cardOpened && cardCaret === 'Warming is real', `Search cards finds a card by its tag and Enter opens its file at it: ${cardRow} ${cardOpened} ${JSON.stringify(cardCaret)}`);
 want(cardInserted.startsWith('Growth is slowingSmith 24'), `Mod-Enter in Search cards puts the card into the open doc: ${JSON.stringify(cardInserted.slice(0, 80))}`);
 want(winBg[0].toLowerCase() === '#f4f4f5' && winBg[1] === 'light', `the Light theme sets the window background and native theme: ${winBg}`);
