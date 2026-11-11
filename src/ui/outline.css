@@ -22,6 +22,7 @@
 /* a tag's card, beside the pane and level with the pointer (outline-preview.ts): card-links.css draws it, this parks it.
    It never takes the pointer. */
 .cl-pv.ol-pv, .cl-pv.ol-pv.cl-on { top: 0; overflow: hidden; pointer-events: none; cursor: default; transform: none; transition: opacity .14s; will-change: transform; }
+@media (prefers-reduced-motion: reduce) { .cl-pv.ol-pv, .cl-pv.ol-pv.cl-on { transition: none; } }
 .cl-pv.ol-pv .cl-h span:last-child { display: none; }
 .cl-pv.ol-pv.cl-page .cl-h { display: none; }
 .ol-drop { position: absolute; left: 4px; right: 4px; top: 0; height: 2px; border-radius: 1px; background: var(--ink); z-index: 2; pointer-events: none; }
