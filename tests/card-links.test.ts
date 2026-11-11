@@ -75,7 +75,7 @@ describe('card links', () => {
     const from = at(s, 'Extend', 3);
     s = s.apply(s.tr.setSelection(TextSelection.create(s.doc, from)));
     const card = cardIndex(s.doc).cards.get('clare 23')![0];
-    s = s.apply(s.tr.setSelection(TextSelection.create(s.doc, card.pos + 1)).setMeta(cardLinksKey, { push: s.selection.head, flash: [card.pos, card.end] }));
+    s = s.apply(s.tr.setSelection(TextSelection.create(s.doc, card.pos + 1)).setMeta(cardLinksKey, { push: { pos: s.selection.head, top: 0 }, flash: null }));
     expect(canGoBack(s)).toBe(true);
     s = s.apply(s.tr.insertText('xx', 2)); // typing above the spot moves it
     let next = s;
@@ -83,5 +83,25 @@ describe('card links', () => {
     expect(next.selection.head).toBe(from + 2);
     expect(canGoBack(next)).toBe(false);
     expect(linkBack(next)).toBe(false);
+  });
+
+  it("matches O'Brien typed with either apostrophe", () => {
+    const s = doc([['tag', 'T'], ['normal', '[[O’Brien 21]] (x)'], ['analytic', "Extend O'Brien 21 and O’Brien 21"]]);
+    const para = s.doc.child(2);
+    expect(refsIn(s.doc, para, s.doc.child(0).nodeSize + s.doc.child(1).nodeSize + 1)).toHaveLength(2);
+  });
+
+  it('indexes a 15k-paragraph file fast enough to rebuild after an edit', () => {
+    const word = (n: number) => 'N' + [...String(n)].map((d) => 'abcdefghij'[+d]).join('');
+    const big: [ParaStyle, string][] = [];
+    for (let i = 0; i < 5000; i++) big.push(['tag', `Tag ${i}`], ['normal', `[[${word(i % 700)} ${10 + (i % 15)}]] (cite)`], ['normal', 'Body text that is read aloud.']);
+    const s = doc(big);
+    cardIndex(s.doc);
+    const edited = s.apply(s.tr.insertText('x', 3)).doc; // a new doc: paragraphs keep their nodes
+    const t0 = performance.now();
+    const idx = cardIndex(edited);
+    const ms = performance.now() - t0;
+    expect(idx.cards.size).toBe(2100); // 700 names × 15 years, as lcm(700, 15) pairs
+    expect(ms).toBeLessThan(25);
   });
 });

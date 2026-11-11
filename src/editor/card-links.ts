@@ -43,6 +43,12 @@ function citeRun(n: PMNode): string {
 const hasCite = (n: PMNode) => { let y = false; n.forEach((t) => { if (cite.isInSet(t.marks)) y = true; }); return y; };
 
 const built = new WeakMap<PMNode, Index>();
+const cites = new WeakMap<PMNode, { name: string; year: string } | null>(); // an unchanged paragraph keeps its node across edits
+function citeOf(n: PMNode) {
+  let c = cites.get(n);
+  if (c === undefined) { c = parseCite(citeRun(n)); cites.set(n, c); }
+  return c;
+}
 let lastAlt = '', lastRe: RegExp | null = null; // typing rarely changes the names: keep the compiled pattern
 /** Every card's cite name → the cards with it, in file order. A card's cite line is the first non-empty,
  *  non-undertag paragraph after its tag (after an analytic only when it has cite-marked text). */
@@ -61,17 +67,17 @@ export function cardIndex(doc: PMNode): Index {
       head = level === 4 ? { node: n, pos, done: false } : null;
       return;
     }
-    if (!head || head.done || n.attrs.style === 'undertag' || n.content.size === 0) return;
+    if (!head || head.done || !n.isTextblock || n.attrs.style === 'undertag' || n.content.size === 0) return;
     head.done = true;
     if (head.node.attrs.style !== 'tag' && !hasCite(n)) return;
-    const c = parseCite(citeRun(n));
+    const c = citeOf(n);
     if (!c) return;
     const k = keyOf(c.name, c.year);
     last = { pos: head.pos, end: doc.content.size, name: `${c.name} ${c.year}` };
     cards.set(k, [...(cards.get(k) ?? []), last]);
     names.add(c.name);
   });
-  const alt = [...names].sort((a, b) => b.length - a.length).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+').replace(/'/g, "['’]")).join('|');
+  const alt = [...names].sort((a, b) => b.length - a.length).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+').replace(/['’]/g, "['’]")).join('|');
   if (alt !== lastAlt) { lastAlt = alt; lastRe = alt ? new RegExp(`(?<![\\p{L}\\p{N}])(${alt})[\\s,]+['’]?(\\d{4}|\\d{2})(?![\\p{L}\\p{N}])`, 'giu') : null; }
   const idx: Index = { cards, re: lastRe };
   built.set(doc, idx);
@@ -103,29 +109,30 @@ export function refAt(doc: PMNode, pos: number): Ref | null {
 
 // ---------------------------------------------------------------- state: Back, and the card that just got jumped to
 
-type St = { back: number[]; flash: [number, number] | null };
+/** `back`: where each followed link was clicked, and the page's scroll then. `flash`: the card just gone to, until `until`. */
+type St = { back: { pos: number; top: number }[]; flash: { from: number; to: number; until: number } | null };
 export const cardLinksKey = new PluginKey<St>('cardLinks');
-type Meta = { push?: number; pop?: true; flash?: [number, number] | null };
+type Meta = { push?: { pos: number; top: number }; pop?: true; flash?: St['flash'] };
+const FLASH_MS = 1200;
 
 export const canGoBack = (state: EditorState) => !!cardLinksKey.getState(state)?.back.length;
-const tops = new WeakMap<EditorView, number[]>(); // scroll offsets beside the back stack
 const scroller = (view: EditorView) => view.dom.closest('.f-scroll') as HTMLElement | null;
 
 /** Go to a card: the cursor to its tag, the page scrolled to it (the app's smooth scroll when it listens), and a short flash. */
 export function goToCard(view: EditorView, card: CardRef) {
   const { state } = view;
-  const t = tops.get(view) ?? [];
-  t.push(scroller(view)?.scrollTop ?? 0);
-  tops.set(view, t.slice(-20));
-  const tr = state.tr.setSelection(TextSelection.create(state.doc, card.pos + 1))
-    .setMeta(cardLinksKey, { push: state.selection.head, flash: [card.pos, card.end] } satisfies Meta);
+  const tr = state.tr.setSelection(TextSelection.create(state.doc, card.pos + 1)).setMeta(cardLinksKey, {
+    push: { pos: state.selection.head, top: scroller(view)?.scrollTop ?? 0 }, flash: { from: card.pos, to: card.end, until: Date.now() + FLASH_MS },
+  } satisfies Meta);
   view.dispatch(tr);
   view.focus();
   const ev = new CustomEvent('falcon-scroll-to', { detail: { view, pos: card.pos }, cancelable: true });
   if (dispatchEvent(ev)) scrollToTop(view, card.pos);
+  // the flash ends by its time (a file switched away and back draws none); this just redraws the page when it's over
   setTimeout(() => {
-    if (!view.isDestroyed && cardLinksKey.getState(view.state)?.flash) view.dispatch(view.state.tr.setMeta(cardLinksKey, { flash: null }).setMeta('addToHistory', false));
-  }, 1200);
+    const f = !view.isDestroyed && cardLinksKey.getState(view.state)?.flash;
+    if (f && f.until <= Date.now()) view.dispatch(view.state.tr.setMeta(cardLinksKey, { flash: null }).setMeta('addToHistory', false));
+  }, FLASH_MS + 20);
 }
 
 /** Back to where the last card link was clicked. */
@@ -133,13 +140,11 @@ export const linkBack: Command = (state, dispatch, view) => {
   const st = cardLinksKey.getState(state);
   if (!st?.back.length) return false;
   if (dispatch) {
-    const pos = Math.min(st.back[st.back.length - 1], state.doc.content.size);
-    dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(pos))).setMeta(cardLinksKey, { pop: true, flash: null } satisfies Meta));
+    const { pos, top } = st.back[st.back.length - 1];
+    dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(Math.min(pos, state.doc.content.size)))).setMeta(cardLinksKey, { pop: true, flash: null } satisfies Meta));
     if (view) {
-      const t = tops.get(view) ?? [];
-      const top = t.pop();
       const sc = scroller(view);
-      if (sc && top != null) sc.scrollTop = top;
+      if (sc) sc.scrollTop = top;
       view.focus();
     }
   }
@@ -239,6 +244,7 @@ class LinkView {
   timer = 0;
   hideTimer = 0;
   raf = 0;
+  typing = 0;
   sc: HTMLElement | null;
   constructor(readonly view: EditorView) {
     this.pv = document.createElement('div');
@@ -318,6 +324,7 @@ class LinkView {
     const view = this.view;
     if (mode() !== 'page' || !this.sc || !view.dom.isConnected) { if (dots.has(view)) setDots(view, null); return; }
     const box = this.sc.getBoundingClientRect(), left = view.dom.getBoundingClientRect().left + 4;
+    if (!box.height) return; // hidden: posAtCoords finds nothing and the fallback below would be the whole file
     const a = view.posAtCoords({ left, top: box.top + 2 })?.pos ?? 0;
     const b = view.posAtCoords({ left, top: box.bottom - 2 })?.pos ?? view.state.doc.content.size;
     const doc = view.state.doc, idx = cardIndex(doc), ranges: Range[] = [];
@@ -329,11 +336,13 @@ class LinkView {
     setDots(view, ranges);
   }
   update(view: EditorView, prev: EditorState) {
-    if (view.state.doc !== prev.doc) { this.hide(); this.setHot(null); }
-    this.paintSoon();
+    if (view.state.doc === prev.doc) { this.paintSoon(); return; }
+    this.hide(); this.setHot(null);
+    // typing: redraw the dots once it pauses, not per key (each new doc rebuilds the card index)
+    if (mode() === 'page') { clearTimeout(this.typing); this.typing = window.setTimeout(() => this.paintSoon(), 150); }
   }
   destroy() {
-    clearTimeout(this.timer); clearTimeout(this.hideTimer); cancelAnimationFrame(this.raf);
+    clearTimeout(this.timer); clearTimeout(this.hideTimer); clearTimeout(this.typing); cancelAnimationFrame(this.raf);
     this.sc?.removeEventListener('scroll', this.onScroll);
     this.pv.remove();
     document.removeEventListener('mouseup', this.up);
@@ -349,8 +358,8 @@ export const cardLinksPlugin = new Plugin<St>({
     init: () => ({ back: [], flash: null }),
     apply(tr, prev) {
       const m = tr.getMeta(cardLinksKey) as Meta | undefined;
-      let back = tr.docChanged ? prev.back.map((p) => tr.mapping.map(p)) : prev.back;
-      let flash = prev.flash && tr.docChanged ? [tr.mapping.map(prev.flash[0]), tr.mapping.map(prev.flash[1])] as [number, number] : prev.flash;
+      let back = tr.docChanged ? prev.back.map((b) => ({ ...b, pos: tr.mapping.map(b.pos) })) : prev.back;
+      let flash = prev.flash && tr.docChanged ? { ...prev.flash, from: tr.mapping.map(prev.flash.from), to: tr.mapping.map(prev.flash.to) } : prev.flash;
       if (!m) return back === prev.back && flash === prev.flash ? prev : { back, flash };
       if (m.push != null) back = [...back, m.push].slice(-20);
       if (m.pop) back = back.slice(0, -1);
@@ -363,9 +372,9 @@ export const cardLinksPlugin = new Plugin<St>({
     attributes: () => ({ 'data-card-links': mode() }),
     decorations(state) {
       const f = cardLinksKey.getState(state)?.flash;
-      if (!f) return null;
+      if (!f || f.until <= Date.now()) return null;
       const decos: Decoration[] = [];
-      state.doc.forEach((n, pos) => { if (pos >= f[0] && pos < f[1]) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'cl-flash' })); });
+      state.doc.forEach((n, pos) => { if (pos >= f.from && pos < f.to) decos.push(Decoration.node(pos, pos + n.nodeSize, { class: 'cl-flash' })); });
       return DecorationSet.create(state.doc, decos);
     },
     handleDOMEvents: {
