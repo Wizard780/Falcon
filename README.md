@@ -58,5 +58,3 @@ node scripts/side-by-side.mjs file.docx    # same file screenshotted in both app
 node scripts/bigdoc.mjs file.docx          # open time and typing latency
 node scripts/electron-smoke.mjs            # desktop app, headless (run `npm run build` first)
 ```
-
-CardMirror is a reference only: Falcon studies how it behaves but shares no code with it.
