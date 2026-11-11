@@ -1,6 +1,8 @@
 // Search cards: every card (tag, cite, and the pocket/hat/block it sits under) in the .docx files of the
 // folders allowed in Settings. Only changed files are read again, and the index is kept on disk, so a
 // restart doesn't read everything. The page gets tags, cites and headings back, never whole files.
+// It's only in memory while Search cards is in use: a big backfile's index is a gigabyte or more, so it's
+// read from disk on the first search and let go again after a few minutes without one.
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
@@ -8,6 +10,7 @@ const zlib = require('node:zlib');
 
 const VERSION = 1;
 const STALE_MS = 15000; // asked again after this long: look for changed files (in the background)
+const IDLE_MS = 5 * 60_000; // unused this long: let the index go (it's all on disk)
 const SEP = '\u0001';
 // kept short: a big backfile has hundreds of thousands of cards, and all of them stay in memory
 const TAG_MAX = 250, CITE_MAX = 160;
@@ -191,14 +194,29 @@ function rank(hay, query, limit = 60, memo) {
 
 const flat = (p) => p.replace(/\\/g, '/').replace(/\/+$/, '');
 
-/** `listFiles` gives every .docx in the allowed folders ([{ path, mtime }]); `storeFile` keeps the index. */
-function createCardIndex(storeFile, listFiles) {
+/** `listFiles` gives every .docx in the allowed folders ([{ path, mtime }]); `storeFile` keeps the index.
+ *  `onRelease` runs once it's let go: a quiet process may not collect the garbage for a long while on its own. */
+function createCardIndex(storeFile, listFiles, { idleMs = IDLE_MS, onRelease } = {}) {
   let files = new Map(); // path -> { mtime, size, bad, cards }
   let hay = null; // lowercase copies for searching, built on the first search after a change
   let hidden = []; // files and folders kept out of the search, as forward-slash paths
   const memo = { hay: null, ws: [], hits: [] }; // the last search's matches, for narrowing while typing
   let loaded = null, scanning = null, scannedAt = 0;
   let progress = { done: 0, total: 0 };
+  let idle = null;
+
+  // a scan saves whatever it changed, so letting go loses nothing: the next search reads it back
+  function release() {
+    if (scanning) return rest();
+    files = new Map(); hay = null; loaded = null;
+    memo.hay = null; memo.ws = []; memo.hits = [];
+    onRelease?.();
+  }
+  function rest() {
+    clearTimeout(idle);
+    idle = setTimeout(release, idleMs);
+    idle.unref?.();
+  }
 
   const load = () => (loaded ??= fsp.readFile(storeFile, 'utf8').then((s) => {
     const saved = JSON.parse(s);
@@ -247,7 +265,8 @@ function createCardIndex(storeFile, listFiles) {
   }
 
   function scan() {
-    return (scanning ??= doScan().finally(() => { scanning = null; }));
+    clearTimeout(idle);
+    return (scanning ??= doScan().finally(() => { scanning = null; rest(); }));
   }
 
   function haystack() {
@@ -276,6 +295,7 @@ function createCardIndex(storeFile, listFiles) {
     scan,
     /** Matching cards, from what's indexed now. A stale index is brought up to date in the background. */
     async search(query, limit, hide = []) {
+      clearTimeout(idle);
       await load();
       const dirs = hide.map(flat);
       if (dirs.join('\n') !== hidden.join('\n')) { hidden = dirs; hay = null; }
@@ -284,6 +304,7 @@ function createCardIndex(storeFile, listFiles) {
         const [tag, cite, heads] = files.get(h.path).cards[h.i];
         return { path: h.path, ordinal: h.i, file: path.basename(h.path).replace(/\.docx$/i, ''), tag, cite, headings: heads ? heads.split(SEP) : [], copies };
       });
+      rest();
       return { hits, status: status() };
     },
     status,

@@ -1,11 +1,10 @@
 // Falcon main process: the windows, native file dialogs, and the clipboard bridge.
-const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, safeStorage, shell, utilityProcess } = require('electron');
 const crypto = require('node:crypto');
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createIndex } = require('./indexer.cjs');
-const { createCardIndex } = require('./cards.cjs');
 const updater = require('./updater.cjs');
 const speechdrop = require('./speechdrop.cjs');
 const telemetry = require('./telemetry.cjs');
@@ -14,6 +13,14 @@ const { createSecrets, promptSecret } = require('./secrets.cjs');
 
 const DEV = process.env.FALCON_DEV === '1';
 const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a window
+// scripts/idle-bench.mjs: a shown window that paints like the user's, but can't be seen or clicked (macOS keeps
+// 40px of any window on screen, so it's see-through too), and isn't slowed for being out of sight
+const BENCH = process.env.FALCON_BENCH === '1';
+if (BENCH) {
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+}
 // tests: a throwaway profile, so they never touch the user's recents, pens or crash-recovery copy
 // tests: closing never waits on the unsaved-docs question (the smoke test turns this off to check it)
 globalThis.falconSkipUnloadGuard = HEADLESS;
@@ -68,6 +75,7 @@ function createWindow(start = null) {
     minWidth: 800,
     minHeight: 500,
     show: false,
+    ...(BENCH ? { x: -20000, y: -20000, opacity: 0, focusable: false, hasShadow: false } : {}),
     backgroundColor: theme.bg,
     title: 'Falcon',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
@@ -92,7 +100,8 @@ function createWindow(start = null) {
     if (speechHolder === page) speechHolder = null;
     if (!keepSession) tellWindows();
   });
-  if (!HEADLESS) win.once('ready-to-show', () => (start?.inactive ? win.showInactive() : win.show()));
+  if (BENCH) win.once('ready-to-show', () => { win.setIgnoreMouseEvents(true); win.showInactive(); });
+  else if (!HEADLESS) win.once('ready-to-show', () => (start?.inactive ? win.showInactive() : win.show()));
   if (DEV) win.loadURL('http://localhost:5173/');
   else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   // links open in the browser, never inside the app
@@ -231,9 +240,40 @@ if (primary) {
 // File search: the folders allowed in Settings (see indexer.cjs)
 let fileIndex = null;
 const index = () => (fileIndex ??= createIndex(path.join(app.getPath('userData'), 'index-folders.json')));
-// Search cards: the cards in those same folders (see cards.cjs)
-let cardIndex = null;
-const cards = () => (cardIndex ??= createCardIndex(path.join(app.getPath('userData'), 'card-index.json'), () => index().files()));
+// Search cards: the cards in those same folders (see cards.cjs), kept by a process that only runs while it's used
+// (cards-host.cjs). A search sent just as it quits idle goes to a new one.
+let cardHost = null;
+const cardAsks = new Map();
+let cardNext = 0;
+function cardProcess() {
+  if (cardHost) return cardHost;
+  const child = (cardHost = utilityProcess.fork(path.join(__dirname, 'cards-host.cjs'), [path.join(app.getPath('userData'), 'card-index.json')], { serviceName: 'Falcon card search' }));
+  child.on('message', (m) => {
+    if (m.files) {
+      index().files().then((list) => child.postMessage({ files: m.files, list }), (e) => child.postMessage({ files: m.files, error: String(e?.message ?? e) }));
+      return;
+    }
+    const a = cardAsks.get(m.id);
+    if (!a) return;
+    cardAsks.delete(m.id);
+    if (m.error) a.reject(new Error(m.error)); else a.resolve(m.r);
+  });
+  child.once('exit', () => {
+    if (cardHost === child) cardHost = null;
+    for (const a of cardAsks.values()) if (a.child === child) sendCardAsk(a);
+  });
+  return child;
+}
+function sendCardAsk(a) {
+  if (a.tries++ >= 3) { cardAsks.delete(a.msg.id); a.reject(new Error('Search cards stopped')); return; }
+  a.child = cardProcess();
+  a.child.postMessage(a.msg);
+}
+const searchCards = (query, limit, hide) => new Promise((resolve, reject) => {
+  const a = { msg: { id: ++cardNext, query, limit, hide }, resolve, reject, tries: 0, child: null };
+  cardAsks.set(a.msg.id, a);
+  sendCardAsk(a);
+});
 
 let quitting = false; // the window is closing because the app is quitting (Cmd-Q), not just the window
 // a quit keeps the list of open files, for Restore open files. Windows close while others still ask about unsaved
@@ -324,7 +364,7 @@ ipcMain.handle('falcon:dict-remove', async (e, w) => {
   return (await dictWords(e)).filter((x) => x !== w); // the list can lag the removal by a moment
 });
 ipcMain.handle('falcon:index-files', () => index().files());
-ipcMain.handle('falcon:card-search', (_e, q, hidden) => cards().search(typeof q === 'string' ? q.slice(0, 200) : '', 60, Array.isArray(hidden) ? hidden.filter((h) => typeof h === 'string') : []));
+ipcMain.handle('falcon:card-search', (_e, q, hidden) => searchCards(typeof q === 'string' ? q.slice(0, 200) : '', 60, Array.isArray(hidden) ? hidden.filter((h) => typeof h === 'string') : []));
 async function saveFile(e, opts) {
   if (!opts || !(opts.data instanceof Uint8Array)) throw new Error('bad save request');
   // Save writes straight into the document's own file, wherever it lives, as long as it's still there.
@@ -657,12 +697,11 @@ ipcMain.on('falcon:track', (_e, event, props) => {
 });
 
 if (primary) app.whenReady().then(() => {
+  if (BENCH) app.dock?.hide();
   buildMenu();
   createWindow();
   updater.start();
   startEditorBridge();
-  // read changed files into the card index after launch settles, so Search cards is current when first opened
-  if (!HEADLESS) setTimeout(() => void cards().scan().catch(() => {}), 10000);
   app.on('activate', () => { if (!windows.size) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

@@ -120,6 +120,33 @@ describe('createCardIndex', () => {
     expect((await idx.search('chen')).hits).toEqual([]);
     fs.rmSync(dir, { recursive: true });
   });
+
+  it('reads the index only when searched, lets it go when unused, and reads it back the same', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-cards-'));
+    const a = path.join(dir, 'Aff.docx'), store = path.join(dir, 'index.json');
+    fs.writeFileSync(a, await docx());
+    const list = async () => [{ path: a, mtime: fs.statSync(a).mtimeMs }];
+    await createCardIndex(store, list).scan();
+    const saved = fs.readFileSync(store, 'utf8');
+
+    let released = 0;
+    const idx = createCardIndex(store, list, { idleMs: 400, onRelease: () => released++ });
+    expect(idx.status()).toMatchObject({ files: 0, cards: 0 }); // made, but nothing read yet
+    const first = await idx.search('chen nature');
+    expect(first.hits).toHaveLength(1);
+    expect(idx.status()).toMatchObject({ files: 1, cards: 3 });
+    await new Promise((r) => setTimeout(r, 250));
+    await idx.search('plan'); // still in use: the clock starts over
+    await new Promise((r) => setTimeout(r, 250));
+    expect(idx.status().cards).toBe(3);
+    // the search's background scan finishes, then nothing for a while: let go
+    await new Promise((r) => setTimeout(r, 1000));
+    expect(idx.status()).toMatchObject({ files: 0, cards: 0, scanning: false });
+    expect(released).toBe(1); // so the app can ask for the garbage to be collected
+    expect(fs.readFileSync(store, 'utf8')).toBe(saved); // letting go never touches the file
+    expect((await idx.search('chen nature')).hits).toEqual(first.hits);
+    fs.rmSync(dir, { recursive: true });
+  });
 });
 
 describe('finding the card in the opened file', () => {
