@@ -44,8 +44,8 @@ const box = (text) => page.evaluate((text) => {
 
 // the user's own case: type "clare 23" in lowercase after "Extend "
 await f.select('Extend '); // typing replaces the selection (headless has no OS focus for a bare caret move)
-await page.keyboard.type('Extend clare 23 here.');
-f.want((await f.markMap()).includes('Extend clare 23 here.'), 'typed "clare 23" into the analytic');
+await page.keyboard.type('Extend clare 23 here, then smith 22.');
+f.want((await f.markMap()).includes('Extend clare 23 here, then smith 22.'), 'typed "clare 23" into the analytic');
 
 // hover: preview after a moment, quiet style, with the card's tag and cite
 let at = await box('clare 23');
@@ -56,6 +56,21 @@ f.want(!!pv && pv.cls.includes('cl-quiet'), `hover shows the quiet preview (${pv
 f.want(!!pv && pv.text.includes('Compute caps survive treaty collapse') && pv.text.includes('Clare 23') && pv.text.includes('Evidence'), 'preview has the tag, cite and section');
 f.want(await page.evaluate(() => document.querySelector('.ProseMirror').classList.contains('cl-pointer')), 'pointer cursor over the name');
 await f.shot('quiet-hover');
+
+// on to another name with the preview open: the box glides there, taking no pointer on the way, and lands usable
+const left = () => page.evaluate(() => document.querySelector('.cl-pv').getBoundingClientRect().left);
+const l0 = await left();
+at = await box('smith 22');
+await page.mouse.move(at.x, at.y, { steps: 5 });
+await page.waitForTimeout(60);
+const mid = await page.evaluate(() => { const e = document.querySelector('.cl-pv.cl-on'); return e && { cls: e.className, pe: getComputedStyle(e).pointerEvents, n: e.querySelectorAll('.cl-it').length }; });
+f.want(!!mid && mid.cls.includes('cl-glide') && mid.pe === 'none', `the open preview glides to the next name (${mid?.cls}, ${mid?.pe})`);
+f.want(mid?.n === 2, 'already showing the two Smith 22 cards: no second wait');
+await page.waitForTimeout(450);
+const end = await page.evaluate(() => { const e = document.querySelector('.cl-pv.cl-on'); return e && { cls: e.className, pe: getComputedStyle(e).pointerEvents }; });
+f.want(!!end && !end.cls.includes('cl-glide') && end.pe === 'auto', `and lands where it can be clicked (${end?.cls}, ${end?.pe})`);
+f.want(Math.abs(await left() - l0) > 40, `under the new name (${l0} → ${await left()})`);
+await f.shot('glided');
 
 // not linked: Jones 19 (move off first: the open preview sits over the next line)
 await page.mouse.move(5, 300);
