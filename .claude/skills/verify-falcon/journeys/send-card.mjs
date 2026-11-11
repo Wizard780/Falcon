@@ -53,7 +53,7 @@ const command = async (f, text) => {
   await wait(f, 300);
   return row;
 };
-/** Settings > General > Card sharing > Relay, typed in, as a user sets it */
+/** Settings > Sharing > Relay, typed in, as a user sets it */
 async function setRelay(f, url) {
   await f.page.click('.fstrip [aria-label="Settings"]');
   await f.page.fill('[aria-label="Search settings"]', 'relay');
@@ -220,7 +220,7 @@ want((await A.markMap()).includes('tag: Temperatures rose again.'), 'relay stopp
 // ---------- no relay set ----------
 const C = await openFalcon('send-card/c');
 await command(C, 'card sharing');
-want((await status(C)) === "No relay is set, so cards can't be sent or received yet. Add one in Settings > General > Card sharing", 'no relay: the panel says sharing is off and where to turn it on');
+want((await status(C)) === "No relay is set, so cards can't be sent or received yet. Add one in Settings > Sharing", 'no relay: the panel says sharing is off and where to turn it on');
 want(/^[0-9A-Z-]{63}$/.test((await C.page.textContent('.co-code')).trim()), 'no relay: the pairing code still shows');
 await C.page.fill('input[aria-label="Their pairing code"]', codeB);
 await C.page.fill('input[aria-label="Their name"]', 'Blake');
@@ -233,10 +233,10 @@ await C.page.click('.ProseMirror:not(.hm-doc)');
 await C.page.keyboard.press('F7');
 await C.page.keyboard.type('A tag to send');
 await command(C, 'send card');
-want((await C.page.textContent('.co-send .co-line')) === "No relay is set, so cards can't be sent or received yet. Add one in Settings > General > Card sharing", 'no relay: the picker says so');
+want((await C.page.textContent('.co-send .co-line')) === "No relay is set, so cards can't be sent or received yet. Add one in Settings > Sharing", 'no relay: the picker says so');
 await C.page.keyboard.press('Enter');
 await wait(C, 300);
-want((await toast(C)) === "No relay is set, so cards can't be sent yet. Add one in Settings > General > Card sharing", `no relay: sending explains it (${await toast(C)})`);
+want((await toast(C)) === "No relay is set, so cards can't be sent yet. Add one in Settings > Sharing", `no relay: sending explains it (${await toast(C)})`);
 
 for (const f of [B, C]) { if (f.errors.length) want(false, `page errors: ${f.errors.join(' | ')}`); await f.browser.close(); }
 fs.rmSync(persist, { recursive: true, force: true });

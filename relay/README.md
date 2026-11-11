@@ -23,7 +23,7 @@ It is built to stay on the **Workers Free plan**, and it never needs a paid one.
    ```
    Wrangler prints the URL, like `https://falcon-relay.<your-subdomain>.workers.dev`.
 3. Put that URL in Falcon. Either:
-   - per install: Settings > General > Card sharing > Relay, or
+   - per install: Settings > Sharing > Relay, or
    - for everyone: set `DEFAULT_RELAY` in `src/collab/relay.ts` and ship a build.
 
 The migration in `wrangler.jsonc` uses `new_sqlite_classes`, the Durable Object storage the Free plan

@@ -127,3 +127,13 @@ export function relayTransport(base: string): Transport {
     },
   };
 }
+
+/**
+ * Is a Falcon relay answering at `base`? Posts one byte, which a relay turns down as not an envelope
+ * before it touches storage, so the check costs a request and nothing else.
+ */
+export async function checkRelay(base: string): Promise<'ok' | 'not_relay' | 'unreachable'> {
+  let r: Response;
+  try { r = await fetch(`${base.replace(/\/+$/, '')}/v1/inbox/${'0'.repeat(64)}`, { method: 'POST', body: new Uint8Array([1]) }); } catch { return 'unreachable'; }
+  try { return r.status === 400 && (await r.json()).error === 'bad_envelope' ? 'ok' : 'not_relay'; } catch { return 'not_relay'; }
+}

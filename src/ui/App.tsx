@@ -1443,6 +1443,8 @@ export function App() {
       if (settingsRef.current && !(e.key === 'Escape' || id === 'settings')) { if (mod) e.preventDefault(); return; }
       // Esc in a filled Settings search clears the search before it closes Settings, and in a half-typed number puts it back
       if (e.key === 'Escape' && settingsRef.current && e.target instanceof HTMLInputElement && ((e.target.closest('.st-search') || e.target.classList.contains('st-find')) && e.target.value || 'draft' in e.target.dataset)) return;
+      // a dialog inside Settings (the relay guide) closes itself on Esc, leaving Settings open
+      if (e.key === 'Escape' && settingsRef.current && (e.target as Element | null)?.closest?.('[data-own-esc]')) return;
       if (e.key === 'Escape' && settingsRef.current) { e.preventDefault(); e.stopPropagation(); setSettingsOpen(false); return; }
       if (e.key === 'Escape' && citePass.current && !citePass.current.stop) { e.preventDefault(); e.stopPropagation(); citePass.current.stop = true; flash('Stopping after this cite…'); return; }
       if (e.key === 'Escape' && homeRef.current) { e.preventDefault(); e.stopPropagation(); setHomeOpen(false); return; }

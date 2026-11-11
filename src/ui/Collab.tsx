@@ -25,7 +25,7 @@ function when(ms: number, now = new Date()) {
 /** What the relay link is doing, in a line. */
 export function linkLine(s: collab.CollabState): string {
   if (s.status === 'unavailable') return "Card sharing needs the Falcon app or a secure page (https), and this one can't keep keys";
-  if (!s.relay) return "No relay is set, so cards can't be sent or received yet. Add one in Settings > General > Card sharing";
+  if (!s.relay) return "No relay is set, so cards can't be sent or received yet. Add one in Settings > Sharing";
   if (s.pausedUntil > Date.now()) return `Paused until ${collab.resetTime(s.pausedUntil)}, when the relay's daily limit resets`;
   const l = s.link;
   if (l.kind === 'live') return 'Connected. Cards sent to your code arrive here';

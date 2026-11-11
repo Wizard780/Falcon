@@ -138,7 +138,7 @@ describe('card sharing in the app', () => {
   it('with no relay set, sharing is inert and says so; the code and contacts still work', async () => {
     const app = await setup({});
     await openPanel(app);
-    expect($('.co-line')?.textContent).toBe("No relay is set, so cards can't be sent or received yet. Add one in Settings > General > Card sharing");
+    expect($('.co-line')?.textContent).toBe("No relay is set, so cards can't be sent or received yet. Add one in Settings > Sharing");
     expect(parseCode($('.co-code')?.textContent ?? '').ok).toBe(true);
     const pat = await makeIdentity();
     await app.fill($('input[aria-label="Their pairing code"]'), encodeCode(pat.pub));
@@ -149,7 +149,7 @@ describe('card sharing in the app', () => {
     await app.act(() => v.dispatch(v.state.tr.replaceWith(0, v.state.doc.content.size, formattedCard())));
     await app.press('F1', { ctrlKey: true, shiftKey: true }, 100);
     await app.click($('.co-pk'), 200);
-    expect(app.toast()).toBe("No relay is set, so cards can't be sent yet. Add one in Settings > General > Card sharing");
+    expect(app.toast()).toBe("No relay is set, so cards can't be sent yet. Add one in Settings > Sharing");
     expect(relay.posted).toHaveLength(0);
     await app.type(' still types');
     expect(app.text()).toContain('still types');

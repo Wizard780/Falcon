@@ -19,7 +19,7 @@ Each Falcon has a pairing code. Partners swap codes and save each other as conta
 - Command center (Mod-Shift-Space): `Card sharing` opens the panel; `Send Card to…` opens the picker. Neither has a key until one is set in Settings > Keybindings (Card sharing group).
 - The rail's inbox button above Settings, shown only while cards are waiting.
 - The toast's Show button when a card arrives.
-- Settings > General > Card sharing > Relay (search "relay"), the relay's address.
+- Settings > Sharing > Relay (search "relay"), the relay's address.
 
 ## Driving it with falcon-verify
 
