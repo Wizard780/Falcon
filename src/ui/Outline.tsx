@@ -438,6 +438,7 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
       {item.hasKids ? <span className="ic tw" data-tw><SvgIcon name="chev" /></span> : <span className="ic sp" />}
       {numbers[i] && <span className="num">{numbers[i]}</span>}
       <span className={`nm${item.text ? '' : ' empty'}`}>{tidyHeading(item.text) || 'Untitled'}</span>
+      {item.cite && <span className="cite">{item.cite}</span>}
       {item.level < 4 && item.cards > 0 && <span className="ct">{item.cards}</span>}
     </button>
   )), [rows, sel, hitSet, numbers, keep, hide]);

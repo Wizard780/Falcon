@@ -2,7 +2,7 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { levelOf, type ParaStyle } from './schema';
 import { norm } from './find';
 
-export type OutlineItem = { pos: number; level: number; text: string; style: ParaStyle; cards: number; hasKids: boolean; key: string };
+export type OutlineItem = { pos: number; level: number; text: string; style: ParaStyle; cards: number; hasKids: boolean; key: string; cite?: string };
 
 /**
  * Headings in document order, each with the number of cards (tags/analytics) under it. `key` names the
@@ -13,10 +13,14 @@ export function buildOutline(doc: PMNode): OutlineItem[] {
   const items: OutlineItem[] = [];
   const stack: OutlineItem[] = [];
   const seen: Map<string, number>[] = [new Map()];
+  let tag: OutlineItem | null = null; // a tag still waiting for its cite: the cite-styled text of the first paragraph under it
   doc.forEach((node, pos) => {
     const style = node.attrs.style as ParaStyle;
     const level = levelOf(node);
-    if (!level) return;
+    if (!level) {
+      if (tag && node.isTextblock && style !== 'undertag' && node.textContent.trim()) { tag.cite = citeOf(node); tag = null; }
+      return;
+    }
     const text = node.textContent.trim();
     while (stack.length && stack[stack.length - 1].level >= level) { stack.pop(); seen.pop(); }
     const parent = stack[stack.length - 1];
@@ -32,8 +36,20 @@ export function buildOutline(doc: PMNode): OutlineItem[] {
     }
     stack.push(item);
     items.push(item);
+    tag = level === 4 ? item : null;
   });
   return items;
+}
+
+/** The first run of cite-styled text in a paragraph ("Bulletin '25"), or undefined. */
+function citeOf(para: PMNode): string | undefined {
+  let s = '', done = false;
+  para.forEach((t) => {
+    if (done) return;
+    if (t.marks.some((m) => m.type.name === 'cite')) s += t.text ?? '';
+    else if (s.trim()) done = true;
+  });
+  return s.trim().replace(/\s+/g, ' ') || undefined;
 }
 
 /** Index of the outline item that contains pos (the last heading at or before it). */

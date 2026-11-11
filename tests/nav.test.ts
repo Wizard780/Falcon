@@ -5,7 +5,7 @@ import { make, caret, select, run } from './helpers';
 import { alphabetize, canDrop, deleteSections, gotoStyle, moveSections, sectionAt, sectionsSlice, selectSections, topSections } from '../src/editor/nav/sections';
 import { compute, letters, numberMarks, numberingKey, outlineNumbers, toggleRestart, toggleRole, setNavScope } from '../src/editor/nav/numbering';
 import { falconKeys as navKeys } from '../src/editor/keymap';
-import type { ParaStyle } from '../src/editor/schema';
+import { schema, type ParaStyle } from '../src/editor/schema';
 import { buildOutline, searchOutline } from '../src/editor/outline';
 
 const DOC: [ParaStyle, string][] = [
@@ -233,5 +233,15 @@ describe('outline keys', () => {
     // typing a card above a heading doesn't change its key
     const t = s.apply(s.tr.insertText('more words', pos(s, 'body') + 1));
     expect(buildOutline(t.doc).map((i) => i.key)).toEqual(keys);
+  });
+});
+
+describe('outline cites', () => {
+  it('a tag carries the cite-styled text of the first paragraph under it', () => {
+    const s = make([['block', 'B'], ['tag', 'T1'], ['normal', ''], ['undertag', 'context'], ['normal', 'Bulletin ’25 [Science Board] Concern'], ['tag', 'T2'], ['normal', 'no cite here'], ['tag', 'T3'], ['block', 'B2']]);
+    const p = pos(s, 'Bulletin ’25 [Science Board] Concern') + 1;
+    const t = s.apply(s.tr.addMark(p, p + 'Bulletin ’25'.length, schema.marks.cite.create()));
+    const items = buildOutline(t.doc);
+    expect(items.map((i) => i.cite)).toEqual([undefined, 'Bulletin ’25', undefined, undefined, undefined]);
   });
 });
