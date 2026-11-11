@@ -14,6 +14,14 @@ const { createSecrets, promptSecret } = require('./secrets.cjs');
 
 const DEV = process.env.FALCON_DEV === '1';
 const HEADLESS = process.env.FALCON_HEADLESS === '1'; // tests: never show a window
+// scripts/idle-bench.mjs: a shown window that paints like the user's, but can't be seen or clicked (macOS keeps
+// 40px of any window on screen, so it's see-through too), and isn't slowed for being out of sight
+const BENCH = process.env.FALCON_BENCH === '1';
+if (BENCH) {
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+}
 // tests: a throwaway profile, so they never touch the user's recents, pens or crash-recovery copy
 // tests: closing never waits on the unsaved-docs question (the smoke test turns this off to check it)
 globalThis.falconSkipUnloadGuard = HEADLESS;
@@ -68,6 +76,7 @@ function createWindow(start = null) {
     minWidth: 800,
     minHeight: 500,
     show: false,
+    ...(BENCH ? { x: -20000, y: -20000, opacity: 0, focusable: false, hasShadow: false } : {}),
     backgroundColor: theme.bg,
     title: 'Falcon',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
@@ -92,7 +101,8 @@ function createWindow(start = null) {
     if (speechHolder === page) speechHolder = null;
     if (!keepSession) tellWindows();
   });
-  if (!HEADLESS) win.once('ready-to-show', () => (start?.inactive ? win.showInactive() : win.show()));
+  if (BENCH) win.once('ready-to-show', () => { win.setIgnoreMouseEvents(true); win.showInactive(); });
+  else if (!HEADLESS) win.once('ready-to-show', () => (start?.inactive ? win.showInactive() : win.show()));
   if (DEV) win.loadURL('http://localhost:5173/');
   else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   // links open in the browser, never inside the app
@@ -657,6 +667,7 @@ ipcMain.on('falcon:track', (_e, event, props) => {
 });
 
 if (primary) app.whenReady().then(() => {
+  if (BENCH) app.dock?.hide();
   buildMenu();
   createWindow();
   updater.start();
