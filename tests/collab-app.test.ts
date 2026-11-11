@@ -226,12 +226,59 @@ describe('card sharing in the app', () => {
     await openPanel(app);
     expect($('.cf.co')).not.toBeNull();
     expect([...document.querySelectorAll('.co-ct .nm')].map((n) => n.textContent)).toEqual(['Pat', 'Kim']);
+    ($('[aria-label="Remove Pat"]') as HTMLElement).focus(); // as a real click does
     await app.click($('[aria-label="Remove Pat"]'));
+    // the row folds shut where it is, then goes
+    expect([...document.querySelectorAll('.co-fold[data-gone] .nm')].map((n) => n.textContent)).toEqual(['Pat']);
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Remove Kim'); // focus went to the next row
+    await app.act(() => {}, 400);
     expect([...document.querySelectorAll('.co-ct .nm')].map((n) => n.textContent)).toEqual(['Kim']);
     await unmountAll();
     await mountApp();
     await until(() => collab.current().status === 'ready', 'reload');
     expect(collab.current().contacts.map((c) => c.name)).toEqual(['Kim']);
+  });
+
+  it('a card or contact whose save fails stays, and says so in its row; Dismiss all asks first and takes every card', async () => {
+    const store = await import('../src/collab/store');
+    const app = await setup();
+    await until(() => relay.proven() === 1, 'connected');
+    const me = parseCode(collab.current().code) as { pub: Uint8Array };
+    const inbox = await inboxId(me.pub);
+    const eve = await makeIdentity();
+    for (const i of [1, 2, 3]) await relay.post(inbox, await seal(eve, me.pub, { name: 'E', at: i, content: [{ type: 'paragraph', content: [{ type: 'text', text: `Card ${i}` }] }] }));
+    await until(() => collab.current().cards.length === 3, 'three cards in');
+    expect(await collab.addContact(encodeCode((await makeIdentity()).pub), 'Pat')).toBeNull();
+    await openPanel(app);
+    const row = (i: number) => document.querySelectorAll('.co-card')[i];
+    // a save that fails: the card is still in the list and in the store, and its row says why
+    const drop = vi.spyOn(store, 'dropCard').mockRejectedValueOnce(new Error('disk full'));
+    await app.click(button('Dismiss', row(1)));
+    expect(collab.current().cards.length).toBe(3);
+    expect(document.querySelector('.co-fold[data-gone]')).toBeNull();
+    expect(row(1).querySelector('[role="alert"]')?.textContent).toBe("Couldn't save that, so this card is still here. Try again");
+    expect((button('Dismiss', row(1)) as HTMLButtonElement).disabled).toBe(false);
+    // again, and it goes
+    await app.click(button('Dismiss', row(1)));
+    await until(() => document.querySelectorAll('.co-card').length === 2, 'the row folded shut and went');
+    expect(drop).toHaveBeenCalledTimes(2);
+    expect([...document.querySelectorAll('.co-card b')].map((b) => b.textContent)).toEqual(['Card 1', 'Card 3']);
+    // the same for a contact
+    vi.spyOn(store, 'saveContacts').mockRejectedValueOnce(new Error('disk full'));
+    await app.click($('[aria-label="Remove Pat"]'));
+    expect(collab.current().contacts.map((c) => c.name)).toEqual(['Pat']);
+    expect(document.querySelector('.co-ct [role="alert"]')?.textContent).toBe("Couldn't save that. Try again");
+    // Dismiss all: Cancel keeps them, Dismiss all takes both and the section with them
+    await app.click(button('Dismiss all'));
+    expect($('#cf-t')?.textContent).toBe('Dismiss all 2 cards?');
+    await app.click(button('Cancel'));
+    expect(collab.current().cards.length).toBe(2);
+    await app.click(button('Dismiss all'));
+    await app.click(button('Dismiss all', [...document.querySelectorAll('.cf-back')].pop()!));
+    await until(() => !$('[aria-label="Cards waiting"]'), 'the section folded shut and went');
+    expect(collab.current().cards.length).toBe(0);
+    expect((await store.loadCards()).length).toBe(0);
+    vi.restoreAllMocks();
   });
 
   it('junk sent to the code is dropped (and acked, so it never comes back); a card it already has is not shown twice', async () => {

@@ -14,6 +14,23 @@
 .cf.co .co-main { font-weight: 500; }
 .cf.co .co-main svg { color: var(--ink-ui); }
 
+/* a row that goes folds shut in place (Collab.tsx: FOLD); the row's hover fill still reaches past its text */
+.co-fold { display: grid; grid-template-rows: 1fr; margin: 0 -12px; transition: grid-template-rows 320ms var(--u-ease), opacity 220ms ease-out; }
+.co-fold > div { min-height: 0; overflow: hidden; padding: 0 12px; }
+.co-fold[data-gone] { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
+.co-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.co-h h3 { margin: 0; }
+.cf.co .co-h .co-plain { margin: 0 -8px 0 0; }
+.co-sec h3:focus, .cf.co h2:focus { outline: none; }
+.co-what .co-err, .co-ct .co-err { font-size: 12px; color: #e07070; }
+:root[data-chrome="light"] .co-err { color: #b23a3a; }
+/* a save that takes long enough to notice */
+.co-spin { display: none; flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--u-mut); border-top-color: var(--u-tx); animation: co-spin .7s linear infinite; }
+[data-slow] > .co-spin { display: block; }
+.co-x[data-slow] { opacity: 1 !important; }
+.co-x[data-slow] svg { display: none; }
+@keyframes co-spin { to { transform: rotate(360deg); } }
+
 /* a card waiting: its tag, who sent it and when, and what to do with it */
 .co-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; margin: 0 -12px; border-radius: 10px; }
 .co-card:hover { background: var(--u-hover); }
@@ -57,4 +74,4 @@
 .fs-b.co-wait { position: relative; }
 .fs-b.co-wait .dot { position: absolute; top: 8px; right: 9px; width: 6px; height: 6px; border-radius: 50%; }
 .fstrip[data-wide] .fs-b.co-wait .dot { position: static; flex: none; margin-left: auto; }
-@media (prefers-reduced-motion: reduce) { .cf.co button { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .cf.co button { transition: none; } .co-fold { transition: opacity 200ms ease-out, grid-template-rows 0s 200ms; } .co-spin { animation: none; } }

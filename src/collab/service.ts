@@ -206,10 +206,17 @@ export async function addContact(codeText: string, name: string): Promise<string
   await saved(store.saveContacts(contacts));
   return null;
 }
-export async function removeContact(code: string) {
-  const contacts = state.contacts.filter((c) => c.code !== code);
-  set({ contacts });
-  await saved(store.saveContacts(contacts));
+let turn: Promise<unknown> = Promise.resolve();
+/** Remove a contact. It leaves the list once the save went through, so a save that fails (it rejects) keeps them.
+ *  One at a time: each save is the whole list, worked out from what the last one left. */
+export function removeContact(code: string): Promise<void> {
+  const mine = turn.then(async () => {
+    const contacts = state.contacts.filter((c) => c.code !== code);
+    await saved(store.saveContacts(contacts));
+    set({ contacts });
+  });
+  turn = mine.catch(() => {});
+  return mine;
 }
 export async function setName(name: string) {
   set({ name });
@@ -222,10 +229,11 @@ export async function newCode() {
   relisten();
   told({ t: 'changed' });
 }
-/** Done with a card that came in (inserted, copied and let go, or dismissed). */
+/** Done with a card that came in (inserted, copied and let go, or dismissed). It leaves the list once the save went
+ *  through, so a save that fails (it rejects) keeps the card. */
 export async function drop(id: string) {
-  set({ cards: state.cards.filter((c) => c.id !== id) });
   await saved(store.dropCard(id));
+  set({ cards: state.cards.filter((c) => c.id !== id) });
   roomAgain();
 }
 

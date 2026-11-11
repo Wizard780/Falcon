@@ -11,6 +11,7 @@ import './collab.css';
  * Card sharing: send a card to someone by their pairing code, and take in cards sent to yours.
  * The panel holds your code (Copy, your name, a new code), contacts, and cards waiting; Send Card to…
  * is a short list of contacts. Both are Falcon dialogs: Esc or a click outside closes them.
+ * A card or contact that goes folds shut in place: it stays while its save runs, and stays for good if the save fails.
  */
 
 export const useCollab = () => useSyncExternalStore(collab.subscribe, collab.current);
@@ -32,6 +33,44 @@ export function linkLine(s: collab.CollabState): string {
     return `Can't reach the relay: no connection, or it's over its daily limit until ${collab.resetTime(nextUtcMidnight())}. Trying again in ${l.at - Date.now() < 60_000 ? 'under a minute' : `${m} min`}`; }
   if (l.kind === 'connecting') return 'Connecting to the relay…';
   return 'Cards sent to your code arrive in another Falcon window';
+}
+
+const FOLD = 320; // collab.css: .co-fold
+const still = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** A list whose rows fold shut before they go: a row that left `list` keeps its place, marked gone, for the fold's
+ *  length. However it left: dismissed here, or in another window. `on` false (the panel is closed) just mirrors the list. */
+function useLeaving<T>(list: T[], key: (t: T) => string, on: boolean): { item: T; gone: boolean }[] {
+  const prev = useRef<{ item: T; goneAt: number }[]>([]);
+  const [, again] = useState(0);
+  const live = new Map(list.map((t) => [key(t), t]));
+  const now = Date.now(), ms = still() ? 200 : FOLD;
+  const rows = !on ? [] : prev.current.flatMap((r) => {
+    const t = live.get(key(r.item));
+    if (t) { live.delete(key(r.item)); return [{ item: t, goneAt: 0 }]; }
+    return r.goneAt && now - r.goneAt >= ms ? [] : [{ item: r.item, goneAt: r.goneAt || now }];
+  });
+  for (const t of live.values()) rows.push({ item: t, goneAt: 0 });
+  prev.current = rows;
+  const next = Math.min(...rows.filter((r) => r.goneAt).map((r) => r.goneAt + ms));
+  useEffect(() => {
+    if (next === Infinity) return;
+    const t = setTimeout(() => again((n) => n + 1), Math.max(0, next - Date.now()) + 10);
+    return () => clearTimeout(t);
+  }, [next]);
+  return rows.map((r) => ({ item: r.item, gone: r.goneAt > 0 }));
+}
+
+/** Where focus goes when a row leaves: the next row's first button, else the one before, else the heading.
+ *  Not when the person has already moved on to something else. */
+function focusAfter(row: Element | null, btn: Element) {
+  const at = document.activeElement;
+  if (!row || (at && at !== document.body && at !== btn && !row.contains(at))) return;
+  const ok = (e: Element | null) => !!e && e.classList.contains('co-fold') && !e.hasAttribute('data-gone');
+  let to: Element | null = row.nextElementSibling;
+  while (to && !ok(to)) to = to.nextElementSibling;
+  if (!to) { to = row.previousElementSibling; while (to && !ok(to)) to = to.previousElementSibling; }
+  (to?.querySelector<HTMLElement>('button:not(:disabled)') ?? row.closest('section')?.querySelector<HTMLElement>('h3'))?.focus({ preventScroll: true });
 }
 
 /** Esc closes, wherever focus is. */
@@ -64,10 +103,14 @@ export function CollabPanel(props: {
   const [bad, setBad] = useState<string | null>(null);
   const codeBox = useRef<HTMLInputElement>(null), nameBox = useRef<HTMLInputElement>(null), first = useRef<HTMLButtonElement>(null);
   const [, tick] = useState(0);
+  /** a row whose save is running ('wait', then 'slow' past 150 ms: only then a spinner), or failed */
+  const [rows, setRows] = useState<Record<string, 'wait' | 'slow' | 'failed'>>({});
+  const cards = useLeaving(s.cards, (c) => c.id, open), contacts = useLeaving(s.contacts, (c) => c.code, open);
   useEsc(open, onClose);
   useLayoutEffect(() => {
     if (!open) return;
     setBad(null);
+    setRows({});
     (first.current ?? codeBox.current)?.focus();
   }, [open]);
   // the retry countdown in the status line
@@ -87,34 +130,69 @@ export function CollabPanel(props: {
     flash('You have a new pairing code');
   };
   const ready = s.status === 'ready';
+  /** Run a row's save. True when it went through; the row then folds shut as it leaves the list. */
+  const run = async (id: string, save: () => Promise<unknown>) => {
+    setRows((r) => ({ ...r, [id]: 'wait' }));
+    const slow = setTimeout(() => setRows((r) => (r[id] === 'wait' ? { ...r, [id]: 'slow' } : r)), 150);
+    try { await save(); setRows(({ [id]: _, ...r }) => r); return true; }
+    catch { setRows((r) => ({ ...r, [id]: 'failed' })); return false; }
+    finally { clearTimeout(slow); }
+  };
+  const leave = async (e: React.MouseEvent<HTMLButtonElement>, id: string, save: () => Promise<unknown>, said: string) => {
+    const btn = e.currentTarget, row = btn.closest('.co-fold');
+    if (!(await run(id, save))) return;
+    flash(said);
+    focusAfter(row, btn);
+  };
+  const dismissAll = async () => {
+    const all = s.cards;
+    if (!(await props.confirm({ title: `Dismiss all ${all.length} cards?`, body: 'They leave this Falcon for good. To get one back, ask whoever sent it to send it again.', ok: 'Dismiss all' }))) return;
+    let done = 0;
+    for (const c of all) { // one after another, so they fold shut in turn
+      if (await run(c.id, () => collab.drop(c.id))) done++;
+      if (!still()) await new Promise((r) => setTimeout(r, 90));
+    }
+    flash(done === all.length ? `Dismissed ${done} cards` : `Dismissed ${done} of ${all.length} cards`);
+    document.querySelector<HTMLElement>('#co-t')?.focus({ preventScroll: true });
+  };
+  const state = (id: string, gone: boolean) => ({ off: gone || rows[id] === 'wait' || rows[id] === 'slow', slow: rows[id] === 'slow' || undefined, failed: rows[id] === 'failed' });
 
   return (
     <div className="cf-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="cf co" role="dialog" aria-modal="true" aria-labelledby="co-t">
-        <h2 id="co-t">Card sharing</h2>
+        <h2 id="co-t" tabIndex={-1}>Card sharing</h2>
         <p className="co-line" role="status">{linkLine(s)}</p>
 
-        {s.cards.length > 0 && (
-          <section className="co-sec" aria-label="Cards waiting">
-            <h3>Cards waiting</h3>
-            {s.cards.map((c, i) => {
-              const who = collab.contactFor(c.from);
-              return (
-                <div key={c.id} className="co-card">
-                  <div className="co-what">
-                    <b>{c.label}</b>
-                    <span>{c.unreadable ? 'It may need a newer Falcon. Ask them to send it another way. ' : ''}{who ? `From ${who.name}` : `From a code not in your contacts${c.claimed ? `, who says they're ${c.claimed}` : ''}`} · {when(c.gotAt)}</span>
-                  </div>
-                  <div className="co-acts">
-                    {!c.unreadable && <button ref={i === 0 ? first : undefined} className="co-main" onClick={() => { const why = props.onInsert(c); if (why) flash(why); else { void collab.drop(c.id); onClose(); } }}>Insert</button>}
-                    {!c.unreadable && <button onClick={() => void props.onCopy(c).then((ok) => flash(ok ? `Copied “${c.label}”` : "Couldn't copy it"))}>Copy</button>}
-                    {!who && <button onClick={() => fromUnknown(c)}>Add contact</button>}
-                    <button onClick={() => void collab.drop(c.id)}>Dismiss</button>
-                  </div>
-                </div>
-              );
-            })}
-          </section>
+        {cards.length > 0 && (
+          <div className="co-fold" data-gone={cards.every((r) => r.gone) || undefined}><div>
+            <section className="co-sec" aria-label="Cards waiting">
+              <div className="co-h">
+                <h3 tabIndex={-1}>Cards waiting</h3>
+                {s.cards.length > 1 && <button className="co-plain" onClick={() => void dismissAll()}>Dismiss all</button>}
+              </div>
+              {cards.map(({ item: c, gone }, i) => {
+                const who = collab.contactFor(c.from), st = state(c.id, gone);
+                return (
+                  <div key={c.id} className="co-fold" data-gone={gone || undefined} aria-hidden={gone || undefined}><div>
+                    <div className="co-card">
+                      <div className="co-what">
+                        <b>{c.label}</b>
+                        {st.failed
+                          ? <span className="co-err" role="alert">Couldn't save that, so this card is still here. Try again</span>
+                          : <span>{c.unreadable ? 'It may need a newer Falcon. Ask them to send it another way. ' : ''}{who ? `From ${who.name}` : `From a code not in your contacts${c.claimed ? `, who says they're ${c.claimed}` : ''}`} · {when(c.gotAt)}</span>}
+                      </div>
+                      <div className="co-acts">
+                        {!c.unreadable && <button ref={i === 0 ? first : undefined} className="co-main" disabled={st.off} onClick={() => { const why = props.onInsert(c); if (why) flash(why); else { void collab.drop(c.id).catch(() => {}); onClose(); } }}>Insert</button>}
+                        {!c.unreadable && <button disabled={st.off} onClick={() => void props.onCopy(c).then((ok) => flash(ok ? `Copied “${c.label}”` : "Couldn't copy it"))}>Copy</button>}
+                        {!who && <button disabled={st.off} onClick={() => fromUnknown(c)}>Add contact</button>}
+                        <button disabled={st.off} data-slow={st.slow} onClick={(e) => void leave(e, c.id, () => collab.drop(c.id), 'Dismissed')}><span className="co-spin" />Dismiss</button>
+                      </div>
+                    </div>
+                  </div></div>
+                );
+              })}
+            </section>
+          </div></div>
         )}
 
         <section className="co-sec" aria-label="Your code">
@@ -133,15 +211,21 @@ export function CollabPanel(props: {
         </section>
 
         <section className="co-sec" aria-label="Contacts">
-          <h3>Contacts</h3>
-          {s.contacts.length === 0 && <p className="co-sub">No one yet. Paste a partner's pairing code below.</p>}
-          {s.contacts.map((c) => (
-            <div key={c.code} className="co-ct">
-              <span className="nm">{c.name}</span>
-              <span className="cd">{shortCode(c.code)}</span>
-              <button className="co-x" aria-label={`Remove ${c.name}`} title={`Remove ${c.name}`} onClick={() => void collab.removeContact(c.code)}><SvgIcon name="x" /></button>
-            </div>
-          ))}
+          <h3 tabIndex={-1}>Contacts</h3>
+          {contacts.length === 0 && <p className="co-sub">No one yet. Paste a partner's pairing code below.</p>}
+          {contacts.map(({ item: c, gone }) => {
+            const st = state(c.code, gone);
+            return (
+              <div key={c.code} className="co-fold" data-gone={gone || undefined} aria-hidden={gone || undefined}><div>
+                <div className="co-ct">
+                  <span className="nm">{c.name}</span>
+                  {st.failed ? <span className="co-err" role="alert">Couldn't save that. Try again</span> : <span className="cd">{shortCode(c.code)}</span>}
+                  <button className="co-x" aria-label={`Remove ${c.name}`} title={`Remove ${c.name}`} disabled={st.off} data-slow={st.slow}
+                    onClick={(e) => void leave(e, c.code, () => collab.removeContact(c.code), `Removed ${c.name}`)}><span className="co-spin" /><SvgIcon name="x" /></button>
+                </div>
+              </div></div>
+            );
+          })}
           <form className="co-add" onSubmit={(e) => { e.preventDefault(); void add(); }}>
             <input ref={codeBox} className="co-in co-mono" aria-label="Their pairing code" placeholder="Their pairing code" spellCheck={false} autoCapitalize="characters" autoCorrect="off"
               value={code} data-bad={bad ? true : undefined} onChange={(e) => { setCode(e.target.value); setBad(null); }} disabled={!ready} />
