@@ -140,7 +140,7 @@ f.want(!(await rows()).includes('Search files'), 'the Search files command is no
 await p.keyboard.press(`${MOD}+Shift+Space`);
 await p.waitForTimeout(100);
 
-// files: DOCX rows next to CMD rows; Enter on one switches to it
+// files: DOCX rows next to CMD rows; Mod-Enter on one switches to it
 await p.keyboard.press(`${MOD}+n`);
 await p.waitForTimeout(300);
 const tagged = () => p.$$eval('.cc-row', (r) => r.map((x) => `${x.querySelector('.cc-badge')?.textContent ?? ''} ${x.querySelector('.cc-nm')?.textContent}`));
@@ -156,9 +156,9 @@ f.want((await p.$$eval('.cc-head', (r) => r.map((x) => x.textContent))).includes
 await f.shot('f-files');
 await typeIn('seed');
 f.want(await cur() === 'seed' && await p.$eval('.cc-row[data-on] .cc-badge', (b) => b.textContent) === 'DOCX', 'seed is the lit DOCX row');
-await p.keyboard.press('Enter');
+await p.keyboard.press(`${MOD}+Enter`);
 await p.waitForTimeout(300);
-f.want(!(await open()) && await p.$eval('.doc-row[data-on] .doc-nm', (e) => e.getAttribute('aria-label')) === 'seed', 'Enter on a DOCX row switches to that file');
+f.want(!(await open()) && await p.$eval('.doc-row[data-on] .doc-nm', (e) => e.getAttribute('aria-label')) === 'seed', 'Mod-Enter on a DOCX row switches to that file (Enter asks first, see block-search)');
 await openCC();
 f.want((await tagged()).includes('DOCX seed'), 'an opened file shows under Recent next time');
 await f.shot('recent-file');

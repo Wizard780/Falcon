@@ -1,0 +1,75 @@
+// Search blocks (command center and Cmd-K): Enter on a file asks "search blocks or open", Mod-Enter opens straight away;
+// inside, the file's tree (blocks closed), typing filters, Enter inserts the section and stays open, Alt-Enter puts it
+// at the end, Esc steps back to the files. The web build reads open files only (a path needs the desktop bridge).
+import { openFalcon, SEED, MOD } from '../lib/falcon.mjs';
+const f = await openFalcon('block-search');
+const p = f.page;
+await f.open(SEED);
+await p.keyboard.press(`${MOD}+n`);
+await p.waitForTimeout(300);
+await p.keyboard.type('My speech');
+
+const openCC = async () => { await p.keyboard.press(`${MOD}+Shift+Space`); await p.waitForSelector('.cc input'); await p.waitForTimeout(250); };
+const rows = () => p.$$eval('.cc-row .cc-nm', (r) => r.map((x) => x.textContent));
+const cur = () => p.$eval('.cc-row[data-on] .cc-nm', (x) => x.textContent).catch(() => null);
+const typeIn = async (t) => { await p.fill('.cc input', t); await p.waitForTimeout(80); };
+const hints = () => p.$eval('.cc-hints', (x) => x.textContent);
+const active = () => p.$eval('.doc-row[data-on] .doc-nm', (e) => e.getAttribute('aria-label'));
+const paras = () => p.evaluate(() => { const o = []; window.__falconView.state.doc.forEach((n) => o.push(n.textContent)); return o; });
+
+await openCC();
+await typeIn('f seed');
+f.want(await cur() === 'seed', 'f seed lights the seed file');
+f.want((await hints()).includes('open or search') && (await hints()).includes('blocks'), `the hint strip names the keys: ${await hints()}`);
+await p.keyboard.press('Enter');
+await p.waitForTimeout(100);
+f.want((await rows()).join('|') === 'Search blocks in seed|Open seed', `Enter asks: ${(await rows()).join(' | ')}`);
+await f.shot('open-or-blocks');
+await p.keyboard.press('Enter');
+await p.waitForTimeout(200);
+f.want(await p.getAttribute('.cc input', 'placeholder') === 'Search in seed…', 'Search blocks lists the file');
+f.want((await rows()).join('|') === 'Seed Pocket|Seed Hat|Economy Block|Warming Block', `its tree, blocks closed: ${(await rows()).join(' | ')}`);
+await f.shot('tree');
+await p.keyboard.press('ArrowDown'); await p.keyboard.press('ArrowDown');
+await p.keyboard.press('ArrowRight');
+await p.waitForTimeout(100);
+f.want((await rows()).includes('Growth is slowing'), '→ opens a block');
+await f.shot('block-open');
+await typeIn('warming is');
+f.want(await cur() === 'Warming is real', 'typing finds a card');
+await p.keyboard.press('Enter');
+await p.waitForTimeout(200);
+f.want(!!(await p.$('.cc')), 'Enter inserts and keeps the box open');
+f.want((await paras()).join('|') === 'My speech|Warming is real|Temperatures rose again. The needle finds this line.', `the card went in under the caret: ${(await paras()).join(' | ')}`);
+f.want(await active() !== 'seed', 'into the doc you were in, not seed');
+await f.shot('inserted');
+await typeIn('economy');
+await p.keyboard.press('Alt+Enter');
+await p.waitForTimeout(200);
+const after = await paras();
+f.want(after.slice(-4).join('|') === 'Economy Block|Growth is slowing|[Smith 24]|Global growth will fall to two percent next year.'.replace('[Smith 24]', 'Smith 24'), `Alt-Enter put the whole block at the end: ${after.join(' | ')}`);
+await p.keyboard.press(`${MOD}+z`);
+await p.waitForTimeout(150);
+f.want((await paras()).length === 3, 'one undo takes the last insert back');
+await p.keyboard.press('Escape');
+await p.waitForTimeout(100);
+f.want(await p.inputValue('.cc input') === 'f seed' && await cur() === 'seed', 'Esc goes back to the files, query kept');
+await p.keyboard.press(`${MOD}+Enter`);
+await p.waitForTimeout(300);
+f.want(!(await p.$('.cc')) && await active() === 'seed', 'Mod-Enter opens the file with no question');
+
+// Cmd-K asks the same, and Search blocks lands in the command center inside the file
+await p.keyboard.press(`${MOD}+k`);
+await p.waitForSelector('.pk input');
+await p.keyboard.type('seed');
+await p.keyboard.press('Enter');
+await p.waitForTimeout(100);
+await f.shot('cmdk-choice');
+await p.keyboard.press('Enter');
+await p.waitForTimeout(300);
+f.want(!(await p.$('.pk')) && await p.getAttribute('.cc input', 'placeholder') === 'Search in seed…' && (await rows())[0] === 'Seed Pocket', 'Cmd-K Search blocks opens the file\'s blocks');
+await f.shot('cmdk-blocks');
+await p.keyboard.press('Escape');
+await p.keyboard.press('Escape');
+await p.keyboard.press('Escape');
+await f.done();
