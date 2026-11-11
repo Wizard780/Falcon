@@ -3,7 +3,7 @@ import { createPortal, flushSync } from 'react-dom';
 import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
-import { Fragment, Node as PMNode } from 'prosemirror-model';
+import { Fragment, Node as PMNode, Slice } from 'prosemirror-model';
 import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc, swapState } from '../editor/editor';
 import { topChildAt } from '../editor/window';
@@ -39,6 +39,9 @@ import './theme'; // so does the saved theme (Settings and the command center, w
 import { aiService, formatCite, reformatCites, reformatCount, usePreset } from '../editor/ai-cite';
 import { Confirm, nameList, type Ask } from './Confirm';
 import { ComparePanel } from './ComparePanel';
+import { CollabPanel, SendCard, useCollab } from './Collab';
+import * as collab from '../collab/service';
+import { copySlice } from '../editor/nav/clipboard';
 import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
 import { NewDoc, NewSpeech, SaveAs } from './SaveAs';
 import { copyName, docForMode, type SaveMode } from '../editor/save-modes';
@@ -97,7 +100,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'collab', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -352,6 +355,12 @@ export function App() {
   const [settingsQuery, setSettingsQuery] = useState<string | undefined>();
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
+  // Card sharing: the panel, and Send Card to… with the label of what it sends (its content waits in sendingRef)
+  const [collabOpen, setCollabOpen] = useState(false);
+  const [sendLabel, setSendLabel] = useState<string | null>(null);
+  const sendingRef = useRef<Fragment | null>(null);
+  const collabRef = useRef(false);
+  collabRef.current = collabOpen || sendLabel !== null;
   const [compareWith, setCompareWith] = useState<string | null>(null); // Compare Text is open, Text 1 from this selection
   const [speechAsk, setSpeechAsk] = useState(false); // the New speech doc dialog is up
   const [newAsk, setNewAsk] = useState(false); // the + button's New Document dialog is up
@@ -1131,6 +1140,43 @@ export function App() {
     else { next = base.apply(tr); patch(id, { state: next, dirty: true }); }
     flash(`Sent “${sent.label}” to ${speechName}`, { label: 'Undo', run: () => { const note = takeBack(id, next, speechName); if (note) flash(note); } });
   }, [flash, sendAway, takeBack, patch]);
+  /** Send Card to…: what Send to speech would send (the card at the caret, or the selection), to a contact. */
+  const openSendCard = useCallback(() => {
+    const v = viewRef.current;
+    if (!v || locked()) return;
+    const sent = sendContent(v.state);
+    if (!sent) { flash('Nothing to send. Put the caret in a card or select some text.'); return; }
+    sendingRef.current = sent.content;
+    setSendLabel(sent.label);
+  }, [flash]); // eslint-disable-line react-hooks/exhaustive-deps
+  const closeSendCard = useCallback(() => { setSendLabel(null); sendingRef.current = null; viewRef.current?.focus(); }, []);
+  const sendCardTo = useCallback(async (c: collab.Contact) => {
+    const content = sendingRef.current;
+    closeSendCard();
+    if (!content) return;
+    flash(`Sending to ${c.name}…`);
+    flash((await collab.send(c, content)).message);
+  }, [flash, closeSendCard]);
+  const closeCollab = useCallback(() => { setCollabOpen(false); viewRef.current?.focus(); }, []);
+  /** A card that came in, into the open document below the caret's paragraph; why not, or null. */
+  const insertReceived = useCallback((c: collab.Received): string | null => {
+    const v = viewRef.current, content = collab.cardFragment(c.content);
+    if (!v) return 'Open a document to insert it into.';
+    if (!content) return "That card can't go into a document.";
+    if (isReading(v.state)) return `${docsRef.current.find((d) => d.id === activeRef.current)?.meta.name || 'This document'} is in read mode. Leave it to insert.`;
+    v.dispatch(insertIntoSpeech(v.state, content).scrollIntoView());
+    flash(`Inserted “${c.label}”`);
+    return null;
+  }, [flash]);
+  const copyReceived = useCallback(async (c: collab.Received) => {
+    const content = collab.cardFragment(c.content);
+    return !!content && copySlice(new Slice(content, 0, 0));
+  }, []);
+  // every window loads card sharing; one per launch holds the relay socket. A card coming in is a toast, never a focus change
+  useEffect(() => collab.start(true), []);
+  useEffect(() => collab.onArrive((c, who) => {
+    flash(`Card from ${who?.name ?? 'a code not in your contacts'}: “${c.label}”`, { label: 'Show', run: () => { if (!locked()) setCollabOpen(true); } });
+  }), [flash]); // eslint-disable-line react-hooks/exhaustive-deps
   // Nimbus and other debate apps send cards in over the bridge (electron/editor-bridge.cjs), the way they do
   // into CardMirror: they list the open docs, then insert into one (usually the speech doc) without taking focus
   // the main process stopped waiting for a consent answer: an Allow clicked now would go nowhere
@@ -1198,7 +1244,7 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => compareRef.current !== null || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || newAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => compareRef.current !== null || collabRef.current || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || newAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
     if (swRef.current) { endSw(false); return; } // a menu key or click while Ctrl-Tab is held: the switcher closes on the current doc
     if (askRef.current || saveAsRef.current || speechAskRef.current || newAskRef.current) return; // a warning, Save As, New speech doc or New Document is up: it gets answered first
@@ -1260,7 +1306,9 @@ export function App() {
     else if (id === 'commands') setCcOpen((o) => !o);
     else if (id === 'searchCards') setPaletteOpen('cards');
     else if (id === 'sendToSpeech') sendToSpeech();
-  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, zoomTo, sendToSpeech, openSd, closeSd]);
+    else if (id === 'sendCard') openSendCard();
+    else if (id === 'collab') setCollabOpen(true);
+  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, zoomTo, sendToSpeech, openSd, closeSd, openSendCard]);
 
   // app-level shortcuts
   useEffect(() => {
@@ -1285,6 +1333,8 @@ export function App() {
       // Compare Text is up: text editing keys and its own (Mod-Enter), nothing else
       // (inside the panel its text boxes keep every editing key: word jumps, AltGr characters)
       if (compareRef.current !== null) { if ((e.ctrlKey || e.metaKey) && !(e.target as Element | null)?.closest?.('.cmp') && !/^([acvxz]|Enter)$/i.test(e.key)) e.preventDefault(); return; }
+      // Card sharing's panel and Send Card to…: their own fields and keys, nothing else
+      if (collabRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // so are New speech doc and New Document (their own Esc and Enter included)
       if (speechAskRef.current || newAskRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // Send to speech (` unless changed in Settings), so the page can't type that key (AltGr layouts too: their character arrives with Ctrl+Alt held). Boxes with their own text field keep it.
@@ -1569,6 +1619,7 @@ export function App() {
     return () => removeEventListener(SHOW_EVENT, openSd);
   }, [openSd]);
 
+  const cardsWaiting = useCollab().cards.length;
   const modal = settingsOpen || !!paletteOpen || ccOpen || !!ask || saveAsName !== null || speechAsk || newAsk;
   return (
     <div ref={appRef} className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
@@ -1576,7 +1627,7 @@ export function App() {
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc} onMove={moveDoc}
         group={group} onJoin={join} onUnjoin={unjoin} flash={flash}
         sd={sdTabs.map((x) => ({ key: x.key, on: sdLit === x.key, name: x.info.room?.name ?? 'SpeechDrop', fresh: x.info.fresh }))} onSd={showSd} onSdClose={closeSd}
-        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
+        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} cards={cardsWaiting} onCards={() => { if (!locked()) setCollabOpen(true); }} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
 
       <div className="covered" inert={homeOpen || sdOn || modal}>
@@ -1664,6 +1715,8 @@ export function App() {
         showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth}
         highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} />
       </div>
+      <CollabPanel open={collabOpen} onClose={closeCollab} flash={flash} confirm={confirmAsk} onInsert={insertReceived} onCopy={copyReceived} />
+      <SendCard label={sendLabel} onClose={closeSendCard} onSend={(c) => void sendCardTo(c)} onManage={() => { closeSendCard(); setCollabOpen(true); }} />
       <Confirm ask={ask} />
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
       <ComparePanel open={compareWith} onClose={closeCompare} readSelection={readSelection} />
@@ -1703,7 +1756,7 @@ type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech:
 /** A SpeechDrop tab's row: lit or not, the room's name, and how many files came that you haven't seen. */
 type SdRow = { key: number; on: boolean; name: string; fresh: number };
 function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void;
-  group: number[] | null; onJoin: (ids: number[]) => void; onUnjoin: () => void; flash: (m: string) => void; sd: SdRow[]; onSd: (key: number) => void; onSdClose: (key: number) => void; onHome: () => void; onSettings: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
+  group: number[] | null; onJoin: (ids: number[]) => void; onUnjoin: () => void; flash: (m: string) => void; sd: SdRow[]; onSd: (key: number) => void; onSdClose: (key: number) => void; onHome: () => void; onSettings: () => void; cards: number; onCards: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -1938,6 +1991,8 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         </div>
       )}
       <div className="grow" />
+      {props.cards > 0 && <button className="fs-b co-wait" title={`${props.cards === 1 ? 'A card came' : `${props.cards} cards came`} for you. Show card sharing`} aria-label={`Cards waiting (${props.cards})`} onClick={props.onCards}>
+        <SvgIcon name="inbox" /><span className="lbl">{props.cards === 1 ? 'Card waiting' : `${props.cards} cards waiting`}</span><i className="dot new" aria-hidden="true" /></button>}
       {props.update ? <UpdateButton u={props.update} onInstall={props.onUpdate} />
         : props.onCheck && <button className="fs-b chk" title={props.checking ? 'Checking for updates' : 'Check for updates'} aria-label="Check for updates"
             aria-busy={props.checking || undefined} data-busy={props.checking || undefined} onClick={() => { if (!props.checking) props.onCheck!(); }}>

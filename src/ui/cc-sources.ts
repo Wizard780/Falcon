@@ -205,6 +205,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: P.aiCitePresets.key, label: 'AI cite-creator prompt presets', page: 'ai', query: 'AI cite prompt preset', hint: 'Save them in Settings.', link: true, get: () => currentPreset()?.name ?? 'Built-in prompt', set: () => {} },
     { id: P.aiMaxTokens.key, label: 'AI max output tokens', page: 'ai', query: 'AI max output tokens', hint: 'Type it in Settings.', link: true, get: () => pref(P.aiMaxTokens), set: () => {} },
     { id: TEMPLATES_KEY, label: 'Templates', page: 'templates', query: 'Templates', hint: 'Set them in Settings.', link: true, get: () => String(loadTemplates().length), set: () => {} },
+    { id: P.relayUrl.key, label: 'Card sharing relay', page: 'general', query: 'Relay address', hint: 'Type it in Settings.', link: true, get: () => pref(P.relayUrl) || 'None', set: () => {} },
     { id: P.speechName.key, label: 'Speech doc name', page: 'general', query: 'Speech doc name filename', hint: 'Type it in Settings.', link: true, get: () => pref(P.speechName), set: () => {} },
     tog(P.savePrefix, 'Prefix Save As copies', 'general', 'Send, Read and Marked Doc copies start with a prefix.'),
     { id: P.prefixSend.key, label: 'Send Doc filename prefix', page: 'general', query: 'Send Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixSend), set: () => {} },
