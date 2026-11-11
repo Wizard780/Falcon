@@ -196,7 +196,9 @@ export function toggleColorMark(type: MarkType, color: string | null): Command {
       for (const r of picked) tr.removeMark(r.from, r.to, type);
     } else {
       const has = allHave(state.doc, paint, (ms) => ms.some((m) => m.type === type && m.attrs.color === color));
-      if (has) for (const r of picked) tr.removeMark(r.from, r.to, type);
+      // taking this color off: the rest of the selection loses this color too, but keeps any other one
+      // (with "Highlight underlined text only", the unread words between can carry a color of their own)
+      if (has) eachText(state.doc, picked, (node, from, to) => { if (node.marks.some((m) => m.type === type && m.attrs.color === color)) tr.removeMark(from, to, type); });
       else for (const r of paint) tr.addMark(r.from, r.to, type.create({ color }));
     }
     return finish(state, tr, dispatch);
