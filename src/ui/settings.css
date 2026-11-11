@@ -151,3 +151,7 @@
 @media (hover: hover) { .st-sw:hover { transform: scale(1.12); } }
 .st-sw[aria-checked="true"] { box-shadow: 0 0 0 2px var(--u-panel), 0 0 0 4px var(--u-tx); }
 .st-sw:focus-visible { outline: 2px solid #4b6bd6; outline-offset: 3px; }
+/* the ? beside a setting that has a step-by-step guide (Card sharing > Relay) */
+.st-help { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 6px; vertical-align: 1px; border-radius: 50%; background: var(--u-ctl2); color: var(--u-mut); font-size: 11px; font-weight: 600; line-height: 1; cursor: pointer; transition: color 150ms ease-out, background 150ms ease-out; }
+.st-help:hover { background: var(--u-ctl-on); color: var(--u-tx); }
+.st-help:focus-visible { outline: 2px solid var(--u-tx2); outline-offset: 2px; }

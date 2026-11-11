@@ -249,7 +249,7 @@ let unsure: { what: string; mid: string } | null = null;
 export async function send(contact: Contact, content: Fragment): Promise<{ ok: boolean; message: string }> {
   const label = cardLabel(content);
   const url = relayUrl();
-  if (!url) return { ok: false, message: "No relay is set, so cards can't be sent yet. Add one in Settings > General > Card sharing" };
+  if (!url) return { ok: false, message: "No relay is set, so cards can't be sent yet. Add one in Settings > Sharing" };
   if (state.pausedUntil > Date.now()) return { ok: false, message: `Card sharing is paused until ${resetTime(state.pausedUntil)}, when the relay's daily limit resets. The card wasn't sent` };
   const p = parseCode(contact.code);
   if (!p.ok || !me) return { ok: false, message: "Couldn't send: card sharing isn't ready yet" };

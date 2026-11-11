@@ -1,8 +1,10 @@
 import { MAX_PRESETS, aiService, citePresets, currentPreset, deletePreset, editPreset, newPreset } from '../editor/ai-cite';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { version } from '../../package.json';
 import { HIGHLIGHTS, HIGHLIGHT_NAMES } from '../editor/schema';
 import { DEFAULT_RELAY } from '../collab/relay';
+import { RelayGuide, relayAddress } from './RelayGuide';
 import { SvgIcon } from './icons';
 import { docToolSettings } from '../editor/doc-tools';
 import { cardToolSettings } from '../editor/card-tools';
@@ -47,7 +49,7 @@ type Props = {
   /** close Settings and start the tutorial from its first step */
   onReplay: () => void;
 };
-type Row = { id?: string; key?: string; lead?: ReactNode; label: string; hint?: string; bad?: boolean; search?: string; preview?: ReactNode; control: ReactNode; path?: boolean; wide?: boolean };
+type Row = { id?: string; key?: string; lead?: ReactNode; label: string; help?: ReactNode; hint?: string; bad?: boolean; search?: string; preview?: ReactNode; control: ReactNode; path?: boolean; wide?: boolean };
 type Page = { id: string; title: string; icon: string; group?: string; sections: [string, Row[]][] };
 
 /** A theme in miniature: its chrome around a strip of its paper, with a few lines of each one's text. */
@@ -89,8 +91,7 @@ function RelayField() {
   const commit = () => {
     if (draft === null) return;
     setDraft(null);
-    const u = draft.trim();
-    setPref(P.relayUrl, !u || /^https?:\/\//i.test(u) ? u : `https://${u}`);
+    setPref(P.relayUrl, relayAddress(draft));
   };
   return (
     <input className="st-text st-wide" aria-label="Relay address" spellCheck={false} maxLength={200} placeholder={DEFAULT_RELAY || 'https://falcon-relay.example.workers.dev'}
@@ -132,6 +133,7 @@ export function Settings(props: Props) {
   const [query, setQuery] = useState('');
   const [, setSpecTick] = useState(0); // a feature setting changed: redraw its row
   const [keyNote, setKeyNote] = useState<KeyNote>(null); // the recorder's note under a shortcut's label
+  const [guide, setGuide] = useState(false); // the relay setup guide is open
   const [importNote, setImportNote] = useState<{ text: string; bad?: boolean } | null>(null); // how the last Import went
   const fileInput = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => { if (props.open) { setQuery(props.startQuery ?? ''); if (props.startPage) setPageId(props.startPage); ref.current?.focus({ preventScroll: true }); } }, [props.open, props.startPage, props.startQuery]);
@@ -407,11 +409,6 @@ export function Settings(props: Props) {
             <button className="sb-ico" aria-label={`Forget ${a.name}`} title="Forget it: it asks again next time" onClick={() => void bridge.allowLinkedApp!(a.id, null).then(setLinked)}><SvgIcon name="x" /></button>
           </span>) }))
         : [{ label: 'No linked apps yet', search: 'linked apps nimbus bridge cards send', hint: 'Debate apps like Nimbus can send cards into your open docs, the way they do with CardMirror. The first time one tries, Falcon asks you.', control: null }]] as [string, Row[]]] : []),
-      ['Card sharing', [
-        { label: 'Relay', wide: true, search: 'card sharing relay send card pairing code collaboration server url',
-          hint: `Where sent cards wait until the other person's Falcon picks them up. It only ever sees them sealed. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: paste the address of one you set up (relay/README.md in Falcon\'s source).'} Your code and contacts are in the command center: Card sharing.`,
-          control: <RelayField /> },
-      ]],
       ['Privacy', [
         tog(P.usageStats, 'Share usage statistics', 'Send anonymous counts of which features get used, like opening and saving files. Never file names or anything you type. Desktop app only.'),
       ]],
@@ -613,6 +610,13 @@ export function Settings(props: Props) {
         wpm(P.wpm2Tags, 'Reader 2: tags and analytics', 'How fast Reader 2 reads tags, analytics and cites.', true),
       ]],
     ] },
+    { id: 'sharing', title: 'Sharing', icon: 'inbox', group: 'Debate', sections: [
+      ['Card sharing', [
+        { label: 'Relay', wide: true, help: <button className="st-help" aria-label="How to set up a relay" title="How to set up a relay, step by step" onClick={() => setGuide(true)}>?</button>, search: 'card sharing relay send card pairing code collaboration server url',
+          hint: `Where sent cards wait until the other person's Falcon picks them up. It only ever sees them sealed. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: click ? to set one up, step by step.'} Your code and contacts are in the command center: Card sharing.`,
+          control: <RelayField /> },
+      ]],
+    ] },
   ];
 
   const q = query.trim().toLowerCase();
@@ -701,7 +705,7 @@ export function Settings(props: Props) {
                   {rows.map((r) => (
                     <div key={r.key ?? r.id ?? (r.path ? r.hint : r.label)} className={`st-row${r.wide ? ' wide' : ''}${r.id ? ' st-tree' : ''}`}>
                       {r.lead}
-                      {r.label && <div className="st-txt"><span>{r.label}</span>{r.hint && (r.path ? <small className="path"><span dir="ltr">{r.hint}</span></small> : <small data-bad={r.bad || undefined}>{r.hint}</small>)}</div>}
+                      {r.label && <div className="st-txt"><span>{r.label}{r.help}</span>{r.hint && (r.path ? <small className="path"><span dir="ltr">{r.hint}</span></small> : <small data-bad={r.bad || undefined}>{r.hint}</small>)}</div>}
                       {r.preview}
                       {r.control}
                     </div>
@@ -712,6 +716,7 @@ export function Settings(props: Props) {
           </div>
         </div>
       </div>
+      {guide && createPortal(<RelayGuide onClose={() => setGuide(false)} />, document.body)}
     </div>
   );
 }

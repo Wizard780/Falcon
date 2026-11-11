@@ -49,6 +49,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Find and replace](./find-replace.md) covers the find bar, the match counter, Replace all and its single undo.
 - [Send to speech](./send-to-speech.md) covers the `` ` `` key (changeable in Settings), the speech doc in the rail, send order, the Undo toast, Mod-Z and the Speech doc button.
 - [Send Card](./send-card.md) covers pairing codes, contacts, Send Card to…, a card arriving without taking focus, Insert with its marks, a stopped relay and no relay set, through a local `wrangler dev` relay.
+- Settings > Sharing and its ? relay guide: `journeys/relay-guide.mjs` steps through the guide, checks Esc leaves Settings open, and checks a dead and a live relay address on the last step, through a local `wrangler dev` relay.
 - [Settings](./settings.md) covers the nine panes and the highlighter pen with its stored value and effect.
 - [Themes](./themes.md) covers the preset tiles, custom themes and their colors, Document paper, System, and the desktop window following the theme.
 - [Keybindings](./keybindings.md) covers changing a shortcut in Settings and the editor and app following it.

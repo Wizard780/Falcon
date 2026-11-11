@@ -1440,9 +1440,12 @@ export function App() {
       if (id === 'commands') { e.preventDefault(); e.stopPropagation(); if (ccRef.current) setCcOpen(false); else if (!settingsRef.current) { setHomeOpen(false); setCcOpen(true); } return; }
       if (ccRef.current) { if (mod && !/^[acvxyz]$/i.test(e.key)) e.preventDefault(); return; }
       // Settings is modal: only its own keys (Esc, its shortcut) get through
-      if (settingsRef.current && !(e.key === 'Escape' || id === 'settings')) { if (mod) e.preventDefault(); return; }
+      // (its text boxes keep copy, cut, paste, select all and undo, like every other box over the page)
+      if (settingsRef.current && !(e.key === 'Escape' || id === 'settings')) { if (mod && !(/^[acvxz]$/i.test(e.key) && (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement))) e.preventDefault(); return; }
       // Esc in a filled Settings search clears the search before it closes Settings, and in a half-typed number puts it back
       if (e.key === 'Escape' && settingsRef.current && e.target instanceof HTMLInputElement && ((e.target.closest('.st-search') || e.target.classList.contains('st-find')) && e.target.value || 'draft' in e.target.dataset)) return;
+      // a dialog inside Settings (the relay guide) closes itself on Esc, leaving Settings open
+      if (e.key === 'Escape' && settingsRef.current && (e.target as Element | null)?.closest?.('[data-own-esc]')) return;
       if (e.key === 'Escape' && settingsRef.current) { e.preventDefault(); e.stopPropagation(); setSettingsOpen(false); return; }
       if (e.key === 'Escape' && citePass.current && !citePass.current.stop) { e.preventDefault(); e.stopPropagation(); citePass.current.stop = true; flash('Stopping after this cite…'); return; }
       if (e.key === 'Escape' && homeRef.current) { e.preventDefault(); e.stopPropagation(); setHomeOpen(false); return; }
