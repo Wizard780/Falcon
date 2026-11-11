@@ -147,6 +147,8 @@ export const keyText = (k: string) => {
   const ps = keyParts(k);
   return IS_MAC ? ps.map((p, i) => (i && p.length > 1 && ps[i - 1].length > 1 ? ` ${p}` : p)).join('') : ps.join('+');
 };
+/** A command's key as text, for messages: ⌘S ('' when it has none). */
+export const keyLabel = (id: string) => keyText(keyOf(id));
 /** `Label (key): desc` for a button's title (the shape Tips reads), leaving out the key when there is none. */
 export const titled = (label: string, id: string, desc: string) => {
   const k = keyOf(id);
@@ -168,6 +170,7 @@ bind('App', [
   { id: 'searchCards', label: 'Search cards', key: 'Mod-Shift-k' },
   { id: 'outline', label: 'Show or hide the outline', key: 'Mod-\\' }, { id: 'find', label: 'Find', key: 'Mod-f' },
   { id: 'zoomIn', label: 'Zoom in', key: 'Mod-=' }, { id: 'zoomOut', label: 'Zoom out', key: 'Mod--' }, { id: 'zoomReset', label: 'Actual size', key: 'Mod-0' },
+  { id: 'tutorial', label: 'Replay tutorial' },
 ]);
 bind('Files', [
   { id: 'new', label: 'New document', key: 'Mod-n' }, { id: 'newSpeech', label: 'New speech doc', key: 'Mod-Shift-n' }, { id: 'open', label: 'Open', key: 'Mod-o' },

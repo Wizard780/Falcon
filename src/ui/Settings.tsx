@@ -44,6 +44,8 @@ type Props = {
   showOutline: boolean; onShowOutline: (s: boolean) => void;
   depth: number; onDepth: (d: number) => void;
   highlight: string | null; onHighlight: (c: string) => void;
+  /** close Settings and start the tutorial from its first step */
+  onReplay: () => void;
 };
 type Row = { id?: string; key?: string; lead?: ReactNode; label: string; hint?: string; bad?: boolean; search?: string; preview?: ReactNode; control: ReactNode; path?: boolean; wide?: boolean };
 type Page = { id: string; title: string; icon: string; group?: string; sections: [string, Row[]][] };
@@ -372,6 +374,7 @@ export function Settings(props: Props) {
         { label: 'Open on launch', hint: 'What Falcon shows when it starts.', control:
           select('Open on launch', pref(P.openHome) ? 'home' : 'doc', [['home', 'Home'], ['doc', 'Last document']], (o) => setPref(P.openHome, o === 'home')) },
         tog(P.reopen, 'Restore open files', 'Reopen the files you had open when you quit. Desktop app only.'),
+        { label: 'Replay tutorial', hint: 'Walk through Falcon again, step by step, in a sample file.', control: <button className="st-btn" onClick={props.onReplay}>Replay</button> },
         tog(P.fileWindows, 'Open files in new windows', 'Each file and new document gets its own window instead of a tab. Turning this on moves open tabs into windows; turning it off leaves windows as they are. Desktop app only.'),
       ]],
       ['Notifications', [
