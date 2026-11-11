@@ -134,6 +134,6 @@ export function relayTransport(base: string): Transport {
  */
 export async function checkRelay(base: string): Promise<'ok' | 'not_relay' | 'unreachable'> {
   let r: Response;
-  try { r = await fetch(`${base.replace(/\/+$/, '')}/v1/inbox/${'0'.repeat(64)}`, { method: 'POST', body: new Uint8Array([1]) }); } catch { return 'unreachable'; }
+  try { r = await fetch(`${base.replace(/\/+$/, '')}/v1/inbox/${'0'.repeat(64)}`, { method: 'POST', body: new Uint8Array([1]), signal: AbortSignal.timeout(10_000) }); } catch { return 'unreachable'; }
   try { return r.status === 400 && (await r.json()).error === 'bad_envelope' ? 'ok' : 'not_relay'; } catch { return 'not_relay'; }
 }

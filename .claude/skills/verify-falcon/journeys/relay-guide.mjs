@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { openFalcon } from '../lib/falcon.mjs';
+import { openFalcon, MOD } from '../lib/falcon.mjs';
 
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..');
 const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-relay-guide-'));
@@ -26,6 +26,7 @@ for (let i = 0; ; i++) {
 
 const f = await openFalcon('relay-guide');
 const { page, want } = f;
+await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 const wait = (ms) => page.waitForTimeout(ms);
 const saved = () => page.evaluate(() => Object.entries(localStorage).find(([k]) => /relayUrl/.test(k))?.[1] ?? null);
 
@@ -55,19 +56,27 @@ await wait(200);
 want((await page.textContent('.rg h2')).trim() === 'Put the relay online', 'Back goes one step back');
 want((await page.textContent('.rg .rg-cmd code')).trim() === 'npx wrangler deploy', 'the deploy step shows the command to copy');
 
+for (let i = 0; i < 8; i++) await page.keyboard.press('Tab');
+want(await page.evaluate(() => !!document.activeElement?.closest('.rg')), 'Tab goes round the guide and never out to Settings behind it');
 await page.keyboard.press('Escape');
 await wait(250);
 want(!(await page.$('.rg')) && !!(await page.$('[aria-label="Search settings"]')), 'Esc closes the guide and leaves Settings open');
+want(await page.evaluate(() => document.activeElement?.classList.contains('st-help')), 'focus goes back to the ?');
 
 await page.click('.st-help');
 await page.waitForSelector('.rg');
 for (let i = 0; i < 7; i++) { await page.click('.rg .cf-btns button.co-main'); await wait(150); }
+want(await page.evaluate(() => document.activeElement?.matches('.rg input')), 'the Connect step starts in the address box');
 await page.fill('.rg input', '127.0.0.1:1');
 await page.click('.rg button:has-text("Check and save")');
 await page.waitForFunction(() => document.querySelector('.rg-note')?.textContent !== 'Checking…');
 want(/Couldn't reach it/.test(await page.textContent('.rg-note')) && (await saved()) === null, `a dead address is turned down, nothing saved (${await page.textContent('.rg-note')})`);
 await f.shot('connect-bad');
-await page.fill('.rg input', RELAY);
+await page.evaluate((u) => navigator.clipboard.writeText(u), RELAY);
+await page.fill('.rg input', '');
+await page.keyboard.press(`${MOD}+V`);
+await wait(100);
+want((await page.inputValue('.rg input')) === RELAY, `a real ${MOD}+V pastes the address (${await page.inputValue('.rg input')})`);
 await page.keyboard.press('Enter');
 await page.waitForFunction(() => /It works/.test(document.querySelector('.rg-note')?.textContent ?? ''));
 want((await saved()) === RELAY, `a real relay is checked and saved (${await saved()})`);
