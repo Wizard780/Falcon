@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Fragment } from 'prosemirror-model';
 import { deflateSync } from 'fflate';
 import { CODE_CHARS, encodeCode, inboxId, parseCode } from '../src/collab/code';
-import { BadEnvelope, makeIdentity, open, proveKey, seal, unb64url, type Identity } from '../src/collab/crypto';
+import { BadEnvelope, makeIdentity, open, proveKey, seal, unb64url, type Identity, TooBig } from '../src/collab/crypto';
 
 // Fixed test keys (never used anywhere else). These pin protocol v1: codes people have already swapped
 // and envelopes already sent must keep reading the same way.
@@ -120,13 +120,31 @@ describe('envelopes', () => {
     await expect(open(b, bad)).rejects.toThrow('content');
   });
 
-  it('a card that unpacks past 8 MB is refused', async () => {
+  it('a card that unpacks past 2 MB is refused: by seal, and by open when a sender skips seal', async () => {
     const a = await makeIdentity(), b = await makeIdentity();
-    const big = 'x'.repeat(9 * 1024 * 1024);
-    expect(deflateSync(new TextEncoder().encode(big)).length).toBeLessThan(1_000_000); // small on the wire
-    const env = await seal(a, b.pub, { name: 'x', at: 1, content: [big] });
-    expect(env.length).toBeLessThan(1_000_000);
-    await expect(open(b, env)).rejects.toThrow('content');
+    const big = 'x'.repeat(3 * 1024 * 1024);
+    await expect(seal(a, b.pub, { name: 'x', at: 1, content: [big] })).rejects.toBeInstanceOf(TooBig);
+    // the envelope built by hand, as someone with their own client would: a few KB on the wire
+    const te = new TextEncoder(), salt = new Uint8Array(16), iv = new Uint8Array(12);
+    const secret = await crypto.subtle.deriveBits({ name: 'X25519', public: await crypto.subtle.importKey('raw', b.pub as Uint8Array<ArrayBuffer>, { name: 'X25519' }, false, []) }, a.priv, 256);
+    const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt, info: te.encode('falcon card v1') }, await crypto.subtle.importKey('raw', secret, 'HKDF', false, ['deriveKey']), { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+    const sealRaw = async (json: string) => {
+      const aad = new Uint8Array([1, ...a.pub, ...b.pub]);
+      const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, key, deflateSync(te.encode(json))));
+      return new Uint8Array([1, ...a.pub, ...salt, ...iv, ...ct]);
+    };
+    const fine = await sealRaw(JSON.stringify({ v: 1, name: 'x', at: 1, content: ['ok'] }));
+    expect((await open(b, fine)).card.content).toEqual(['ok']); // the hand-built envelope is a real one
+    const bomb = await sealRaw(JSON.stringify({ v: 1, name: 'x', at: 1, content: [big] }));
+    expect(bomb.length).toBeLessThan(10_000);
+    await expect(open(b, bomb)).rejects.toThrow('content');
+  });
+
+  it("carries the sender's id for the send, and reads a card without one", async () => {
+    const a = await makeIdentity(), b = await makeIdentity();
+    expect((await open(b, await seal(a, b.pub, { name: 'x', at: 1, content: [], mid: 'abc' }))).card.mid).toBe('abc');
+    expect((await open(b, await seal(a, b.pub, { name: 'x', at: 1, content: [] }))).card.mid).toBeUndefined();
+    expect((await open(b, await seal(a, b.pub, { name: 'x', at: 1, content: [], mid: 'm'.repeat(65) }))).card.mid).toBeUndefined();
   });
 });
 
@@ -169,6 +187,23 @@ describe('what a received card may put in a document', async () => {
     expect(cardFragment([{ type: 'nonsense' }])).toBeNull();
     expect(cardFragment([])).toBeNull();
     expect(cardFragment('x')).toBeNull();
+  });
+
+  it('refuses a table whose cell spans what no table has', () => {
+    const table = (attrs: object) => [{ type: 'table', content: [{ type: 'table_row', content: [{ type: 'table_cell', attrs, content: [para({ style: 'normal' }, [text('x')])] }] }] }];
+    expect(cardFragment(table({ colspan: 2, rowspan: 1 }))).not.toBeNull();
+    for (const bad of [{ colspan: 1e7 }, { colspan: -5 }, { colspan: 1.5 }, { colspan: 0 }, { rowspan: 64 }, { colspan: '2' }]) expect(cardFragment(table(bad)), JSON.stringify(bad)).toBeNull();
+  });
+
+  it("gives a footnote's text the same pass: a color that would load from the web is dropped, plain marks stay", () => {
+    const note = [text('see ', [{ type: 'underline' }]), text('this', [{ type: 'color', attrs: { color: 'red;background:url(https://evil.test/p)' } }]), text(' ok', [{ type: 'color', attrs: { color: '#c00000' } }])];
+    const f = cardFragment([para({ style: 'normal' }, [text('body'), { type: 'footnote', attrs: { content: note } }])])!;
+    let got: { text?: string; marks?: { type: string; attrs?: Record<string, unknown> }[] }[] = [];
+    f.descendants((n) => { if (n.type.name === 'footnote') got = n.attrs.content; });
+    expect(got.map((n) => n.text).join('')).toBe('see this ok');
+    expect(JSON.stringify(got)).not.toContain('evil.test');
+    expect(got[0].marks?.map((m) => m.type)).toEqual(['underline']);
+    expect(got.at(-1)!.marks?.[0].attrs?.color).toMatch(/^#c00000$/i);
   });
 
   it('keeps a picture carried in the card, and drops one that would load from the web', () => {
