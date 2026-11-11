@@ -8,7 +8,7 @@ import './tutorial.css';
 // The first-run tour: one step at a time, a glow ring around the thing the step is about, the rest of the
 // app dimmed and held back. The steps live in tutorial-steps.ts; App opens the sample doc and closes it.
 
-type Box = { left: number; top: number; width: number; height: number };
+type Box = { left: number; top: number; width: number; height: number; line?: boolean };
 const PAD = 6, GAP = 14, EDGE = 12, GLIDE = 320;
 
 // Every launch since the first release writes these (App's mount effects): a profile without any of them has never
@@ -50,11 +50,24 @@ export function placeCard(targets: Box[], w: number, h: number, vw: number, vh: 
   // nothing fits beside it (a target as big as the window): the bottom right corner, over the target
   return best ?? { left: vw - w - EDGE, top: vh - h - EDGE };
 }
-/** The target as the ring draws it: padded, and kept inside the window so a tall pane's ring still shows. */
-const ringBox = (r: DOMRect, vw: number, vh: number): Box => {
-  const left = Math.max(4, r.left - PAD), top = Math.max(4, r.top - PAD);
-  return { left, top, width: Math.min(vw - 4, r.right + PAD) - left, height: Math.min(vh - 4, r.bottom + PAD) - top };
-};
+/** The ring's edge around a line of text, drawn outside its box (tutorial.css: thinner than a button's 2 px). */
+const EDGE_W = 1.5;
+/** The target as the ring draws it: padded, and kept inside the window so a tall pane's ring still shows. A line of text
+ * gets `room` (the gaps to the lines above and below): there its edge stays within half of each gap, never on a
+ * neighbouring line, even when that means sitting just inside the line's own leading. */
+export function ringBox(r: Box, vw: number, vh: number, room?: { above: number; below: number }): Box {
+  const pad = (gap: number) => Math.min(PAD, gap / 2) - EDGE_W - 0.25; // and a little clear, for rounding
+  const top = room ? r.top - pad(room.above) : Math.max(4, r.top - PAD), left = Math.max(4, r.left - PAD);
+  const bottom = room ? r.top + r.height + pad(room.below) : Math.min(vh - 4, r.top + r.height + PAD);
+  return { left, top, width: Math.min(vw - 4, r.left + r.width + PAD) - left, height: bottom - top, ...(room && { line: true }) };
+}
+const boxOf = (e: Element): Box => { const r = e.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; };
+/** A paragraph of the document: the gaps to the paragraphs drawn next to it (a big one when there's none). */
+function roomOf(e: Element): { above: number; below: number } | undefined {
+  if (!e.parentElement?.classList.contains('ProseMirror')) return undefined;
+  const r = e.getBoundingClientRect(), a = e.previousElementSibling?.getBoundingClientRect(), b = e.nextElementSibling?.getBoundingClientRect();
+  return { above: a ? Math.max(0, r.top - a.bottom) : 2 * PAD, below: b ? Math.max(0, b.top - r.bottom) : 2 * PAD };
+}
 /** The dim: the whole window with a rounded hole per ring (even-odd fill, so clicks in a hole reach the app). */
 function dimPath(rings: Box[], vw: number, vh: number) {
   const hole = ({ left: x, top: y, width: w, height: h }: Box) => {
@@ -67,9 +80,10 @@ function dimPath(rings: Box[], vw: number, vh: number) {
 export function between(a: Box[], b: Box[], t: number): Box[] {
   if (a.length !== b.length || t >= 1) return b;
   const e = 1 - Math.pow(1 - t, 3), at = (x: number, y: number) => x + (y - x) * e;
-  return b.map((r, k) => ({ left: at(a[k].left, r.left), top: at(a[k].top, r.top), width: at(a[k].width, r.width), height: at(a[k].height, r.height) }));
+  return b.map((r, k) => ({ ...r, left: at(a[k].left, r.left), top: at(a[k].top, r.top), width: at(a[k].width, r.width), height: at(a[k].height, r.height) }));
 }
-const same = (a: Box[], b: Box[]) => a.length === b.length && a.every((r, i) => Math.abs(r.left - b[i].left) < 0.5 && Math.abs(r.top - b[i].top) < 0.5 && Math.abs(r.width - b[i].width) < 0.5 && Math.abs(r.height - b[i].height) < 0.5);
+// close enough to skip a redraw; tight, so a glide's last frame still lands exactly on the target
+const same = (a: Box[], b: Box[]) => a.length === b.length && a.every((r, i) => Math.abs(r.left - b[i].left) < 0.05 && Math.abs(r.top - b[i].top) < 0.05 && Math.abs(r.width - b[i].width) < 0.05 && Math.abs(r.height - b[i].height) < 0.05);
 
 type Props = {
   on: boolean;
@@ -83,7 +97,7 @@ export function Tutorial({ on, ctx, gate, onEnd }: Props) {
   const [i, setI] = useState(-1);
   const [rings, setRings] = useState<Box[]>([]);
   const [anchor, setAnchor] = useState<Box | null>(null);
-  const [goal, setGoal] = useState<Box[]>([]); // where the rings are going: the card is placed from these, not the glide
+  const [goal, setGoal] = useState<Box[]>([]); // the targets as drawn: the card is placed from these, not the glide
   const shown = useRef<Box[]>([]); // the rings as last drawn, where the next step's glide starts
   const [size, setSize] = useState({ w: innerWidth, h: innerHeight });
   const [moving, setMoving] = useState(false);
@@ -128,8 +142,9 @@ export function Tutorial({ on, ctx, gate, onEnd }: Props) {
       const vw = innerWidth, vh = innerHeight;
       // measured every frame, so the ring follows the target through scrolling, resizing and layout changes;
       // from one step to the next it glides, and the dim's holes go with it
-      const want = targetsOf(s, ctx).map((e) => ringBox(e.getBoundingClientRect(), vw, vh));
-      if (!lastGoal || !same(want, lastGoal)) { lastGoal = want; setGoal(want); }
+      const els = targetsOf(s, ctx), at = els.map(boxOf);
+      const want = els.map((e, k) => ringBox(at[k], vw, vh, roomOf(e)));
+      if (!lastGoal || !same(at, lastGoal)) { lastGoal = at; setGoal(at); }
       const now = glide ? between(from, want, (performance.now() - t0) / GLIDE) : want;
       if (!same(now, shown.current)) { shown.current = now; setRings(now); }
       const n = s.near?.(ctx)?.getBoundingClientRect();
@@ -148,8 +163,7 @@ export function Tutorial({ on, ctx, gate, onEnd }: Props) {
   useLayoutEffect(() => {
     const c = card.current;
     if (!c) return;
-    const boxes = goal.map((r) => ({ left: r.left + PAD, top: r.top + PAD, width: r.width - 2 * PAD, height: r.height - 2 * PAD }));
-    const p = placeCard(anchor ? [anchor, ...boxes] : boxes, c.offsetWidth, c.offsetHeight, size.w, size.h);
+    const p = placeCard(anchor ? [anchor, ...goal] : goal, c.offsetWidth, c.offsetHeight, size.w, size.h);
     c.style.left = `${p.left}px`;
     c.style.top = `${p.top}px`;
   }, [goal, anchor, size, i]);
@@ -164,7 +178,7 @@ export function Tutorial({ on, ctx, gate, onEnd }: Props) {
         <path d={dimPath(rings, size.w, size.h)} fillRule="evenodd" />
       </svg>
       {s.look && <div className="tour-block" />}
-      {rings.map((r, k) => <div key={k} className="tour-ring" style={{ transform: `translate(${r.left}px, ${r.top}px)`, width: r.width, height: r.height }} />)}
+      {rings.map((r, k) => <div key={k} className="tour-ring" data-line={r.line || undefined} style={{ transform: `translate(${r.left}px, ${r.top}px)`, width: r.width, height: r.height }} />)}
       <div ref={card} className="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-t" aria-describedby="tour-b">
         <h2 id="tour-t">{s.title}</h2>
         <p id="tour-b">{body}</p>

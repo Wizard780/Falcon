@@ -8,6 +8,9 @@
   box-shadow: 0 0 0 2px var(--ink, #00e5ff), 0 0 18px 3px color-mix(in srgb, var(--ink, #00e5ff) 45%, transparent);
   animation: tour-glow 2.4s ease-in-out infinite; }
 @keyframes tour-glow { 50% { box-shadow: 0 0 0 2px var(--ink, #00e5ff), 0 0 26px 6px color-mix(in srgb, var(--ink, #00e5ff) 30%, transparent); } }
+/* around a line of text the edge is thinner, so it fits in the line's own leading (Tutorial.tsx ringBox) */
+.tour-ring[data-line] { box-shadow: 0 0 0 1.5px var(--ink, #00e5ff), 0 0 18px 3px color-mix(in srgb, var(--ink, #00e5ff) 45%, transparent); animation-name: tour-glow-line; }
+@keyframes tour-glow-line { 50% { box-shadow: 0 0 0 1.5px var(--ink, #00e5ff), 0 0 26px 6px color-mix(in srgb, var(--ink, #00e5ff) 30%, transparent); } }
 .tour[data-moving] .tour-card { transition: left 320ms var(--u-ease), top 320ms var(--u-ease); }
 .tour-card { position: absolute; left: 0; top: 0; width: 320px; padding: 16px 16px 12px; border-radius: 14px; pointer-events: auto;
   background: var(--u-pop); color: var(--u-tx); user-select: none;

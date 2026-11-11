@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import '../src/editor/keymap'; // registers the formatting bindings
 import { bindingOf, setKey, resetKey } from '../src/editor/keybinds';
-import { between, isFreshProfile, nextStep, placeCard } from '../src/ui/Tutorial';
+import { between, isFreshProfile, nextStep, placeCard, ringBox } from '../src/ui/Tutorial';
 import { SAMPLE, STEPS, findText, firstStyle, marked, sampleDoc, type Step, type TourCtx } from '../src/ui/tutorial-steps';
 
 const step = (title: string, extra: Partial<Step> = {}): Step => ({ title, body: '', ...extra });
@@ -50,6 +50,27 @@ describe('the card', () => {
     expect(between(a, b, 1)).toEqual(b);
     expect(between(a, b, 0.5)[0].left).toBeGreaterThan(50); // ease-out: past halfway at half time
     expect(between([], b, 0.2)).toEqual(b);
+  });
+});
+
+describe('the ring', () => {
+  const vw = 1440, vh = 900;
+  it('pads a button all round', () => {
+    expect(ringBox({ left: 100, top: 100, width: 40, height: 30 }, vw, vh)).toEqual({ left: 94, top: 94, width: 52, height: 42 }); // no line flag
+  });
+  it('keeps a line of text\'s edge (1.5 px, drawn outside) off the lines touching it', () => {
+    const line = { left: 366, top: 150, width: 1050, height: 19 };
+    const r = ringBox(line, vw, vh, { above: 0, below: 0 });
+    expect(r.top - 1.5).toBeGreaterThanOrEqual(line.top);
+    expect(r.top + r.height + 1.5).toBeLessThanOrEqual(line.top + line.height);
+    expect(r.line).toBe(true);
+    expect(r.left).toBe(360); // still padded sideways
+  });
+  it('uses up to half of a gap, and the full pad past it', () => {
+    const line = { left: 0, top: 100, width: 10, height: 20 };
+    const r = ringBox(line, vw, vh, { above: 8, below: 40 });
+    expect(r.top - 1.5).toBeGreaterThanOrEqual(100 - 4); // half the 8 px gap
+    expect(r.top + r.height).toBe(124.25); // 6 px pad, less the 1.5 px edge and a quarter pixel
   });
 });
 
