@@ -68,7 +68,9 @@ type FalconBridge = {
   /** This window's last doc closed: true when the window closes too (it isn't the only one). */
   leaveWindow?: () => boolean;
   cycleWindow?: (dir: 1 | -1) => void;
-  reportWindow?: (state: { paths: string[]; speech: string | null }) => void;
+  reportWindow?: (state: { paths: string[]; speech: string | null; unsaved?: string[] }) => void;
+  /** The names of unsaved docs in the app's other windows. */
+  unsavedElsewhere?: () => string[];
   /** Every window's open files, and the name of the speech doc when another window holds it. */
   onWindows?: (f: (w: { session: string[]; speech: string | null }) => void) => () => void;
   speechAsk?: (kind: string, payload: Record<string, unknown>) => Promise<SpeechAnswer>;

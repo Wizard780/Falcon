@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('falcon', {
   leaveWindow: () => ipcRenderer.sendSync('falcon:window-leave'),
   cycleWindow: (dir) => ipcRenderer.send('falcon:window-cycle', dir),
   reportWindow: (state) => ipcRenderer.send('falcon:window-report', state),
+  unsavedElsewhere: () => ipcRenderer.sendSync('falcon:window-unsaved'),
   onWindows: (f) => {
     const on = (_e, w) => f(w);
     ipcRenderer.on('falcon:windows', on);
