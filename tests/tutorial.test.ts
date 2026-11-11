@@ -105,7 +105,7 @@ describe('the hands-on steps', () => {
     // the steps find their text by its first match: the practice lines are the only ones that hold it
     for (const t of [SAMPLE.tag, SAMPLE.author, SAMPLE.sentence]) expect(doc.textContent.split(t).length).toBe(2);
     expect(marked(doc, SAMPLE.author, 'cite')).toBe(false);
-    expect(marked(doc, 'Smith 24', 'cite')).toBe(true); // the guide's own example card is formatted
+    expect(marked(doc, 'Okafor 25', 'cite')).toBe(true); // the guide's own example card is formatted
   });
   it('the guide names keys as they are bound when the tour starts', () => {
     expect(sampleDoc().textContent).toContain('F7 tag');

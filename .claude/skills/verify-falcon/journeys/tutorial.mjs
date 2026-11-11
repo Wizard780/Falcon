@@ -109,7 +109,7 @@ want((await stored(page)).seen === 'on', 'the seen flag is stored as soon as it 
 const sample0 = await page.evaluate(() => window.__falconMarkMap());
 want(sample0.startsWith('pocket: Welcome to Falcon\n') && sample0.includes('\nblock: Practice card\nnormal: Rural broadband raises small business growth\nnormal: Rivera 24 (Dana Rivera, fellow at the Center for Regional Economics, "Connected Counties," Journal of Rural Policy, March 2024)\nnormal: Counties that gained fast internet between 2015 and 2022 saw new business filings rise faster than similar counties that did not. The effect was largest for firms with fewer than ten employees, which used the connection to reach customers outside their region. These gains held after controlling for population, income and existing industry.\nhat: '),
   'the sample is the Falcon guide, with the practice card unformatted under its block (tag line, cite line, body)');
-for (const h of ['hat: Build a speech', 'hat: Find your evidence', 'hat: Work with your team', 'tag: A card is one piece of evidence', 'analytic: ', 'undertag: ']) want(sample0.includes(h), `the guide has "${h.trim()}"`);
+for (const h of ['hat: Build a speech', 'hat: Find your evidence', 'hat: Work with your team', 'tag: Each card starts with a tag', 'analytic: ', 'undertag: ']) want(sample0.includes(h), `the guide has "${h.trim()}"`);
 // a click outside the ring is held back: Settings doesn't open behind the welcome card
 await page.mouse.click(20, 880);
 await page.keyboard.press(`${MOD}+s`).catch(() => {});

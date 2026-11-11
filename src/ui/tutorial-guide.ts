@@ -31,8 +31,8 @@ const copyKey = () => (IS_MAC ? 'Option' : 'Ctrl'); // page-drag.ts copyModifier
 function guide(): [ParaStyle, ...Run[]][] {
   return [
     ['pocket', 'Welcome to Falcon'],
-    ['normal', 'Falcon is an editor for debate evidence. It opens and saves the same Word .docx files as Verbatim, so your files, your team\'s files and Falcon\'s files are one and the same. The boxed heading above is a pocket, the biggest heading.'],
-    ['normal', 'This is a practice file the tour opened for you. Type in it and try the keys as you go: nothing here is saved, and it closes when the tour ends.'],
+    ['normal', 'Falcon is where you cut, file and read your debate cards. Its files are ordinary Word .docx files in Verbatim\'s format, so what you make here works in Verbatim, and the other way round. The heading at the top, in a box, is a pocket: the largest heading there is.'],
+    ['normal', 'The tour opened this practice file for you. Nothing in it is saved, so edit it as much as you like. It closes when the tour ends.'],
 
     ['hat', 'Try it: cut a card'],
     ['normal', 'The card below has no formatting yet. The tour walks you through it: make the first line a tag, mark the cite, then underline and highlight the part you\'d read.'],
@@ -41,29 +41,29 @@ function guide(): [ParaStyle, ...Run[]][] {
     ['normal', SAMPLE.cite],
     ['normal', SAMPLE.body],
 
-    ['hat', 'Open and save your files'],
-    ['normal', `Open…${k('open')} opens any Verbatim file, and Save${k('save')} writes it back as a .docx that Verbatim and your teammates can open. Home${k('home')} lists your recent files.`],
+    ['hat', 'Your files'],
+    ['normal', `Open…${k('open')} opens any Verbatim file, and Save${k('save')} keeps your changes in that same .docx, ready for Word, Verbatim or a teammate. Home${k('home')} lists your recent files.`],
     ['normal', `Save As${k('saveAs')} can also save a different kind of copy: a Send Doc leaves out your analytics and undertags, a Read Doc keeps only what you read aloud, and a Marked Doc keeps only the cards you marked.`],
-    ['normal', 'Falcon keeps a copy of your open files and brings them back if it closes unexpectedly (Settings > General > Crash recovery). Save early anyway: a .docx on disk is what other people can open.'],
+    ['normal', 'If Falcon closes without warning, it brings your open files back as they were (Settings > General > Crash recovery). That copy stays on this computer, so save a file before you share it.'],
 
     ['hat', 'Headings and card styles'],
-    ['normal', 'Falcon uses Verbatim\'s four heading levels, pocket, hat, block and tag, plus analytics and undertags. Each has a key, and Settings > Keybindings changes any of them:'],
+    ['normal', 'A file has four sizes of heading, from biggest to smallest: pocket, hat, block, tag. Analytics and undertags get their own styles too. These are their keys, and you can change any of them in Settings > Keybindings:'],
     ['normal', `${kk('pocket')} pocket, ${kk('hat')} hat, ${kk('block')} block, ${kk('tag')} tag, ${kk('analytic')} analytic, ${kk('undertag')} undertag.`],
-    ['normal', `Put the cursor in a paragraph and press the key to change it. A selection changes every paragraph it touches, and ${kk('clear')} clears it back to plain text.`],
-    ['block', 'Blocks group cards under a hat'],
-    ['tag', 'A card is one piece of evidence, with its tag on top'],
-    ['undertag', 'An undertag adds a note under the tag, like a qualifier.'],
-    ['normal', ['Smith 24', 'cite'], ', Professor of Climate Science, "Title of the Source," Publication Name, 9/23/2024, https://example.com'],
-    ['normal', 'The body holds the evidence. ', [`${kk('underline')} underlines`, 'underline'], ', ', [`${kk('emphasis')} adds emphasis`, 'emphasis'], ', and ', [`${kk('highlight')} highlights the part you read aloud`, 'underline', 'highlight'], `. ${kk('shrink')} shrinks the words you don't read, and ${kk('cite')} marks the cite, like "Smith 24" above.`],
-    ['analytic', 'An analytic is your own argument, a claim with no card behind it.'],
+    ['normal', `Press a style's key and the paragraph you're in takes that style. Select several paragraphs first to style them all at once, and ${kk('clear')} turns them back into plain text.`],
+    ['block', 'A block sits under a hat and holds cards'],
+    ['tag', 'Each card starts with a tag: its claim in one line'],
+    ['undertag', 'An undertag is a smaller line below the tag, for a caveat or some context.'],
+    ['normal', ['Okafor 25', 'cite'], ', Senior Analyst at the Institute for Water Security, "Dry Years Ahead," Coastal Review, 2/11/2025, https://example.org'],
+    ['normal', 'Under the cite goes the text of the article. ', [`${kk('underline')} underlines`, 'underline'], ', ', [`${kk('emphasis')} adds emphasis`, 'emphasis'], ', and ', [`${kk('highlight')} highlights the part you read aloud`, 'underline', 'highlight'], `. ${kk('shrink')} makes the words you skip smaller, and ${kk('cite')} marks the cite, like "Okafor 25" above.`],
+    ['analytic', 'An analytic is a point you make yourself, without evidence to back it.'],
 
     ['hat', 'The outline'],
-    ['normal', `The outline on the left lists every heading. Click a row to jump to it, double-click one to fold it, and pick how deep it goes with 1 to 4. Drag a row to move that heading and everything under it, and hold ${copyKey()} while you drag to copy it instead.`],
+    ['normal', `Every heading in the file shows in the outline on the left. A click on a row takes you to that heading, and a double-click folds the row away. The 1 to 4 buttons choose how many levels it shows. Dragging a row moves the heading with everything below it. Hold ${copyKey()} as you drag and Falcon copies it instead.`],
     ['normal', `${kk('cardUp')} and ${kk('cardDown')} move the card at your cursor up and down, and ${kk('nextHeading')} jumps to the next heading.`],
 
     ['hat', 'Read mode and timers'],
-    ['normal', `Read mode${k('read')}, the eye in the tool row, shows only what you read aloud: headings, tags, cites, analytics and highlights. Typing is locked so a stray key can't change the file, and Space drops a marker where you stopped.`],
-    ['normal', 'The status bar shows how long Reader 1 and Reader 2 take to read the file, or the selection. Set how fast each reads in Settings > Speech and timers.'],
+    ['normal', `Read mode${k('read')}, the eye in the tool row, shows only what you read aloud: headings, tags, cites, analytics and highlights. While it's on, the file can't be edited, and Space drops a marker where you stopped.`],
+    ['normal', 'At the bottom of the window, Reader 1 and Reader 2 are how long each of your speakers would take to read the file, or just the selection. Change their reading speeds in Settings > Speech and timers.'],
     ['normal', 'The timer in the top bar runs your speech. Click it for the timer window with both sides\' prep, and pick your event\'s speech times in Settings > Speech and timers.'],
 
     ['hat', 'Build a speech'],
@@ -82,7 +82,7 @@ function guide(): [ParaStyle, ...Run[]][] {
     ['normal', 'Card sharing sends a card straight to a teammate\'s Falcon. Swap pairing codes once in Card sharing in the command center, then Send Card to… sends the card at your cursor. It arrives as a message, without taking their focus.'],
     ['normal', 'To see files side by side, shift-click them in the rail, right-click one and choose Join.'],
 
-    ['hat', 'Make it yours'],
+    ['hat', 'Set it up your way'],
     ['normal', `Settings${k('settings')}, the gear at the bottom of the rail, changes every key, the theme, the fonts and how each style looks. With an Anthropic key in Settings > AI, ${kk('aiCite')} turns a pasted citation or link into a finished cite.`],
     ['normal', 'Replay this tour any time from Settings > General, or type Replay tutorial in the command center.'],
   ];

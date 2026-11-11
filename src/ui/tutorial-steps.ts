@@ -172,7 +172,7 @@ export const STEPS: Step[] = [
   outline(),
   {
     title: 'Read mode',
-    body: () => `Read mode${key('read') ? ` (${key('read')})` : ''} shows only what you read aloud: headings, tags, cites, analytics and highlights. Typing is locked so a stray key can't change the file, and Space drops a marker where you stopped.`,
+    body: () => `Read mode${key('read') ? ` (${key('read')})` : ''} shows only what you read aloud: headings, tags, cites, analytics and highlights. While it's on, the file can't be edited, and Space drops a marker where you stopped.`,
     target: '.tools [aria-label="Read mode"]',
     look: true,
   },
