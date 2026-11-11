@@ -3,7 +3,7 @@
  *
  * To add a step, copy one of the entries below and change it:
  *   title   one short line.
- *   body    one or two plain sentences, addressed to "you". Write a key with key('tag'), never "F7",
+ *   body    one or two plain sentences (or a function of the tour's ctx returning them), addressed to "you". Write a key with key('tag'), never "F7",
  *           so a key someone rebound in Settings shows right (the ids are in keybinds.ts and keymap.ts).
  *   target  what the glow ring goes around: a CSS selector, or a function returning the element (or a
  *           list of them). Leave it out for a card in the middle of the window. A step whose target
@@ -26,16 +26,18 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { keyLabel } from '../editor/keybinds';
 import { schema } from '../editor/schema';
 
-/** What steps can reach: the sample document's editor, and the command center. */
+/** What steps can reach: the sample document's editor, the command center, and the outline's depth. */
 export type TourCtx = {
   view: () => EditorView | null;
   ccOpen: () => boolean;
   closeCc: () => void;
+  depth: () => number;
+  setDepth: (n: number) => void;
 };
 type Found = Element | Element[] | null | undefined;
 export type Step = {
   title: string;
-  body: string | (() => string);
+  body: string | ((ctx: TourCtx) => string);
   target?: string | ((ctx: TourCtx) => Found);
   optional?: boolean;
   enter?: (ctx: TourCtx) => void;
@@ -46,9 +48,10 @@ export type Step = {
   near?: (ctx: TourCtx) => Element | null;
 };
 
-/** The sample card, unformatted: a tag line, a cite line and a body paragraph. */
+/** The sample: a block heading (already styled, so the outline has a row), then one unformatted card: a tag line, a cite line and a body paragraph. */
 export const SAMPLE = {
   name: 'Tutorial',
+  block: 'Broadband advantage',
   tag: 'Rural broadband raises small business growth',
   cite: 'Rivera 24 (Dana Rivera, fellow at the Center for Regional Economics, "Connected Counties," Journal of Rural Policy, March 2024)',
   author: 'Rivera 24',
@@ -57,11 +60,13 @@ export const SAMPLE = {
 };
 export function sampleDoc(): PMNode {
   const p = (text: string) => schema.node('paragraph', null, [schema.text(text)]);
-  return schema.node('doc', null, [p(SAMPLE.tag), p(SAMPLE.cite), p(SAMPLE.body)]);
+  return schema.node('doc', null, [schema.node('paragraph', { style: 'block' }, [schema.text(SAMPLE.block)]), p(SAMPLE.tag), p(SAMPLE.cite), p(SAMPLE.body)]);
 }
 
 /** A key's name as this computer shows it (⌘K, F7), or '' when it has none. */
 export const key = (id: string) => keyLabel(id);
+/** A command as its button or menu names it, with its key when it has one: "Find (⌘F)". */
+const named = (label: string, id: string) => (key(id) ? `${label} (${key(id)})` : label);
 /** "Press F7 or click Tag", or just "Click Tag" when the command has no key. */
 const pressOr = (id: string, button: string) => (key(id) ? `Press ${key(id)} or click ${button}` : `Click ${button}`);
 
@@ -85,8 +90,11 @@ export function marked(doc: PMNode, text: string, mark: string): boolean {
   doc.nodesBetween(r.from, r.to, (n) => { if (n.isText && !schema.marks[mark].isInSet(n.marks)) all = false; });
   return all;
 }
-/** The first paragraph's style (the tag line). */
-export const firstStyle = (doc: PMNode) => doc.firstChild?.attrs.style as string | undefined;
+/** The style of the paragraph holding `text`. */
+export function styleOf(doc: PMNode, text: string): string | undefined {
+  const r = findText(doc, text);
+  return r ? doc.resolve(r.from).parent.attrs.style as string : undefined;
+}
 
 const select = (ctx: TourCtx, text: string, caret = false) => {
   const v = ctx.view(), r = v && findText(v.state.doc, text);
@@ -100,6 +108,21 @@ const line = (ctx: TourCtx, text: string) => {
   return v && r ? v.nodeDOM(v.state.doc.resolve(r.from).before()) as Element | null : null;
 };
 const both = (ctx: TourCtx, text: string, button: string) => [line(ctx, text), document.querySelector(`[data-tour="${button}"]`)].filter((e): e is Element => !!e);
+
+/** The outline step: it shows down to tags, so the tag you just made is there under the block, and then puts your own depth back. */
+function outline(): Step {
+  let mine: number | null = null;
+  return {
+    title: 'The outline',
+    body: (c) => {
+      const v = c.view(), made = !!v && styleOf(v.state.doc, SAMPLE.tag) === 'tag';
+      return `This is the outline: the sample's block${made ? ', and under it the tag you made' : ''}. Click a row to jump to it. The numbers at the top pick how deep it goes, down to 4 for tags.`;
+    },
+    target: '.olp.shown',
+    enter: (c) => { mine = c.depth(); c.setDepth(4); },
+    leave: (c) => { if (mine !== null) c.setDepth(mine); mine = null; },
+  };
+}
 
 export const STEPS: Step[] = [
   {
@@ -118,12 +141,12 @@ export const STEPS: Step[] = [
   },
   {
     title: 'Make a tag',
-    body: () => `Your cursor is on the first line. ${pressOr('tag', 'Tag')} to make it the card's tag.`,
+    body: () => `Your cursor is on the card's first line. ${pressOr('tag', 'Tag')} to make it the card's tag.`,
     target: (c) => both(c, SAMPLE.tag, 'tag'),
     near: (c) => line(c, SAMPLE.body),
     enter: (c) => select(c, SAMPLE.tag, true),
     keys: ['tag'],
-    done: (c) => { const v = c.view(); return !!v && firstStyle(v.state.doc) === 'tag'; },
+    done: (c) => { const v = c.view(); return !!v && styleOf(v.state.doc, SAMPLE.tag) === 'tag'; },
   },
   {
     title: 'Mark the cite',
@@ -155,11 +178,7 @@ export const STEPS: Step[] = [
     body: 'Pocket, Hat and Block make the headings that organize a file, from biggest to smallest.',
     target: '[data-tour="styles"]',
   },
-  {
-    title: 'The outline',
-    body: 'Your pockets, hats and blocks show up here, and 4 adds tags. Click one to jump to it.',
-    target: '.olp.shown',
-  },
+  outline(),
   {
     title: 'The command center',
     body: () => (key('commands')
@@ -174,8 +193,8 @@ export const STEPS: Step[] = [
   },
   {
     title: 'Search',
-    body: () => [key('search') && `${key('search')} finds a file by name.`, key('searchCards') && `${key('searchCards')} searches every card in your files.`].filter(Boolean).join(' ')
-      || 'Search files finds a file by name, and Search cards searches every card in your files.',
+    body: () => `${named('Find', 'find')} searches this file. ${named('Search files', 'search')} finds a file by name, and ${named('Search cards', 'searchCards')} searches every card in your files.`,
+    target: '.tools [aria-label="Find"]',
   },
   {
     title: 'Send to speech',

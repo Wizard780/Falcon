@@ -3,7 +3,7 @@ import { EditorState, TextSelection } from 'prosemirror-state';
 import '../src/editor/keymap'; // registers the formatting bindings
 import { bindingOf, setKey, resetKey } from '../src/editor/keybinds';
 import { between, isFreshProfile, nextStep, placeCard, ringBox } from '../src/ui/Tutorial';
-import { SAMPLE, STEPS, findText, firstStyle, marked, sampleDoc, type Step, type TourCtx } from '../src/ui/tutorial-steps';
+import { SAMPLE, STEPS, findText, marked, sampleDoc, styleOf, type Step, type TourCtx } from '../src/ui/tutorial-steps';
 
 const step = (title: string, extra: Partial<Step> = {}): Step => ({ title, body: '', ...extra });
 
@@ -92,12 +92,14 @@ describe('the hands-on steps', () => {
     const r = findText(state.doc, text)!;
     return state.apply(state.tr.setSelection(TextSelection.create(state.doc, r.from, r.to)));
   };
-  const ctx = (state: EditorState): TourCtx => ({ view: () => ({ state }) as never, ccOpen: () => false, closeCc: () => {} });
+  const ctx = (state: EditorState): TourCtx => ({ view: () => ({ state }) as never, ccOpen: () => false, closeCc: () => {}, depth: () => 3, setDepth: () => {} });
   const byTitle = (t: string) => STEPS.find((s) => s.title === t)!;
-  it('the sample starts as one unformatted card', () => {
+  it('the sample starts as a block heading over one unformatted card', () => {
     const doc = sampleDoc();
-    expect(doc.childCount).toBe(3);
-    doc.forEach((p) => expect(p.attrs.style).toBe('normal'));
+    expect(doc.childCount).toBe(4);
+    expect(doc.firstChild!.attrs.style).toBe('block');
+    expect(doc.firstChild!.textContent).toBe(SAMPLE.block);
+    doc.forEach((p, _, k) => { if (k > 0) expect(p.attrs.style).toBe('normal'); });
     expect(doc.textContent).toContain(SAMPLE.author);
     expect(doc.textContent).toContain(SAMPLE.sentence);
   });
@@ -106,7 +108,8 @@ describe('the hands-on steps', () => {
     s = pick(s, SAMPLE.tag);
     expect(byTitle('Make a tag').done!(ctx(s))).toBe(false);
     s = run('tag', s);
-    expect(firstStyle(s.doc)).toBe('tag');
+    expect(styleOf(s.doc, SAMPLE.tag)).toBe('tag');
+    expect(styleOf(s.doc, SAMPLE.block)).toBe('block'); // the heading above is left alone
     expect(byTitle('Make a tag').done!(ctx(s))).toBe(true);
     s = pick(s, SAMPLE.author);
     expect(byTitle('Mark the cite').done!(ctx(s))).toBe(false);
@@ -120,10 +123,27 @@ describe('the hands-on steps', () => {
     s = run('highlight', s);
     expect(byTitle('Highlight').done!(ctx(s))).toBe(true);
   });
+  it('the outline step shows down to tags, then puts your depth back', () => {
+    const s = byTitle('The outline');
+    let depth = 2;
+    const c: TourCtx = { view: () => null, ccOpen: () => false, closeCc: () => {}, depth: () => depth, setDepth: (n) => { depth = n; } };
+    s.enter!(c);
+    expect(depth).toBe(4);
+    s.leave!(c);
+    expect(depth).toBe(2);
+  });
+  it('the outline text mentions the tag only once there is one', () => {
+    let st = EditorState.create({ doc: sampleDoc() });
+    const body = () => (byTitle('The outline').body as (c: TourCtx) => string)(ctx(st));
+    expect(body()).not.toContain('tag you made');
+    st = run('tag', pick(st, SAMPLE.tag));
+    expect(body()).toContain('tag you made');
+  });
   it('the command center step is done once it opens', () => {
     const s = byTitle('The command center');
-    expect(s.done!({ view: () => null, ccOpen: () => true, closeCc: () => {} })).toBe(true);
-    expect(s.done!({ view: () => null, ccOpen: () => false, closeCc: () => {} })).toBe(false);
+    const c = { view: () => null, closeCc: () => {}, depth: () => 3, setDepth: () => {} };
+    expect(s.done!({ ...c, ccOpen: () => true })).toBe(true);
+    expect(s.done!({ ...c, ccOpen: () => false })).toBe(false);
   });
   it('the text names the key as it is bound now, and a button when it has none', () => {
     const body = () => (byTitle('Make a tag').body as () => string)();
@@ -131,7 +151,7 @@ describe('the hands-on steps', () => {
     setKey('tag', 'F2');
     expect(body()).toContain('F2');
     setKey('tag', '');
-    expect(body()).toMatch(/^Your cursor is on the first line\. Click Tag/);
+    expect(body()).toMatch(/^Your cursor is on the card's first line\. Click Tag/);
     resetKey('tag');
   });
 });

@@ -171,7 +171,7 @@ export function Tutorial({ on, ctx, gate, onEnd }: Props) {
   if (!on || i < 0) return null;
   const s = STEPS[i];
   const last = nextStep(STEPS, i, 1, has) < 0;
-  const body = typeof s.body === 'function' ? s.body() : s.body;
+  const body = typeof s.body === 'function' ? s.body(ctx) : s.body;
   return (
     <div className="tour" data-moving={moving || undefined}>
       <svg className="tour-dim" width={size.w} height={size.h} aria-hidden="true">

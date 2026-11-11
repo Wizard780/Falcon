@@ -36,6 +36,7 @@ const shot = async (page, name) => {
   await page.screenshot({ path: path.join(out, `${name}.png`) });
   if (SHOTS) fs.copyFileSync(path.join(out, `${name}.png`), path.join(SHOTS, `${name}.png`));
 };
+const depthNow = (page) => page.evaluate(() => document.querySelector('.olp .lv [data-on]')?.textContent ?? localStorage.getItem('falcon.depth'));
 const docNames = (page) => page.evaluate(() => [...document.querySelectorAll('.doc-row .doc-nm')].map((b) => b.getAttribute('aria-label')));
 const stored = (page) => page.evaluate(() => ({ autosave: localStorage.getItem('falcon.autosave.v2') ?? '', recents: localStorage.getItem('falcon.recents.v1') ?? '', seen: localStorage.getItem('falcon.tourSeen') }));
 
@@ -44,24 +45,37 @@ const P = (n) => () => document.querySelector(`.ProseMirror > :nth-child(${n})`)
 const TARGETS = {
   'Home': ['.fstrip .sb-logo'],
   'Your open files': ['.fstrip .fs-docs'],
-  'Make a tag': [1, '[data-tour="tag"]'],
-  'Mark the cite': [2, '[data-tour="cite"]'],
-  'Underline': [3, '[data-tour="underline"]'],
-  'Highlight': [3, '[data-tour="highlight"]'],
+  'Make a tag': [2, '[data-tour="tag"]'],
+  'Mark the cite': [3, '[data-tour="cite"]'],
+  'Underline': [4, '[data-tour="underline"]'],
+  'Highlight': [4, '[data-tour="highlight"]'],
   'Headings': ['[data-tour="styles"]'],
   'The outline': ['.olp.shown'],
   'The command center': ['.cc'],
+  'Search': ['.tools [aria-label="Find"]'],
   'Send to speech': ['.tools [aria-label="Speech doc"]'],
   'Settings': ['.fstrip [aria-label="Settings"]'],
 };
 const KEYS = { 'Make a tag': 'F7', 'Mark the cite': 'F8', 'Underline': 'F9', 'Highlight': 'F11', 'The command center': `${MOD}+Shift+Space` };
 const NAMES = ['welcome', 'home', 'files', 'tag', 'cite', 'underline', 'highlight', 'headings', 'outline', 'command-center', 'search', 'send', 'settings'];
-/** Ring boxes against the targets' boxes (padded 6 px, kept 4 px inside the window), and the card inside the window and off the rings. */
+/** Ring boxes against the targets' boxes, and the card inside the window and off the rings. A button's ring is padded 6 px
+ * (kept 4 px inside the window). A paragraph's ring, with its edge as drawn, must stay off the paragraphs before and after it
+ * and still cover its own text (2 px of the line's leading aside). */
 const geometry = (page, sels) => page.evaluate((sels) => {
   const vw = innerWidth, vh = innerHeight;
-  const want = sels.map((s) => (typeof s === 'number' ? document.querySelector(`.ProseMirror > :nth-child(${s})`) : document.querySelector(s))?.getBoundingClientRect())
+  const els = sels.map((s) => (typeof s === 'number' ? document.querySelector(`.ProseMirror > :nth-child(${s})`) : document.querySelector(s)));
+  const want = els.map((e) => e?.getBoundingClientRect())
     .map((r) => r && { left: Math.max(4, r.left - 6), top: Math.max(4, r.top - 6), right: Math.min(vw - 4, r.right + 6), bottom: Math.min(vh - 4, r.bottom + 6) });
   const rings = [...document.querySelectorAll('.tour-ring')].map((e) => e.getBoundingClientRect());
+  const lines = [];
+  sels.forEach((s, i) => {
+    if (typeof s !== 'number' || !els[i] || !rings[i]) return;
+    const p = els[i].getBoundingClientRect(), r = rings[i], w = parseFloat(getComputedStyle(document.querySelectorAll('.tour-ring')[i]).boxShadow.match(/0px 0px 0px ([\d.]+)px/)?.[1] ?? '2');
+    const edge = { left: r.left - w, top: r.top - w, right: r.right + w, bottom: r.bottom + w }; // the edge as drawn, outside the box
+    const near = [els[i].previousElementSibling, els[i].nextElementSibling].filter(Boolean).map((e) => e.getBoundingClientRect());
+    lines.push({ clear: !near.some((n) => edge.left < n.right && n.left < edge.right && edge.top < n.bottom && n.top < edge.bottom), covers: r.top <= p.top + 2 && r.bottom >= p.bottom - 2 && r.left <= p.left && r.right >= p.right, neighbours: near.length });
+    want[i] = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; // checked above instead of against the 6 px pad
+  });
   const card = document.querySelector('.tour-card').getBoundingClientRect();
   const off = (a, b) => Math.max(Math.abs(a.left - b.left), Math.abs(a.top - b.top), Math.abs(a.right - b.right), Math.abs(a.bottom - b.bottom));
   const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
@@ -70,6 +84,7 @@ const geometry = (page, sels) => page.evaluate((sels) => {
     worst: want.every(Boolean) && rings.length === want.length ? Math.max(...want.map((w, i) => off(w, rings[i]))) : 999,
     inside: card.left >= 0 && card.top >= 0 && card.right <= vw && card.bottom <= vh,
     clear: !rings.some((r) => hit(r, card)),
+    lines,
     // the gap between the card and the nearest ring
     gap: Math.min(...rings.map((r) => Math.hypot(Math.max(0, r.left - card.right, card.left - r.right), Math.max(0, r.top - card.bottom, card.top - r.bottom)))),
   };
@@ -80,13 +95,14 @@ const video = path.join(out, 'video');
 let { ctx, page } = await context({ recordVideo: { dir: video, size: { width: 1440, height: 900 } } });
 await page.goto(URL);
 want(await page.waitForSelector('.tour-card', { timeout: 8000 }).then(() => true, () => false), 'a fresh profile starts the tour by itself (after the falcon lands)');
+const depth0 = await depthNow(page);
 want(await title(page) === 'Welcome to Falcon', 'it starts on the welcome step');
 want((await docNames(page)).includes('Tutorial'), 'it opened its sample document in the rail');
 want(!(await page.evaluate(() => document.querySelector('.home')?.classList.contains('open'))), 'Home is out of the way while the tour runs');
 want((await stored(page)).seen === 'on', 'the seen flag is stored as soon as it starts');
 const sample0 = await page.evaluate(() => window.__falconMarkMap());
-want(sample0 === 'normal: Rural broadband raises small business growth\nnormal: Rivera 24 (Dana Rivera, fellow at the Center for Regional Economics, "Connected Counties," Journal of Rural Policy, March 2024)\nnormal: Counties that gained fast internet between 2015 and 2022 saw new business filings rise faster than similar counties that did not. The effect was largest for firms with fewer than ten employees, which used the connection to reach customers outside their region. These gains held after controlling for population, income and existing industry.',
-  'the sample is one unformatted card: tag line, cite line, body');
+want(sample0 === 'block: Broadband advantage\nnormal: Rural broadband raises small business growth\nnormal: Rivera 24 (Dana Rivera, fellow at the Center for Regional Economics, "Connected Counties," Journal of Rural Policy, March 2024)\nnormal: Counties that gained fast internet between 2015 and 2022 saw new business filings rise faster than similar counties that did not. The effect was largest for firms with fewer than ten employees, which used the connection to reach customers outside their region. These gains held after controlling for population, income and existing industry.',
+  'the sample is a block heading over one unformatted card: tag line, cite line, body');
 // a click outside the ring is held back: Settings doesn't open behind the welcome card
 await page.mouse.click(20, 880);
 await page.keyboard.press(`${MOD}+s`).catch(() => {});
@@ -103,6 +119,12 @@ for (;;) {
     const g = await geometry(page, TARGETS[t]);
     want(g.found && g.count && g.worst <= 2, `${t}: the ring sits on its target (worst edge ${g.worst.toFixed?.(1) ?? g.worst} px)`);
     want(g.inside && g.clear && g.gap <= 100, `${t}: the card is inside the window, off the ring and beside it (${Math.round(g.gap)} px away)`);
+    for (const l of g.lines) want(l.clear && l.covers && l.neighbours >= 1, `${t}: the ring around the paragraph stays off the paragraphs before and after it, and covers its own (${l.neighbours} neighbours)`);
+  }
+  if (t === 'The outline') {
+    const rows = await page.evaluate(() => [...document.querySelectorAll('.olp .sb-row.ol')].map((r) => r.className.match(/\bl(\d)\b/)?.[1] + ':' + r.textContent.trim()));
+    want(rows.length >= 1 && rows.some((r) => r.startsWith('3:') && r.includes('Broadband advantage')), `The outline: it has the sample's block as a row (${rows.join(' | ')})`);
+    want(rows.some((r) => r.startsWith('4:') && r.includes('Rural broadband')) && await depthNow(page) === '4', 'The outline: the depth is 4, so the tag made in step 4 shows under the block');
   }
   await shot(page, name);
   if (KEYS[t]) {
@@ -125,6 +147,7 @@ for (;;) {
   await page.click('.tour-next');
 }
 want(n === 13, `the tour showed all 13 steps (${n})`);
+want(await depthNow(page) === depth0, `the outline depth after the tour is the one before it (${depth0})`);
 const sampleEnd = await page.evaluate(() => window.__falconMarkMap?.());
 want(!(await touring(page)), 'Done ends the tour');
 want(!(await docNames(page)).includes('Tutorial'), 'the sample document is closed, with no question asked');
@@ -201,6 +224,20 @@ await page.click('.tour-next');
 await page.click('.tour-skip');
 want(!(await touring(page)), 'Skip ends it');
 await replayCheck('Replay from the command center, then Skip');
+// your own depth (2 here) comes back when you skip during the outline step
+await page.click('[aria-label="Show down to hats"]');
+await page.keyboard.press(`${MOD}+Shift+Space`);
+await page.waitForSelector('.cc');
+await page.keyboard.type('Replay tutorial');
+await page.waitForTimeout(200);
+await page.keyboard.press('Enter');
+await waitTitle(page, 'Welcome to Falcon');
+for (let k = 0; k < 8; k++) { await page.click('.tour-next'); await page.waitForTimeout(80); }
+want(await waitTitle(page, 'The outline') && await depthNow(page) === '4', 'Next walks to the outline step, which shows down to tags');
+await page.click('.tour-skip');
+await page.waitForTimeout(300);
+want(!(await touring(page)) && await depthNow(page) === '2' && await page.evaluate(() => localStorage.getItem('falcon.depth')) === '2', 'Skip on the outline step puts the depth back to 2, stored too');
+await replayCheck('Replay, then Skip on the outline step');
 // undo still has the edit made before the tours
 await page.keyboard.press(`${MOD}+z`);
 await page.waitForTimeout(200);

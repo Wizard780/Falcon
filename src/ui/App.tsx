@@ -294,6 +294,8 @@ export function App() {
   const [docVersion, setDocVersion] = useState(0);
   const [showOutline, setShowOutline] = useState(() => localStorage.getItem('falcon.outline') !== 'off');
   const [depth, setDepth] = useState(() => Number(localStorage.getItem('falcon.depth')) || 3);
+  const depthRef = useRef(depth);
+  depthRef.current = depth;
   const [zoom, setZoom] = useState(() => Number(localStorage.getItem('falcon.zoom')) || 1);
   const [speechMin, setSpeechMin] = useState(() => Number(localStorage.getItem('falcon.speech')) || 8);
   const [docs, setDocs] = useState<OpenDoc[]>(() => [{ id: 1, meta: { name: 'Untitled' }, dirty: false, state: null, scroll: 0 }]);
@@ -836,6 +838,8 @@ export function App() {
     view: () => (activeRef.current === tourDoc.current ? viewRef.current : null),
     ccOpen: () => ccRef.current,
     closeCc: () => setCcOpen(false),
+    depth: () => depthRef.current,
+    setDepth,
   }), []);
   // the tour only acts on its sample: anything that puts another doc in front of it ends the tour
   useEffect(() => { if (touring && activeId !== tourDoc.current) endTour(); }, [touring, activeId, endTour]);
