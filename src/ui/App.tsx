@@ -9,7 +9,7 @@ import { createState, createView, brushKey, emptyDoc, swapState } from '../edito
 import { topChildAt } from '../editor/window';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
-import { IS_MAC, bindingOf, isRecording, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
+import { IS_MAC, bindingOf, isRecording, keyLabel, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
 import { activeColors, bridge, setActiveColor, type CardHit, type CardSpot, type UpdateInfo, type WindowStart } from '../editor/host';
 import { cardContent, findCard } from './card-search';
 import { ago, releaseNotes } from './update';
@@ -54,13 +54,15 @@ import { DOC_TOOLS } from '../editor/doc-tools';
 import { CARD_TOOLS } from '../editor/card-tools';
 import type { ToolSection } from '../editor/tools';
 import { RECENTS_KEY, loadRecents, noteRecent, peekHtml, saveRecents, tidy, type Recent } from './recents';
-import { P, onPrefs, pref } from '../editor/prefs';
+import { P, onPrefs, pref, setPref } from '../editor/prefs';
 import { track, type DocSource } from './analytics';
 import { pathName, templateName, type Template } from './templates';
 import { readJson, safeSet } from './storage';
 import { RAIL_MAX, RAIL_MIN, RAIL_NAMES, loadRail, railMax, railWidth, saveRail } from './rail';
 import { reducedMotion } from './motion';
 import { Switcher, holdMods, recentOrder, type Mod } from './Switcher';
+import { Tutorial, shouldAutoStart } from './Tutorial';
+import { SAMPLE, sampleDoc, type TourCtx } from './tutorial-steps';
 
 // Settings, the command center and file search load the first time they open (and in the background once the
 // app is up), so the first screen downloads and starts less code; so does the .docx code (files.ts)
@@ -88,8 +90,6 @@ const MODE_PREFIX = { send: P.prefixSend, read: P.prefixRead, marked: P.prefixMa
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty, speech }]: the open doc and every unsaved one
 const OLD_AUTOSAVE_KEY = 'falcon.autosave.v1'; // one doc, before several could be open
 let windowSlot = ''; // which recovery file is this window's ('' for the first window: see electron/main.cjs)
-/** A command's key as text, for messages: ⌘S. */
-const keyLabel = (id: string) => keyText(keyOf(id));
 /** The keys that swap the document out, which read mode and Settings hold back. */
 const SWAPS = ['home', 'new', 'newSpeech', 'open', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop'];
 /** The commands the app runs itself (the editor's keymap runs the rest). */
@@ -101,7 +101,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'collab', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['tutorial', 'aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'collab', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -278,6 +278,9 @@ export function App() {
   const panes = useRef(new Map<number, Pane>());
   // read before anything touches the crash-recovery copy: it says which copy is this window's
   const [start] = useState<WindowStart>(() => { const s = bridge.windowStart?.() ?? { slot: '' }; windowSlot = s.slot; return s; });
+  // read on the first render, before the app stores anything: a profile Falcon has never run in gets the tutorial (the first window only)
+  const autoTour = useRef<boolean | null>(null);
+  autoTour.current ??= !start.slot && shouldAutoStart();
   const splitBox = useRef<HTMLDivElement>(null);
   // the joined files, in rail order (one group at a time); shown side by side while one of them is the open doc
   const [group, setGroupState] = useState<number[] | null>(null);
@@ -380,7 +383,11 @@ export function App() {
   const lastDocs = useRef(new WeakMap<EditorView, PMNode>()); // each editor's doc at its last change
   // each doc as it was last opened or saved: an edit that puts it back the same makes it clean again
   const savedDocs = useRef(new Map<number, PMNode>());
+  // the tutorial's sample doc (null when no tour runs), and what was showing before it opened
+  const tourDoc = useRef<number | null>(null);
+  const tourFrom = useRef<{ id: number; home: boolean; sd: number | null }>({ id: 1, home: false, sd: null });
   const isDirty = (id: number, doc: PMNode) => {
+    if (id === tourDoc.current) return false; // nothing saves it, so nothing asks about it
     const saved = savedDocs.current.get(id);
     return !saved || saved.content.size !== doc.content.size || !saved.eq(doc);
   };
@@ -404,7 +411,8 @@ export function App() {
   /** Back up the active doc and every unsaved one (state is read from refs, so call it after renders). */
   const mounted = useRef(true);
   const backup = useCallback(() => !mounted.current || autosave(docsRef.current.flatMap((d) => {
-    const isActive = d.id === activeRef.current;
+    if (d.id === tourDoc.current) return []; // the tutorial's sample isn't kept; the doc it covers counts as the open one
+    const isActive = d.id === (activeRef.current === tourDoc.current ? tourFrom.current.id : activeRef.current);
     const doc = liveState(d.id)?.doc;
     const speech = d.id === speechRef.current;
     // the speech doc is kept even when saved, so its marker comes back after a crash
@@ -705,12 +713,12 @@ export function App() {
   }, []);
   /** Open files in new windows is on, and this window has its file already. */
   const wantsWindow = useCallback(() => !!bridge.openWindow && pref(P.fileWindows) && !isBlank(), [isBlank]);
-  /** A new tab for `doc`, after the current one. An untouched blank Untitled is replaced instead. */
-  const addDoc = useCallback((doc: PMNode, m: DocMeta) => {
+  /** A new tab for `doc`, after the current one. An untouched blank Untitled is replaced instead, unless `alongside`. */
+  const addDoc = useCallback((doc: PMNode, m: DocMeta, alongside = false) => {
     const cur = docsRef.current.find((d) => d.id === activeRef.current)!;
     // joined files showing: the new one opens alone in the main editor, after the group, which stays joined
     const split = panes.current.size > 0;
-    const blank = isBlank();
+    const blank = !alongside && isBlank();
     const id = blank ? cur.id : nextDocId++;
     const fresh: OpenDoc = { id, meta: m, dirty: false, state: null, scroll: 0 };
     savedDocs.current.set(id, doc);
@@ -794,6 +802,50 @@ export function App() {
     void confirmAsk({ title: `Close ${name} without saving?`, body: 'Your changes will be lost.', ok: 'Close Without Saving' })
       .then((yes) => { if (yes) dropDoc(id); });
   }, [dropDoc, confirmAsk]);
+
+  // ---- the tutorial: it runs in a sample doc of its own, opened beside what you had and closed without a question ----
+  const [touring, setTouring] = useState(false);
+  const tourGate = useRef<((e: KeyboardEvent) => boolean) | null>(null);
+  const startTour = useCallback(() => {
+    if (tourDoc.current !== null || !viewRef.current) return;
+    setPref(P.tourSeen, true);
+    setSettingsOpen(false); setCcOpen(false); setPaletteOpen(false); setCollabOpen(false);
+    tourFrom.current = { id: activeRef.current, home: homeRef.current, sd: sdLitRef.current };
+    const doc = sampleDoc();
+    tourDoc.current = nextDocId; // before addDoc, so the new tab is never unsaved or backed up
+    addDoc(doc, { name: SAMPLE.name }, true);
+    setTouring(true);
+  }, [addDoc]);
+  const endTour = useCallback(() => {
+    const id = tourDoc.current;
+    if (id === null) return;
+    setTouring(false);
+    setCcOpen(false);
+    const from = tourFrom.current;
+    // back to the doc you had, with its undo history and unsaved state as they were (it was only stashed)
+    if (activeRef.current === id && docsRef.current.some((d) => d.id === from.id)) switchTo(from.id);
+    else if (activeRef.current === id) { dropDoc(id); tourDoc.current = null; return; }
+    setDocs((ds) => ds.filter((d) => d.id !== id));
+    savedDocs.current.delete(id);
+    tourDoc.current = null;
+    if (from.home) setHomeOpen(true);
+    if (from.sd !== null && sdTabsRef.current.some((x) => x.key === from.sd)) setSdLit(from.sd);
+    backupSoon.current();
+  }, [switchTo, dropDoc]);
+  const tourCtx = useMemo<TourCtx>(() => ({
+    view: () => (activeRef.current === tourDoc.current ? viewRef.current : null),
+    ccOpen: () => ccRef.current,
+    closeCc: () => setCcOpen(false),
+  }), []);
+  // the tour only acts on its sample: anything that puts another doc in front of it ends the tour
+  useEffect(() => { if (touring && activeId !== tourDoc.current) endTour(); }, [touring, activeId, endTour]);
+  const ready = tick > 0;
+  // the first run starts it by itself, once the falcon has landed on Home (Falcon on launch)
+  useEffect(() => {
+    if (!ready || !autoTour.current) return;
+    const wait = window.setInterval(() => { if (!document.querySelector('.falcon-flight')) { clearInterval(wait); autoTour.current = false; startTour(); } }, 200);
+    return () => clearInterval(wait);
+  }, [ready, startTour]);
 
   /** Join: show these files side by side (in rail order, gathered where the first one sits in the rail). */
   const join = useCallback((ids: number[]) => {
@@ -1080,6 +1132,7 @@ export function App() {
   const saveAsDoc = useRef(0);
   const fileSave = useCallback(async (as = false) => {
     const d = docsRef.current.find((x) => x.id === activeRef.current)!;
+    if (d.id === tourDoc.current) return; // the tutorial's sample is never written anywhere
     if (as) { saveAsDoc.current = d.id; setSaveAsName(!d.meta.path && (d.meta.name || 'Untitled') === 'Untitled' ? newFileName() : d.meta.name); return; }
     await writeDoc(d.meta, 'asis', false);
   }, [writeDoc]);
@@ -1256,7 +1309,7 @@ export function App() {
   // the Mac File menu (its shortcuts are labels only: the keys arrive here as usual)
   const menuRef = useRef<(c: string) => void>(() => {});
   // nothing swaps the document out behind Settings or during a read-mode speech
-  const locked = () => compareRef.current !== null || collabRef.current || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || newAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
+  const locked = () => tourDoc.current !== null || compareRef.current !== null || collabRef.current || settingsRef.current || paletteRef.current || ccRef.current || !!askRef.current || saveAsRef.current !== null || speechAskRef.current || newAskRef.current || (!!viewRef.current && isReading(viewRef.current.state));
   menuRef.current = (c) => {
     if (swRef.current) { endSw(false); return; } // a menu key or click while Ctrl-Tab is held: the switcher closes on the current doc
     if (askRef.current || saveAsRef.current || speechAskRef.current || newAskRef.current) return; // a warning, Save As, New speech doc or New Document is up: it gets answered first
@@ -1320,11 +1373,14 @@ export function App() {
     else if (id === 'sendToSpeech') sendToSpeech();
     else if (id === 'sendCard') openSendCard();
     else if (id === 'collab') setCollabOpen(true);
-  }, [fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, zoomTo, sendToSpeech, openSd, closeSd, openSendCard]);
+    else if (id === 'tutorial') startTour();
+  }, [startTour, fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, zoomTo, sendToSpeech, openSd, closeSd, openSendCard]);
 
   // app-level shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // the tutorial is up: Esc, its card's keys and the step's own shortcut, nothing else
+      if (tourGate.current && !tourGate.current(e)) { e.preventDefault(); e.stopPropagation(); return; }
       // Settings is listening for a new shortcut: every key goes to it
       if (isRecording()) return;
       // the switcher is up: Tab (its keys) and the arrows move, Enter opens, Esc stays put; nothing reaches the page
@@ -1736,7 +1792,7 @@ export function App() {
       <Settings open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsPage(undefined); setSettingsQuery(undefined); }} startPage={settingsPage} startQuery={settingsQuery}
         zoom={zoom} onZoom={setZoom} speechMin={speechMin} onSpeechMin={setSpeechMin}
         showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth}
-        highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} />
+        highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} onReplay={startTour} />
       </div>
       <CollabPanel open={collabOpen} onClose={closeCollab} flash={flash} confirm={confirmAsk} onInsert={insertReceived} onCopy={copyReceived} />
       <SendCard label={sendLabel} onClose={closeSendCard} onSend={(c) => void sendCardTo(c)} onManage={() => { closeSendCard(); setCollabOpen(true); }} />
@@ -1750,6 +1806,7 @@ export function App() {
         {toast?.action && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const a = toast.action!; setToast(null); a.run(); }}>{toast.action.label}</button>}
       </div>
       <Tips />
+      <Tutorial on={touring} ctx={tourCtx} gate={tourGate} onEnd={endTour} />
     </div>
   );
 }
@@ -2103,12 +2160,12 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
 
   // each button runs its key's command, and its tip shows the key Settings has for it now
   const style = (s: ParaStyle, label: string, cls: string, desc: string) => (
-    <button className="b" data-on={sel?.style === s || undefined} title={titled(label, s, desc)} onMouseDown={(e) => { e.preventDefault(); run(commandOf(s)); }}>
+    <button className="b" data-tour={s} data-on={sel?.style === s || undefined} title={titled(label, s, desc)} onMouseDown={(e) => { e.preventDefault(); run(commandOf(s)); }}>
       <span className={cls}>{label}</span>
     </button>
   );
   const mark = (name: string, label: string, cls: string, desc: string) => (
-    <button className="b" data-on={sel?.marks.has(name) || undefined} title={titled(label, name, desc)} onMouseDown={(e) => { e.preventDefault(); run(commandOf(name)); }}>
+    <button className="b" data-tour={name} data-on={sel?.marks.has(name) || undefined} title={titled(label, name, desc)} onMouseDown={(e) => { e.preventDefault(); run(commandOf(name)); }}>
       <span className={cls}>{label}</span>
     </button>
   );
@@ -2145,7 +2202,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   };
   const pair = (kind: PopKind, glyph: React.ReactNode, label: string, onMain: () => void, bar: string | undefined, armed = false) => (
     <span className="pair">
-      <button className="b ic" data-on={armed || undefined} aria-label={parseTip(label).label} title={label} onMouseDown={(e) => { e.preventDefault(); onMain(); }}>
+      <button className="b ic" data-tour={kind} data-on={armed || undefined} aria-label={parseTip(label).label} title={label} onMouseDown={(e) => { e.preventDefault(); onMain(); }}>
         <span className="glyph">{glyph}<i className={bar === undefined ? 'none' : ''} style={{ background: bar }} /></span>
       </button>
       <button className="b cr" data-pop={kind} aria-label={`${parseTip(label).label} options`} title={`${parseTip(label).label} colors: pick the color`} aria-haspopup="menu" aria-expanded={pop?.kind === kind}
@@ -2205,7 +2262,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
   return (
     <header className="toolbar">
       <div className="bar">
-        <div className="g">
+        <div className="g" data-tour="styles">
           {style('pocket', 'Pocket', 'pv box', 'turn this line into a pocket, the biggest heading')}{style('tag', 'Tag', 'pv', 'turn this line into a card tag')}
           {style('hat', 'Hat', 'pv uu', 'turn this line into a hat, the heading above blocks')}{style('block', 'Block', 'pv u', 'turn this line into a block heading')}
           {style('analytic', 'Analytic', 'pv an', 'turn this line into an analytic, a tag with no card')}{style('undertag', 'Undertag', 'ut', 'turn this line into an undertag, the note under a tag')}

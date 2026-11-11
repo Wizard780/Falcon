@@ -37,6 +37,7 @@ export const P = {
   prefixMarked: def('prefix.marked', 'MARKED_'),
   relayUrl: def('relayUrl', ''), // card sharing's relay ('' = src/collab/relay.ts DEFAULT_RELAY)
   openDepth: def('openDepth', 0), // 0: opening a file keeps the current depth
+  tourSeen: def('tourSeen', false), // the first-run tutorial has started once (Tutorial.tsx); Settings > General replays it
   // Appearance
   railResize: def('railResize', false), // the rail's right edge drags it wider to show file names
   joinMax: def('joinMax', 3), // how many files Join puts side by side
