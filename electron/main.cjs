@@ -672,8 +672,6 @@ if (primary) app.whenReady().then(() => {
   createWindow();
   updater.start();
   startEditorBridge();
-  // read changed files into the card index after launch settles, so Search cards is current when first opened
-  if (!HEADLESS) setTimeout(() => void cards().scan().catch(() => {}), 10000);
   app.on('activate', () => { if (!windows.size) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
