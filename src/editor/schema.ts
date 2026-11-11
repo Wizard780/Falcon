@@ -17,6 +17,9 @@ export const LEVEL: Record<ParaStyle, number> = {
 /** A node's outline level: 0 for body paragraphs and for anything that isn't a paragraph (tables). */
 export const levelOf = (n: PMNode): number => (n.type.name === 'paragraph' ? LEVEL[n.attrs.style as ParaStyle] ?? 0 : 0);
 
+/** A pasted paragraph's indent: the steps Falcon uses (0-8), whatever the HTML says, so the .docx stays valid. */
+const indentOf = (el: HTMLElement) => Math.max(0, Math.min(8, Math.round(Number(el.dataset.indent)) || 0));
+
 const TAG_FOR: Record<ParaStyle, string> = {
   pocket: 'h1', hat: 'h2', block: 'h3', tag: 'h4', analytic: 'p', undertag: 'p', normal: 'p',
 };
@@ -26,17 +29,18 @@ const paragraph: NodeSpec = {
   group: 'block',
   attrs: { style: { default: 'normal' }, indent: { default: 0 } },
   parseDOM: [
-    { tag: 'h1', attrs: { style: 'pocket' } },
-    { tag: 'h2', attrs: { style: 'hat' } },
-    { tag: 'h3', attrs: { style: 'block' } },
-    { tag: 'h4', attrs: { style: 'tag' } },
+    // headings keep their indent too: copy and paste, and a card sent by Card sharing, come back through these
+    { tag: 'h1', getAttrs: (el) => ({ style: 'pocket', indent: indentOf(el as HTMLElement) }) },
+    { tag: 'h2', getAttrs: (el) => ({ style: 'hat', indent: indentOf(el as HTMLElement) }) },
+    { tag: 'h3', getAttrs: (el) => ({ style: 'block', indent: indentOf(el as HTMLElement) }) },
+    { tag: 'h4', getAttrs: (el) => ({ style: 'tag', indent: indentOf(el as HTMLElement) }) },
     { tag: 'h5', attrs: { style: 'tag' } },
     { tag: 'h6', attrs: { style: 'tag' } },
     {
       tag: 'p',
       getAttrs: (el) => {
         const s = (el as HTMLElement).dataset.style;
-        return { style: s && (PARA_STYLES as readonly string[]).includes(s) ? s : 'normal', indent: Number((el as HTMLElement).dataset.indent) || 0 };
+        return { style: s && (PARA_STYLES as readonly string[]).includes(s) ? s : 'normal', indent: indentOf(el as HTMLElement) };
       },
     },
   ],
@@ -62,7 +66,8 @@ const marks: Record<string, MarkSpec> = {
   // Font size sits outside highlight, underline and emphasis so their box and background take the text's size (inside cite, whose own size it overrides).
   size: {
     attrs: { pt: {} },
-    parseDOM: [{ tag: 'span.f-size', getAttrs: (el) => ({ pt: Number((el as HTMLElement).dataset.pt) || 11 }) }],
+    // Word's range (1 to 1638 pt, in half points): anything else would make Word refuse the saved file
+    parseDOM: [{ tag: 'span.f-size', getAttrs: (el) => { const pt = Math.round(Number((el as HTMLElement).dataset.pt) * 2) / 2; return { pt: pt >= 1 && pt <= 1638 ? pt : 11 }; } }],
     toDOM: (m) => ['span', { class: 'f-size', 'data-pt': String(m.attrs.pt), style: `font-size:${m.attrs.pt}pt` }, 0],
   },
   // Underline and emphasis sit outside highlight and shading, so a box stays one box where its highlight starts or stops.
@@ -79,7 +84,8 @@ const marks: Record<string, MarkSpec> = {
   highlight: {
     attrs: { color: { default: 'yellow' } },
     parseDOM: [
-      { tag: 'span.f-highlight', getAttrs: (el) => ({ color: (el as HTMLElement).dataset.color || 'yellow' }) },
+      // only the colors a .docx can carry (Word refuses a file with any other name)
+      { tag: 'span.f-highlight', getAttrs: (el) => { const c = (el as HTMLElement).dataset.color ?? ''; return { color: Object.hasOwn(HIGHLIGHTS, c) ? c : 'yellow' }; } },
       { tag: 'mark', getAttrs: () => ({ color: 'yellow' }) },
     ],
     toDOM: (m) => ['span', { class: 'f-highlight', 'data-color': m.attrs.color, style: `background-color:${highlightCss(m.attrs.color)}` }, 0],

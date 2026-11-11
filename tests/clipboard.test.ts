@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import * as pmView from 'prosemirror-view';
-import type { Slice, ResolvedPos } from 'prosemirror-model';
+import type { Fragment, Slice, ResolvedPos } from 'prosemirror-model';
 import { createState, markMap } from '../src/editor/editor';
 import { schema } from '../src/editor/schema';
 import { clipboardHTML } from '../src/editor/clipboard-styles';
@@ -83,6 +83,35 @@ describe('copy out', () => {
 });
 
 describe('paste in', () => {
+  it('Falcon to Falcon: an indented tag or pocket keeps its indent, and a sent card does too', async () => {
+    const indented = schema.node('doc', null, [
+      schema.node('paragraph', { style: 'pocket', indent: 1 }, [t('Pocket')]),
+      schema.node('paragraph', { style: 'tag', indent: 2 }, [t('Tag')]),
+      schema.node('paragraph', { style: 'normal', indent: 1 }, [t('Body')]),
+    ]);
+    const view = new EditorView(document.createElement('div'), { state: createState() });
+    const slice = parseFromClipboard(view, '', clipboardHTML(indented.content), false, view.state.doc.resolve(1));
+    view.destroy();
+    const indents = (f: Fragment) => { const out: number[] = []; f.forEach((n) => out.push(n.attrs.indent as number)); return out; };
+    expect(indents(slice.content)).toEqual([1, 2, 1]);
+    const { cardFragment } = await import('../src/collab/service');
+    expect(indents(cardFragment(indented.content.toJSON())!)).toEqual([1, 2, 1]);
+  });
+  it('a pasted or received highlight color, size or indent Word has no value for is brought into range', async () => {
+    const { docToDocx } = await import('../src/docx/export');
+    const { unzipSync, strFromU8 } = await import('fflate');
+    const view = new EditorView(document.createElement('div'), { state: createState() });
+    // shaped like Falcon's own copy (the f-* paragraph classes), so the f-* marks are read as they are
+    const html = '<h4 class="f-tag" data-style="tag" data-indent="99">Tag</h4><p class="f-normal" data-style="normal" data-indent="-3"><span class="f-highlight" data-color="notAColor">a</span> <span class="f-size" data-pt="-10">b</span> <span class="f-size" data-pt="9999">c</span> <span class="f-highlight" data-color="toString">d</span></p>';
+    const slice = parseFromClipboard(view, '', html, false, view.state.doc.resolve(1));
+    view.destroy();
+    const xml = strFromU8(unzipSync(await docToDocx(schema.node('doc', null, slice.content)))['word/document.xml']);
+    expect(xml.match(/w:highlight w:val="[^"]*"/g)).toEqual(['w:highlight w:val="yellow"', 'w:highlight w:val="yellow"']);
+    expect(xml).not.toMatch(/w:sz w:val="-/);
+    expect(xml).not.toContain('w:sz w:val="19998"');
+    expect(xml).toContain('<w:ind w:left="5760"/>'); // 8 steps, Falcon's most
+    expect(xml).not.toContain('w:left="-');
+  });
   it('Word: Verbatim character styles and highlights', () => {
     const lines = paste(fs.readFileSync('tests/fixtures/word-clipboard.html', 'utf8')).split('\n');
     expect(lines).toEqual([
