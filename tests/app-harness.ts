@@ -7,6 +7,8 @@ export const tick = (ms = 50) => new Promise<void>((r) => setTimeout(r, ms));
 type Bridge = Record<string, unknown>;
 const fake: Bridge = {};
 (globalThis as unknown as { falcon: Bridge }).falcon = fake;
+// a test drives the page the way Playwright does, and like it says so: the first-run tutorial waits for a person (Tutorial.tsx)
+Object.defineProperty(navigator, 'webdriver', { value: true, configurable: true });
 
 const roots: (() => Promise<void>)[] = [];
 
