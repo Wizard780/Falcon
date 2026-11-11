@@ -1,0 +1,181 @@
+/**
+ * Falcon's card relay. One SQLite-backed Durable Object per inbox (hex SHA-256 of a public key) holds
+ * sealed card envelopes until their owner connects and acks them. It never sees a card: only the
+ * ciphertext, and the inbox id it is addressed to. Built for the Workers free plan: the Worker only
+ * forwards, idle sockets hibernate, and each inbox has at most one alarm.
+ *
+ *   POST /v1/inbox/:id   body = envelope bytes  → 201 {id} | 400 | 404 | 413 | 429 | 503 | 507
+ *   GET  /v1/inbox/:id   WebSocket. Client → relay text frames:
+ *        {"t":"hello","pub":b64url}  {"t":"proof","mac":b64url}  {"t":"ack","ids":[...]}
+ *     relay → client: {"t":"challenge","eph","nonce"} {"t":"ready"} {"t":"error","code"},
+ *     and each card as a binary frame: 36 bytes of ASCII id, then the envelope.
+ */
+import { DurableObject } from 'cloudflare:workers';
+
+/** Over this, an envelope is turned away (413). SQLite rows hold up to 8 MB; this leaves room. */
+const MAX_ENVELOPE = 1_000_000;
+const MIN_ENVELOPE = 1 + 32 + 16 + 12 + 16;
+/** Per inbox: at most this many cards waiting, and this many bytes (507 past either). */
+const MAX_QUEUED = 50;
+const MAX_QUEUED_BYTES = 10_000_000;
+const EXPIRY_MS = 3 * 3600_000;
+const MAX_CONTROL = 4096; // a hello, proof or ack is far smaller
+const ID_LEN = 36;
+
+interface Env { INBOX: DurableObjectNamespace<Inbox>; EXPIRY_MS?: string }
+type Att = { inbox: string; expect?: string; proven?: boolean };
+
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Max-Age': '86400' };
+const reply = (status: number, body: Record<string, unknown>) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
+const te = new TextEncoder();
+const b64url = (b: Uint8Array) => { let s = ''; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+const hex = (b: ArrayBuffer) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, '0')).join('');
+
+/** What the inbox owner must send back: HMAC(HKDF(X25519(eph, inbox key), salt nonce), nonce || inbox id). Same as src/collab/crypto.ts proveKey. */
+async function expectedProof(eph: CryptoKey, inboxPub: Uint8Array, nonce: Uint8Array, inbox: string): Promise<Uint8Array> {
+  const pub = await crypto.subtle.importKey('raw', inboxPub, { name: 'X25519' }, false, []);
+  const secret = await crypto.subtle.deriveBits({ name: 'X25519', public: pub } as unknown as SubtleCryptoDeriveKeyAlgorithm, eph, 256);
+  const ikm = await crypto.subtle.importKey('raw', secret, 'HKDF', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: nonce, info: te.encode('falcon relay proof v1') }, ikm, { name: 'HMAC', hash: 'SHA-256', length: 256 }, false, ['sign']);
+  const msg = new Uint8Array(nonce.length + inbox.length);
+  msg.set(nonce);
+  msg.set(te.encode(inbox), nonce.length);
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, msg));
+}
+
+/**
+ * The free plan's daily caps fail calls with "Exceeded allowed rows written in Durable Objects free tier"
+ * (or rows read, duration, volume of requests). Cloudflare doesn't document the text; this is what it is
+ * reported to say. Anything else (CPU, memory, a bug) is the relay breaking, not the day's allowance.
+ */
+const overLimit = (e: unknown) => /exceeded allowed .* free tier/i.test(String((e as Error)?.message ?? e));
+
+export default {
+  async fetch(req: Request, env: Env): Promise<Response> {
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    const m = /^\/v1\/inbox\/([0-9a-f]{64})$/.exec(new URL(req.url).pathname);
+    if (!m) return reply(404, { error: 'not_found' });
+    const inbox = m[1];
+    const stub = env.INBOX.get(env.INBOX.idFromName(inbox));
+    try {
+      if (req.method === 'GET') {
+        if (req.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return reply(426, { error: 'websocket_only' });
+        return await stub.fetch(req);
+      }
+      if (req.method !== 'POST') return reply(405, { error: 'method' });
+      if (Number(req.headers.get('Content-Length') ?? 0) > MAX_ENVELOPE) return reply(413, { error: 'too_large', max: MAX_ENVELOPE });
+      const body = new Uint8Array(await req.arrayBuffer());
+      if (body.length > MAX_ENVELOPE) return reply(413, { error: 'too_large', max: MAX_ENVELOPE });
+      if (body.length < MIN_ENVELOPE || body[0] !== 1) return reply(400, { error: 'bad_envelope' });
+      const r = await stub.put(inbox, body);
+      return reply(r.status, r.body);
+    } catch (e) {
+      return overLimit(e) ? reply(429, { error: 'daily_limit' }) : reply(503, { error: 'relay_error' });
+    }
+  },
+} satisfies ExportedHandler<Env>;
+
+export class Inbox extends DurableObject<Env> {
+  private sql: SqlStorage;
+  private expiry: number;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+    this.expiry = Number(env.EXPIRY_MS) > 0 ? Number(env.EXPIRY_MS) : EXPIRY_MS;
+    this.sql.exec('CREATE TABLE IF NOT EXISTS msg (id TEXT PRIMARY KEY, at INTEGER NOT NULL, data BLOB NOT NULL)');
+  }
+
+  /** Store an envelope and push it to the owner's proven sockets. */
+  async put(inbox: string, data: Uint8Array): Promise<{ status: number; body: { id?: string; error?: string } }> {
+    const now = Date.now();
+    const q = this.sql.exec<{ n: number; bytes: number }>('SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM msg WHERE at > ?', now - this.expiry).one();
+    if (q.n >= MAX_QUEUED || q.bytes + data.length > MAX_QUEUED_BYTES) return { status: 507, body: { error: 'inbox_full' } };
+    const id = crypto.randomUUID();
+    this.sql.exec('INSERT INTO msg (id, at, data) VALUES (?, ?, ?)', id, now, data);
+    // one alarm per inbox: set only when none is pending (each setAlarm is a row write)
+    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(now + this.expiry);
+    const frame = this.frame(id, data);
+    for (const ws of this.ctx.getWebSockets()) if (this.att(ws)?.proven && this.att(ws)?.inbox === inbox) ws.send(frame);
+    return { status: 201, body: { id } };
+  }
+
+  async fetch(req: Request): Promise<Response> {
+    const inbox = /([0-9a-f]{64})$/.exec(new URL(req.url).pathname)![1];
+    const { 0: client, 1: server } = new WebSocketPair();
+    this.ctx.acceptWebSocket(server);
+    server.serializeAttachment({ inbox } satisfies Att);
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  private att = (ws: WebSocket) => ws.deserializeAttachment() as Att | null;
+  private frame(id: string, data: ArrayBuffer | Uint8Array) {
+    const d = data instanceof Uint8Array ? data : new Uint8Array(data);
+    const out = new Uint8Array(ID_LEN + d.length);
+    out.set(te.encode(id));
+    out.set(d, ID_LEN);
+    return out;
+  }
+  private fail(ws: WebSocket, code: string, close: number) {
+    try { ws.send(JSON.stringify({ t: 'error', code })); ws.close(close, code); } catch { /* already gone */ }
+  }
+
+  async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
+    const att = this.att(ws);
+    if (!att || typeof raw !== 'string' || raw.length > MAX_CONTROL) return this.fail(ws, 'bad_request', 4000);
+    let m: { t?: unknown; pub?: unknown; mac?: unknown; ids?: unknown };
+    try { m = JSON.parse(raw); } catch { return this.fail(ws, 'bad_request', 4000); }
+
+    if (m.t === 'hello') {
+      if (att.expect || att.proven || typeof m.pub !== 'string') return this.fail(ws, 'bad_request', 4000);
+      let pub: Uint8Array;
+      try { pub = unb64url(m.pub); } catch { return this.fail(ws, 'bad_key', 4001); }
+      if (pub.length !== 32 || hex(await crypto.subtle.digest('SHA-256', pub)) !== att.inbox) return this.fail(ws, 'bad_key', 4001);
+      const eph = (await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits'])) as CryptoKeyPair;
+      const nonce = crypto.getRandomValues(new Uint8Array(32));
+      const expect = await expectedProof(eph.privateKey, pub, nonce, att.inbox);
+      // only the answer is kept (it survives hibernation); the one-time private key is dropped here
+      ws.serializeAttachment({ inbox: att.inbox, expect: b64url(expect) } satisfies Att);
+      const ephPub = new Uint8Array((await crypto.subtle.exportKey('raw', eph.publicKey)) as ArrayBuffer);
+      ws.send(JSON.stringify({ t: 'challenge', eph: b64url(ephPub), nonce: b64url(nonce) }));
+      return;
+    }
+
+    if (m.t === 'proof') {
+      if (!att.expect || att.proven || typeof m.mac !== 'string') return this.fail(ws, 'bad_request', 4000);
+      let mac: Uint8Array;
+      try { mac = unb64url(m.mac); } catch { mac = new Uint8Array(); }
+      const want = unb64url(att.expect);
+      let diff = mac.length ^ want.length;
+      for (let i = 0; i < want.length; i++) diff |= (mac[i] ?? 0) ^ want[i];
+      if (diff) return this.fail(ws, 'bad_proof', 4003);
+      ws.serializeAttachment({ inbox: att.inbox, proven: true } satisfies Att);
+      ws.send(JSON.stringify({ t: 'ready' }));
+      const rows = this.sql.exec<{ id: string; data: ArrayBuffer }>('SELECT id, data FROM msg WHERE at > ? ORDER BY at', Date.now() - this.expiry).toArray();
+      for (const r of rows) ws.send(this.frame(r.id, r.data));
+      return;
+    }
+
+    if (m.t === 'ack') {
+      // nothing is deleted for a socket that hasn't proven it holds the key
+      if (!att.proven) return this.fail(ws, 'bad_request', 4000);
+      const ids = Array.isArray(m.ids) ? m.ids.filter((x): x is string => typeof x === 'string' && x.length === ID_LEN).slice(0, MAX_QUEUED) : [];
+      if (ids.length) this.sql.exec(`DELETE FROM msg WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids);
+      return;
+    }
+    this.fail(ws, 'bad_request', 4000);
+  }
+
+  async webSocketClose(ws: WebSocket, code: number) {
+    try { ws.close(code === 1005 ? 1000 : code); } catch { /* already closed */ }
+  }
+
+  /** Expiry: drop what has waited 3 hours, then sleep until the next oldest card is due. */
+  async alarm() {
+    const now = Date.now();
+    this.sql.exec('DELETE FROM msg WHERE at <= ?', now - this.expiry);
+    const next = this.sql.exec<{ at: number | null }>('SELECT MIN(at) AS at FROM msg').one().at;
+    if (next !== null) await this.ctx.storage.setAlarm(next + this.expiry);
+  }
+}

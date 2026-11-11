@@ -35,6 +35,7 @@ export const P = {
   prefixSend: def('prefix.send', 'SEND_'),
   prefixRead: def('prefix.read', 'READ_'),
   prefixMarked: def('prefix.marked', 'MARKED_'),
+  relayUrl: def('relayUrl', ''), // card sharing's relay ('' = src/collab/relay.ts DEFAULT_RELAY)
   openDepth: def('openDepth', 0), // 0: opening a file keeps the current depth
   // Appearance
   railResize: def('railResize', false), // the rail's right edge drags it wider to show file names

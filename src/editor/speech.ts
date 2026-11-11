@@ -52,3 +52,11 @@ export function insertIntoSpeech(state: EditorState, content: Fragment): Transac
   const end = start + (blank ? 0 : para.nodeSize) + content.size;
   return tr.setSelection(Selection.near(tr.doc.resolve(end), -1));
 }
+
+/** Add at the end of the doc (an empty doc's one blank line is replaced). The caret stays where it is. */
+export function insertAtEnd(state: EditorState, content: Fragment): Transaction {
+  const { doc } = state;
+  const tr = closeHistory(state.tr);
+  if (doc.childCount === 1 && !doc.child(0).content.size) return tr.replaceWith(0, doc.content.size, content).setSelection(Selection.near(tr.doc.resolve(0)));
+  return tr.insert(doc.content.size, content);
+}

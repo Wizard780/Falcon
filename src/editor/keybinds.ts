@@ -184,6 +184,11 @@ bind('AI', [
 ]);
 // the SpeechDrop tab (no key until you give it one)
 bind('SpeechDrop', [{ id: 'speechdrop', label: 'SpeechDrop: join a room, upload and open its files' }]);
+// card sharing (src/collab): no keys until you give them one
+bind('Card sharing', [
+  { id: 'sendCard', label: 'Send Card to…' },
+  { id: 'collab', label: 'Card sharing' }, // your pairing code, contacts, and cards sent to you
+]);
 // a plain key on purpose: the page can't type it while it's bound (text boxes still can)
 bind('Speech', [{ id: 'sendToSpeech', label: 'Send to speech', key: '`' }]);
 // second keys that always work: Mod-Shift-] / [ also switch documents

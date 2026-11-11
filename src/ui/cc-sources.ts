@@ -20,7 +20,7 @@ import { HIGHLIGHTS, HIGHLIGHT_NAMES, LEVEL, schema, type ParaStyle } from '../e
 import { brushKey } from '../editor/editor';
 import { toggleColorMark } from '../editor/commands';
 import { fontSizeAt, setFontSize } from '../editor/font-size';
-import { buildOutline } from '../editor/outline';
+import { buildOutline, type OutlineItem } from '../editor/outline';
 import { PRESETS, SYSTEM, customThemes } from './theme';
 import { newFileName } from './files';
 import { FONT_COLORS } from './swatches';
@@ -52,6 +52,10 @@ export type Ctx = {
   docs?: { id: number; name: string; path?: string }[];
   recents?: Recent[];
   openFile?: (h: FileHit) => void;
+  /** can Search blocks read this file (it's open, or the desktop app can read its path) */
+  readable?: (h: FileHit) => boolean;
+  /** the file's document: the open copy with its unsaved edits, else read from disk */
+  fileDoc?: (h: FileHit) => Promise<PMNode | null>;
   /** open every file in a template (desktop only) */
   openTemplate?: (t: Template) => void;
 };
@@ -73,6 +77,7 @@ const HIDDEN = new Set(['search', 'commands']);
 const NOT_COMMANDS = new Set(['New line', 'Delete back', 'Delete forward']);
 /** Words people search for that the label doesn't say. */
 const SYN: Record<string, string> = {
+  sendCard: 'share partner teammate contact pairing code collaborate', collab: 'pairing code contacts received cards waiting share partner collaborate inbox',
   home: 'start recent', settings: 'preferences options config', outline: 'nav pane navigation sidebar', find: 'search text look for',
   zoomIn: 'bigger magnify', zoomOut: 'smaller', zoomReset: '100% reset zoom', new: 'blank file create', open: 'docx file',
   save: 'write disk', saveAs: 'copy rename export', close: 'tab', nextDoc: 'switch tab', prevDoc: 'switch tab', recentDoc: 'switch tab last previous mru ctrl tab', recentDocBack: 'switch tab mru',
@@ -205,6 +210,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: P.aiCitePresets.key, label: 'AI cite-creator prompt presets', page: 'ai', query: 'AI cite prompt preset', hint: 'Save them in Settings.', link: true, get: () => currentPreset()?.name ?? 'Built-in prompt', set: () => {} },
     { id: P.aiMaxTokens.key, label: 'AI max output tokens', page: 'ai', query: 'AI max output tokens', hint: 'Type it in Settings.', link: true, get: () => pref(P.aiMaxTokens), set: () => {} },
     { id: TEMPLATES_KEY, label: 'Templates', page: 'templates', query: 'Templates', hint: 'Set them in Settings.', link: true, get: () => String(loadTemplates().length), set: () => {} },
+    { id: P.relayUrl.key, label: 'Card sharing relay', page: 'general', query: 'Relay', hint: 'Type it in Settings.', link: true, get: () => pref(P.relayUrl) || 'None', set: () => {} },
     { id: P.speechName.key, label: 'Speech doc name', page: 'general', query: 'Speech doc name filename', hint: 'Type it in Settings.', link: true, get: () => pref(P.speechName), set: () => {} },
     tog(P.savePrefix, 'Prefix Save As copies', 'general', 'Send, Read and Marked Doc copies start with a prefix.'),
     { id: P.prefixSend.key, label: 'Send Doc filename prefix', page: 'general', query: 'Send Doc filename prefix', hint: 'Type it in Settings.', link: true, get: () => pref(P.prefixSend), set: () => {} },
@@ -389,6 +395,41 @@ export function fileEntries(ctx: Ctx, hits: FileHit[]): Entry[] {
   return hits.map((h): Entry => ({
     key: `file:${h.path ?? h.key}`, source: 'file', label: h.name, badge: 'DOCX',
     group: h.kind === 'file' ? h.folder || 'Files' : KIND_NAME[h.kind], keywords: `${h.folder} docx file`,
-    hint: h.path, run: () => { ctx.openFile?.(h); },
+    hint: h.path, file: h, run: () => { ctx.openFile?.(h); },
   }));
+}
+
+// ---------- blocks in another file (Search blocks) ----------
+
+/** Another file's headings as rows to insert from, with the cite under each card. `items` holds each row's spot in `doc`. */
+export function blockEntries(doc: PMNode): { items: OutlineItem[]; entries: Entry[] } {
+  const items = buildOutline(doc), cites = citesUnder(doc);
+  const entries = items.map((it, i): Entry => ({
+    key: `blk:${i}`, source: 'blk', label: it.text || '(empty heading)', group: STYLE_NAME[it.style] ?? '', badge: STYLE_BADGE[it.style],
+    level: it.level, keywords: cites[i] ?? '', hint: cites[i],
+  }));
+  return { items, entries };
+}
+
+/** A heading that can fold: a pocket, hat or block with something under it. */
+export const canFold = (levels: readonly number[], i: number) => levels[i] <= 3 && (levels[i + 1] ?? 0) > levels[i];
+
+/** Folded when the list opens, as CardMirror does: every block, so a file shows its pockets, hats and blocks. */
+export function startFolded(levels: readonly number[]): Set<number> {
+  const out = new Set<number>();
+  levels.forEach((l, i) => { if (l >= 3 && canFold(levels, i)) out.add(i); });
+  return out;
+}
+
+/** The rows shown with nothing typed: the file's tree, minus what sits under a folded heading. */
+export function visibleTree(levels: readonly number[], folded: ReadonlySet<number>): number[] {
+  const out: number[] = [];
+  let hideBelow = Infinity;
+  levels.forEach((l, i) => {
+    if (l <= hideBelow) hideBelow = Infinity;
+    if (hideBelow !== Infinity) return;
+    out.push(i);
+    if (folded.has(i) && canFold(levels, i)) hideBelow = l;
+  });
+  return out;
 }

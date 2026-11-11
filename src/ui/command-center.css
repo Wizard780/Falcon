@@ -52,6 +52,12 @@
 .cc-keys { flex: none; display: inline-flex; gap: 3px; }
 .cc-go { width: 14px; height: 14px; fill: none; stroke: var(--u-mut); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .cc-row[data-on] .cc-go { stroke: var(--u-tx); }
+/* Search blocks: a heading's open/close arrow (an empty one keeps rows lined up) */
+.cc-fold { flex: none; width: 14px; height: 14px; margin-right: -4px; fill: none; stroke: var(--u-mut); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  transition: transform 120ms var(--u-ease); }
+.cc-fold[data-open] { transform: rotate(90deg); }
+svg.cc-fold:hover, .cc-row[data-on] .cc-fold { stroke: var(--u-tx); }
+.reduce-motion .cc-fold { transition: none; }
 
 /* empty box: the prefixes as chips you can click */
 .cc-start { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 8px 8px 10px; font-size: 12.5px; color: var(--u-mut); }

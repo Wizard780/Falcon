@@ -1,0 +1,60 @@
+/* Card sharing: Falcon's dialog (.cf) with Home's quiet rows. Space separates the parts, not lines. */
+.cf.co { width: min(520px, calc(100vw - 48px)); max-height: min(86vh, 760px); overflow: auto; user-select: text; }
+.cf.co h2 { margin-bottom: 4px; }
+.co-line { margin: 0 0 6px !important; }
+.co-sec { margin-top: 22px; }
+.co-sec h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; line-height: 18px; color: var(--u-tx); }
+.cf.co .co-sub { margin: -2px 0 10px; font-size: 12.5px; line-height: 18px; color: var(--u-mut); }
+.cf.co button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 8px; background: var(--u-ctl2); color: var(--u-tx); font-size: 12.5px;
+  box-shadow: var(--u-top); cursor: pointer; white-space: nowrap; transition: background 150ms ease-out; }
+.cf.co button:hover:not(:disabled) { background: var(--u-ctl-on); }
+.cf.co button:disabled { opacity: .45; cursor: default; }
+.cf.co button:focus-visible, .co-in:focus-visible { outline: 2px solid var(--u-tx2); outline-offset: 2px; }
+.cf.co button svg { width: 14px; height: 14px; }
+.cf.co .co-main { font-weight: 500; }
+.cf.co .co-main svg { color: var(--ink-ui); }
+
+/* a card waiting: its tag, who sent it and when, and what to do with it */
+.co-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; margin: 0 -12px; border-radius: 10px; }
+.co-card:hover { background: var(--u-hover); }
+.co-what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.co-what b { font-size: 13.5px; font-weight: 500; color: var(--u-tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-what span { font-size: 12px; color: var(--u-mut); overflow-wrap: anywhere; }
+.co-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* your code: big enough to read aloud, wraps instead of scrolling */
+.co-me { display: flex; align-items: flex-start; gap: 10px; }
+.co-code { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; background: var(--u-well); font: 13px/20px var(--mono); color: var(--u-tx); overflow-wrap: anywhere; user-select: all; }
+.co-row { display: flex; align-items: center; gap: 10px; margin: 12px 0 10px; }
+.co-row label { flex: none; width: 76px; font-size: 12.5px; color: var(--u-tx2); }
+.co-in { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; outline: none; background: var(--u-ctl2); color: var(--u-tx); font: inherit; font-size: 13px; box-shadow: var(--u-top); }
+.co-in::placeholder { color: var(--u-mut); }
+.co-in[data-bad] { box-shadow: inset 0 0 0 1px #c25454, var(--u-top); }
+.co-mono { font-family: var(--mono); font-size: 12px; }
+.cf.co .co-plain { background: transparent; box-shadow: none; color: var(--u-tx2); padding: 0 8px; margin-left: -8px; }
+
+/* contacts: a name and the code's ends, Remove on hover */
+.co-ct { display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 12px; margin: 0 -12px; border-radius: 8px; }
+.co-ct:hover { background: var(--u-hover); }
+.co-ct .nm { flex: 1; min-width: 0; font-size: 13.5px; color: var(--u-tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.co-ct .cd { font: 12px var(--mono); color: var(--u-mut); }
+.cf.co .co-x { width: 28px; padding: 0; justify-content: center; background: transparent; box-shadow: none; color: var(--u-mut); opacity: 0; }
+.co-ct:hover .co-x, .cf.co .co-x:focus-visible { opacity: 1; }
+.co-add { display: flex; gap: 8px; margin-top: 10px; }
+.co-add .co-in:first-child { flex: 2; }
+.co-add button { height: 32px !important; }
+.co-hint { min-height: 18px; margin: 6px 2px 0 !important; font-size: 12.5px !important; color: #e07070 !important; }
+:root[data-chrome="light"] .co-hint { color: #b23a3a !important; }
+
+/* Send Card to…: the contacts as one list, the lit one marked by the pen color */
+.cf.co-send { width: min(420px, calc(100vw - 48px)); }
+.co-pick { display: flex; flex-direction: column; margin: 10px 0 0; }
+.cf.co .co-pk { height: 40px; padding: 0 12px; background: transparent; box-shadow: none; }
+.cf.co .co-pk[data-on] { background: var(--u-hover); }
+.cf.co .co-pk:focus-visible { outline: none; }
+
+/* the rail's cue that cards are waiting: the unseen dot SpeechDrop uses */
+.fs-b.co-wait { position: relative; }
+.fs-b.co-wait .dot { position: absolute; top: 8px; right: 9px; width: 6px; height: 6px; border-radius: 50%; }
+.fstrip[data-wide] .fs-b.co-wait .dot { position: static; flex: none; margin-left: auto; }
+@media (prefers-reduced-motion: reduce) { .cf.co button { transition: none; } }

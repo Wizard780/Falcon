@@ -1,0 +1,17 @@
+{
+  "name": "falcon-relay",
+  "private": true,
+  "type": "module",
+  "description": "Falcon's card relay: a Cloudflare Worker with one SQLite Durable Object per inbox. It only ever sees ciphertext.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "node --test test/relay.test.mjs",
+    "typecheck": "tsc",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261027.1",
+    "typescript": "7.0.2",
+    "wrangler": "4.154.0"
+  }
+}
