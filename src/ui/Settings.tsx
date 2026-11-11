@@ -530,6 +530,7 @@ export function Settings(props: Props) {
       ['Card links', [
         pick(P.cardLinks, 'Card links', `Type a card's cite, like Clare 23, and it links to the card: hover to preview it, click to go there, ${keyLabel('linkBack')} to come back. Page slice also dots every linked name.`,
           [['quiet', 'Quiet'], ['page', 'Page slice'], ['off', 'Off']]),
+        tog(P.outlinePreview, 'Card preview in the outline', 'Rest on a tag in the outline and its card shows beside the pane, then follows you down the tags. It looks the way Card links is set.'),
       ]],
       ['Reading', [
         tog(P.readParas, 'Keep paragraphs apart', 'In read mode, each paragraph stays on its own line.'),

@@ -70,6 +70,7 @@ export const P = {
   launchFalcon: def('launchFalcon', true), // the falcon sweeps in over Home when Falcon starts
   // Editor
   cardLinks: def<'quiet' | 'page' | 'off'>('cardLinks', 'quiet'), // a card's cite typed in the file links to it (card-links.ts)
+  outlinePreview: def('outlinePreview', true), // resting on a tag in the outline shows its card beside the pane (outline-preview.ts)
   spellcheck: def('spellcheck', true),
   condense: def<CondenseMode>('condense', 'integrity'),
   smallPilcrows: def('smallPilcrows', false),
