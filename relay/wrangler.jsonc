@@ -1,0 +1,10 @@
+// Falcon's card relay. Free plan only: SQLite-backed Durable Objects (new_sqlite_classes) are the
+// kind the Workers free plan allows. See README.md for deploying it.
+{
+  "name": "falcon-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "durable_objects": { "bindings": [{ "name": "INBOX", "class_name": "Inbox" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Inbox"] }],
+  "observability": { "enabled": false }
+}
