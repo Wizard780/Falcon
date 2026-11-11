@@ -41,7 +41,9 @@ const backspaceAtCardEdge: Command = (state, dispatch) => {
       if (dispatch) dispatch(state.tr.delete(prevPos, prevPos + prev.nodeSize).scrollIntoView());
       return true;
     }
-    return cur.attrs.style !== 'analytic'; // swallow: don't merge a tag into the paragraph above
+    // swallow: don't merge a tag into the paragraph above. An analytic joins a line, but under a table or other
+    // block that isn't a line it stays put (the editor's own Backspace would select the table, and a second one delete it)
+    return cur.attrs.style !== 'analytic' || !prev.isTextblock;
   }
   if (isCardHead(prev)) {
     if (cur.content.size === 0) {
