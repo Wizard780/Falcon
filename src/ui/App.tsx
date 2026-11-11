@@ -1143,12 +1143,12 @@ export function App() {
   /** Send Card to…: what Send to speech would send (the card at the caret, or the selection), to a contact. */
   const openSendCard = useCallback(() => {
     const v = viewRef.current;
-    if (!v || locked()) return;
+    if (!v) return;
     const sent = sendContent(v.state);
     if (!sent) { flash('Nothing to send. Put the caret in a card or select some text.'); return; }
     sendingRef.current = sent.content;
     setSendLabel(sent.label);
-  }, [flash]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [flash]);
   const closeSendCard = useCallback(() => { setSendLabel(null); sendingRef.current = null; viewRef.current?.focus(); }, []);
   const sendCardTo = useCallback(async (c: collab.Contact) => {
     const content = sendingRef.current;
