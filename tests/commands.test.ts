@@ -212,6 +212,22 @@ describe('shrink, case, condense', () => {
       expect(map(run(caret(run(select(s0, 'pushed utilities'), K.F9), 'skip'), K['Mod-8'])).split('\n')[2]).toBe('normal: [skip all of this]{size:6pt}');
     } finally { resetPrefs(); }
   });
+  it('Mod-Shift-8 regrows only what Mod-8 shrinks: a tag, read text and a cite keep their own sizes', () => {
+    const pt = (n: number) => schema.marks.size.create({ pt: n });
+    const s0 = createState(schema.node('doc', null, [
+      schema.node('paragraph', { style: 'block' }, [schema.text('Block')]),
+      schema.node('paragraph', { style: 'tag' }, [schema.text('Tag', [pt(13)])]),
+      schema.node('paragraph', null, [schema.text('Smith 24', [schema.marks.cite.create(), pt(12)])]),
+      schema.node('paragraph', null, [schema.text('skipped text '), schema.text('kept words', [pt(12), schema.marks.underline.create()])]),
+    ]));
+    // from the block (its whole section) and from a selection across the tag
+    for (const s1 of [caret(s0, 'Block'), select(s0, 'Tag', 'kept words')]) {
+      const shrunk = run(s1, K['Mod-8']);
+      expect(map(shrunk)).toContain('[skipped text ]{size:8pt}');
+      const back = run(shrunk, K['Mod-Shift-8']);
+      expect(map(back)).toBe(map(s0));
+    }
+  });
   it('Shift-F3 cycles lower → UPPER → Title → lower', () => {
     let s = run(select(card(), 'rapid expansion'), K['Shift-F3']);
     expect(body(s)).toContain('RAPID EXPANSION');
