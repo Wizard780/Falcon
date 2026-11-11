@@ -1,0 +1,46 @@
+/* card links (card-links.ts): names are drawn with the CSS Custom Highlight API, never in the document's DOM */
+.ProseMirror.cl-pointer { cursor: pointer; }
+::highlight(falcon-ref-hot) { text-decoration: underline dotted 1.5px; text-underline-offset: 3px; }
+/* page slice: every linked name on screen is dotted, in the pen color (darkened so a yellow pen still shows on white) */
+::highlight(falcon-ref) { text-decoration: underline dotted 1.5px color-mix(in srgb, var(--ink) 60%, #000); text-underline-offset: 3px; }
+.ProseMirror .cl-flash { background: color-mix(in srgb, var(--ink) 14%, transparent); transition: background .6s; }
+
+.cl-pv { position: fixed; z-index: 2500; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity .14s, transform .18s var(--u-ease); }
+.cl-pv.cl-on { opacity: 1; transform: none; pointer-events: auto; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .cl-pv { transition: none; transform: none; } }
+.cl-pv .cl-h { display: flex; justify-content: space-between; gap: 16px; font: 500 11px/1 var(--mono); }
+.cl-pv .cl-h span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-pv .cl-h span:last-child { flex: none; }
+.cl-pv .cl-card { overflow: hidden; -webkit-mask: linear-gradient(#000 65%, transparent); mask: linear-gradient(#000 65%, transparent); }
+.cl-pv .cl-card p, .cl-pv .cl-card h1, .cl-pv .cl-card h2, .cl-pv .cl-card h3, .cl-pv .cl-card h4 { margin: 0; }
+
+/* Quiet: a dark popover in the chrome's font, the read words lit in the pen color */
+.cl-quiet { width: 380px; max-width: calc(100vw - 24px); padding: 12px 14px; border-radius: 12px; background: var(--u-pop); color: var(--u-mut); box-shadow: var(--u-top), 0 12px 32px rgba(0, 0, 0, calc(.45 * var(--u-sh))); }
+.cl-quiet .cl-h { color: var(--u-mut); margin-bottom: 8px; }
+.cl-quiet .cl-card { max-height: 168px; font: 12px/1.45 var(--ui-font); }
+.cl-quiet .cl-card :is(h1, h2, h3, h4, .f-tag, .f-analytic) { font: 600 13px/1.35 var(--ui-font); color: var(--u-tx); margin-bottom: 4px; text-decoration: none; text-align: left; }
+.cl-quiet .cl-card .f-undertag { font-size: 12px; color: var(--u-tx2); }
+.cl-quiet .cl-card .f-cite { font: 600 12px/1.35 var(--ui-font); color: var(--u-tx); }
+.cl-quiet .cl-card .f-size { font-size: inherit !important; }
+.cl-quiet .cl-card :is(.f-underline, .f-emphasis) { color: var(--u-tx2); border: 0; font-weight: inherit; }
+.cl-quiet .cl-card :is(.f-highlight, .f-shading) { background: none !important; color: var(--ink-ui); }
+.cl-quiet .cl-card :is(.f-color, a) { color: inherit !important; }
+
+/* Page slice: a piece of the page itself, in the document's font and formatting */
+.cl-page { width: 440px; max-width: calc(100vw - 24px); padding: 16px 18px 12px; border-radius: 6px; background: var(--page); color: var(--doc-ink); box-shadow: 0 0 0 1px rgba(0, 0, 0, .06), 0 14px 40px rgba(0, 0, 0, .45); font: 10pt/1.2 var(--doc-font); }
+.cl-page .cl-h { color: #8a8a90; margin-top: 10px; }
+.cl-page .cl-card { max-height: 190px; }
+.cl-page .cl-card .f-tag, .cl-page .cl-card .f-cite { font-size: 11.5pt; }
+.cl-page .cl-card .f-tag { margin-bottom: .15rem; }
+
+/* two cards with one name: pick */
+.cl-many { cursor: default; }
+.cl-many .cl-h { margin: 0 0 6px; padding: 0 10px; }
+.cl-page.cl-many .cl-h { margin: 0 0 6px; }
+.cl-many .cl-it { display: block; width: 100%; padding: 8px 10px; border-radius: 8px; text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.cl-quiet.cl-many .cl-it:hover { background: var(--u-hover); }
+.cl-page.cl-many .cl-it:hover { background: rgba(0, 0, 0, .05); }
+.cl-many .cl-it b { display: block; margin-bottom: 3px; }
+.cl-quiet.cl-many .cl-it b { font: 600 13px/1.35 var(--ui-font); color: var(--u-tx); }
+.cl-quiet.cl-many .cl-it span { font: 12px/1.35 var(--ui-font); color: var(--u-tx2); }
+.cl-page.cl-many .cl-it span { font-size: 9pt; color: #555; }

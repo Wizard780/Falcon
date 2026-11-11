@@ -11,6 +11,7 @@ import { ENTER_AFTER, onPrefs, pref } from './prefs';
 import { activeColors, pastePlainFromClipboard } from './host';
 import { moveByHeading, moveByParagraph, moveContainer } from './motion';
 import { toggleMarker, toggleRead } from './read';
+import { linkBack } from './card-links';
 import { DOC_TOOLS } from './doc-tools';
 import { CARD_TOOLS } from './card-tools';
 import { compareText } from './doc-tools/compare';
@@ -157,6 +158,7 @@ bind('Moving around', [
   { id: 'cardDown', label: 'Move card down', key: 'Mod-Alt-ArrowDown', run: moveContainer(1) },
   { id: 'read', label: 'Read mode', key: 'Mod-Shift-r', run: toggleRead },
   { id: 'marker', label: 'Read marker', key: 'Mod-Shift-d', run: toggleMarker },
+  { id: 'linkBack', label: 'Back from a card link', key: 'Mod-[', run: linkBack },
   // each feature keeps its own keys in its own file
   ...navBinds,
 ]);

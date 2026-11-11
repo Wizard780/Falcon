@@ -239,6 +239,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: 'app.outline', label: 'Show outline pane', page: 'editor', get: () => ctx.showOutline, set: (v) => ctx.setShowOutline(v as boolean) },
     { id: 'app.depth', label: 'Outline depth', page: 'editor', options: [[1, '1'], [2, '2'], [3, '3'], [4, '4']], get: () => ctx.depth, set: (v) => ctx.setDepth(v as number) },
     pick(P.openDepth, 'Depth for opened files', 'editor', [[0, 'Keep'], [1, '1'], [2, '2'], [3, '3'], [4, '4']]),
+    pick(P.cardLinks, 'Card links', 'editor', [['quiet', 'Quiet'], ['page', 'Page slice'], ['off', 'Off']]),
     tog(P.readParas, 'Keep paragraphs apart', 'editor', 'In read mode, each paragraph stays on its own line.'),
     tog(P.readWholeCite, 'Show the whole cite', 'editor', 'In read mode, all of a cite line.'),
     tog(P.readUndertags, 'Show undertags', 'editor', 'Undertags stay visible while you read.'),
