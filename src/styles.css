@@ -404,9 +404,8 @@ button.b:active { transform: scale(.97); }
 /* as tall as the window leaves room for, so the caption stays on screen */
 .hm-desk { position: relative; isolation: isolate; height: clamp(400px, calc(100vh - 340px), 640px); margin-top: 36px; }
 .hm-desk::before { content: ''; position: absolute; z-index: -1; inset: -100px -40px -40px; pointer-events: none;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--ink-ui) 15%, transparent), transparent); animation: hm-breathe 9s ease-in-out infinite alternate; }
-@keyframes hm-breathe { from { opacity: .65; } to { opacity: 1; } }
-.home:not(.open) .hm-desk::before { animation-play-state: paused; } /* hidden Home: no frames for a glow nobody sees */
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--ink-ui) 15%, transparent), transparent); }
+/* the glow holds still: breathing, it repainted the caption's blur over it every frame, a quarter of a core while Home sat open */
 .hm-sheet { position: absolute; top: 0; bottom: 56px; left: 50%; width: min(100%, 480px); translate: -50% 0; border-radius: 3px; background: var(--page); }
 .hm-under { transform: rotate(2.6deg) translate(16px, 8px); opacity: .5; box-shadow: 0 24px 60px rgba(0, 0, 0, calc(.4 * var(--u-sh))); }
 .hm-page { overflow: hidden; padding: 34px 38px; color: var(--doc-ink); font-family: var(--doc-font); cursor: default;
@@ -455,7 +454,7 @@ button.b:active { transform: scale(.97); }
 
 @media (prefers-reduced-motion: reduce) {
   .olp, .lv-hl, .sb-list[data-ready] .sb-act, .sb-row.ol .tw svg, .b, .b::before, .b::after, .pop, .pop *, .toast, .home, .home.open, .hm-act, .hm-row, .hm-row .ic, .cap-go, .hm-undo { transition: none !important; }
-  .hm-page, .hm-desk::before { animation: none !important; }
+  .hm-page { animation: none !important; }
   .tip { animation: none !important; }
   .files { transition: none !important; }
   button.b:active { transform: none; }
