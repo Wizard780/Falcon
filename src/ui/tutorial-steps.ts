@@ -18,21 +18,27 @@
  *   near    what the card sits beside, when not the first target (a function, like target).
  * Removing, rewording or moving a step is just editing or moving its entry.
  *
- * The tour runs in its own sample document (SAMPLE below), which nothing saves.
+ * The tour runs in its own sample document, a short guide to Falcon (tutorial-guide.ts), which nothing saves.
  */
 import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { keyLabel } from '../editor/keybinds';
 import { schema } from '../editor/schema';
+import { SAMPLE } from './tutorial-guide';
 
-/** What steps can reach: the sample document's editor, the command center, and the outline's depth. */
+export { SAMPLE, sampleDoc } from './tutorial-guide';
+
+/** What steps can reach: the sample document's editor, the command center, the outline's depth and Settings. */
 export type TourCtx = {
   view: () => EditorView | null;
   ccOpen: () => boolean;
   closeCc: () => void;
   depth: () => number;
   setDepth: (n: number) => void;
+  /** Settings, open at one page (its id in Settings.tsx), and closed again */
+  openSettings: (page: string) => void;
+  closeSettings: () => void;
 };
 type Found = Element | Element[] | null | undefined;
 export type Step = {
@@ -47,21 +53,6 @@ export type Step = {
   look?: boolean;
   near?: (ctx: TourCtx) => Element | null;
 };
-
-/** The sample: a block heading (already styled, so the outline has a row), then one unformatted card: a tag line, a cite line and a body paragraph. */
-export const SAMPLE = {
-  name: 'Tutorial',
-  block: 'Broadband advantage',
-  tag: 'Rural broadband raises small business growth',
-  cite: 'Rivera 24 (Dana Rivera, fellow at the Center for Regional Economics, "Connected Counties," Journal of Rural Policy, March 2024)',
-  author: 'Rivera 24',
-  body: 'Counties that gained fast internet between 2015 and 2022 saw new business filings rise faster than similar counties that did not. The effect was largest for firms with fewer than ten employees, which used the connection to reach customers outside their region. These gains held after controlling for population, income and existing industry.',
-  sentence: 'The effect was largest for firms with fewer than ten employees',
-};
-export function sampleDoc(): PMNode {
-  const p = (text: string) => schema.node('paragraph', null, [schema.text(text)]);
-  return schema.node('doc', null, [schema.node('paragraph', { style: 'block' }, [schema.text(SAMPLE.block)]), p(SAMPLE.tag), p(SAMPLE.cite), p(SAMPLE.body)]);
-}
 
 /** A key's name as this computer shows it (⌘K, F7), or '' when it has none. */
 export const key = (id: string) => keyLabel(id);
@@ -116,7 +107,7 @@ function outline(): Step {
     title: 'The outline',
     body: (c) => {
       const v = c.view(), made = !!v && styleOf(v.state.doc, SAMPLE.tag) === 'tag';
-      return `This is the outline: the sample's block${made ? ', and under it the tag you made' : ''}. Click a row to jump to it. The numbers at the top pick how deep it goes, down to 4 for tags.`;
+      return `This is the outline: every heading in the guide${made ? ', down to the tag you made under Practice card' : ''}. Click a row to jump to it. The numbers at the top pick how deep it goes, down to 4 for tags.`;
     },
     target: '.olp.shown',
     enter: (c) => { mine = c.depth(); c.setDepth(4); },
@@ -127,21 +118,21 @@ function outline(): Step {
 export const STEPS: Step[] = [
   {
     title: 'Welcome to Falcon',
-    body: () => 'Falcon is where you cut, organize and read debate evidence. This tour takes about two minutes, and Esc skips it.',
+    body: () => 'Falcon is where you cut, organize and read debate evidence. This tour shows you around in a few minutes, and the guide it opened covers the rest. Esc skips it.',
   },
   {
     title: 'Home',
-    body: 'This button opens Home, with your recent files and new documents.',
+    body: 'This button opens Home: your recent files, a new document or speech doc, and SpeechDrop, which joins a round\'s room so you can upload your speech and open the other team\'s.',
     target: '.fstrip .sb-logo',
   },
   {
     title: 'Your open files',
-    body: 'Every file you have open is here. The tour opened a sample file for you to practice on.',
+    body: 'Every file you have open is here. The tour opened a guide to Falcon, with a card at the top to practice on.',
     target: '.fstrip .fs-docs',
   },
   {
     title: 'Make a tag',
-    body: () => `Your cursor is on the card's first line. ${pressOr('tag', 'Tag')} to make it the card's tag.`,
+    body: () => `Your cursor is on the practice card's first line. ${pressOr('tag', 'Tag')} to make it the card's tag.`,
     target: (c) => both(c, SAMPLE.tag, 'tag'),
     near: (c) => line(c, SAMPLE.body),
     enter: (c) => select(c, SAMPLE.tag, true),
@@ -180,6 +171,24 @@ export const STEPS: Step[] = [
   },
   outline(),
   {
+    title: 'Read mode',
+    body: () => `Read mode${key('read') ? ` (${key('read')})` : ''} shows only what you read aloud: headings, tags, cites, analytics and highlights. Typing is locked so a stray key can't change the file, and Space drops a marker where you stopped.`,
+    target: '.tools [aria-label="Read mode"]',
+    look: true,
+  },
+  {
+    title: 'Save a copy',
+    body: () => `Save As${key('saveAs') ? ` (${key('saveAs')})` : ''} saves the file as it is, or a copy for the round: a Send Doc without your analytics and undertags, a Read Doc with only what you read aloud, or a Marked Doc with only the cards you marked.`,
+    target: '.tools [aria-label="Save As…"]',
+    look: true,
+  },
+  {
+    title: 'The timer',
+    body: 'The timer runs your speech. Click it for the timer window, with both sides\' prep. Settings > Speech and timers picks your event\'s speech times and how fast you read.',
+    target: '.timer.clock',
+    look: true,
+  },
+  {
     title: 'The command center',
     body: () => (key('commands')
       ? `Press ${key('commands')} to open the command center. It runs any command, changes any setting, and goes to any heading.`
@@ -202,8 +211,26 @@ export const STEPS: Step[] = [
     target: '.tools [aria-label="Speech doc"]',
   },
   {
+    title: 'Your folders',
+    body: () => `In the desktop app, add the folders your files live in, like your team's Dropbox. Search files${key('search') ? ` (${key('search')})` : ''} and Search cards read them, and a starred file comes first.`,
+    target: '.st .st-body section',
+    optional: true,
+    enter: (c) => c.openSettings('search'),
+    leave: (c) => c.closeSettings(),
+    look: true,
+  },
+  {
+    title: 'Templates',
+    body: 'A template is a set of files you open together, like an aff and its frontlines. Make one here with Add files…, then open it from the command center: type t and its name.',
+    target: '.st .st-body section',
+    optional: true,
+    enter: (c) => c.openSettings('templates'),
+    leave: (c) => c.closeSettings(),
+    look: true,
+  },
+  {
     title: 'Settings',
-    body: 'You can change every key here, and replay this tutorial.',
+    body: 'Settings changes every key, the theme and how each style looks, and replays this tour. Card sharing, which sends a card straight to a teammate, is in the command center. The guide in this file has the rest.',
     target: '.fstrip [aria-label="Settings"]',
   },
 ];

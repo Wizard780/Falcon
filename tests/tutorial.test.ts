@@ -92,16 +92,26 @@ describe('the hands-on steps', () => {
     const r = findText(state.doc, text)!;
     return state.apply(state.tr.setSelection(TextSelection.create(state.doc, r.from, r.to)));
   };
-  const ctx = (state: EditorState): TourCtx => ({ view: () => ({ state }) as never, ccOpen: () => false, closeCc: () => {}, depth: () => 3, setDepth: () => {} });
+  const ctx = (state: EditorState): TourCtx => ({ view: () => ({ state }) as never, ccOpen: () => false, closeCc: () => {}, depth: () => 3, setDepth: () => {}, openSettings: () => {}, closeSettings: () => {} });
   const byTitle = (t: string) => STEPS.find((s) => s.title === t)!;
-  it('the sample starts as a block heading over one unformatted card', () => {
-    const doc = sampleDoc();
-    expect(doc.childCount).toBe(4);
-    expect(doc.firstChild!.attrs.style).toBe('block');
-    expect(doc.firstChild!.textContent).toBe(SAMPLE.block);
-    doc.forEach((p, _, k) => { if (k > 0) expect(p.attrs.style).toBe('normal'); });
-    expect(doc.textContent).toContain(SAMPLE.author);
-    expect(doc.textContent).toContain(SAMPLE.sentence);
+  it('the sample is a guide with the practice card under its block, unformatted', () => {
+    const doc = sampleDoc(), paras: { style: string; text: string }[] = [];
+    doc.forEach((p) => paras.push({ style: p.attrs.style, text: p.textContent }));
+    const at = paras.findIndex((p) => p.text === SAMPLE.block);
+    expect(paras[at].style).toBe('block');
+    expect(paras.slice(at + 1, at + 4)).toEqual([SAMPLE.tag, SAMPLE.cite, SAMPLE.body].map((text) => ({ style: 'normal', text })));
+    expect(paras[0]).toEqual({ style: 'pocket', text: 'Welcome to Falcon' });
+    for (const st of ['hat', 'tag', 'undertag', 'analytic']) expect(paras.some((p) => p.style === st)).toBe(true);
+    // the steps find their text by its first match: the practice lines are the only ones that hold it
+    for (const t of [SAMPLE.tag, SAMPLE.author, SAMPLE.sentence]) expect(doc.textContent.split(t).length).toBe(2);
+    expect(marked(doc, SAMPLE.author, 'cite')).toBe(false);
+    expect(marked(doc, 'Smith 24', 'cite')).toBe(true); // the guide's own example card is formatted
+  });
+  it('the guide names keys as they are bound when the tour starts', () => {
+    expect(sampleDoc().textContent).toContain('F7 tag');
+    setKey('tag', 'F2');
+    expect(sampleDoc().textContent).toContain('F2 tag');
+    resetKey('tag');
   });
   it('each is done only after its command runs', () => {
     let s = EditorState.create({ doc: sampleDoc() });
@@ -126,7 +136,7 @@ describe('the hands-on steps', () => {
   it('the outline step shows down to tags, then puts your depth back', () => {
     const s = byTitle('The outline');
     let depth = 2;
-    const c: TourCtx = { view: () => null, ccOpen: () => false, closeCc: () => {}, depth: () => depth, setDepth: (n) => { depth = n; } };
+    const c: TourCtx = { view: () => null, ccOpen: () => false, closeCc: () => {}, depth: () => depth, setDepth: (n) => { depth = n; }, openSettings: () => {}, closeSettings: () => {} };
     s.enter!(c);
     expect(depth).toBe(4);
     s.leave!(c);
@@ -141,7 +151,7 @@ describe('the hands-on steps', () => {
   });
   it('the command center step is done once it opens', () => {
     const s = byTitle('The command center');
-    const c = { view: () => null, closeCc: () => {}, depth: () => 3, setDepth: () => {} };
+    const c = { view: () => null, closeCc: () => {}, depth: () => 3, setDepth: () => {}, openSettings: () => {}, closeSettings: () => {} };
     expect(s.done!({ ...c, ccOpen: () => true })).toBe(true);
     expect(s.done!({ ...c, ccOpen: () => false })).toBe(false);
   });
@@ -151,7 +161,7 @@ describe('the hands-on steps', () => {
     setKey('tag', 'F2');
     expect(body()).toContain('F2');
     setKey('tag', '');
-    expect(body()).toMatch(/^Your cursor is on the card's first line\. Click Tag/);
+    expect(body()).toMatch(/^Your cursor is on the practice card's first line\. Click Tag/);
     resetKey('tag');
   });
 });

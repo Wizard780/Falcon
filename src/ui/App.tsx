@@ -840,6 +840,8 @@ export function App() {
     closeCc: () => setCcOpen(false),
     depth: () => depthRef.current,
     setDepth,
+    openSettings: (page) => { setSettingsPage(page); setSettingsQuery(undefined); setSettingsOpen(true); },
+    closeSettings: () => { setSettingsOpen(false); setSettingsPage(undefined); },
   }), []);
   // the tour only acts on its sample: anything that puts another doc in front of it ends the tour
   useEffect(() => { if (touring && activeId !== tourDoc.current) endTour(); }, [touring, activeId, endTour]);

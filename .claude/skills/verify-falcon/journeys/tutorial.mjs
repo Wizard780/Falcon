@@ -45,31 +45,37 @@ const P = (n) => () => document.querySelector(`.ProseMirror > :nth-child(${n})`)
 const TARGETS = {
   'Home': ['.fstrip .sb-logo'],
   'Your open files': ['.fstrip .fs-docs'],
-  'Make a tag': [2, '[data-tour="tag"]'],
-  'Mark the cite': [3, '[data-tour="cite"]'],
-  'Underline': [4, '[data-tour="underline"]'],
-  'Highlight': [4, '[data-tour="highlight"]'],
+  'Make a tag': [{ p: 'Rural broadband' }, '[data-tour="tag"]'],
+  'Mark the cite': [{ p: 'Rivera 24' }, '[data-tour="cite"]'],
+  'Underline': [{ p: 'Counties that gained' }, '[data-tour="underline"]'],
+  'Highlight': [{ p: 'Counties that gained' }, '[data-tour="highlight"]'],
   'Headings': ['[data-tour="styles"]'],
   'The outline': ['.olp.shown'],
+  'Read mode': ['.tools [aria-label="Read mode"]'],
+  'Save a copy': ['.tools [aria-label="Save As…"]'],
+  'The timer': ['.timer.clock'],
+  'Your folders': ['.st .st-body section'],
+  'Templates': ['.st .st-body section'],
   'The command center': ['.cc'],
   'Search': ['.tools [aria-label="Find"]'],
   'Send to speech': ['.tools [aria-label="Speech doc"]'],
   'Settings': ['.fstrip [aria-label="Settings"]'],
 };
 const KEYS = { 'Make a tag': 'F7', 'Mark the cite': 'F8', 'Underline': 'F9', 'Highlight': 'F11', 'The command center': `${MOD}+Shift+Space` };
-const NAMES = ['welcome', 'home', 'files', 'tag', 'cite', 'underline', 'highlight', 'headings', 'outline', 'command-center', 'search', 'send', 'settings'];
+const NAMES = ['welcome', 'home', 'files', 'tag', 'cite', 'underline', 'highlight', 'headings', 'outline', 'read-mode', 'save-as', 'timer', 'command-center', 'search', 'send', 'folders', 'templates', 'settings'];
 /** Ring boxes against the targets' boxes, and the card inside the window and off the rings. A button's ring is padded 6 px
  * (kept 4 px inside the window). A paragraph's ring, with its edge as drawn, must stay off the paragraphs before and after it
  * and still cover its own text (2 px of the line's leading aside). */
 const geometry = (page, sels) => page.evaluate((sels) => {
   const vw = innerWidth, vh = innerHeight;
-  const els = sels.map((s) => (typeof s === 'number' ? document.querySelector(`.ProseMirror > :nth-child(${s})`) : document.querySelector(s)));
+  const para = (t) => [...document.querySelectorAll('.ProseMirror:not(.hm-doc) > *')].find((e) => e.textContent.startsWith(t));
+  const els = sels.map((s) => (typeof s === 'object' ? para(s.p) : document.querySelector(s)));
   const want = els.map((e) => e?.getBoundingClientRect())
     .map((r) => r && { left: Math.max(4, r.left - 6), top: Math.max(4, r.top - 6), right: Math.min(vw - 4, r.right + 6), bottom: Math.min(vh - 4, r.bottom + 6) });
   const rings = [...document.querySelectorAll('.tour-ring')].map((e) => e.getBoundingClientRect());
   const lines = [];
   sels.forEach((s, i) => {
-    if (typeof s !== 'number' || !els[i] || !rings[i]) return;
+    if (typeof s !== 'object' || !els[i] || !rings[i]) return;
     const p = els[i].getBoundingClientRect(), r = rings[i], w = parseFloat(getComputedStyle(document.querySelectorAll('.tour-ring')[i]).boxShadow.match(/0px 0px 0px ([\d.]+)px/)?.[1] ?? '2');
     const edge = { left: r.left - w, top: r.top - w, right: r.right + w, bottom: r.bottom + w }; // the edge as drawn, outside the box
     const near = [els[i].previousElementSibling, els[i].nextElementSibling].filter(Boolean).map((e) => e.getBoundingClientRect());
@@ -101,8 +107,9 @@ want((await docNames(page)).includes('Tutorial'), 'it opened its sample document
 want(!(await page.evaluate(() => document.querySelector('.home')?.classList.contains('open'))), 'Home is out of the way while the tour runs');
 want((await stored(page)).seen === 'on', 'the seen flag is stored as soon as it starts');
 const sample0 = await page.evaluate(() => window.__falconMarkMap());
-want(sample0 === 'block: Broadband advantage\nnormal: Rural broadband raises small business growth\nnormal: Rivera 24 (Dana Rivera, fellow at the Center for Regional Economics, "Connected Counties," Journal of Rural Policy, March 2024)\nnormal: Counties that gained fast internet between 2015 and 2022 saw new business filings rise faster than similar counties that did not. The effect was largest for firms with fewer than ten employees, which used the connection to reach customers outside their region. These gains held after controlling for population, income and existing industry.',
-  'the sample is a block heading over one unformatted card: tag line, cite line, body');
+want(sample0.startsWith('pocket: Welcome to Falcon\n') && sample0.includes('\nblock: Practice card\nnormal: Rural broadband raises small business growth\nnormal: Rivera 24 (Dana Rivera, fellow at the Center for Regional Economics, "Connected Counties," Journal of Rural Policy, March 2024)\nnormal: Counties that gained fast internet between 2015 and 2022 saw new business filings rise faster than similar counties that did not. The effect was largest for firms with fewer than ten employees, which used the connection to reach customers outside their region. These gains held after controlling for population, income and existing industry.\nhat: '),
+  'the sample is the Falcon guide, with the practice card unformatted under its block (tag line, cite line, body)');
+for (const h of ['hat: Build a speech', 'hat: Find your evidence', 'hat: Work with your team', 'tag: A card is one piece of evidence', 'analytic: ', 'undertag: ']) want(sample0.includes(h), `the guide has "${h.trim()}"`);
 // a click outside the ring is held back: Settings doesn't open behind the welcome card
 await page.mouse.click(20, 880);
 await page.keyboard.press(`${MOD}+s`).catch(() => {});
@@ -121,9 +128,20 @@ for (;;) {
     want(g.inside && g.clear && g.gap <= 100, `${t}: the card is inside the window, off the ring and beside it (${Math.round(g.gap)} px away)`);
     for (const l of g.lines) want(l.clear && l.covers && l.neighbours >= 1, `${t}: the ring around the paragraph stays off the paragraphs before and after it, and covers its own (${l.neighbours} neighbours)`);
   }
+  if (t === 'Your folders' || t === 'Templates') {
+    const page_ = await page.evaluate(() => document.querySelector('.st .st-crumb b')?.textContent);
+    want(page_ === (t === 'Templates' ? 'Templates' : 'File search'), `${t}: Settings is open at ${page_}`);
+  }
+  if (t === 'Settings') want(!(await page.evaluate(() => !!document.querySelector('.st-back'))), 'Settings: the folders and templates steps closed Settings behind them');
+  if (t === 'Read mode') {
+    const b = await page.locator('.tools [aria-label="Read mode"]').boundingBox();
+    await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+    await page.waitForTimeout(200);
+    want(!(await page.evaluate(() => !!document.querySelector('.f-read'))) && await title(page) === 'Read mode', 'Read mode: the step shows the button, and a click on it does nothing');
+  }
   if (t === 'The outline') {
     const rows = await page.evaluate(() => [...document.querySelectorAll('.olp .sb-row.ol')].map((r) => r.className.match(/\bl(\d)\b/)?.[1] + ':' + r.textContent.trim()));
-    want(rows.length >= 1 && rows.some((r) => r.startsWith('3:') && r.includes('Broadband advantage')), `The outline: it has the sample's block as a row (${rows.join(' | ')})`);
+    want(rows.some((r) => r.startsWith('1:') && r.includes('Welcome to Falcon')) && rows.some((r) => r.startsWith('3:') && r.includes('Practice card')), `The outline: it lists the guide's headings, the practice block among them (${rows.length} rows)`);
     want(rows.some((r) => r.startsWith('4:') && r.includes('Rural broadband')) && await depthNow(page) === '4', 'The outline: the depth is 4, so the tag made in step 4 shows under the block');
   }
   await shot(page, name);
@@ -146,7 +164,7 @@ for (;;) {
   }
   await page.click('.tour-next');
 }
-want(n === 13, `the tour showed all 13 steps (${n})`);
+want(n === 18, `the tour showed all 18 steps (${n})`);
 want(await depthNow(page) === depth0, `the outline depth after the tour is the one before it (${depth0})`);
 const sampleEnd = await page.evaluate(() => window.__falconMarkMap?.());
 want(!(await touring(page)), 'Done ends the tour');
@@ -266,7 +284,7 @@ await page.keyboard.press('F7'); await waitTitle(page, 'Mark the cite');
 await page.keyboard.press('F8'); await waitTitle(page, 'Underline');
 await page.keyboard.press('F9'); await waitTitle(page, 'Highlight');
 await page.keyboard.press('F11'); await waitTitle(page, 'Headings');
-await page.click('.tour-next'); await page.waitForTimeout(450); await page.click('.tour-next');
+for (let k = 0; k < 5; k++) { await page.click('.tour-next'); await page.waitForTimeout(450); }
 await waitTitle(page, 'The command center');
 await page.waitForTimeout(450);
 await page.keyboard.press(`${MOD}+Shift+Space`);
