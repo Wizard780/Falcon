@@ -56,13 +56,12 @@ export function CollabPanel(props: {
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [bad, setBad] = useState<string | null>(null);
-  const [myName, setMyName] = useState(s.name);
   const codeBox = useRef<HTMLInputElement>(null), nameBox = useRef<HTMLInputElement>(null), first = useRef<HTMLButtonElement>(null);
   const [, tick] = useState(0);
   useEsc(open, onClose);
   useLayoutEffect(() => {
     if (!open) return;
-    setBad(null); setMyName(collab.current().name);
+    setBad(null);
     (first.current ?? codeBox.current)?.focus();
   }, [open]);
   // the retry countdown in the status line
@@ -121,9 +120,8 @@ export function CollabPanel(props: {
           </div>
           <div className="co-row">
             <label htmlFor="co-name">Your name</label>
-            <input id="co-name" className="co-in" spellCheck={false} maxLength={60} placeholder="Shown to people you send cards to" value={myName} disabled={!ready}
-              onChange={(e) => setMyName(e.target.value)} onBlur={() => { if (myName !== s.name) void collab.setName(myName.trim()); }}
-              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+            <input id="co-name" className="co-in" spellCheck={false} maxLength={60} placeholder="Shown to people you send cards to" value={s.name} disabled={!ready}
+              onChange={(e) => void collab.setName(e.target.value)} />
           </div>
           <button className="co-plain" onClick={() => void renew()} disabled={!ready}>New code…</button>
         </section>

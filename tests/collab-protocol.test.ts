@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Fragment } from 'prosemirror-model';
 import { deflateSync } from 'fflate';
 import { CODE_CHARS, encodeCode, inboxId, parseCode } from '../src/collab/code';
 import { BadEnvelope, makeIdentity, open, proveKey, seal, unb64url, type Identity } from '../src/collab/crypto';
@@ -140,5 +141,41 @@ describe('proof of key', () => {
     const relayView = await proveKey(eph.privateKey, me.pub, nonce, inbox);
     expect(Array.from(await proveKey(me.priv, ephPub, nonce, inbox))).toEqual(Array.from(relayView));
     expect(Array.from(await proveKey(other.priv, ephPub, nonce, inbox))).not.toEqual(Array.from(relayView));
+  });
+});
+
+describe('what a received card may put in a document', async () => {
+  const { cardFragment } = await import('../src/collab/service');
+  const { markMap } = await import('../src/editor/editor');
+  const { schema } = await import('../src/editor/schema');
+  const para = (attrs: object, content: object[]) => ({ type: 'paragraph', attrs, content });
+  const text = (t: string, marks: object[] = []) => ({ type: 'text', text: t, marks });
+
+  it('keeps every style and mark Falcon writes', () => {
+    const json = [
+      para({ style: 'tag' }, [text('Tag')]),
+      para({ style: 'normal', indent: 1 }, [text('Smith 24', [{ type: 'cite' }]), text(' body '), text('under', [{ type: 'underline' }, { type: 'highlight', attrs: { color: 'green' } }]),
+        text('box', [{ type: 'emphasis' }]), text(' big', [{ type: 'size', attrs: { pt: 14 } }]), text(' red', [{ type: 'color', attrs: { color: '#c00000' } }])]),
+    ];
+    const f = cardFragment(json)!;
+    expect(markMap(schema.node('doc', null, f))).toBe(markMap(schema.node('doc', null, Fragment.fromJSON(schema, json))));
+    expect(f.child(1).attrs.indent).toBe(1);
+  });
+
+  it('refuses a style the schema has no drawing for, and drops a color that would inject CSS', () => {
+    expect(cardFragment([para({ style: 'bogus' }, [text('x')])])).toBeNull();
+    const f = cardFragment([para({ style: 'normal' }, [text('x', [{ type: 'color', attrs: { color: 'red;background:url(https://evil.test/p)' } }])])])!;
+    expect(f.child(0).firstChild!.marks).toEqual([]);
+    expect(cardFragment([{ type: 'nonsense' }])).toBeNull();
+    expect(cardFragment([])).toBeNull();
+    expect(cardFragment('x')).toBeNull();
+  });
+
+  it('keeps a picture carried in the card, and drops one that would load from the web', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    const f = cardFragment([para({ style: 'normal' }, [text('a'), { type: 'image', attrs: { src: png } }, { type: 'image', attrs: { src: 'https://tracker.test/p.png' } }, text('b')])])!;
+    const srcs: string[] = [];
+    f.descendants((n) => { if (n.type.name === 'image') srcs.push(n.attrs.src); });
+    expect(srcs).toEqual([png]);
   });
 });

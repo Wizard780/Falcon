@@ -3,7 +3,7 @@
  * Every window reads the same IndexedDB and hears the others' changes over a BroadcastChannel; only
  * one window per launch (whoever holds a Web Lock) keeps the relay socket open.
  */
-import { Fragment } from 'prosemirror-model';
+import { DOMParser, DOMSerializer, Fragment } from 'prosemirror-model';
 import { schema } from '../editor/schema';
 import { P, onPrefs, pref } from '../editor/prefs';
 import { encodeCode, inboxId, parseCode } from './code';
@@ -42,12 +42,29 @@ export function cardLabel(content: Fragment): string {
   return text.length > LABEL_MAX ? `${text.slice(0, LABEL_MAX - 1).trimEnd()}…` : text || 'A card';
 }
 
-/** A received card's content as editor nodes, or null when it isn't something Falcon's documents can hold. */
+/** Pictures that came in a card: only ones carried in the card itself. A web address would load from
+ *  wherever the sender pointed it, telling that server when you opened the card. */
+function embeddedOnly(nodes: unknown): unknown {
+  if (!Array.isArray(nodes)) return nodes;
+  return nodes.filter((n) => !(n?.type === 'image' && !/^data:image\//i.test(String(n?.attrs?.src ?? ''))))
+    .map((n) => (n && typeof n === 'object' && Array.isArray(n.content) ? { ...n, content: embeddedOnly(n.content) } : n));
+}
+
+/**
+ * A received card's content as editor nodes, or null when it isn't something Falcon's documents can hold.
+ * The JSON is drawn as the clipboard draws it and read back through the schema's paste rules, as a copy
+ * and paste inside Falcon is, so a style, color or size the schema doesn't know can't reach the page.
+ * It's drawn into a document of its own, which loads nothing.
+ */
 export function cardFragment(content: unknown): Fragment | null {
   try {
-    const f = Fragment.fromJSON(schema, content as object[]);
-    if (!f.childCount) return null;
-    schema.topNodeType.create(null, f).check(); // only what a document may contain, at the top level
+    const raw = Fragment.fromJSON(schema, embeddedOnly(content) as object[]);
+    const inert = document.implementation.createHTMLDocument('');
+    const box = inert.createElement('div');
+    box.appendChild(DOMSerializer.fromSchema(schema).serializeFragment(raw, { document: inert }));
+    const f = DOMParser.fromSchema(schema).parse(box, { preserveWhitespace: 'full' }).content;
+    if (!f.childCount || !f.textBetween(0, f.size, ' ', ' ').trim()) return null;
+    schema.topNodeType.create(null, f).check();
     return f;
   } catch { return null; }
 }
