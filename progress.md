@@ -271,3 +271,50 @@ Guards: vitest 589 pass, tsc clean, 33 verify-falcon journeys pass, Electron smo
 Open:
 - Home showing costs 112 ms/s in Electron (93 GPU): the breathing glow redraws the window every frame. Stepping it or pausing it when minimised would change intended motion; not done.
 - A typing pause in a big file re-serialises the whole doc for crash recovery (29 MB of JSON for Nordics).
+
+## Stage: live co-editing (2026-11-11, branch live-editing, stacked on #147 relay-help)
+Task: two or more people open the same doc by invite and see each other's edits live (CardMirror-style), from Settings > Sharing and the command center. End-to-end encrypted through the user's own free relay. Loro + loro-prosemirror (MIT, chosen in tech-stack.md). No CardMirror code.
+Done means:
+- [x] free-tier maths by a script from Cloudflare's published limits (`node scripts/live-free-tier.mjs`), numbers below
+- [x] headless spike: two Falcon editors through Loro converge under concurrent F-keys, tables and footnotes; undo is local only; a block file types at usable speed (`tests/live-binding.test.ts`)
+- [ ] relay: a hibernating Room DO that only rebroadcasts ciphertext, new migration, Send Card tests still pass; an old relay without rooms is detected and the user told to redeploy (RelayGuide says so)
+- [ ] invites: the room key goes to a contact through Send Card's seal + inbox
+- [ ] UI: Settings > Sharing and the command center: start/stop for the open doc, invite a contact, accept an invite, who's in it, carets; leaving keeps the doc; .docx save after a session works
+- [ ] verify-falcon journey (two contexts, `wrangler dev`): concurrent typing + formatting converge, disconnect/reconnect, late joiner, leaving, .docx saved and reopened with the same mark map; npm test, tsc, send-card and relay-guide journeys pass
+- [ ] fresh-subagent review fixed; PR against main noting it's stacked on #147; CI green. No version bump (#147 has 0.1.12)
+Baseline (origin/relay-help 99ab853d, fresh npm ci): vitest 674 pass / 1 skipped, tsc clean, relay tests 8/8.
+
+Free plan (read 2026-11-11 from developers.cloudflare.com: DO pricing + limits, Workers limits; all daily, reset 00:00 UTC, fail with an error past the cap):
+Worker requests 100k; DO requests 100k (incoming WebSocket messages count 1/20, outgoing free); DO duration 13,000 GB-s (128 MB × wall clock while active and not eligible to hibernate); rows written 100k (setAlarm and deletes count); rows read 5M; SQLite-backed DOs only.
+A round = 2 h, 400 ms client batches, 2 ms room handler per frame, 6 connects a person, one late joiner (twice) fetching an 8 MB snapshot from a peer:
+
+| design | 4 people, editing 50% of the time | 4 people, editing 100% | runs out first |
+| --- | --- | --- | --- |
+| Falcon: hibernating room, rebroadcast only, 400 ms batches, peer snapshot | 1,829 DO req, 9 GB-s, 0 rows → **54 rounds/day** | 3,629 DO req, 18 GB-s → **27 rounds/day** | DO requests |
+| same with 2 / 3 people (50%) | 109 / 72 rounds/day | 55 / 36 | DO requests |
+| no batching (one message per transaction, ~8/s) | 17 rounds/day | 8 | DO requests |
+| a storage row per update, late joiner reads them back | 2 rounds/day | 1 | rows written |
+| ws.accept() instead of hibernation | 14 rounds/day | 14 | duration (900 GB-s a round) |
+
+Duration is never the limit with hibernation: even at 50 ms a frame a worst-case round is 450 GB-s (27 rounds still bound by requests). Worker requests (24 a round) only matter shared with Send Card.
+So the design is forced: hibernation API, no storage row per update (the room writes and reads nothing), batched frames, late joiners and reconnects sync from a peer by version vector.
+Risk: the pricing page doesn't say the 20:1 WebSocket ratio applies on Free; Send Card's README assumes it. Without it a worst-case 4-person round is 72k DO requests (1 round/day).
+
+Spike (tests/live-binding.test.ts, jsdom, Falcon's real schema + plugins, updates queued so both sides edit concurrently):
+- [x] joiner starts from the host snapshot exactly (mark maps and Loro JSON equal)
+- [x] concurrent F9/F11/F10/F8/F7 plus typing on both sides converge
+- [x] F9 and F10 on overlapping words at once: Loro keeps both marks (an invalid PM mark set, `doc.check()` throws); live-doc's `settle` removes the excluded one the same way on every peer (later in the schema stays: emphasis over underline, sub over sup). Checked: with settle off the test fails with "Invalid collection of marks"
+- [x] tables: typing in two cells + a row and a column added at once converge to a valid rectangular table, but only when ONE peer runs Falcon's appendTransaction tidiers on remote changes (fixTables on both peers adds the missing cell twice, then the rows are too long, and so on: 2 columns became 7 vs 8). live-doc `guard` lets only the fixer run them on remote changes
+- [x] footnotes added on both sides converge; editing the same note at once keeps one version (the note is one attr: last writer wins), the same on both
+- [x] undo/redo take back only my own typing and formatting (Loro UndoManager through editor/live-hooks.ts); history comes out of a live state
+- [x] big file, 4,830 paragraphs (1,200 cards): seed 0.3 s, snapshot 0.9 MB, join 0.15 s, 3.6 ms per key in the binding, 10 ms for a remote batch; 14,893 paragraphs: seed 1.1 s, 2.8 MB, join 0.5 s, 13 ms a key, 40 ms a remote batch
+Decisions:
+- Loro + loro-prosemirror works; no fallback to prosemirror-collab.
+- Inline wasm (`loro-crdt/base64`), loaded only when a session starts: Electron loads the page from file://, where fetching a .wasm fails, and the 5 MB chunk shouldn't slow every launch.
+- The binding replaces the whole doc on each remote change. editor.ts runs it through `narrowLoroReplace` (via live-hooks, so the editor never imports the CRDT): one replace per run of changed top-level nodes, matched by identity, so decorations, kept heights and the caret map normally.
+- After attaching, the binding's node map is pointed at the editor's own nodes (`updateLoroToPmState` once, no ops when equal). Without it a remote batch on a 15k-paragraph file took 351 ms (fixTables re-walking everything), with it 40 ms.
+- The binding stops listening while its doc is out of the editor (tab switched away): it would write into whatever doc the editor holds. Shown again it rebuilds from Loro.
+Known limits: a paragraph split (Enter) is a delete plus a new paragraph in the binding, so text someone typed at the same moment after the split point lands at the end of the first half (both peers agree, nothing lost). The binding deletes absent null attrs, which Loro records as ops (harmless; the harness must deliver them, not drop them).
+Failed attempts:
+- First narrowing used one findDiffStart/findDiffEnd range: a batch touching the start and end of the doc replaced everything between. Replaced by per-gap narrowing.
+Next action: relay Room DO + migration v2 + old-relay detection.
