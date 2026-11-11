@@ -90,6 +90,8 @@ try {
     return { visibility: document.visibilityState, hasFocus: document.hasFocus(), appRafPerSec: calls / (ms / 1000), probeFps: fps, animations: anims };
   }, 5000);
 
+  // a window that isn't painting, or isn't on Home, reads near 0% whatever the code does: refuse it rather than report it
+  if (page.visibility !== 'visible' || page.probeFps < 50 || !homeOpen) throw new Error(`not a painting Home: ${JSON.stringify({ visibility: page.visibility, fps: page.probeFps, homeOpen })}`);
   if (PROBE) await win.evaluate((probe) => {
     const css = { breathe: '.hm-desk::before { animation: none !important; }', backdrop: '.hm-cap { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }', willchange: '* { will-change: auto !important; }' }[probe];
     if (css) { const s = document.createElement('style'); s.textContent = css; document.head.append(s); }
