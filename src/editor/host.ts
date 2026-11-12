@@ -96,10 +96,15 @@ type FalconBridge = {
   secretList?: () => Promise<string[]>;
   secretPrompt?: (id: string, look: Record<string, string>) => Promise<boolean>;
   secretRemove?: (id: string) => Promise<string[]>;
+  /** Puts the user's relay on their Cloudflare account (electron/relay-setup.cjs). The token is typed into a window the
+   *  main process owns and never reaches the page. `onStep` hears 'account', 'upload' and 'address' as each starts. */
+  relaySetup?: (look: Record<string, string>, onStep: (step: string) => void) => Promise<RelaySetupResult>;
   /** One model request. `stop` means retrying won't help (a bad key, no credit). */
   aiAsk?: (req: { provider: string; system: string; text: string; model: string; maxTokens: number }) => Promise<{ text?: string; error?: string; stop?: boolean }>;
   platform?: string;
 };
+/** The relay is up at `url` (`created`: on a workers.dev subdomain made just now), or why not: an error code, and what Cloudflare said. */
+export type RelaySetupResult = { ok: true; url: string; created: boolean } | { ok: false; error: string; said?: string };
 /** A SpeechDrop answer: the value, or SpeechDrop's error code ('no_room', 'too_large', 'unreachable'…). */
 export type SdResult<T> = { ok: true; value: T } | { ok: false; error: string };
 /** One file in a room. `index` is SpeechDrop's slot for it (part of its URL); `ctime` is when it came, in ms. */

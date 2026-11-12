@@ -55,6 +55,12 @@ contextBridge.exposeInMainWorld('falcon', {
   secretPrompt: (id, look) => ipcRenderer.invoke('falcon:secret-prompt', id, look),
   secretRemove: (id) => ipcRenderer.invoke('falcon:secret-remove', id),
   aiAsk: (req) => ipcRenderer.invoke('falcon:ai-ask', req),
+  // puts the user's relay on their Cloudflare account; the token goes into a window main owns, never through here
+  relaySetup: (look, onStep) => {
+    const on = (_e, step) => { if (typeof step === 'string') onStep(step); };
+    ipcRenderer.on('falcon:relay-step', on);
+    return ipcRenderer.invoke('falcon:relay-setup', look).finally(() => ipcRenderer.removeListener('falcon:relay-step', on));
+  },
   linkedApps: () => ipcRenderer.invoke('falcon:bridge-apps'),
   allowLinkedApp: (id, on) => ipcRenderer.invoke('falcon:bridge-allow', id, on),
   onConfirmClose: (f) => {
