@@ -109,8 +109,11 @@ export const dropCard = (id: string) => tx(['meta', 'cards'], 'readwrite', (t) =
 });
 
 export const loadInvites = async () => (await get<Invited[]>('invites')) ?? [];
-/** Keep an invite that came in. Resolves once saved (then the relay may forget it); false: had it already, or it was dismissed. */
-export async function keepInvite(inv: Invited): Promise<boolean> {
+/**
+ * Keep an invite that came in. Resolves once saved (then the relay may forget it); false: had it already, or it was dismissed.
+ * Past MAX_INVITES the oldest from a code that isn't a contact (`known`) goes first, so a stranger can't flood out a teammate's.
+ */
+export async function keepInvite(inv: Invited, known: (code: string) => boolean = () => false): Promise<boolean> {
   let added = false;
   await tx(['meta'], 'readwrite', (t) => {
     const meta = t.objectStore('meta'), gone = meta.get('gone');
@@ -121,7 +124,12 @@ export async function keepInvite(inv: Invited): Promise<boolean> {
         const list = (have.result as Invited[] | undefined) ?? [];
         if (list.some((x) => x.id === inv.id)) return;
         // a newer invite to the same room takes the older one's place
-        meta.put([...list.filter((x) => x.invite.room !== inv.invite.room), inv].slice(-MAX_INVITES), 'invites');
+        const next = [...list.filter((x) => x.invite.room !== inv.invite.room), inv];
+        while (next.length > MAX_INVITES) {
+          const stranger = next.findIndex((x) => x !== inv && !known(x.from));
+          next.splice(stranger >= 0 ? stranger : 0, 1);
+        }
+        meta.put(next, 'invites');
         added = true;
       };
     };

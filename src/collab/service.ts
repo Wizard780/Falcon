@@ -156,8 +156,8 @@ async function onCard(id: string, envelope: Uint8Array) {
 
 /** An invite came in: kept (then acked), and told to the app for its toast. Not a card: the rail's count leaves it out. */
 async function onInvite(inv: Invited) {
-  if (!(await store.keepInvite(inv))) return;
-  set({ invites: [...state.invites.filter((x) => x.invite.room !== inv.invite.room), inv] });
+  if (!(await store.keepInvite(inv, (code) => !!contactFor(code)))) return;
+  set({ invites: await store.loadInvites() }); // what was kept, after any stranger's old invite made room
   told({ t: 'invite', id: inv.id });
   for (const f of invitedArrivals) f(inv, contactFor(inv.from));
 }

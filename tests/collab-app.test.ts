@@ -6,7 +6,7 @@ import { RELAY, fakeRelay } from './collab-relay-fake';
 // Card sharing in the real <App/>: its IndexedDB (fake-indexeddb), its relay transport over a fake
 // relay that speaks the real protocol, and the other person played by the same crypto module.
 const { encodeCode, inboxId, keyOf, parseCode } = await import('../src/collab/code');
-const { makeIdentity, open, seal } = await import('../src/collab/crypto');
+const { b64url, makeIdentity, open, seal } = await import('../src/collab/crypto');
 const { schema } = await import('../src/editor/schema');
 const { markMap } = await import('../src/editor/editor');
 const collab = await import('../src/collab/service');
@@ -203,6 +203,29 @@ describe('card sharing in the app', () => {
     const k = collab.current().contacts.find((c) => c.name === 'Kim')!;
     expect((await collab.send(k, v.state.doc.content)).message).toBe("No relay is set, so cards can't be sent yet. Add one in Settings > Sharing");
     expect(relay.posted).toHaveLength(1);
+  });
+
+  it("a flood of live-editing invites from strangers never pushes out a contact's", async () => {
+    await setup();
+    await until(() => relay.proven() === 1, 'connected');
+    const me = parseCode(collab.current().code) as { pub: Uint8Array };
+    const inbox = await inboxId(me.pub);
+    const pat = await makeIdentity();
+    await collab.addContact(encodeCode(pat.pub), 'Pat');
+    const invite = (n: number) => ({ room: n.toString(16).padStart(64, '0'), key: b64url(new Uint8Array(32).fill(n % 256)), doc: `Doc ${n}` });
+    await relay.post(inbox, await seal(pat, me.pub, { name: 'Pat', at: Date.now(), content: [], mid: 'pat-1', invite: invite(1) }));
+    await until(() => collab.current().invites.length === 1, "Pat's invite");
+    for (let i = 0; i < 21; i++) {
+      const x = await makeIdentity();
+      await relay.post(inbox, await seal(x, me.pub, { name: 'Stranger', at: Date.now(), content: [], mid: `x${i}`, invite: invite(100 + i) }));
+    }
+    await until(() => collab.current().invites.some((v) => v.invite.doc === 'Doc 120'), 'the last stranger', 10000);
+    const docs = collab.current().invites.map((v) => v.invite.doc);
+    expect(docs).toHaveLength(20);
+    expect(docs).toContain('Doc 1'); // Pat's stays
+    expect(docs).not.toContain('Doc 100'); // the oldest strangers' went
+    expect(docs).not.toContain('Doc 101');
+    expect(collab.current().cards).toHaveLength(0); // and none of it counts as a card waiting
   });
 
   it('a relay that is down or out of its daily requests says so plainly, and the editor keeps working', async () => {
