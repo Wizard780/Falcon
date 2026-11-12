@@ -4,7 +4,7 @@ import { EditorView } from 'prosemirror-view';
 import { schema } from '../src/editor/schema';
 import { bridge } from '../src/editor/host';
 import { P, resetPrefs, setPref } from '../src/editor/prefs';
-import { BUILT_IN_PROMPT, MAX_PRESETS, aiCitePlugin, citeLines, citeNodes, citePresets, citePrompt, currentPreset, deletePreset, editPreset, formatCite, newPreset, parseCite, reformatCites, usePreset } from '../src/editor/ai-cite';
+import { BUILT_IN_PROMPT, MAX_PRESETS, aiCitePlugin, citeLines, citeNodes, citePresets, citePrompt, currentPreset, deletePreset, editPreset, savePreset, formatCite, newPreset, parseCite, reformatCites, usePreset } from '../src/editor/ai-cite';
 
 const para = (text: string, cite = '') => schema.node('paragraph', null, [
   ...(cite ? [schema.text(cite, [schema.marks.cite.create()])] : []),
@@ -152,6 +152,20 @@ describe('prompt presets', () => {
   it('starts on the built-in prompt', () => {
     expect(currentPreset()).toBeNull();
     expect(citePrompt()).toContain('[[TOKENS]]');
+  });
+  it('the prompt editor saves a new preset only on Save, then edits it in place', () => {
+    const id = savePreset(null, '  ', 'mine on {DATE}')!;
+    expect(currentPreset()).toMatchObject({ id, name: 'Preset 1', prompt: 'mine on {DATE}' });
+    expect(savePreset(id, 'House', 'changed')).toBe(id);
+    expect(citePresets()).toEqual([{ id, name: 'House', prompt: 'changed' }]);
+    // a blank name keeps the old one
+    savePreset(id, '', 'changed again');
+    expect(currentPreset()?.name).toBe('House');
+  });
+  it('fills {DATE} the way CardMirror does, M-D-YYYY', () => {
+    savePreset(null, 'd', 'on {DATE}.');
+    const d = new Date();
+    expect(citePrompt()).toBe(`on ${d.getMonth() + 1}-${d.getDate()}-${d.getFullYear()}.`);
   });
   it('New preset copies the prompt in use and starts using it', () => {
     newPreset();

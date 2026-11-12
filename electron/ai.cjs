@@ -23,7 +23,8 @@ function failure(e, model) {
     const said = e.error?.error?.message;
     return { error: said ? `Anthropic said: ${said}` : `Anthropic error ${e.status ?? ''}`.trim() };
   }
-  return { error: 'The AI request failed.' };
+  // anything else (the SDK saying no before it sends, a bad answer): say what it was, or nobody can fix it
+  return { error: e?.message ? `The AI request failed: ${String(e.message).slice(0, 200)}` : 'The AI request failed.' };
 }
 
 function routerFailure(code, said, model) {
@@ -81,7 +82,8 @@ function createAi({ key, Client = Anthropic, post = fetch }) {
       if (hasFallbacks(m)) Object.assign(body, { betas: [FALLBACK_BETA], fallbacks: 'default' });
       try {
         const client = new Client({ apiKey, maxRetries: 2 });
-        const res = await client.beta.messages.create(body);
+        // streamed, so a big max output tokens works: the SDK refuses those without streaming before it even sends
+        const res = await client.beta.messages.stream(body).finalMessage();
         if (res.stop_reason === 'refusal') return { error: 'The AI declined to format this one.' };
         if (res.stop_reason === 'max_tokens') return { error: 'The AI ran out of room on this one.' };
         return { text: res.content.filter((b) => b.type === 'text').map((b) => b.text).join('') };

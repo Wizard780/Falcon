@@ -41,7 +41,7 @@ export function citePresets(): CitePreset[] {
 }
 /** The preset in use, or null for the built-in prompt. */
 export const currentPreset = () => citePresets().find((f) => f.id === pref(P.aiCitePreset)) ?? null;
-const promptInUse = () => currentPreset()?.prompt.trim() || BUILT_IN_PROMPT;
+export const promptInUse = () => currentPreset()?.prompt.trim() || BUILT_IN_PROMPT;
 const savePresets = (list: CitePreset[]) => setPref(P.aiCitePresets, JSON.stringify(list));
 
 /** Saves a copy of the prompt in use under a new name and starts using it. */
@@ -51,6 +51,16 @@ export function newPreset() {
   const id = `p${Date.now().toString(36)}${list.length}`;
   savePresets([...list, { id, name: `Preset ${list.length + 1}`, prompt: promptInUse() }]);
   setPref(P.aiCitePreset, id);
+}
+/** Save from the prompt editor: a new preset when `id` is null (and starts using it), else that one. Null if there's no room. */
+export function savePreset(id: string | null, name: string, prompt: string): string | null {
+  const list = citePresets();
+  if (id) { editPreset(id, { name: name.trim() || list.find((f) => f.id === id)?.name || 'Preset', prompt }); return id; }
+  if (list.length >= MAX_PRESETS) return null;
+  const nid = `p${Date.now().toString(36)}${list.length}`;
+  savePresets([...list, { id: nid, name: name.trim() || `Preset ${list.length + 1}`, prompt }]);
+  setPref(P.aiCitePreset, nid);
+  return nid;
 }
 export const editPreset = (id: string, change: Partial<CitePreset>) => savePresets(citePresets().map((f) => (f.id === id ? { ...f, ...change } : f)));
 export function deletePreset(id: string) {
@@ -148,7 +158,8 @@ export const aiCitePlugin = new Plugin<Held[]>({
   },
 });
 
-const today = () => new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+// M-D-YYYY, the way CardMirror fills it in, so a prompt written for CardMirror reads the date the same
+const today = (d = new Date()) => `${d.getMonth() + 1}-${d.getDate()}-${d.getFullYear()}`;
 export const citePrompt = () => promptInUse().split('{DATE}').join(today());
 
 /** `end` is where the text ended up, so a pass over the doc knows where to carry on. */
