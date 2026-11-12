@@ -19,6 +19,7 @@ import { wordSelection } from './mouse';
 import { footnoteText, schema } from './schema';
 import { P, PREFS_META, onPrefs, pref } from './prefs';
 import { cleanPastedHTML } from './paste';
+import { liveHooks } from './live-hooks';
 import { clipboardSerializer } from './clipboard-styles';
 import { findPlugin } from './find';
 import { multiSelectionPlugin } from './multi';
@@ -209,7 +210,8 @@ export function createView(mount: HTMLElement, onChange: (view: EditorView) => v
   const view: EditorView = new EditorView(mount, {
     state: doc instanceof EditorState ? doc : createState(doc),
     dispatchTransaction(tr) {
-      const next = view.state.apply(tr);
+      // a live doc's remote change arrives as a replace of the whole doc: the hook narrows it to what changed
+      const next = view.state.apply(liveHooks.narrow ? liveHooks.narrow(view.state, tr) : tr);
       view.updateState(next);
       // the drawn range moved on a scroll: nothing the app shows changed
       if (!tr.getMeta(WINDOW_META)) onChange(view);

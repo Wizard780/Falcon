@@ -243,3 +243,132 @@ describe('expiry', () => {
     o.ws.close();
   });
 });
+
+// ---------- live-editing rooms ----------
+
+const ROOM = 'c'.repeat(63);
+/** A socket on a room, joined, recording text and binary frames ({kind, from, body}). */
+async function seat(url, room, join = true) {
+  const ws = new WebSocket(`${url.replace('http', 'ws')}/v1/room/${room}`);
+  ws.binaryType = 'arraybuffer';
+  const got = { text: [], frames: [], closed: null };
+  const waiters = [];
+  const poke = () => { for (const w of [...waiters]) if (w.ok()) { waiters.splice(waiters.indexOf(w), 1); w.done(); } };
+  ws.onmessage = (e) => {
+    if (typeof e.data === 'string') got.text.push(JSON.parse(e.data));
+    else { const b = new Uint8Array(e.data); got.frames.push({ kind: b[0], from: new DataView(b.buffer).getUint32(1), body: new TextDecoder().decode(b.subarray(5)) }); }
+    poke();
+  };
+  ws.onclose = (e) => { got.closed = e.code; poke(); };
+  const until = (ok, ms = 5000) => new Promise((res, rej) => {
+    if (ok()) return res();
+    const t = setTimeout(() => rej(new Error(`timed out; got ${JSON.stringify(got)}`)), ms);
+    waiters.push({ ok, done: () => { clearTimeout(t); res(); } });
+  });
+  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  const s = { ws, got, until, frame: (kind, body, extra = []) => ws.send(new Uint8Array([kind, ...extra, ...new TextEncoder().encode(body)])) };
+  if (join) { ws.send(JSON.stringify({ t: 'join' })); await until(() => got.text.some((m) => m.t === 'welcome')); s.slot = got.text.find((m) => m.t === 'welcome').slot; }
+  return s;
+}
+const roomRows = (persist) => {
+  const dir = join(persist, 'v3', 'do', 'falcon-relay-Room');
+  let rows = 0, tables = [];
+  for (const f of (() => { try { return readdirSync(dir); } catch { return []; } })().filter((x) => x.endsWith('.sqlite'))) {
+    const db = new DatabaseSync(join(dir, f), { readOnly: true });
+    try {
+      // __miniflare_do_name is wrangler dev's own note of each object's name (production has none)
+      for (const { name } of db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name <> '__miniflare_do_name'").all()) {
+        tables.push(name);
+        rows += db.prepare(`SELECT COUNT(*) AS n FROM "${name}"`).get().n;
+      }
+    } finally { db.close(); }
+  }
+  return { rows, tables };
+};
+
+describe('rooms', () => {
+  test('GET /v1/rooms says this relay has rooms, without a Durable Object', async () => {
+    const r = await fetch(`${relay.url}/v1/rooms`);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('access-control-allow-origin'), '*');
+    assert.equal((await r.json()).rooms, 1);
+  });
+
+  test('join, broadcast, ask the longest-in peer, answer one peer, leave', async () => {
+    const room = `${ROOM}1`;
+    const a = await seat(relay.url, room), b = await seat(relay.url, room);
+    assert.deepEqual(a.got.text[0], { t: 'welcome', slot: a.slot, peers: [] });
+    assert.deepEqual(b.got.text[0], { t: 'welcome', slot: b.slot, peers: [a.slot] });
+    await a.until(() => a.got.text.some((m) => m.t === 'joined' && m.slot === b.slot));
+    // an update goes to everyone else, never back
+    b.frame(1, 'sealed update');
+    await a.until(() => a.got.frames.length === 1);
+    assert.deepEqual(a.got.frames[0], { kind: 1, from: b.slot, body: 'sealed update' });
+    await wait(200);
+    assert.equal(b.got.frames.length, 0);
+    // an ask goes to the one in longest; attempt 1 goes to the next
+    const c = await seat(relay.url, room);
+    assert.deepEqual(c.got.text[0].peers, [a.slot, b.slot]);
+    c.frame(2, 'ask', [0]);
+    await a.until(() => a.got.frames.some((f) => f.kind === 2));
+    assert.deepEqual(a.got.frames.find((f) => f.kind === 2), { kind: 2, from: c.slot, body: 'ask' });
+    c.frame(2, 'ask again', [1]);
+    await b.until(() => b.got.frames.some((f) => f.kind === 2));
+    assert.equal(b.got.frames.find((f) => f.kind === 2).body, 'ask again');
+    // an answer goes to the slot it names only
+    const to = new Uint8Array(4); new DataView(to.buffer).setUint32(0, c.slot);
+    a.frame(3, 'snapshot piece', [...to]);
+    await c.until(() => c.got.frames.some((f) => f.kind === 3));
+    assert.deepEqual(c.got.frames.find((f) => f.kind === 3), { kind: 3, from: a.slot, body: 'snapshot piece' });
+    await wait(200);
+    assert.equal(b.got.frames.filter((f) => f.kind === 3).length, 0);
+    // leaving tells the others
+    b.ws.close();
+    await a.until(() => a.got.text.some((m) => m.t === 'left' && m.slot === b.slot));
+    await c.until(() => c.got.text.some((m) => m.t === 'left' && m.slot === b.slot));
+    a.ws.close(); c.ws.close();
+  });
+
+  test('an ask with nobody else in is answered "alone"; frames before join, and too big, are refused', async () => {
+    const room = `${ROOM}2`;
+    const a = await seat(relay.url, room);
+    a.frame(2, 'anyone?', [0]);
+    await a.until(() => a.got.text.some((m) => m.t === 'alone'));
+    const early = await seat(relay.url, room, false);
+    early.frame(1, 'not joined');
+    await early.until(() => early.got.closed !== null);
+    assert.deepEqual(early.got.text, [{ t: 'error', code: 'bad_request' }]);
+    a.ws.send(new Uint8Array(1_048_576 + 6));
+    await a.until(() => a.got.closed !== null);
+    assert.equal(a.got.text.at(-1).code, 'too_large');
+  });
+
+  test('a ninth person is turned away: room_full', async () => {
+    const room = `${ROOM}3`;
+    const in8 = [];
+    for (let i = 0; i < 8; i++) in8.push(await seat(relay.url, room));
+    const ninth = await seat(relay.url, room, false);
+    await ninth.until(() => ninth.got.closed !== null);
+    assert.deepEqual(ninth.got.text, [{ t: 'error', code: 'room_full' }]);
+    for (const s of in8) s.ws.close();
+  });
+
+  test('a room writes nothing to storage: a burst of frames leaves no rows', async () => {
+    const room = `${ROOM}4`;
+    const a = await seat(relay.url, room), b = await seat(relay.url, room);
+    for (let i = 0; i < 50; i++) a.frame(1, `update ${i}`);
+    await b.until(() => b.got.frames.length === 50);
+    b.frame(2, 'ask', [0]);
+    await a.until(() => a.got.frames.some((f) => f.kind === 2));
+    a.ws.close(); b.ws.close();
+    await wait(500);
+    const { rows, tables } = roomRows(relay.persist);
+    assert.equal(rows, 0, `rows in ${tables.join(', ')}`);
+    assert.deepEqual(tables, []);
+  });
+
+  test('a room id that is not 64 hex is 404, and a plain GET is told to use a WebSocket', async () => {
+    assert.equal((await fetch(`${relay.url}/v1/room/xyz`)).status, 404);
+    assert.equal((await fetch(`${relay.url}/v1/room/${ROOM}5`)).status, 426);
+  });
+});

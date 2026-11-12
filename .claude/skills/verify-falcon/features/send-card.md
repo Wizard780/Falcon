@@ -1,10 +1,10 @@
 # Send Card (card sharing)
 
-Each Falcon has a pairing code. Partners swap codes and save each other as contacts; then Send Card to… seals the card at the caret (or the selection) to a contact and hands it to the relay (`relay/`, a Cloudflare Worker). In the other person's Falcon it arrives as a toast and a dot on the rail's inbox button, without taking focus. From the Card sharing panel they can Insert it below their caret, Copy it, or Dismiss it. A card from a code that isn't in contacts says so, with Add contact. With no relay set, sharing is inert and says so, but the code and contacts still work.
+Each Falcon has a pairing code, which carries the relay it listens on (code v2; with no relay set, a v1 code with none). Partners swap codes and save each other as contacts; then Send Card to… seals the card at the caret (or the selection) to a contact and hands it to the contact's relay (`relay/`, a Cloudflare Worker), or to my own for a v1 code. Everyone can run their own relay and still reach each other. In the other person's Falcon it arrives as a toast and a dot on the rail's inbox button, without taking focus. From the Card sharing panel they can Insert it below their caret, Copy it, or Dismiss it. A card from a code that isn't in contacts says so, with Add contact. With no relay set, sharing is inert and says so, but the code and contacts still work.
 
 ## Sub-features
 
-- `code` the panel shows this install's 56-character code in groups of 7; Copy puts it on the clipboard; New code… (after a Confirm) replaces it.
+- `code` the panel shows this install's code in groups of 7, carrying my relay; Copy puts it on the clipboard; a new relay makes a new code (the panel says people need it); New code… (after a Confirm) replaces the key.
 - `name` Your name is sent with each card, and saved as you type.
 - `contacts` paste a code and a name, then Add. A typo, a short code or a newer Falcon's code is refused with its own reason. Remove is the x on hover.
 - `send` Send Card to… lists the contacts (arrows, Enter or a click) and names the card it sends; the toast says Sent, or why it didn't go.
@@ -12,7 +12,8 @@ Each Falcon has a pairing code. Partners swap codes and save each other as conta
 - `insert` Insert puts it below the caret's paragraph with every style and mark. Read mode refuses. Copy and Dismiss do what they say.
 - `unknown` a card from a code not in contacts shows the name it claims, and Add contact fills it in.
 - `fail` relay stopped: the send says it failed and the panel says it's retrying. Relay over its daily limit: paused until 00:00 UTC, shown in local time (app test). The editor keeps working.
-- `inert` no relay set: the panel and the picker say so, and sending explains it.
+- `inert` no relay set: nobody can send to me (the panel says so, and my code is v1), but a card still goes to a contact whose code carries a relay; to a v1 contact sending explains it.
+- `relays` A on relay 1 and B on relay 2: each card goes to the recipient's relay, both ways; one relay stopped leaves the other person's fine.
 
 ## How to get to it (user POV)
 
@@ -27,7 +28,7 @@ Preconditions:
 
 - `falcon-verify doctor` is all `ok`, and `npm ci` has been run in `relay/` (the journey starts its own `wrangler dev`, no account needed).
 
-- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/send-card.mjs`. It exits 0 with 37 `ok` lines. It opens three browser contexts (A, B, and C with no relay), so three identities, plus a second window in B that waits for the socket and takes it over when the first closes.
+- **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/send-card.mjs`. It exits 0 with 52 `ok` lines. A is on relay 1 and B on relay 2 (two `wrangler dev`s). It opens three browser contexts (A, B, and C with no relay), so three identities, plus a second window in B that waits for the socket and takes it over when the first closes.
 - **Desktop.** After `npm run build`, run `$V run .claude/skills/verify-falcon/journeys/send-card-desktop.mjs`. It exits 0 with 12 `ok` lines. The hidden Electron window (file://) connects and proves its key, takes a card from the script (the partner, using `src/collab` itself), inserts it with its marks, sends one back that the partner opens and verifies, and keeps the same code and contacts after a relaunch.
 - **Relay.** In Settings, fill `input[aria-label="Relay address"]` and press Enter (it is saved on Enter or on leaving the box, not as it is typed; an address without `https://` gets it). `localStorage['falcon.relayUrl']` holds it, and the panel's `.co-line` reads `Connected. Cards sent to your code arrive here`.
 - **Code.** `.co-code` is the code. `.co-me button` copies it and the toast reads `Copied your pairing code`.

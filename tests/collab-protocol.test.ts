@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Fragment } from 'prosemirror-model';
 import { deflateSync } from 'fflate';
-import { CODE_CHARS, encodeCode, inboxId, parseCode } from '../src/collab/code';
-import { BadEnvelope, makeIdentity, open, proveKey, seal, unb64url, type Identity, TooBig } from '../src/collab/crypto';
+import { CODE_CHARS, encodeCode, inboxId, keyOf, parseCode, relayKey } from '../src/collab/code';
+import { BadEnvelope, b64url, makeIdentity, newRoom, open, openFrame, proveKey, roomKey, seal, sealFrame, unb64url, type Identity, TooBig } from '../src/collab/crypto';
 
 // Fixed test keys (never used anywhere else). These pin protocol v1: codes people have already swapped
 // and envelopes already sent must keep reading the same way.
@@ -45,15 +45,15 @@ describe('pairing codes', () => {
 
   it('a short or padded code says how long a code is', () => {
     const p = parseCode(A.code.slice(0, -3));
-    expect(!p.ok && p.error).toMatch(/^A pairing code is 56 letters and numbers\. This one has 53$/);
+    expect(!p.ok && p.error).toMatch(/^A pairing code is at least 56 letters and numbers\. This one has 53$/);
     expect(parseCode('').ok).toBe(false);
     expect(!parseCode('hello!').ok && (parseCode('hello!') as { error: string }).error).toBe('Pairing codes are only letters and numbers');
   });
 
   it('a code with a version this Falcon does not know is refused, not misread', async () => {
-    // a well-formed code (checksum and all) whose version byte is 2
+    // a well-formed code (checksum and all) whose version byte is 3
     const body = new Uint8Array(35);
-    body[0] = 2;
+    body[0] = 3;
     body.set(unb64url(A.jwk.x), 1);
     let c = 0xffff;
     for (const b of body.subarray(0, 33)) { c ^= b << 8; for (let i = 0; i < 8; i++) c = c & 0x8000 ? ((c << 1) ^ 0x1021) & 0xffff : (c << 1) & 0xffff; }
@@ -64,6 +64,72 @@ describe('pairing codes', () => {
     const text = bits.match(/.{1,5}/g)!.map((g) => alphabet[parseInt(g.padEnd(5, '0'), 2)]).join('');
     const p = parseCode(text);
     expect(!p.ok && p.error).toBe('That code is from a newer Falcon. Update Falcon to add it');
+  });
+});
+
+describe('pairing codes v2: the owner\'s relay rides along', () => {
+  const WD = 'https://falcon-relay.debate-team.workers.dev';
+  it('a workers.dev relay from the guide is stored as its subdomain alone', async () => {
+    const a = await fixed(A);
+    const short = encodeCode(a.pub, WD), long = encodeCode(a.pub, 'https://falcon-relayx.debate-team.workers.dev');
+    const p = parseCode(short);
+    expect(p.ok && p.relay).toBe(WD);
+    expect(p.ok && Array.from(p.pub)).toEqual(Array.from(a.pub));
+    expect(p.ok && p.code).toBe(short);
+    // version byte + key + kind + "debate-team" + crc
+    expect(short.replace(/-/g, '')).toHaveLength(Math.ceil(((1 + 32 + 1 + 'debate-team'.length + 2) * 8) / 5));
+    expect(short.replace(/-/g, '').length).toBeLessThan(long.replace(/-/g, '').length);
+    expect(short).toMatch(/^[0-9A-Z]{7}(-[0-9A-Z]{1,7})+$/);
+    expect(short.split('-').slice(0, -1).every((g) => g.length === 7)).toBe(true);
+  });
+  it('any other relay is stored in full: a domain, a path, a local one', async () => {
+    const a = await fixed(A);
+    for (const r of ['https://relay.example.org', 'https://example.org/falcon', 'http://127.0.0.1:18800', 'https://falcon-relay.x.workers.dev.evil.example']) {
+      const p = parseCode(encodeCode(a.pub, r));
+      expect(p.ok && p.relay).toBe(r);
+      expect(p.ok && keyOf(p.code)).toBe(keyOf(A.code));
+    }
+  });
+  it('the address is tidied the same way everywhere: trailing slashes, case of the host', async () => {
+    const a = await fixed(A);
+    expect(relayKey('https://Falcon-Relay.Team.workers.dev/')).toBe('https://falcon-relay.team.workers.dev');
+    expect(encodeCode(a.pub, 'https://falcon-relay.team.workers.dev/')).toBe(encodeCode(a.pub, 'https://falcon-relay.team.workers.dev'));
+    for (const bad of ['ftp://x.example', 'javascript:alert(1)', 'https://x.example/?q=1', 'https://u:p@x.example', 'not a url', '', `https://${'a'.repeat(200)}.example`]) expect(relayKey(bad)).toBeNull();
+    expect(encodeCode(a.pub, 'ftp://x.example')).toBe(A.code); // no usable relay: a v1 code
+  });
+  it('a v1 code still reads, with no relay of its own, and is the same person as their v2 code', async () => {
+    const a = await fixed(A);
+    const p = parseCode(A.code);
+    expect(p.ok && p.relay).toBeNull();
+    expect(encodeCode(a.pub)).toBe(A.code);
+    expect(keyOf(encodeCode(a.pub, WD))).toBe(keyOf(A.code));
+    expect(keyOf('nonsense')).toBeNull();
+  });
+  it('every one-letter typo anywhere in a v2 code is caught (or only touches the last letter\'s spare bits)', async () => {
+    const a = await fixed(A);
+    for (const r of [WD, 'https://relay.example.org/falcon']) {
+      const code = encodeCode(a.pub, r), chars = code.replace(/-/g, '').split('');
+      for (let at = 0; at < chars.length; at++) {
+        for (const ch of '0123456789ABCDEFGHJKMNPQRSTVWXYZ') {
+          if (ch === chars[at]) continue;
+          const typo = [...chars]; typo[at] = ch;
+          const p = parseCode(typo.join(''));
+          if (p.ok) { expect(at).toBe(chars.length - 1); expect(p.code).toBe(code); }
+          else expect(p.error).toMatch(/typo|relay address/);
+        }
+      }
+    }
+  });
+  it('a code whose relay bytes make no address is refused', async () => {
+    const a = await fixed(A);
+    // a v2 code built by hand with kind 1 and a subdomain that can't be one
+    const body = [2, ...a.pub, 1, ...new TextEncoder().encode('-bad-')];
+    let c = 0xffff;
+    for (const b of body) { c ^= b << 8; for (let i = 0; i < 8; i++) c = c & 0x8000 ? ((c << 1) ^ 0x1021) & 0xffff : (c << 1) & 0xffff; }
+    const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    const bits = [...body, c >> 8, c & 255].map((b) => b.toString(2).padStart(8, '0')).join('');
+    const p = parseCode(bits.match(/.{1,5}/g)!.map((g) => alphabet[parseInt(g.padEnd(5, '0'), 2)]).join(''));
+    expect(!p.ok && p.error).toBe("That code's relay address isn't one Falcon can use. Ask them for their code again");
   });
 });
 
@@ -212,5 +278,34 @@ describe('what a received card may put in a document', async () => {
     const srcs: string[] = [];
     f.descendants((n) => { if (n.type.name === 'image') srcs.push(n.attrs.src); });
     expect(srcs).toEqual([png]);
+  });
+});
+
+describe('live-editing invites and room frames', () => {
+  it('an invite rides in a sealed card envelope, and comes out whole', async () => {
+    const a = await makeIdentity(), b = await makeIdentity();
+    const { room, key } = newRoom();
+    const invite = { room, key: b64url(key), doc: 'Econ DA' };
+    const got = await open(b, await seal(a, b.pub, { name: 'Avery', at: 1, content: [], mid: 'm1', invite }));
+    expect(got.card.invite).toEqual(invite);
+    expect(got.card.content).toEqual([]);
+  });
+  it('a malformed invite is dropped, the envelope still opens', async () => {
+    const a = await makeIdentity(), b = await makeIdentity();
+    for (const bad of [{ room: 'nothex', key: b64url(new Uint8Array(32)), doc: 'x' }, { room: 'a'.repeat(64), key: b64url(new Uint8Array(5)), doc: 'x' }, { room: 'a'.repeat(64), key: 1, doc: 'x' }]) {
+      const got = await open(b, await seal(a, b.pub, { name: 'Avery', at: 1, content: [], invite: bad as never }));
+      expect(got.card.invite).toBeUndefined();
+    }
+  });
+  it('a room frame opens only with its room key, room id and kind', async () => {
+    const { room, key } = newRoom(), other = newRoom();
+    const k = await roomKey(key);
+    const sealed = await sealFrame(k, room, 1, new TextEncoder().encode('an update'));
+    expect(new TextDecoder().decode(await openFrame(k, room, 1, sealed))).toBe('an update');
+    await expect(openFrame(k, room, 3, sealed)).rejects.toThrow(BadEnvelope); // replayed as another kind
+    await expect(openFrame(k, other.room, 1, sealed)).rejects.toThrow(BadEnvelope); // into another room
+    await expect(openFrame(await roomKey(other.key), room, 1, sealed)).rejects.toThrow(BadEnvelope);
+    expect(room).toMatch(/^[0-9a-f]{64}$/);
+    expect(room).not.toBe(other.room);
   });
 });

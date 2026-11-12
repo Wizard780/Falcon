@@ -1,5 +1,5 @@
 import { chainCommands, deleteSelection, joinBackward, joinForward, selectAll, splitBlockKeepMarks, createParagraphNear, liftEmptyBlock } from 'prosemirror-commands';
-import { undo } from 'prosemirror-history';
+import { undo } from './live-hooks';
 import { keydownHandler } from 'prosemirror-keymap';
 import { Plugin, TextSelection, type Command } from 'prosemirror-state';
 import {

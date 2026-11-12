@@ -55,7 +55,9 @@ const paragraph: NodeSpec = {
   },
 };
 
-const color = (s: string | null) => (s && /^[#a-zA-Z0-9(),. %]+$/.test(s) ? s : null);
+const color = (s: unknown) => (typeof s === 'string' && /^[#a-zA-Z0-9(),. %]+$/.test(s) ? s : null);
+/** A font size Word can save (1 to 1638 pt), else 11. */
+const ptOf = (v: unknown) => { const n = Number(v); return n >= 1 && n <= 1638 ? n : 11; };
 
 const marks: Record<string, MarkSpec> = {
   // Character styles (Verbatim): cite, underline, emphasis. Underline and emphasis replace each other.
@@ -68,7 +70,9 @@ const marks: Record<string, MarkSpec> = {
     attrs: { pt: {} },
     // Word's range (1 to 1638 pt, in half points): anything else would make Word refuse the saved file
     parseDOM: [{ tag: 'span.f-size', getAttrs: (el) => { const pt = Math.round(Number((el as HTMLElement).dataset.pt) * 2) / 2; return { pt: pt >= 1 && pt <= 1638 ? pt : 11 }; } }],
-    toDOM: (m) => ['span', { class: 'f-size', 'data-pt': String(m.attrs.pt), style: `font-size:${m.attrs.pt}pt` }, 0],
+    // every value that goes into an inline style is checked here too, not only on paste: a doc from a live session or a
+    // crafted file sets attrs directly
+    toDOM: (m) => ['span', { class: 'f-size', 'data-pt': String(m.attrs.pt), style: `font-size:${ptOf(m.attrs.pt)}pt` }, 0],
   },
   // Underline and emphasis sit outside highlight and shading, so a box stays one box where its highlight starts or stops.
   underline: {
@@ -94,13 +98,13 @@ const marks: Record<string, MarkSpec> = {
   shading: {
     attrs: { color: { default: '#D9D9D9' } },
     parseDOM: [{ tag: 'span.f-shading', getAttrs: (el) => ({ color: color((el as HTMLElement).dataset.color ?? null) || '#D9D9D9' }) }],
-    toDOM: (m) => ['span', { class: 'f-shading', 'data-color': m.attrs.color, style: `background-color:${m.attrs.color}` }, 0],
+    toDOM: (m) => ['span', { class: 'f-shading', 'data-color': m.attrs.color, style: `background-color:${color(m.attrs.color) ?? '#D9D9D9'}` }, 0],
   },
   color: {
     attrs: { color: {} },
     // sanitized: the value goes into an inline style
     parseDOM: [{ tag: 'span.f-color', getAttrs: (el) => { const c = color((el as HTMLElement).dataset.color ?? null); return c ? { color: c } : false; } }],
-    toDOM: (m) => ['span', { class: 'f-color', 'data-color': m.attrs.color, style: `color:${m.attrs.color}` }, 0],
+    toDOM: (m) => ['span', { class: 'f-color', 'data-color': m.attrs.color, style: `color:${color(m.attrs.color) ?? 'inherit'}` }, 0],
   },
   bold: {
     parseDOM: [{ tag: 'strong' }, { tag: 'b', getAttrs: (el) => (el as HTMLElement).style.fontWeight !== 'normal' && null }, { style: 'font-weight=bold' }, { style: 'font-weight=700' }],
@@ -203,7 +207,7 @@ const tables = tableNodes({
     background: {
       default: null,
       getFromDOM: (dom) => cssColor(dom.dataset.bg ?? null),
-      setDOMAttr: (value, attrs) => { if (value) { attrs['data-bg'] = value; attrs.style = `${attrs.style ?? ''}background-color:${value};`; } },
+      setDOMAttr: (value, attrs) => { const c = cssColor(value as string | null); if (c) { attrs['data-bg'] = c; attrs.style = `${attrs.style ?? ''}background-color:${c};`; } },
     },
   },
 });
@@ -263,5 +267,5 @@ export const SHADES: [string, string][] = [
   ['#BDD7EE', 'Blue'], ['#F8CBAD', 'Orange'], ['#FFE699', 'Gold'], ['#A9D08E', 'Deep green'], ['#9BC2E6', 'Deep blue'],
 ];
 export function highlightCss(name: string): string {
-  return HIGHLIGHTS[name] ?? (color(name) || '#FFFF00');
+  return (Object.hasOwn(HIGHLIGHTS, name) ? HIGHLIGHTS[name] : null) ?? (color(name) || '#FFFF00');
 }

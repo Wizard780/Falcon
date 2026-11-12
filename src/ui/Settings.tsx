@@ -5,6 +5,7 @@ import { version } from '../../package.json';
 import { HIGHLIGHTS, HIGHLIGHT_NAMES } from '../editor/schema';
 import { DEFAULT_RELAY } from '../collab/relay';
 import { RelayGuide, relayAddress } from './RelayGuide';
+import { LiveDocControl, LiveInvitesControl } from './Live';
 import { SvgIcon } from './icons';
 import { docToolSettings } from '../editor/doc-tools';
 import { cardToolSettings } from '../editor/card-tools';
@@ -614,8 +615,16 @@ export function Settings(props: Props) {
     { id: 'sharing', title: 'Sharing', icon: 'inbox', group: 'Debate', sections: [
       ['Card sharing', [
         { label: 'Relay', wide: true, help: <button className="st-help" aria-label="How to set up a relay" title="How to set up a relay, step by step" onClick={() => setGuide(true)}>?</button>, search: 'card sharing relay send card pairing code collaboration server url',
-          hint: `Where sent cards wait until the other person's Falcon picks them up. It only ever sees them sealed. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: click ? to set one up, step by step.'} Your code and contacts are in the command center: Card sharing.`,
+          hint: `Your relay: where cards sent to you wait until this Falcon picks them up, and where your live sessions run. It only ever sees them sealed. Your pairing code carries it, so people reach you from their own relays. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: click ? to set one up, step by step.'} Your code and contacts are in the command center: Card sharing.`,
           control: <RelayField /> },
+      ]],
+      ['Live editing', [
+        { label: 'This document', search: 'live editing co-edit coedit collaborate session start leave realtime real time together invite',
+          hint: 'Everyone you invite edits the open doc with you and sees your edits and caret as you type. It goes through the relay above, sealed: only the people you invite can read it. One session at a time.',
+          control: <LiveDocControl /> },
+        { label: 'Invites to you', search: 'live editing invite join session co-edit',
+          hint: 'Invites from contacts to their sessions. They also show as a message when they come in.',
+          control: <LiveInvitesControl /> },
       ]],
     ] },
   ];

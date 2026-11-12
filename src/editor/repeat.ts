@@ -1,7 +1,7 @@
 import { Plugin, type Command } from 'prosemirror-state';
 import type { Slice } from 'prosemirror-model';
 import type { EditorView } from 'prosemirror-view';
-import { redo } from 'prosemirror-history';
+import { redo } from './live-hooks'; // a live doc's redo is Loro's
 import { P, pref } from './prefs';
 import { isReading } from './read';
 

@@ -48,15 +48,28 @@ async function derive(priv: CryptoKey, pub: Uint8Array, salt: Uint8Array, info: 
 const aad = (from: Uint8Array, to: Uint8Array) => { const a = new Uint8Array(1 + 2 * KEY_LEN); a[0] = ENVELOPE_VERSION; a.set(from, 1); a.set(to, 1 + KEY_LEN); return a; };
 
 /** What a card envelope carries: who it says it's from, when it was sent, the card (a ProseMirror Fragment's JSON),
- *  and the sender's own id for this send, so one that reaches the relay twice is shown once. */
-export type Card = { name: string; at: number; content: unknown; mid?: string };
+ *  and the sender's own id for this send, so one that reaches the relay twice is shown once. An invite to a live-editing
+ *  room rides in the same envelope with empty content (an older Falcon shows it as a card it can't open). */
+export type Card = { name: string; at: number; content: unknown; mid?: string; invite?: Invite;
+  /** the sender's own code, with their relay (Add contact uses it); the recipient checks it is the key that sealed this */
+  code?: string };
+/** A live-editing room: the relay it is on (the host's), its id there, its key (base64url, 32 bytes) and the doc's name.
+ *  Only the envelope carries the key. */
+export type Invite = { room: string; key: string; doc: string; relay?: string };
+const inviteOf = (j: unknown): Invite | undefined => {
+  const i = j as Partial<Invite> | null;
+  if (!i || typeof i.room !== 'string' || !/^[0-9a-f]{64}$/.test(i.room) || typeof i.key !== 'string' || typeof i.doc !== 'string') return undefined;
+  try { if (unb64url(i.key).length !== ROOM_KEY_LEN) return undefined; } catch { return undefined; }
+  // the relay is checked as an address where it's kept (service.ts onInvite); this file stays free of imports Node can't load
+  return { room: i.room, key: i.key, doc: i.doc.slice(0, 120), relay: typeof i.relay === 'string' && i.relay.length <= 200 ? i.relay : undefined };
+};
 /** A card too big to send: thrown by seal. */
 export class TooBig extends Error {}
 
 export async function seal(me: Identity, to: Uint8Array, card: Card): Promise<Uint8Array> {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_LEN)), iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
   const key = await derive(me.priv, to, salt, CARD_INFO, 'aes');
-  const json = te.encode(JSON.stringify({ v: 1, name: card.name, at: card.at, content: card.content, mid: card.mid }));
+  const json = te.encode(JSON.stringify({ v: 1, name: card.name, at: card.at, content: card.content, mid: card.mid, invite: card.invite, code: card.code }));
   if (json.length > MAX_PLAIN) throw new TooBig();
   const plain = deflateSync(json);
   const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv, additionalData: aad(me.pub, to) }, key, plain));
@@ -87,7 +100,7 @@ export async function open(me: Identity, env: Uint8Array): Promise<{ from: Uint8
     if (out.length > MAX_PLAIN) throw new Error('too big');
     const j = JSON.parse(td.decode(out));
     if (j?.v !== 1 || typeof j.name !== 'string' || typeof j.at !== 'number' || !Array.isArray(j.content)) throw new Error('shape');
-    card = { name: j.name.slice(0, 80), at: j.at, content: j.content, mid: typeof j.mid === 'string' && j.mid.length <= 64 ? j.mid : undefined };
+    card = { name: j.name.slice(0, 80), at: j.at, content: j.content, mid: typeof j.mid === 'string' && j.mid.length <= 64 ? j.mid : undefined, invite: inviteOf(j.invite), code: typeof j.code === 'string' && j.code.length <= 400 ? j.code : undefined };
   } catch { throw new BadEnvelope('content'); }
   return { from, card };
 }
@@ -106,3 +119,38 @@ export async function proveKey(priv: CryptoKey, eph: Uint8Array, nonce: Uint8Arr
 
 export const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 export const unb64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+
+// ---------- live-editing rooms ----------
+
+/**
+ * A room frame, protocol v1: [12 IV][AES-256-GCM ciphertext + tag] under the room's key, a random 32 bytes made by
+ * whoever started the session and handed to each person invited inside a sealed card envelope. The additional data is
+ * "falcon room v1", the room id and the frame's kind, so a frame can't be replayed into another room or as another kind.
+ * The relay sees the room id, the kind, which socket sent it, and the size.
+ */
+export const ROOM_KEY_LEN = 32;
+const ROOM_INFO = te.encode('falcon room v1');
+const frameAad = (room: string, kind: number) => { const r = te.encode(room), a = new Uint8Array(ROOM_INFO.length + r.length + 1); a.set(ROOM_INFO); a.set(r, ROOM_INFO.length); a[a.length - 1] = kind; return a; };
+const hexOf = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+
+/** A new room: its id (64 hex, random, unrelated to the key) and its key. */
+export function newRoom(): { room: string; key: Uint8Array } {
+  return { room: hexOf(crypto.getRandomValues(new Uint8Array(32))), key: crypto.getRandomValues(new Uint8Array(ROOM_KEY_LEN)) };
+}
+export const roomKey = (raw: Uint8Array) => subtle().importKey('raw', buf(raw), 'AES-GCM', false, ['encrypt', 'decrypt']);
+
+export async function sealFrame(key: CryptoKey, room: string, kind: number, plain: Uint8Array): Promise<Uint8Array> {
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
+  const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv, additionalData: frameAad(room, kind) }, key, buf(plain)));
+  const out = new Uint8Array(IV_LEN + ct.length);
+  out.set(iv);
+  out.set(ct, IV_LEN);
+  return out;
+}
+/** Open a room frame. Throws BadEnvelope for anything not sealed with this room's key as this kind. */
+export async function openFrame(key: CryptoKey, room: string, kind: number, sealed: Uint8Array): Promise<Uint8Array> {
+  if (sealed.length < IV_LEN + TAG_LEN) throw new BadEnvelope('size');
+  try {
+    return new Uint8Array(await subtle().decrypt({ name: 'AES-GCM', iv: buf(sealed.subarray(0, IV_LEN)), additionalData: frameAad(room, kind) }, key, buf(sealed.subarray(IV_LEN))));
+  } catch { throw new BadEnvelope('decrypt'); }
+}

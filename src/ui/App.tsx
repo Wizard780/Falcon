@@ -41,6 +41,7 @@ import { aiService, formatCite, reformatCites, reformatCount, usePreset } from '
 import { Confirm, nameList, type Ask } from './Confirm';
 import { ComparePanel } from './ComparePanel';
 import { CollabPanel, SendCard, useCollab } from './Collab';
+import { LiveBit, LivePanel, useLiveSessions } from './Live';
 import * as collab from '../collab/service';
 import { copySlice } from '../editor/nav/clipboard';
 import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
@@ -101,7 +102,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['tutorial', 'aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'collab', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['tutorial', 'aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'collab', 'live', 'liveStart', 'liveStop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -368,7 +369,10 @@ export function App() {
   const [sendLabel, setSendLabel] = useState<string | null>(null);
   const sendingRef = useRef<Fragment | null>(null);
   const collabRef = useRef(false);
-  collabRef.current = collabOpen || sendLabel !== null;
+  // Live editing's panel (src/ui/Live.tsx); a session's doc closing ends it (liveClosed, set once the sessions hook is up)
+  const [liveOpen, setLiveOpen] = useState(false);
+  const liveClosed = useRef((_id: number) => {});
+  collabRef.current = collabOpen || sendLabel !== null || liveOpen;
   const [compareWith, setCompareWith] = useState<string | null>(null); // Compare Text is open, Text 1 from this selection
   const [speechAsk, setSpeechAsk] = useState(false); // the New speech doc dialog is up
   const [newAsk, setNewAsk] = useState(false); // the + button's New Document dialog is up
@@ -743,6 +747,7 @@ export function App() {
   const dropDoc = useCallback((id: number) => {
     const list = docsRef.current, i = list.findIndex((d) => d.id === id);
     if (i < 0) return;
+    liveClosed.current(id);
     setSpeechId((s) => (s === id ? null : s));
     savedDocs.current.delete(id);
     const rest = list.filter((x) => x.id !== id);
@@ -811,7 +816,7 @@ export function App() {
   const startTour = useCallback(() => {
     if (tourDoc.current !== null || !viewRef.current) return;
     setPref(P.tourSeen, true);
-    setSettingsOpen(false); setCcOpen(false); setPaletteOpen(false); setCollabOpen(false);
+    setSettingsOpen(false); setCcOpen(false); setPaletteOpen(false); setCollabOpen(false); setLiveOpen(false);
     tourFrom.current = { id: activeRef.current, home: homeRef.current, sd: sdLitRef.current };
     const doc = sampleDoc();
     tourDoc.current = nextDocId; // before addDoc, so the new tab is never unsaved or backed up
@@ -1229,6 +1234,19 @@ export function App() {
     flash((await collab.send(c, content)).message);
   }, [flash, closeSendCard]);
   const closeCollab = useCallback(() => { setCollabOpen(false); viewRef.current?.focus(); }, []);
+  const closeLive = useCallback(() => { setLiveOpen(false); viewRef.current?.focus(); }, []);
+  const live = useLiveSessions({
+    active: () => { const d = docsRef.current.find((x) => x.id === activeRef.current); return d ? { id: d.id, name: d.meta.name || 'Untitled' } : null; },
+    viewOf: liveView,
+    stored: (id) => docsRef.current.find((d) => d.id === id)?.state ?? null,
+    setStored: (id, st) => patch(id, { state: st, dirty: isDirty(id, st.doc) }),
+    // a joined doc is in no file here yet: it counts as unsaved, so closing it asks first
+    openDoc: (doc, docName) => { showEditor(); addDoc(doc, { name: docName }); const id = activeRef.current; savedDocs.current.delete(id); patch(id, { dirty: true }); return id; },
+    flash,
+    confirm: confirmAsk,
+    openPanel: () => setLiveOpen(true),
+  });
+  liveClosed.current = live.closed;
   /** A card that came in, into the open document below the caret's paragraph; why not, or null. */
   const insertReceived = useCallback((c: collab.Received): string | null => {
     const v = viewRef.current, content = collab.cardFragment(c.content);
@@ -1379,8 +1397,11 @@ export function App() {
     else if (id === 'sendToSpeech') sendToSpeech();
     else if (id === 'sendCard') openSendCard();
     else if (id === 'collab') setCollabOpen(true);
+    else if (id === 'live') setLiveOpen(true);
+    else if (id === 'liveStart') void live.start();
+    else if (id === 'liveStop') live.stop();
     else if (id === 'tutorial') startTour();
-  }, [startTour, fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, zoomTo, sendToSpeech, openSd, closeSd, openSendCard]);
+  }, [startTour, fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, zoomTo, sendToSpeech, openSd, closeSd, openSendCard, live.start, live.stop]);
 
   // app-level shortcuts
   useEffect(() => {
@@ -1766,6 +1787,7 @@ export function App() {
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         {linkedFrom && <button className="back" title={titled('Back', 'linkBack', 'to where you clicked the card link')}
           onClick={() => { const v = viewRef.current; if (v) linkBack(v.state, v.dispatch, v); }}>← Back{keyLabel('linkBack') && <kbd>{keyLabel('linkBack')}</kbd>}</button>}
+        <LiveBit docId={activeId} onOpen={() => setLiveOpen(true)} />
         <span className="grow" />
         <button title={titled('Zoom out', 'zoomOut', 'make the page smaller')} onClick={() => zoomBy(-0.1)}>−</button>
         <button className="zoom" title={titled('Actual size', 'zoomReset', 'back to 100%')} onClick={() => zoomTo(1)}>{Math.round(zoom * 100)}%</button>
@@ -1804,6 +1826,7 @@ export function App() {
         highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} onReplay={startTour} />
       </div>
       <CollabPanel open={collabOpen} onClose={closeCollab} flash={flash} confirm={confirmAsk} onInsert={insertReceived} onCopy={copyReceived} />
+      <LivePanel open={liveOpen} onClose={closeLive} docName={name} />
       <SendCard label={sendLabel} onClose={closeSendCard} onSend={(c) => void sendCardTo(c)} onManage={() => { closeSendCard(); setCollabOpen(true); }} />
       <Confirm ask={ask} />
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />

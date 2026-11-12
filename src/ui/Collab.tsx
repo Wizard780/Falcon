@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as collab from '../collab/service';
-import { shortCode } from '../collab/code';
+import { keyOf, shortCode } from '../collab/code';
 import { nextUtcMidnight } from '../collab/relay';
 import type { Contact, Received } from '../collab/service';
 import type { Ask } from './Confirm';
@@ -25,7 +25,7 @@ function when(ms: number, now = new Date()) {
 /** What the relay link is doing, in a line. */
 export function linkLine(s: collab.CollabState): string {
   if (s.status === 'unavailable') return "Card sharing needs the Falcon app or a secure page (https), and this one can't keep keys";
-  if (!s.relay) return "No relay is set, so cards can't be sent or received yet. Add one in Settings > Sharing";
+  if (!s.relay) return 'No relay is set, so nobody can send you cards yet, and yours go only to contacts whose code carries their relay. Add one in Settings > Sharing';
   if (s.pausedUntil > Date.now()) return `Paused until ${collab.resetTime(s.pausedUntil)}, when the relay's daily limit resets`;
   const l = s.link;
   if (l.kind === 'live') return 'Connected. Cards sent to your code arrive here';
@@ -33,6 +33,13 @@ export function linkLine(s: collab.CollabState): string {
     return `Can't reach the relay: no connection, or it's over its daily limit until ${collab.resetTime(nextUtcMidnight())}. Trying again in ${l.at - Date.now() < 60_000 ? 'under a minute' : `${m} min`}`; }
   if (l.kind === 'connecting') return 'Connecting to the relay…';
   return 'Cards sent to your code arrive in another Falcon window';
+}
+
+/** Under your code: what it carries, and when it changed with your relay. */
+export function codeNote(s: collab.CollabState): { text: string; changed?: boolean } {
+  if (!s.relay) return { text: "Nobody can send you cards until you set a relay in Settings > Sharing. Your code then carries it. You can still send to contacts whose code carries theirs." };
+  if (s.gave && s.gave !== s.code && keyOf(s.gave) === keyOf(s.code)) return { changed: true, text: 'Your relay changed, so your code did too. People who send you cards need this new one.' };
+  return { text: 'Give it to whoever will send you cards. It carries your relay, so they reach you from theirs. Anyone with it can send you one, and only this Falcon can read them.' };
 }
 
 const FOLD = 320; // collab.css: .co-fold
@@ -123,7 +130,7 @@ export function CollabPanel(props: {
     if (!why) { flash(`Added ${name.trim()}`); setCode(''); setName(''); codeBox.current?.focus(); }
   };
   const fromUnknown = (c: Received) => { setCode(c.from); setName(c.claimed); setBad(null); nameBox.current?.focus(); };
-  const copyCode = () => void navigator.clipboard?.writeText(s.code).then(() => flash('Copied your pairing code'), () => flash("Couldn't copy. Select the code and copy it"));
+  const copyCode = () => void navigator.clipboard?.writeText(s.code).then(() => { flash('Copied your pairing code'); void collab.gaveCode().catch(() => {}); }, () => flash("Couldn't copy. Select the code and copy it"));
   const renew = async () => {
     if (!(await props.confirm({ title: 'Make a new pairing code?', body: 'Your old code stops working: cards sent to it never arrive. Give the new one to everyone who sends you cards.', ok: 'New code' }))) return;
     await collab.newCode();
@@ -197,7 +204,7 @@ export function CollabPanel(props: {
 
         <section className="co-sec" aria-label="Your code">
           <h3>Your pairing code</h3>
-          <p className="co-sub">Give it to whoever will send you cards. Anyone with it can send you one, and only this Falcon can read them.</p>
+          {(() => { const n = codeNote(s); return <p className="co-sub" data-changed={n.changed || undefined} role={n.changed ? 'status' : undefined}>{n.text}</p>; })()}
           <div className="co-me">
             <code className="co-code" aria-label="Your pairing code">{ready ? s.code : '…'}</code>
             <button onClick={copyCode} disabled={!ready}><SvgIcon name="copy" />Copy</button>

@@ -271,3 +271,103 @@ Guards: vitest 589 pass, tsc clean, 33 verify-falcon journeys pass, Electron smo
 Open:
 - Home showing costs 112 ms/s in Electron (93 GPU): the breathing glow redraws the window every frame. Stepping it or pausing it when minimised would change intended motion; not done.
 - A typing pause in a big file re-serialises the whole doc for crash recovery (29 MB of JSON for Nordics).
+
+## Stage: live co-editing (2026-11-11, branch live-editing, stacked on #147 relay-help)
+Task: two or more people open the same doc by invite and see each other's edits live (CardMirror-style), from Settings > Sharing and the command center. End-to-end encrypted through the user's own free relay. Loro + loro-prosemirror (MIT, chosen in tech-stack.md). No CardMirror code.
+Done means:
+- [x] free-tier maths by a script from Cloudflare's published limits (`node scripts/live-free-tier.mjs`), numbers below
+- [x] headless spike: two Falcon editors through Loro converge under concurrent F-keys, tables and footnotes; undo is local only; a block file types at usable speed (`tests/live-binding.test.ts`)
+- [x] relay: a hibernating Room DO that only rebroadcasts ciphertext, new migration, Send Card tests still pass; an old relay without rooms is detected and the user told to redeploy (RelayGuide says so)
+- [x] invites: the room key goes to a contact through Send Card's seal + inbox
+- [x] UI: Settings > Sharing and the command center: start/stop for the open doc, invite a contact, accept an invite, who's in it, carets; leaving keeps the doc; .docx save after a session works
+- [x] (scope added by the user) pairing codes carry their owner's relay (code v2): everyone can run their own relay, each with its own free allowance; cards and invites go to the recipient's relay, the room lives on the host's
+- [x] verify-falcon journey (two contexts, `wrangler dev`): concurrent typing + formatting converge, disconnect/reconnect, late joiner, leaving, .docx saved and reopened with the same mark map; npm test, tsc, send-card and relay-guide journeys pass
+- [ ] fresh-subagent review fixed; PR against main noting it's stacked on #147; CI green. No version bump (#147 has 0.1.12)
+Baseline (origin/relay-help 99ab853d, fresh npm ci): vitest 674 pass / 1 skipped, tsc clean, relay tests 8/8.
+
+Free plan (read 2026-11-11 from developers.cloudflare.com: DO pricing + limits, Workers limits; all daily, reset 00:00 UTC, fail with an error past the cap):
+Worker requests 100k; DO requests 100k (incoming WebSocket messages count 1/20, outgoing free); DO duration 13,000 GB-s (128 MB × wall clock while active and not eligible to hibernate); rows written 100k (setAlarm and deletes count); rows read 5M; SQLite-backed DOs only.
+A round = 2 h, 400 ms client batches, 2 ms room handler per frame, 6 connects a person, one late joiner (twice) fetching an 8 MB snapshot from a peer:
+
+| design | 4 people, editing 50% of the time | 4 people, editing 100% | runs out first |
+| --- | --- | --- | --- |
+| Falcon: hibernating room, rebroadcast only, 400 ms batches, peer snapshot | 1,829 DO req, 9 GB-s, 0 rows → **54 rounds/day** | 3,629 DO req, 18 GB-s → **27 rounds/day** | DO requests |
+| same with 2 / 3 people (50%) | 108 / 72 rounds/day | 54 / 36 | DO requests |
+| no batching (one message per transaction, ~8/s) | 17 rounds/day | 8 | DO requests |
+| a storage row per update, late joiner reads them back | 2 rounds/day | 1 | rows written |
+| ws.accept() instead of hibernation | 14 rounds/day | 14 | duration (900 GB-s a round) |
+
+Duration is never the limit with hibernation: even at 50 ms a frame a worst-case round is 450 GB-s (27 rounds still bound by requests). Worker requests (24 a round) only matter shared with Send Card.
+So the design is forced: hibernation API, no storage row per update (the room writes and reads nothing), batched frames, late joiners and reconnects sync from a peer by version vector.
+Risk: the pricing page doesn't say the 20:1 WebSocket ratio applies on Free; Send Card's README assumes it. Without it a worst-case 4-person round is 72k DO requests (1 round/day).
+
+Spike (tests/live-binding.test.ts, jsdom, Falcon's real schema + plugins, updates queued so both sides edit concurrently):
+- [x] joiner starts from the host snapshot exactly (mark maps and Loro JSON equal)
+- [x] concurrent F9/F11/F10/F8/F7 plus typing on both sides converge
+- [x] F9 and F10 on overlapping words at once: Loro keeps both marks (an invalid PM mark set, `doc.check()` throws); live-doc's `settle` removes the excluded one the same way on every peer (later in the schema stays: emphasis over underline, sub over sup). Checked: with settle off the test fails with "Invalid collection of marks"
+- [x] tables: typing in two cells + a row and a column added at once converge to a valid rectangular table, but only when ONE peer runs Falcon's appendTransaction tidiers on remote changes (fixTables on both peers adds the missing cell twice, then the rows are too long, and so on: 2 columns became 7 vs 8). live-doc `guard` lets only the fixer run them on remote changes
+- [x] footnotes added on both sides converge; editing the same note at once keeps one version (the note is one attr: last writer wins), the same on both
+- [x] undo/redo take back only my own typing and formatting (Loro UndoManager through editor/live-hooks.ts); history comes out of a live state
+- [x] big file, 4,830 paragraphs (1,200 cards): seed 0.3 s, snapshot 0.9 MB, join 0.15 s, 3.6 ms per key in the binding, 10 ms for a remote batch; 14,893 paragraphs: seed 1.1 s, 2.8 MB, join 0.5 s, 13 ms a key, 40 ms a remote batch
+Decisions:
+- Loro + loro-prosemirror works; no fallback to prosemirror-collab.
+- Inline wasm (`loro-crdt/base64`), loaded only when a session starts: Electron loads the page from file://, where fetching a .wasm fails, and the 5 MB chunk shouldn't slow every launch.
+- The binding replaces the whole doc on each remote change. editor.ts runs it through `narrowLoroReplace` (via live-hooks, so the editor never imports the CRDT): one replace per run of changed top-level nodes, matched by identity, so decorations, kept heights and the caret map normally.
+- After attaching, the binding's node map is pointed at the editor's own nodes (`updateLoroToPmState` once, no ops when equal). Without it a remote batch on a 15k-paragraph file took 351 ms (fixTables re-walking everything), with it 40 ms.
+- The binding stops listening while its doc is out of the editor (tab switched away): it would write into whatever doc the editor holds. Shown again it rebuilds from Loro.
+Known limits: a paragraph split (Enter) is a delete plus a new paragraph in the binding, so text someone typed at the same moment after the split point lands at the end of the first half (both peers agree, nothing lost). The binding deletes absent null attrs, which Loro records as ops (harmless; the harness must deliver them, not drop them).
+Failed attempts:
+- First narrowing used one findDiffStart/findDiffEnd range: a batch touching the start and end of the doc replaced everything between. Replaced by per-gap narrowing.
+Relay (relay/src/index.ts, migration v2 `new_sqlite_classes: ["Room"]`):
+- [x] Room DO: hibernation API, no storage, no alarms; who's in it lives in socket attachments. Updates to everyone else, a joiner's ask to the peer in longest (the next on a retry: a half-dead socket can't stall a join), answers to one slot. 8 people, 1 MiB frames. `GET /v1/rooms` is answered by the Worker alone (an older relay: 404). Over the daily limit the upgrade gets a socket that says daily_limit (the browser can't see an upgrade's status)
+- [x] relay tests 14/14 (8 Send Card + 6 rooms, including "a burst of frames leaves no rows": only wrangler dev's own `__miniflare_do_name` table exists, production has none)
+Client (src/collab/live.ts, live-doc.ts, crypto.ts; ui/Live.tsx):
+- [x] frames: [msg u32][piece u16][pieces u16][slice], parts inside; sealed AES-GCM with the room key, AAD = "falcon room v1" + room id + kind. Only this peer's own commits go out (subscribeLocalUpdates), at most one frame per 400 ms with its caret; reconnects and late joiners sync by version vector with one peer and send back what that peer lacks
+- [x] fail closed: any socket loss retries (1 s to 30 s); daily_limit pauses until 00:00 UTC; an old relay says to redeploy; the doc stays editable throughout
+- [x] tests/live-session.test.ts (8, an in-memory relay with rooms): join, convergence, an idle peer sends 0 frames while a typist sends ≤ 1 per 400 ms, drop + reconnect, late joiner, leave, a joiner who arrives before anyone with the doc, daily limit, old relay, relay down
+- [x] invites ride in Send Card's sealed envelope (Card.invite, empty content: an older Falcon shows "a card this Falcon can't open"), kept apart from cards (not in the rail's count)
+- [x] UI: Settings > Sharing > Live editing (This document: Start / Invite… / Leave; Invites to you), the Live editing panel (who's in it with their caret color, Invite per contact, Invites to you with Join/Dismiss, Leave), command center (Live editing, Start live editing, Leave live editing), status bar `Live · Blake and Casey`, carets as a bar in the person's color with their name on hover. One session per window. A joined doc opens as an unsaved tab
+Pairing codes v2 (user's scope addition, 2026-11-11):
+- [x] src/collab/code.ts: [2][key][kind][relay][crc]; a falcon-relay.<sub>.workers.dev relay is stored as its subdomain (76 letters for an 11-letter subdomain; a full localhost URL is 100). v1 still parses (relay null). Every one-letter typo in a v2 code is caught (unit test, every position × every letter); every two-letter typo was checked once by brute force: 0 of 1.48M (v1) and 0 of 2.74M (workers.dev v2) read as another valid code
+- [x] contacts are matched by key, so the same person with a new relay replaces their old entry; a card goes to the relay the contact's code carries, else mine; each relay's daily limit pauses sends to it alone; a card carries the sender's code, so Add contact gets their relay
+- [x] my code carries my relay and changes with it; the panel says people need the new one (after a Copy); with no relay my code is v1 and the panel says nobody can send to me yet (I can still send to codes that carry a relay)
+- [x] invites name the room's relay (the host's) and the joiner connects there; invites go to the invitee's relay
+- [x] RelayGuide: teammates don't paste your relay; each sets up their own (or a team shares one) and you swap codes. relay/README.md the same, plus rooms and updating an old relay
+Verification (run 20261112T003507, origin/relay-help + this branch):
+- vitest 725 pass / 1 skipped (baseline 674), tsc clean, relay tests 14/14; the live and collab suites 5 runs in a row clean (49 each); tests/live-real-docs.test.ts: going live leaves real files unchanged (3 fixtures always; locally 24 real files, 137 tables, 80 pictures)
+- journeys (final run 20261112T012507): live-editing 49 ok (A and C on relay 1, B on relay 2: the invite went to relay 2, B's room socket to relay 1; a put-away live tab takes Send to speech; an older relay via a checked-in stand-in), live-editing-desktop 12 ok (the Electron file:// page loads the CRDT chunk only when a session starts, edits both ways), send-card 52 ok (A on relay 1, B on relay 2, both ways), plus send-card-desktop, relay-guide and the undo-using journeys (results below)
+Decisions:
+- Falcon listens to Loro in the binding's place (live-doc `listen`): the binding put the caret back from cursors computed against already-changed text, so typing ahead of someone's caret in their paragraph moved it (seen in the desktop journey screenshot: "Body from And back. the desktop."). The narrowed replace maps the caret instead; undo keeps the binding's restore
+- The invite carries the room's relay (the user's design), though an earlier review suggested using only the invitee's own relay: joining is an explicit click, from a contact named in the toast
+- An invite stays listed after joining (Join again, from the same invite, if the session drops or you leave); Dismiss removes it
+- Live editing on a doc swaps its prosemirror-history for Loro's undo; leaving brings a fresh history back
+Failed attempts:
+- A live panel class `.lv` collided with the outline's level picker (flex row, mono buttons): renamed co-live
+- `crypto.ts` importing `./code` broke Node's direct imports of it (relay tests, journeys): the invite relay is checked in service.ts instead
+Known limits:
+- Concurrent table structure changes are tidied by one peer (the one in the room longest); if that peer has the doc's tab put away, a ragged table waits until someone edits it
+- Settling underline vs emphasis is a local edit, so it lands on the undo stack of the peer that settled it
+- No session persistence across app restarts: a session ends when its window closes; the invite stays, so Join again works while anyone is in the room
+Browser numbers (headless Chromium, the web build, 4,830-paragraph block file, scratch script):
+- typing (keydown to frame, median / p90): alone 12.5 / 15 ms; live with the other's caret in the same card 13.8 / 16.7 ms; live while the other types elsewhere 12.2 / 14 ms. Carets cost nothing noticeable
+- start live editing 1.4 s (command center, seed, panel); a joiner has the doc open and live in 1.1 s (an 0.9 MB snapshot in 4 pieces)
+- found and fixed: a joiner who already had the host's caret froze 72 s (the binding's carets plugin logged the whole doc as JSON once per paragraph, 2,416 console errors, while its node map was still empty); now 0 errors, 1.1 s
+Review (fresh subagent, read-only) and what came of it:
+- [x] a joined doc's attrs reached inline styles unchecked (CSS injection: url() beacons, overlays) and table spans were unbounded: the schema now checks every value it draws into a style; spans, styles and content a node can't hold are repaired as they come from Loro, and the repair goes back into Loro; caret colors are plain hex
+- [x] /v1/rooms answering anything but 200 was taken as "an old relay" and retrying stopped, so a spent day at first connect said "redeploy": only 404 means old now; 429 pauses until 00:00 UTC; 5xx retries
+- [x] Send to speech into a live speech doc in a background tab was dropped while the toast said Sent, and that tab's state went stale (crash recovery, block search, unsaved dot): a put-away live tab is now kept current from Loro and takes edits (unit test + journey)
+- [x] offline edits could miss the room when no peer answered the ask: sent from the version at the drop
+- [x] smaller: half-received messages cleared on close/leave; leaving empties the carets store; the catch-up frame counts toward the batch window; a stranger's invite flood can't push out a contact's (oldest stranger's goes first); the free-tier maths counts each connect's handshake frames (numbers above barely move)
+- not changed: an invite's relay can be any http(s) address, LAN included (joining is an explicit click on a named invite; the user asked for the invite to carry the relay); the two-letter typo guarantee was checked for workers.dev codes only (a full-URL code is longer: every one-letter typo is still caught)
+Second review (fresh subagent, after the fixes above): nothing broke the hard constraints in ordinary use; hostile-peer and narrow cases fixed:
+- [x] the binding's rebuild throws on a node with a non-string name (or a child that's neither node nor text), so one such write stopped all later remote changes showing: taken out of Loro and rebuilt (test: a raw Loro peer writes it and keeps typing; fails without the fix)
+- [x] a caret whose bytes don't decode broke the carets plugin on every remote change: left out, and the plugin drops carets rather than throwing (test fails without the fix)
+- [x] pictures from Loro: only embedded or web sources, sane sizes. A Falcon with other document types would drop what it can't build and then delete it for everyone: each name frame carries a schema fingerprint, and a mismatch ends the session (the doc stays)
+- [x] an invite from a stranger is toasted as "A code not in your contacts", not the name they typed; a joiner whose first answer brings no doc asks the next peer; reassembly is capped; the code-changed note shows only when one relay replaced another
+Known limits (not done):
+- caret colors come from the Loro peer id (6 colors), so two people can share one; names on hover tell them apart
+- web (https) pictures in a live doc load from where they point, as they do in an opened .docx (cards strip them; a live doc is joined on purpose)
+- an invite's relay can be any http(s) address, LAN included (joining is a click on a named invite)
+- a session ends when its window closes; Join again from the same invite works while anyone is in the room
+- the binding deletes absent null attrs (a few bytes per table cell edit); settling underline vs emphasis lands on the settling peer's undo stack
+Next action: PR against main (#147 merged at c28e1767, so the PR is just this branch), watch CI.
