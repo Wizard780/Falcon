@@ -288,6 +288,14 @@ ipcMain.on('falcon:force-close', (e, quit) => {
 });
 
 let lastThemeJson = '';
+// a card or an invite came in: every window hears it, so one cue per arrival, and none while a Falcon window is in front
+let attentionAt = 0;
+ipcMain.on('falcon:attention', (e) => {
+  if (HEADLESS || BrowserWindow.getFocusedWindow() || Date.now() - attentionAt < 2000) return;
+  attentionAt = Date.now();
+  if (process.platform === 'darwin') app.dock?.bounce('informational');
+  else BrowserWindow.fromWebContents(e.sender)?.flashFrame(true);
+});
 ipcMain.on('falcon:theme', (e, bg, dark, system) => {
   if (!/^#[0-9a-f]{6}$/i.test(bg)) return;
   BrowserWindow.fromWebContents(e.sender)?.setBackgroundColor(bg);
