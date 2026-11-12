@@ -68,7 +68,9 @@ function unparts(b: Uint8Array): [number, Uint8Array][] {
 }
 const colorOf = (peer: string) => COLORS[Number(BigInt(peer) % BigInt(COLORS.length))];
 
-export type SessionOpts = { relay: string; room: string; key: Uint8Array; doc: string; name: string; onChange: () => void };
+export type SessionOpts = { relay: string; room: string; key: Uint8Array; doc: string; name: string; onChange: () => void;
+  /** how long an ask waits for its answer before trying the next peer (tests shorten it) */
+  askWait?: number };
 
 export class LiveSession {
   readonly binding: Binding;
@@ -98,6 +100,8 @@ export class LiveSession {
   private everWelcomed = false;
   private stopped = false;
   private ask = { attempt: 0, timer: 0, peers: 0 };
+  /** Loro's version when the socket last dropped: what's newer here than that, the room may lack (edits made offline) */
+  private droppedAt: VersionVector | null = null;
   private msg = 1;
   private pieces = new Map<string, { n: number; got: Uint8Array[]; count: number }>();
   private chain = Promise.resolve();
@@ -147,6 +151,9 @@ export class LiveSession {
     const ws = this.ws;
     this.ws = null;
     ws?.close(1000);
+    this.pieces.clear();
+    // the others' carets go (an empty store also stops its expiry timer)
+    for (const k of this.binding.presence.keys()) if (k !== this.binding.doc.peerIdStr) this.binding.presence.delete(k as `${number}`);
     this.set({ kind: 'ended' });
   }
 
@@ -175,7 +182,9 @@ export class LiveSession {
     ws.onclose = () => {
       if (ws !== this.ws) return;
       this.ws = null;
+      if (this.joined && !this.droppedAt) this.droppedAt = this.binding.doc.oplogVersion();
       this.joined = false;
+      this.pieces.clear(); // a half-sent message never finishes on another socket
       this.earlier.clear();
       this.names.clear();
       this.setMembers();
@@ -184,9 +193,17 @@ export class LiveSession {
       if (this.liveAt && Date.now() - this.liveAt >= STABLE) this.delay = FIRST_RETRY;
       this.liveAt = 0;
       // never got in: an older relay answers a room with 404, which a socket shows as just a failure
-      if (!this.everWelcomed) void checkRooms(this.o.relay).then((r) => { if (this.stopped) return; if (r === 'no_rooms') this.set({ kind: 'no_rooms' }); else this.later(); });
+      if (!this.everWelcomed) void checkRooms(this.o.relay).then((r) => { if (this.stopped) return; if (r === 'no_rooms') this.set({ kind: 'no_rooms' }); else if (r === 'daily_limit') this.pause(); else this.later(); });
       else this.later();
     };
+  }
+
+  /** The relay's free day is spent: nothing is tried until it resets (00:00 UTC), then it connects again. */
+  private pause() {
+    const until = nextUtcMidnight();
+    this.set({ kind: 'paused', until });
+    window.clearTimeout(this.retry);
+    this.retry = window.setTimeout(() => { this.delay = FIRST_RETRY; this.connect(); }, until - Date.now() + 5_000);
   }
 
   private later() {
@@ -206,12 +223,7 @@ export class LiveSession {
       if (m.t === 'left' && typeof m.slot === 'number') return this.left(m.slot);
       if (m.t === 'alone') return this.synced();
       if (m.t === 'error') {
-        if (m.code === 'daily_limit') {
-          refuse();
-          const until = nextUtcMidnight();
-          this.set({ kind: 'paused', until });
-          this.retry = window.setTimeout(() => { this.delay = FIRST_RETRY; this.connect(); }, until - Date.now() + 5_000);
-        } else if (m.code === 'room_full') { refuse(); this.set({ kind: 'full' }); this.retry = window.setTimeout(() => this.connect(), MAX_RETRY); }
+        if (m.code === 'daily_limit') { refuse(); this.pause(); } else if (m.code === 'room_full') { refuse(); this.set({ kind: 'full' }); this.retry = window.setTimeout(() => this.connect(), MAX_RETRY); }
       }
       return;
     }
@@ -256,6 +268,7 @@ export class LiveSession {
   }
 
   private left(slot: number) {
+    for (const k of [...this.pieces.keys()]) if (k.startsWith(`${slot}:`)) this.pieces.delete(k); // the next to get this slot starts clean
     const m = this.names.get(slot);
     this.names.delete(slot);
     this.earlier.delete(slot);
@@ -269,14 +282,26 @@ export class LiveSession {
     this.ask.timer = window.setTimeout(() => {
       if (!this.joined || this.status.kind !== 'syncing') return;
       // no answer: ask the next one (the first may be asleep with its socket not yet known dead)
-      if (++this.ask.attempt < Math.max(1, this.ask.peers)) this.sendAsk();
-      else this.synced();
-    }, ASK_WAIT);
+      if (++this.ask.attempt < Math.max(1, this.ask.peers)) { this.sendAsk(); return; }
+      // nobody answered: the room still gets what was made here while the socket was down
+      this.sendSince(this.droppedAt);
+      this.synced();
+    }, this.o.askWait ?? ASK_WAIT);
+  }
+
+  /** Send the room what this peer has beyond `from` (nothing when it has nothing more). */
+  private sendSince(from: VersionVector | null) {
+    if (!from) return;
+    const cmp = this.binding.doc.oplogVersion().compare(from);
+    if (cmp !== undefined && cmp <= 0) return;
+    this.lastSent = Date.now(); // it counts as this window's frame
+    void this.send(FRAME_UPDATE, [[T_UPDATE, this.binding.doc.export({ mode: 'update', from })], this.mePart()]);
   }
 
   /** Done syncing, with whatever there is. */
   private synced() {
     window.clearTimeout(this.ask.timer);
+    this.droppedAt = null;
     const doc = docOf(this.binding);
     if (doc) this.resolveReady(doc);
     this.set(doc ? { kind: 'live' } : { kind: 'waiting' });
@@ -308,11 +333,7 @@ export class LiveSession {
     if (kind === FRAME_ASK && version) this.answer(from, version);
     else if (kind === FRAME_TO && this.status.kind === 'syncing') {
       // they sent what I lacked; now send everyone what they lack (edits made here while away)
-      if (version) {
-        const theirs = VersionVector.decode(version), mine = this.binding.doc.oplogVersion();
-        const cmp = mine.compare(theirs);
-        if (cmp === undefined || cmp > 0) void this.send(FRAME_UPDATE, [[T_UPDATE, this.binding.doc.export({ mode: 'update', from: theirs })], this.mePart()]);
-      }
+      if (version) this.sendSince(VersionVector.decode(version));
       this.synced();
     } else if (this.status.kind === 'waiting' && docOf(this.binding)) this.synced();
   }

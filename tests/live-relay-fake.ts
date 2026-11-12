@@ -10,8 +10,10 @@ type Seat = { slot: number; at: number; joined: boolean };
 
 export function fakeRooms() {
   const rooms = new Map<string, Set<FakeSocket>>();
-  /** 'old': a relay from before rooms (404 everywhere); 'down': nothing answers; 'daily': the day's allowance is spent */
-  let mode: 'up' | 'old' | 'down' | 'daily' = 'up';
+  /** 'old': a relay from before rooms (404 everywhere); 'down': nothing answers; 'daily': the day's allowance is spent
+   *  (the room says so); 'capped': the Worker's own request cap is spent (a socket can't open, /v1/rooms is 429);
+   *  'broken': the socket can't open and /v1/rooms is 503 */
+  let mode: 'up' | 'old' | 'down' | 'daily' | 'capped' | 'broken' = 'up';
   let at = 0;
   const frames: { room: string; slot: number; kind: number; size: number }[] = [];
 
@@ -27,7 +29,7 @@ export function fakeRooms() {
     constructor(url: string) {
       this.room = /\/v1\/room\/([0-9a-f]{64})$/.exec(url)![1];
       setTimeout(() => {
-        if (mode === 'down' || mode === 'old') { this.readyState = 3; this.onclose?.(); return; }
+        if (mode === 'down' || mode === 'old' || mode === 'capped' || mode === 'broken') { this.readyState = 3; this.onclose?.(); return; }
         this.readyState = 1;
         if (mode === 'daily') { this.onopen?.(); this.say(JSON.stringify({ t: 'error', code: 'daily_limit' })); setTimeout(() => this.drop(), 2); return; }
         const all = rooms.get(this.room) ?? new Set();
@@ -75,6 +77,8 @@ export function fakeRooms() {
     const u = String(url instanceof Request ? url.url : url);
     if (!u.startsWith(ROOMS)) return realFetch(url, init);
     if (mode === 'down') throw new TypeError('Failed to fetch');
+    if (mode === 'capped') return new Response('<html>error 1027</html>', { status: 429 });
+    if (mode === 'broken') return new Response('oops', { status: 503 });
     if (new URL(u).pathname === '/v1/rooms' && mode !== 'old') return new Response(JSON.stringify({ rooms: 1 }), { status: 200 });
     return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
   });

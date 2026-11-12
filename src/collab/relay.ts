@@ -142,8 +142,12 @@ export async function checkRelay(base: string): Promise<'ok' | 'not_relay' | 'un
  * Does the relay at `base` have live-editing rooms? The Worker answers GET /v1/rooms itself (no Durable Object); a relay
  * deployed before rooms existed answers 404, and whoever set it up has to download it again and redeploy.
  */
-export async function checkRooms(base: string): Promise<'ok' | 'no_rooms' | 'unreachable'> {
+export async function checkRooms(base: string): Promise<'ok' | 'no_rooms' | 'daily_limit' | 'unreachable'> {
   let r: Response;
   try { r = await fetch(`${base.replace(/\/+$/, '')}/v1/rooms`, { signal: AbortSignal.timeout(10_000) }); } catch { return 'unreachable'; }
-  try { return r.ok && (await r.json()).rooms >= 1 ? 'ok' : 'no_rooms'; } catch { return 'no_rooms'; }
+  // only a 404 says the relay is older; a spent day (429) or a hiccup (5xx) is waited out, never taken for that
+  if (r.status === 404) return 'no_rooms';
+  if (r.status === 429) return 'daily_limit';
+  if (!r.ok) return 'unreachable';
+  try { return (await r.json()).rooms >= 1 ? 'ok' : 'no_rooms'; } catch { return 'unreachable'; }
 }

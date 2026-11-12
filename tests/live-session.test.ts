@@ -9,7 +9,9 @@ import { falconKeys as K } from '../src/editor/keymap';
 import { schema } from '../src/editor/schema';
 import { docOf, liveState } from '../src/collab/live-doc';
 import { host, join, BATCH_MS, type LiveSession } from '../src/collab/live';
-import { nextUtcMidnight } from '../src/collab/relay';
+import { checkRooms, nextUtcMidnight } from '../src/collab/relay';
+import { openFrame, roomKey, unb64url } from '../src/collab/crypto';
+import { LoroDoc } from 'loro-crdt';
 import { fakeRooms, ROOMS } from './live-relay-fake';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -130,6 +132,38 @@ describe('a live session through the relay', { timeout: 30_000 }, () => {
     expect(mm(B.view)).toBe(kept);
   });
 
+  it("edits made while the socket was down reach the room even when nobody answers the ask", async () => {
+    const s = host({ relay: ROOMS, doc: 'Econ DA', name: 'Avery', onChange: noop, askWait: 300 }, seedDoc());
+    open.push({ s });
+    const view = mount(s, seedDoc());
+    await until(() => s.status.kind === 'live');
+    const inv = s.invite();
+    // someone in the room who never answers an ask (a laptop asleep with its socket not yet known dead)
+    const got: Uint8Array[] = [];
+    const mute = () => { const ws = new WebSocket(`wss://rooms.test/v1/room/${inv.room}`); ws.binaryType = 'arraybuffer'; ws.onopen = () => ws.send(JSON.stringify({ t: 'join' })); ws.onmessage = (e: MessageEvent) => { if (typeof e.data !== 'string') got.push(new Uint8Array(e.data as ArrayBuffer)); }; return ws; };
+    mute();
+    await sleep(50);
+    const before = s.binding.doc.export({ mode: 'snapshot' });
+    relay.dropAll();
+    await until(() => s.status.kind === 'retry', 3000, 'retrying');
+    caret(view, 'Growth'); type(view, 'offline edit ');
+    mute(); // back first, so it's the one asked
+    got.length = 0;
+    await until(() => s.status.kind === 'live', 8000, 'back, after the ask went unanswered');
+    await sleep(100);
+    // what reached the room: open it as the mute peer would, on top of the doc as it was before the drop
+    const key = await roomKey(unb64url(inv.key)), updates: Uint8Array[] = [];
+    for (const f of got.filter((b) => b[0] === 1)) {
+      const plain = await openFrame(key, inv.room, 1, f.subarray(5));
+      const body = plain.subarray(8), dv = new DataView(body.buffer, body.byteOffset);
+      for (let at = 0; at + 5 <= body.length;) { const len = dv.getUint32(at + 1); if (body[at] === 1) updates.push(body.slice(at + 5, at + 5 + len)); at += 5 + len; }
+    }
+    const peer = new LoroDoc();
+    peer.import(before);
+    peer.importBatch(updates);
+    expect(JSON.stringify(peer.toJSON())).toContain('offline edit ');
+  });
+
   it('a joiner with nobody in the room waits, and gets the doc when someone who has it comes back', async () => {
     const A = start('Avery');
     await until(() => A.s.status.kind === 'live');
@@ -156,6 +190,29 @@ describe('when the relay can’t carry a session', { timeout: 30_000 }, () => {
     expect(A.s.status).toEqual({ kind: 'paused', until: nextUtcMidnight() });
     caret(A.view, 'Growth'); type(A.view, 'still mine ');
     expect(mm(A.view)).toContain('still mine Growth');
+  });
+
+  it("the relay's own request cap spent before the first connect: paused until 00:00 UTC, not taken for an old relay", async () => {
+    relay.setMode('capped');
+    const A = start('Avery');
+    await until(() => A.s.status.kind === 'paused', 3000, 'paused');
+    expect(A.s.status).toEqual({ kind: 'paused', until: nextUtcMidnight() });
+  });
+
+  it('a relay that answers 503 before the first connect: retrying, not taken for an old relay', async () => {
+    relay.setMode('broken');
+    const A = start('Avery');
+    await until(() => A.s.status.kind === 'retry', 3000, 'retry');
+    relay.setMode('up');
+    await until(() => A.s.status.kind === 'live', 8000, 'back');
+  });
+
+  it('checkRooms: only a 404 is an old relay', async () => {
+    const answer = (status: number, body = '{}') => { const f = globalThis.fetch; globalThis.fetch = async () => new Response(body, { status }); return () => { globalThis.fetch = f; }; };
+    for (const [status, body, want] of [[404, '{"error":"not_found"}', 'no_rooms'], [429, '<html>1027</html>', 'daily_limit'], [503, 'x', 'unreachable'], [200, '{"rooms":1}', 'ok'], [200, 'not json', 'unreachable']] as const) {
+      const undo = answer(status, body);
+      try { expect(await checkRooms('https://somewhere.test')).toBe(want); } finally { undo(); }
+    }
   });
 
   it('a relay from before rooms: no_rooms, and nothing more is tried', async () => {
