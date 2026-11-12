@@ -102,6 +102,7 @@ await command(A, 'card sharing');
 await A.page.fill('#co-name', 'Avery');
 await A.page.click('.cf.co .rcp-new');
 await A.page.fill('input[aria-label="Their pairing code"]', codeB.toLowerCase().replace(/-/g, ' ').slice(0, -1) + 'X');
+await A.page.fill('input[aria-label="Their name"]', 'Blake'); // a name, so the code is what's turned down
 await A.page.click('.rcp-add button[type="submit"]');
 await wait(A, 150);
 want((await A.page.textContent('.rcp-why')) === 'That code has a typo. Copy it again', `A: a mistyped code is turned down with a clear reason (${await A.page.textContent('.rcp-why')})`);

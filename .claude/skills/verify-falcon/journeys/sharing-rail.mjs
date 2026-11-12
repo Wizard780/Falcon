@@ -105,7 +105,7 @@ try {
   // Join on the toast with Card sharing still open: what's open comes first, and it says where the invite waits
   await B.page.click('.toast button:has-text("Join")');
   want(await until(B, () => document.querySelector('.toast.show')?.textContent?.startsWith("Close what's open first")), `B: Join over an open dialog says to close it first (${(await toastOnTop(B)).text})`);
-  want(await B.page.isVisible('.cf.co') && !(await B.page.$('.status .lv-bit')), 'B: Card sharing is still up, and nothing was joined under it');
+  want(await B.page.isVisible('.cf.co') && !(await B.page.$('.who')), 'B: Card sharing is still up, and nothing was joined under it');
   await B.page.keyboard.press('Escape');
   await wait(B, 7000); // the toast is gone; the count stays
   want(!(await B.page.$('.toast.show')), `B: the toast has gone by now (${await B.page.textContent('.toast').catch(() => '')})`);
@@ -119,7 +119,7 @@ try {
   want((await B.page.textContent('.co-live section[aria-label="Invites"] .lv-inv')).includes("From a code not in your recipients, who says they're Avery"), 'B: the invite is listed there');
   await B.shot('live-panel-invite');
   await B.page.click('.co-live section[aria-label="Invites"] button:has-text("Join")');
-  want(await until(B, () => document.querySelector('.status .lv-bit')?.textContent?.startsWith('Live')), 'B: Join opens the doc, live');
+  want(await until(B, () => !!document.querySelector('.who')), 'B: Join opens the doc, live');
   want(await until(B, () => !!document.querySelector('.fstrip [aria-label="Sharing"]') && !document.querySelector('.fstrip .share-n')), 'B: joined, the count is gone');
   want((await B.page.textContent('.co-live section[aria-label="Invites"] .lv-inv button')).trim() === 'In it', 'B: the joined invite stays listed (In it)');
   await B.shot('joined');
@@ -127,7 +127,7 @@ try {
   // A presses Invite again for the room B is in: nothing to join, so no toast and no count
   const storedInvites = () => B.page.evaluate(() => new Promise((r) => { const q = indexedDB.open('falcon-collab'); q.onsuccess = () => { const g = q.result.transaction('meta').objectStore('meta').get('invites'); g.onsuccess = () => { r((g.result ?? []).map((i) => `${i.id}:${!!i.joined}`)); q.result.close(); }; }; }));
   const before = await storedInvites();
-  await A.page.click('.status .lv-bit');
+  await A.page.click('.who'); await A.page.click('.lv-pop button:has-text("Invite…")');
   await A.page.click('.co-live section[aria-label="Invite"] .co-ct:has-text("Blake") button');
   await A.page.waitForFunction(() => document.querySelector('.toast')?.textContent?.startsWith('Invited Blake'), null, { timeout: 15000 });
   await A.page.keyboard.press('Escape');
@@ -136,7 +136,7 @@ try {
   want(!again && after.length === 1 && after[0] !== before[0] && after[0].endsWith(':true'), `B: invited again to the room B is in: it arrived (${before} -> ${after}), marked joined, no toast, no count`);
 
   // ---------- a second invite, dismissed ----------
-  await A.page.click('.status .lv-bit');
+  await A.page.click('.who'); await A.page.click('.lv-pop button:has-text("Invite…")');
   await A.page.click('.co-live button:has-text("Leave the session")');
   await A.page.click('.co-live button:has-text("Start live editing")');
   await A.page.waitForSelector('.co-live section[aria-label="Invite"]');
