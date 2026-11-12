@@ -10,13 +10,14 @@ import { inboxId } from '../src/collab/code';
 export const RELAY = 'https://relay.test';
 type Msg = { id: string; data: Uint8Array };
 
-export function fakeRelay() {
+/** `others`: more relay addresses this fake answers for (someone else's relay): a POST to any of them is recorded with its url. */
+export function fakeRelay(others: string[] = []) {
   const inboxes = new Map<string, Msg[]>();
   const sockets = new Set<FakeSocket>();
   /** what the relay answers a POST with; null = store it (201). 'down' = the network fails */
   let answer: number | 'down' | null = null;
   let up = true;
-  const posted: { inbox: string; data: Uint8Array; headers: Headers }[] = [];
+  const posted: { inbox: string; data: Uint8Array; headers: Headers; url: string }[] = [];
   const box = (id: string) => { if (!inboxes.has(id)) inboxes.set(id, []); return inboxes.get(id)!; };
   let n = 0;
 
@@ -70,11 +71,11 @@ export function fakeRelay() {
   const acks: string[] = [];
 
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
-    if (!String(url).startsWith(RELAY)) throw new TypeError('offline');
+    if (![RELAY, ...others].some((b) => String(url).startsWith(`${b}/`))) throw new TypeError('offline');
     if (!up || answer === 'down') throw new TypeError('Failed to fetch');
     const inbox = /\/v1\/inbox\/([0-9a-f]{64})$/.exec(String(url))![1];
     const data = new Uint8Array(init!.body as Uint8Array);
-    posted.push({ inbox, data, headers: new Headers(init?.headers) });
+    posted.push({ inbox, data, headers: new Headers(init?.headers), url: String(url) });
     if (answer) return new Response('{}', { status: answer });
     const m = { id: `00000000-0000-0000-0000-${String(++n).padStart(12, '0')}`, data };
     box(inbox).push(m);

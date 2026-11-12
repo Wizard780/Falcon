@@ -131,8 +131,8 @@ export class LiveSession {
     this.connect();
   }
 
-  /** What an invite to this room carries. */
-  invite(): Invite { return { room: this.o.room, key: b64url(this.o.key), doc: this.o.doc }; }
+  /** What an invite to this room carries: the room is on the host's relay, wherever the invitee's own is. */
+  invite(): Invite { return { room: this.o.room, key: b64url(this.o.key), doc: this.o.doc, relay: this.o.relay }; }
   get room() { return this.o.room; }
   get relay() { return this.o.relay; }
 
@@ -378,5 +378,6 @@ export function host(o: Omit<SessionOpts, 'room' | 'key'>, doc: PMNode): LiveSes
 
 /** Join a room from an invite: the doc comes from whoever is in it (`ready`). */
 export function join(o: Omit<SessionOpts, 'room' | 'key' | 'doc'>, invite: Invite): LiveSession {
-  return new LiveSession({ ...o, room: invite.room, key: unb64url(invite.key), doc: invite.doc }, newBinding());
+  // the room is on the relay the invite names (the host's); `o.relay` is for an invite that names none
+  return new LiveSession({ ...o, relay: invite.relay || o.relay, room: invite.room, key: unb64url(invite.key), doc: invite.doc }, newBinding());
 }

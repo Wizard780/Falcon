@@ -120,7 +120,8 @@ export function useLiveSessions(h: LiveHost) {
 
   const join = useCallback(async (inv: collab.Invited) => {
     if (held.current?.s.room === inv.invite.room) { host.current.openPanel(); return; }
-    const relay = collab.relayUrl();
+    // the room is on the host's relay, which the invite names; mine is for an invite that names none
+    const relay = inv.invite.relay || collab.relayUrl();
     if (!relay) { host.current.flash('Live editing goes through a relay, and none is set. Add one in Settings > Sharing'); return; }
     if (!(await leaveFirst(`Joining “${inv.invite.doc}” leaves it.`))) return;
     const [live, ld] = await load();

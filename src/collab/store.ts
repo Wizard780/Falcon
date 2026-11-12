@@ -74,6 +74,9 @@ export async function regenerate(): Promise<Identity> {
 export const loadName = async () => (await get<string>('name')) ?? '';
 export const saveName = (name: string) => put('name', name);
 export const loadContacts = async () => (await get<Contact[]>('contacts')) ?? [];
+/** The code last copied from the panel (see service gaveCode). */
+export const loadGave = async () => (await get<string>('gave')) ?? '';
+export const saveGave = (code: string) => put('gave', code);
 export const saveContacts = (list: Contact[]) => put('contacts', list);
 
 export const loadCards = () => tx<Received[]>(['cards'], 'readonly', (t) => t.objectStore('cards').getAll() as IDBRequest<Received[]>).then((l) => l.sort((a, b) => a.gotAt - b.gotAt));

@@ -5,7 +5,7 @@ import { RELAY, fakeRelay } from './collab-relay-fake';
 
 // Card sharing in the real <App/>: its IndexedDB (fake-indexeddb), its relay transport over a fake
 // relay that speaks the real protocol, and the other person played by the same crypto module.
-const { encodeCode, inboxId, parseCode } = await import('../src/collab/code');
+const { encodeCode, inboxId, keyOf, parseCode } = await import('../src/collab/code');
 const { makeIdentity, open, seal } = await import('../src/collab/crypto');
 const { schema } = await import('../src/editor/schema');
 const { markMap } = await import('../src/editor/editor');
@@ -129,7 +129,10 @@ describe('card sharing in the app', () => {
     expect(inbox).toBe(await inboxId(pat.pub));
     expect([...headers.keys()]).toEqual([]); // no Content-Type or custom header: no CORS preflight
     const got = await open(pat, data);
-    expect(encodeCode(got.from)).toBe(collab.current().code);
+    // sealed by this Falcon's key, and carrying its code (with its relay) for Add contact
+    expect(keyOf(encodeCode(got.from))).toBe(keyOf(collab.current().code));
+    expect(got.card.code).toBe(collab.current().code);
+    expect(parseCode(collab.current().code).ok && (parseCode(collab.current().code) as { relay: string }).relay).toBe(RELAY);
     expect(got.card.name).toBe('Jordan');
     expect(markMap(schema.node('doc', null, (got.card.content as object[]).map((n) => schema.nodeFromJSON(n))))).toBe(markMap(schema.node('doc', null, formattedCard())));
     await expect(open(await makeIdentity(), data)).rejects.toThrow();
@@ -138,8 +141,10 @@ describe('card sharing in the app', () => {
   it('with no relay set, sharing is inert and says so; the code and contacts still work', async () => {
     const app = await setup({});
     await openPanel(app);
-    expect($('.co-line')?.textContent).toBe("No relay is set, so cards can't be sent or received yet. Add one in Settings > Sharing");
+    expect($('.co-line')?.textContent).toBe('No relay is set, so nobody can send you cards yet, and yours go only to contacts whose code carries their relay. Add one in Settings > Sharing');
     expect(parseCode($('.co-code')?.textContent ?? '').ok).toBe(true);
+    expect((parseCode($('.co-code')?.textContent ?? '') as { relay: string | null }).relay).toBeNull(); // a v1 code: who you are, no relay
+    expect($('.co-me')?.previousElementSibling?.textContent).toMatch(/^Nobody can send you cards until you set a relay in Settings > Sharing/);
     const pat = await makeIdentity();
     await app.fill($('input[aria-label="Their pairing code"]'), encodeCode(pat.pub));
     await app.fill($('input[aria-label="Their name"]'), 'Pat');
@@ -153,6 +158,51 @@ describe('card sharing in the app', () => {
     expect(relay.posted).toHaveLength(0);
     await app.type(' still types');
     expect(app.text()).toContain('still types');
+  });
+
+  it('my code carries my relay; a new relay makes a new code, and the panel says people need it', async () => {
+    const app = await setup();
+    await openPanel(app);
+    const first = $('.co-code')?.textContent ?? '';
+    expect((parseCode(first) as { relay: string }).relay).toBe(RELAY);
+    expect($('.co-me')?.previousElementSibling?.textContent).toMatch(/^Give it to whoever will send you cards\. It carries your relay/);
+    vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { clipboard: { writeText: async () => {} } }));
+    await app.click($('.co-me button'), 100); // Copy: the code given out
+    await until(() => collab.current().gave === first, 'the copied code to be kept');
+    await app.click(button('Close'));
+    const { P, setPref } = await import('../src/editor/prefs');
+    await app.act(async () => { setPref(P.relayUrl, 'https://falcon-relay.my-team.workers.dev'); await tick(50); });
+    await openPanel(app);
+    const now = $('.co-code')?.textContent ?? '';
+    expect(now).not.toBe(first);
+    expect((parseCode(now) as { relay: string }).relay).toBe('https://falcon-relay.my-team.workers.dev');
+    expect(keyOf(now)).toBe(keyOf(first)); // the same person
+    expect(now.replace(/-/g, '').length).toBeLessThan(80); // the workers.dev shortcut keeps it short
+    const note = $('.co-me')?.previousElementSibling;
+    expect(note?.textContent).toBe('Your relay changed, so your code did too. People who send you cards need this new one.');
+    expect(note?.hasAttribute('data-changed')).toBe(true);
+  });
+
+  it("a card goes to the relay its contact's code carries, even with no relay of my own; a v1 contact uses mine", async () => {
+    const other = 'https://pat-relay.test';
+    relay = fakeRelay([other]);
+    relay.install();
+    const app = await setup({});
+    const pat = await makeIdentity(), kim = await makeIdentity();
+    expect(await collab.addContact(encodeCode(pat.pub, other), 'Pat')).toBeNull();
+    const v = app.view();
+    await app.act(() => v.dispatch(v.state.tr.replaceWith(0, v.state.doc.content.size, formattedCard())));
+    expect((await collab.send(collab.current().contacts[0], v.state.doc.content)).message).toBe('Sent “Warming causes resource wars” to Pat');
+    expect(relay.posted.map((x) => x.url)).toEqual([`${other}/v1/inbox/${await inboxId(pat.pub)}`]);
+    expect((await open(pat, relay.posted[0].data)).card.code).toBe(collab.current().code); // a v1 code: I set no relay
+    // the same person again with a new relay: one contact, the new code
+    expect(await collab.addContact(encodeCode(pat.pub, 'https://falcon-relay.pats-new.workers.dev'), 'Pat')).toBeNull();
+    expect(collab.current().contacts).toEqual([{ code: encodeCode(pat.pub, 'https://falcon-relay.pats-new.workers.dev'), name: 'Pat' }]);
+    // a contact from a v1 code, with no relay of mine: nothing to send through
+    expect(await collab.addContact(encodeCode(kim.pub), 'Kim')).toBeNull();
+    const k = collab.current().contacts.find((c) => c.name === 'Kim')!;
+    expect((await collab.send(k, v.state.doc.content)).message).toBe("No relay is set, so cards can't be sent yet. Add one in Settings > Sharing");
+    expect(relay.posted).toHaveLength(1);
   });
 
   it('a relay that is down or out of its daily requests says so plainly, and the editor keeps working', async () => {

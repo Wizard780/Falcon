@@ -6,7 +6,7 @@
 import { DOMParser, DOMSerializer, Fragment, type Node as PMNode } from 'prosemirror-model';
 import { noteNodes, schema } from '../editor/schema';
 import { P, onPrefs, pref } from '../editor/prefs';
-import { encodeCode, inboxId, parseCode } from './code';
+import { encodeCode, inboxId, keyOf, parseCode, relayKey } from './code';
 import { BadEnvelope, MAX_ENVELOPE, TooBig, open, proveKey, seal, type Identity } from './crypto';
 import { DEFAULT_RELAY, nextUtcMidnight, relayTransport, type Link, type Transport } from './relay';
 import * as store from './store';
@@ -17,28 +17,35 @@ export type { Contact, Invited, Received };
 export type CollabState = {
   status: 'loading' | 'unavailable' | 'ready';
   code: string; name: string; contacts: Contact[]; cards: Received[];
+  /** the code last copied from the panel: when mine differs (my relay changed), people need the new one */
+  gave: string;
   /** invites to live-editing sessions waiting to be joined (they aren't cards: not in the rail's count) */
   invites: Invited[];
-  /** the relay in use ('' = none set) */
+  /** my relay ('' = none set): I listen there, and my code carries it */
   relay: string;
   link: Link;
-  /** a send hit the relay's daily limit: nothing goes until then */
+  /** a send through my relay hit its daily limit: nothing goes through it until then */
   pausedUntil: number;
 };
 
 const LABEL_MAX = 40;
-let state: CollabState = { status: 'loading', code: '', name: '', contacts: [], cards: [], invites: [], relay: '', link: { kind: 'off' }, pausedUntil: 0 };
+let state: CollabState = { status: 'loading', code: '', name: '', contacts: [], cards: [], invites: [], gave: '', relay: '', link: { kind: 'off' }, pausedUntil: 0 };
 const subs = new Set<() => void>();
 const arrivals = new Set<(c: Received, contact: Contact | undefined) => void>();
 const invitedArrivals = new Set<(i: Invited, contact: Contact | undefined) => void>();
 const set = (p: Partial<CollabState>) => { state = { ...state, ...p }; for (const f of subs) f(); };
 let me: (Identity & { inbox: string }) | null = null;
+/** Relays whose daily limit a send hit, and until when: each person's relay has its own allowance. */
+const paused = new Map<string, number>();
 const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('falcon-collab') : null;
 const told = (m: { t: 'changed' } | { t: 'card'; id: string } | { t: 'invite'; id: string }) => channel?.postMessage(m);
 
 /** The relay's address, or '' for none: anything that isn't an http(s) address counts as none. */
 export const relayUrl = () => { const u = (pref(P.relayUrl).trim() || DEFAULT_RELAY).replace(/\/+$/, ''); return /^https?:\/\/\S+$/i.test(u) ? u : ''; };
-export const contactFor = (code: string) => state.contacts.find((c) => c.code === code);
+/** The contact a code is, whichever of their codes it is (a v1 one, or one with an older relay): the same key. */
+export const contactFor = (code: string) => { const k = keyOf(code); return k ? state.contacts.find((c) => keyOf(c.code) === k) : undefined; };
+/** Where a card for this contact goes: the relay their code carries, else mine (a v1 code), else '' (none). */
+export const relayFor = (c: Contact) => { const p = parseCode(c.code); return (p.ok && p.relay) || relayUrl(); };
 
 /** "Warming causes war", cut to fit a toast or a row. */
 export function cardLabel(content: Fragment): string {
@@ -94,16 +101,19 @@ function withCleanNotes(f: Fragment): Fragment {
   return Fragment.fromArray(out);
 }
 
+/** My code: my key and the relay I listen on (v2), or the key alone while no relay is set (v1). */
+const myCode = () => (me ? encodeCode(me.pub, relayUrl()) : '');
+
 async function loadMe() {
   const id = await store.identity();
   me = { ...id, inbox: await inboxId(id.pub) };
-  return encodeCode(id.pub);
+  return myCode();
 }
 
 async function reload() {
   const inbox = me?.inbox;
-  const [code, name, contacts, cards, invites] = await Promise.all([loadMe(), store.loadName(), store.loadContacts(), store.loadCards(), store.loadInvites()]);
-  set({ status: 'ready', code, name, contacts, cards, invites, relay: relayUrl() });
+  const [code, name, contacts, cards, invites, gave] = await Promise.all([loadMe(), store.loadName(), store.loadContacts(), store.loadCards(), store.loadInvites(), store.loadGave()]);
+  set({ status: 'ready', code, name, contacts, cards, invites, gave, relay: relayUrl() });
   if (inbox && inbox !== me!.inbox) relisten(); // the code changed in another window
 }
 
@@ -121,7 +131,9 @@ async function onCard(id: string, envelope: Uint8Array) {
   if (!me) throw new Error('no identity yet');
   let got;
   try { got = await open(me, envelope); } catch (e) { if (e instanceof BadEnvelope) return; throw e; } // junk is acked and dropped
-  const from = encodeCode(got.from);
+  // the sender's code as they gave it (with their relay), when it is theirs: the key the envelope proved
+  const said = got.card.code ? parseCode(got.card.code) : null;
+  const from = said?.ok && keyOf(said.code) === keyOf(encodeCode(got.from)) ? said.code : encodeCode(got.from);
   // the sender's id for this send (theirs alone: another sender can't claim it), so a resend isn't a second card
   const key = got.card.mid ? `${from}:${got.card.mid}` : id;
   if (got.card.invite) { await onInvite({ id: key, from, claimed: got.card.name, sentAt: got.card.at, gotAt: Date.now(), invite: got.card.invite }); return; }
@@ -150,7 +162,7 @@ function relisten() {
   stopListen?.();
   stopListen = null;
   const url = relayUrl();
-  set({ relay: url });
+  set({ relay: url, code: myCode() }); // my code carries my relay: a new relay is a new code
   if (!leading || !me || !url) { set({ link: { kind: 'off' } }); return; }
   const mine = me;
   stopListen = transportFor(url).listen(
@@ -166,6 +178,7 @@ function relisten() {
 export function start(listen: boolean): () => void {
   if (!store.storeAvailable()) { set({ status: 'unavailable' }); return () => {}; }
   set({ status: 'loading', pausedUntil: 0 }); // until this start's own load is in (a restart must not read the last one's)
+  paused.clear();
   let live = true;
   const hold = new AbortController();
   let release = () => {};
@@ -179,7 +192,7 @@ export function start(listen: boolean): () => void {
     if (i) for (const f of invitedArrivals) f(i, contactFor(i.from));
   };
   channel?.addEventListener('message', onMsg);
-  const offPrefs = onPrefs(() => { if (relayUrl() !== state.relay) relisten(); });
+  const offPrefs = onPrefs(() => { if (relayUrl() !== state.relay) { set({ pausedUntil: 0 }); relisten(); } });
   void reload().then(() => {
     if (!live || !listen) return;
     const lead = () => { leading = true; relisten(); };
@@ -220,11 +233,12 @@ const saved = async (p: Promise<unknown>) => { await p; told({ t: 'changed' }); 
 export async function addContact(codeText: string, name: string): Promise<string | null> {
   const p = parseCode(codeText);
   if (!p.ok) return p.error;
-  if (p.code === state.code) return "That's your own code";
+  if (keyOf(p.code) === keyOf(state.code)) return "That's your own code";
   const nm = name.trim();
   if (!nm) return 'Give them a name';
   await inTurn(async () => {
-    const contacts = [...state.contacts.filter((c) => c.code !== p.code), { code: p.code, name: nm.slice(0, 60) }];
+    // the same person with a new code (a new relay) takes the old one's place
+    const contacts = [...state.contacts.filter((c) => keyOf(c.code) !== keyOf(p.code)), { code: p.code, name: nm.slice(0, 60) }];
     set({ contacts });
     await saved(store.saveContacts(contacts));
   });
@@ -249,7 +263,7 @@ export async function setName(name: string) {
 export async function newCode() {
   const id = await store.regenerate();
   me = { ...id, inbox: await inboxId(id.pub) };
-  set({ code: encodeCode(id.pub) });
+  set({ code: myCode() });
   relisten();
   told({ t: 'changed' });
 }
@@ -267,12 +281,27 @@ export const resetTime = (until: number) => new Date(until).toLocaleTimeString([
 /** The last send whose fate isn't known (no answer came back): the same card sent again keeps its id. */
 let unsure: { what: string; mid: string } | null = null;
 
-/** Seal a card to a contact and hand it to the relay. Resolves with what to tell the user, and whether it went. */
+/** Copied my code from the panel: kept, so the panel can say when my code has changed since (a new relay). */
+export async function gaveCode() {
+  set({ gave: state.code });
+  await saved(store.saveGave(state.code));
+}
+
+/** How long sends through `url` wait for its daily limit, or 0. */
+const pausedFor = (url: string) => { const t = paused.get(url) ?? 0; return t > Date.now() ? t : 0; };
+function pause(url: string) {
+  const until = nextUtcMidnight();
+  paused.set(url, until);
+  if (url === relayUrl()) set({ pausedUntil: until });
+  return until;
+}
+
+/** Seal a card to a contact and hand it to their relay (or mine, for a code without one). Resolves with what to tell the user, and whether it went. */
 export async function send(contact: Contact, content: Fragment): Promise<{ ok: boolean; message: string }> {
   const label = cardLabel(content);
-  const url = relayUrl();
+  const url = relayFor(contact);
   if (!url) return { ok: false, message: "No relay is set, so cards can't be sent yet. Add one in Settings > Sharing" };
-  if (state.pausedUntil > Date.now()) return { ok: false, message: `Card sharing is paused until ${resetTime(state.pausedUntil)}, when the relay's daily limit resets. The card wasn't sent` };
+  if (pausedFor(url)) return { ok: false, message: `Card sharing is paused until ${resetTime(pausedFor(url))}, when the relay's daily limit resets. The card wasn't sent` };
   const p = parseCode(contact.code);
   if (!p.ok || !me) return { ok: false, message: "Couldn't send: card sharing isn't ready yet" };
   const json = content.toJSON() ?? [];
@@ -281,19 +310,19 @@ export async function send(contact: Contact, content: Fragment): Promise<{ ok: b
   const mid = unsure?.what === what ? unsure.mid : crypto.randomUUID();
   const tooBig = { ok: false, message: 'That card is too big to send (over 1 MB, usually from pictures). It wasn\'t sent' };
   let env: Uint8Array;
-  try { env = await seal(me, p.pub, { name: state.name.trim(), at: Date.now(), content: json, mid }); } catch (e) { return e instanceof TooBig ? tooBig : { ok: false, message: "Couldn't seal the card. It wasn't sent" }; }
+  try { env = await seal(me, p.pub, { name: state.name.trim(), at: Date.now(), content: json, mid, code: state.code }); } catch (e) { return e instanceof TooBig ? tooBig : { ok: false, message: "Couldn't seal the card. It wasn't sent" }; }
   if (env.length > MAX_ENVELOPE) return tooBig;
   const r = await transportFor(url).send(await inboxId(p.pub), env);
   unsure = !r.ok && (r.error === 'unreachable' || r.error === 'relay_error') ? { what, mid } : null;
   if (r.ok) return { ok: true, message: `Sent “${label}” to ${contact.name}` };
   if (r.error === 'daily_limit') {
-    const until = nextUtcMidnight();
-    set({ pausedUntil: until });
+    const until = pause(url);
     return { ok: false, message: `Card sharing is paused until ${resetTime(until)}, when the relay's daily limit resets. The card wasn't sent` };
   }
+  const theirs = url !== relayUrl();
   const why: Record<string, string> = {
     // no answer came back, so whether it got there isn't known: sent again, it still arrives once
-    unreachable: "Couldn't reach the relay. Check the wifi, then send it again",
+    unreachable: theirs ? `Couldn't reach ${contact.name}'s relay. Check the wifi, then send it again` : "Couldn't reach the relay. Check the wifi, then send it again",
     too_large: "That card is too big for the relay. It wasn't sent",
     inbox_full: `${contact.name} has too many cards waiting. The card wasn't sent`,
     bad_envelope: "The relay turned the card down. It wasn't sent",
@@ -307,18 +336,18 @@ export async function send(contact: Contact, content: Fragment): Promise<{ ok: b
  * card does (an older Falcon shows it as a card it can't open). Resolves with what to tell the user.
  */
 export async function sendInvite(contact: Contact, invite: Invite): Promise<{ ok: boolean; message: string }> {
-  const url = relayUrl();
+  const url = relayFor(contact);
   if (!url) return { ok: false, message: "No relay is set, so invites can't be sent. Add one in Settings > Sharing" };
-  if (state.pausedUntil > Date.now()) return { ok: false, message: `Sharing is paused until ${resetTime(state.pausedUntil)}, when the relay's daily limit resets. The invite wasn't sent` };
+  if (pausedFor(url)) return { ok: false, message: `Sharing is paused until ${resetTime(pausedFor(url))}, when the relay's daily limit resets. The invite wasn't sent` };
   const p = parseCode(contact.code);
   if (!p.ok || !me) return { ok: false, message: "Couldn't send: card sharing isn't ready yet" };
   let env: Uint8Array;
-  try { env = await seal(me, p.pub, { name: state.name.trim(), at: Date.now(), content: [], mid: crypto.randomUUID(), invite }); } catch { return { ok: false, message: "Couldn't seal the invite. It wasn't sent" }; }
+  try { env = await seal(me, p.pub, { name: state.name.trim(), at: Date.now(), content: [], mid: crypto.randomUUID(), invite, code: state.code }); } catch { return { ok: false, message: "Couldn't seal the invite. It wasn't sent" }; }
   const r = await transportFor(url).send(await inboxId(p.pub), env);
   if (r.ok) return { ok: true, message: `Invited ${contact.name} to “${invite.doc}”` };
-  if (r.error === 'daily_limit') { const until = nextUtcMidnight(); set({ pausedUntil: until }); return { ok: false, message: `Sharing is paused until ${resetTime(until)}, when the relay's daily limit resets. The invite wasn't sent` }; }
+  if (r.error === 'daily_limit') { const until = pause(url); return { ok: false, message: `Sharing is paused until ${resetTime(until)}, when the relay's daily limit resets. The invite wasn't sent` }; }
   const why: Record<string, string> = {
-    unreachable: "Couldn't reach the relay. Check the wifi, then invite them again",
+    unreachable: url !== relayUrl() ? `Couldn't reach ${contact.name}'s relay. Check the wifi, then invite them again` : "Couldn't reach the relay. Check the wifi, then invite them again",
     too_large: "The relay turned the invite down. It wasn't sent",
     inbox_full: `${contact.name} has too many cards waiting. The invite wasn't sent`,
     bad_envelope: "The relay turned the invite down. It wasn't sent",

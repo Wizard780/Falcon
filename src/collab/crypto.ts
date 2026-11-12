@@ -10,6 +10,7 @@
  * WebCrypto only: the same code runs in Electron, the web build, Node (tests) and Workers.
  */
 import { deflateSync, inflateSync } from 'fflate';
+import { relayKey } from './code';
 
 export const ENVELOPE_VERSION = 1;
 const KEY_LEN = 32, SALT_LEN = 16, IV_LEN = 12, TAG_LEN = 16;
@@ -50,14 +51,17 @@ const aad = (from: Uint8Array, to: Uint8Array) => { const a = new Uint8Array(1 +
 /** What a card envelope carries: who it says it's from, when it was sent, the card (a ProseMirror Fragment's JSON),
  *  and the sender's own id for this send, so one that reaches the relay twice is shown once. An invite to a live-editing
  *  room rides in the same envelope with empty content (an older Falcon shows it as a card it can't open). */
-export type Card = { name: string; at: number; content: unknown; mid?: string; invite?: Invite };
-/** A live-editing room: its id on the relay, its key (base64url, 32 bytes) and the doc's name. Only the envelope carries the key. */
-export type Invite = { room: string; key: string; doc: string };
+export type Card = { name: string; at: number; content: unknown; mid?: string; invite?: Invite;
+  /** the sender's own code, with their relay (Add contact uses it); the recipient checks it is the key that sealed this */
+  code?: string };
+/** A live-editing room: the relay it is on (the host's), its id there, its key (base64url, 32 bytes) and the doc's name.
+ *  Only the envelope carries the key. */
+export type Invite = { room: string; key: string; doc: string; relay?: string };
 const inviteOf = (j: unknown): Invite | undefined => {
   const i = j as Partial<Invite> | null;
   if (!i || typeof i.room !== 'string' || !/^[0-9a-f]{64}$/.test(i.room) || typeof i.key !== 'string' || typeof i.doc !== 'string') return undefined;
   try { if (unb64url(i.key).length !== ROOM_KEY_LEN) return undefined; } catch { return undefined; }
-  return { room: i.room, key: i.key, doc: i.doc.slice(0, 120) };
+  return { room: i.room, key: i.key, doc: i.doc.slice(0, 120), relay: relayKey(typeof i.relay === 'string' ? i.relay : null) ?? undefined };
 };
 /** A card too big to send: thrown by seal. */
 export class TooBig extends Error {}
@@ -65,7 +69,7 @@ export class TooBig extends Error {}
 export async function seal(me: Identity, to: Uint8Array, card: Card): Promise<Uint8Array> {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_LEN)), iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
   const key = await derive(me.priv, to, salt, CARD_INFO, 'aes');
-  const json = te.encode(JSON.stringify({ v: 1, name: card.name, at: card.at, content: card.content, mid: card.mid, invite: card.invite }));
+  const json = te.encode(JSON.stringify({ v: 1, name: card.name, at: card.at, content: card.content, mid: card.mid, invite: card.invite, code: card.code }));
   if (json.length > MAX_PLAIN) throw new TooBig();
   const plain = deflateSync(json);
   const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv, additionalData: aad(me.pub, to) }, key, plain));
@@ -96,7 +100,7 @@ export async function open(me: Identity, env: Uint8Array): Promise<{ from: Uint8
     if (out.length > MAX_PLAIN) throw new Error('too big');
     const j = JSON.parse(td.decode(out));
     if (j?.v !== 1 || typeof j.name !== 'string' || typeof j.at !== 'number' || !Array.isArray(j.content)) throw new Error('shape');
-    card = { name: j.name.slice(0, 80), at: j.at, content: j.content, mid: typeof j.mid === 'string' && j.mid.length <= 64 ? j.mid : undefined, invite: inviteOf(j.invite) };
+    card = { name: j.name.slice(0, 80), at: j.at, content: j.content, mid: typeof j.mid === 'string' && j.mid.length <= 64 ? j.mid : undefined, invite: inviteOf(j.invite), code: typeof j.code === 'string' && j.code.length <= 400 ? j.code : undefined };
   } catch { throw new BadEnvelope('content'); }
   return { from, card };
 }
