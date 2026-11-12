@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { checkRelay, checkRooms } from '../collab/relay';
+import { checkRelayPatiently, checkRooms } from '../collab/relay';
 import { P, pref, setPref } from '../editor/prefs';
 import { IS_MAC } from '../editor/keybinds';
 import { SvgIcon } from './icons';
@@ -23,28 +23,33 @@ function Cmd({ text }: { text: string }) {
 
 const Link = ({ href, children }: { href: string; children: ReactNode }) => <a className="rg-link" href={href} target="_blank" rel="noreferrer">{children}</a>;
 
+export const WAITING = 'A new address can take a few minutes to come online. Falcon is still trying. Leave this open';
+const WORKS = 'It works. Falcon is connected and saved the address. Card sharing and live editing are ready';
+
 /** The last step: paste the address, and Falcon checks a relay answers there before saving it. */
 function Connect() {
   const [url, setUrl] = useState(pref(P.relayUrl));
   const [note, setNote] = useState<{ text: string; bad?: boolean; busy?: boolean } | null>(null);
-  const run = useRef(0); // the check in flight: a newer one, an edit or closing the guide drops an older one's answer
+  // the check in flight, which keeps trying a new address for a while: a newer one, an edit or closing the guide stops it
+  const run = useRef(0);
   useEffect(() => () => { run.current++; }, []);
   const check = async () => {
     const u = relayAddress(url);
     if (!u) { setNote({ text: 'Paste the address wrangler printed first', bad: true }); return; }
-    const mine = ++run.current;
+    const mine = ++run.current, gone = () => mine !== run.current;
     setNote({ text: 'Checking…', busy: true });
-    const r = await checkRelay(u);
-    if (mine !== run.current) return;
+    const r = await checkRelayPatiently(u, gone, () => setNote({ text: WAITING }));
+    if (r === null) return;
     if (r === 'ok') {
       setPref(P.relayUrl, u); setUrl(u);
+      // only a relay that says it has no rooms is an old one: a hiccup on this second request is not
       const rooms = await checkRooms(u);
-      if (mine !== run.current) return;
-      setNote(rooms === 'ok' ? { text: 'It works. Falcon is connected and saved the address. Card sharing and live editing are ready' }
-        : { bad: true, text: 'It works for card sharing, and Falcon saved the address. But this relay is from before live editing: download it again and redeploy it (steps 5 to 7)' });
+      if (gone()) return;
+      setNote(rooms === 'no_rooms' ? { bad: true, text: 'It works for card sharing, and Falcon saved the address. But this relay is from before live editing: download it again and redeploy it (steps 5 to 7)' }
+        : { text: WORKS });
     }
     else setNote({ bad: true, text: r === 'unreachable'
-      ? "Couldn't reach it. Check the address is the one ending in .workers.dev, and that npx wrangler deploy finished"
+      ? "Couldn't reach it for 10 minutes. Check the address is the one ending in .workers.dev, and that npx wrangler deploy finished"
       : "Something answered, but it isn't a Falcon relay. Check you copied the whole address" });
   };
   return (

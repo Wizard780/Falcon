@@ -3,6 +3,7 @@
 // saving its address. A wrong address is turned down and nothing is saved. Needs `npm ci` in relay/.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { openFalcon, MOD } from '../lib/falcon.mjs';
@@ -70,8 +71,26 @@ want(await page.evaluate(() => document.activeElement?.matches('.rg input')), 't
 await page.fill('.rg input', '127.0.0.1:1');
 await page.click('.rg button:has-text("Check and save")');
 await page.waitForFunction(() => document.querySelector('.rg-note')?.textContent !== 'Checking…');
-want(/Couldn't reach it/.test(await page.textContent('.rg-note')) && (await saved()) === null, `a dead address is turned down, nothing saved (${await page.textContent('.rg-note')})`);
-await f.shot('connect-bad');
+// a new workers.dev address fails like a dead one for its first minutes, so Falcon keeps trying instead of blaming the address
+want(/can take a few minutes to come online\. Falcon is still trying/.test(await page.textContent('.rg-note')) && !/Check the address/.test(await page.textContent('.rg-note')) && (await saved()) === null,
+  `an address that can't be reached yet is retried, not turned down, nothing saved (${await page.textContent('.rg-note')})`);
+await f.shot('connect-waiting');
+// the case that sent people hunting for a typo: the same address comes online a little later. Something that answers
+// the two checks the way a relay does starts listening 12 s in, and Falcon saves it without another click.
+const latePort = port + 400, LATE = `http://127.0.0.1:${latePort}`;
+await page.fill('.rg input', LATE);
+await page.click('.rg button:has-text("Check and save")');
+await page.waitForFunction(() => /still trying/.test(document.querySelector('.rg-note')?.textContent ?? ''));
+const late = http.createServer((q, s) => {
+  const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
+  if (q.method === 'POST') { s.writeHead(400, cors); s.end('{"error":"bad_envelope"}'); } else { s.writeHead(200, cors); s.end('{"rooms":1}'); }
+});
+setTimeout(() => late.listen(latePort, '127.0.0.1'), 12_000);
+const cameOnline = await page.waitForFunction(() => /^It works/.test(document.querySelector('.rg-note')?.textContent ?? ''), null, { timeout: 40_000 }).then(() => true, () => false);
+want(cameOnline && (await saved()) === LATE, `the same address, once it comes online, is saved without another click (${await page.textContent('.rg-note')})`);
+await f.shot('connect-came-online');
+late.close();
+await page.evaluate(() => localStorage.removeItem('falcon.relayUrl'));
 await page.evaluate((u) => navigator.clipboard.writeText(u), RELAY);
 await page.fill('.rg input', '');
 await page.keyboard.press(`${MOD}+V`);
