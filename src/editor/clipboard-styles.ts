@@ -1,5 +1,5 @@
 import { DOMSerializer, type Fragment } from 'prosemirror-model';
-import { schema } from './schema';
+import { HIGHLIGHTS, schema } from './schema';
 
 /**
  * Inline styles for copied HTML. Falcon's clipboard HTML is its own DOM (f-* classes and data-*),
@@ -30,11 +30,37 @@ export const MSO_HIGHLIGHT: Record<string, string> = {
   // deep turquoise isn't a Word highlight: it goes as its background color, which Word pastes as shading
 };
 
-/** Write the inline look onto every f-* element under root, in place. */
+/**
+ * CardMirror's names for the same styles. Its paste reads only its own classes: without these a tag
+ * lands there as a pocket, a highlight as colored text, and an analytic or cite as plain bold.
+ */
+const CARDMIRROR: Record<string, string> = {
+  'f-pocket': 'pmd-pocket', 'f-hat': 'pmd-hat', 'f-block': 'pmd-block', 'f-tag': 'pmd-tag',
+  'f-analytic': 'pmd-analytic', 'f-undertag': 'pmd-undertag',
+  'f-cite': 'pmd-cite', 'f-underline': 'pmd-underline', 'f-emphasis': 'pmd-emphasis',
+};
+
+/**
+ * CardMirror reads data-color as a font color, so a highlight or shading also says itself CardMirror's way:
+ * one of Word's highlights by name, anything else (deep turquoise, a shading) as a fill.
+ */
+function cardMirrorFill(el: HTMLElement) {
+  const c = el.dataset.color ?? '';
+  if (el.classList.contains('f-highlight') && MSO_HIGHLIGHT[c]) { el.classList.add('pmd-highlight'); el.dataset.highlight = c; return; }
+  const hex = (HIGHLIGHTS[c] ?? c).replace('#', '');
+  if (/^[0-9a-f]{6}$/i.test(hex)) el.dataset.shading = hex.toUpperCase();
+}
+
+/** Write the inline look onto every f-* element under root, in place, plus CardMirror's class for it. */
 export function freezeStyles(root: ParentNode) {
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>('span.f-shading'))) cardMirrorFill(el);
+  // a font color: CardMirror's data-color is the hex without its # (pasting back into Falcon puts it back)
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>('span.f-color'))) if (/^#[0-9a-f]{6}$/i.test(el.dataset.color ?? '')) el.dataset.color = el.dataset.color!.slice(1);
   for (const el of Array.from(root.querySelectorAll<HTMLElement>('[class*="f-"]'))) {
     const cls = Array.from(el.classList).find((c) => c in CSS || c === 'f-highlight');
     if (!cls) continue;
+    if (CARDMIRROR[cls]) el.classList.add(CARDMIRROR[cls]);
+    if (cls === 'f-highlight') cardMirrorFill(el);
     // through the attribute, not el.style: browsers drop properties they don't know, like mso-highlight
     const add = cls === 'f-highlight' ? (MSO_HIGHLIGHT[el.dataset.color ?? ''] ? `mso-highlight:${MSO_HIGHLIGHT[el.dataset.color!]}` : '') : CSS[cls];
     if (!add) continue;
