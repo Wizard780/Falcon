@@ -146,16 +146,16 @@ want(!/OPTIONS \/v1/.test(R2.log) && !/POST \/v1\/inbox\/(?!0{64})/.test(R1.log)
 await B.page.waitForFunction(() => document.querySelector('.toast')?.textContent?.startsWith('Card from'), null, { timeout: 15000 }).catch(() => {});
 await B.page.keyboard.type('it arrives.');
 const bText = await B.page.evaluate(() => window.__falconView.state.doc.textContent);
-want((await toast(B)).startsWith('Card from a code not in your recipients: “Growth is slowing”'), `B: a toast says a card came (${await toast(B)})`);
+want((await toast(B)).startsWith("Card from a code not in your recipients, who says they're Avery: “Growth is slowing”"), `B: a toast says a card came (${await toast(B)})`);
 want(bText === 'Typing while it arrives.', `B: typing went on uninterrupted (${bText})`);
 want(await B.page.evaluate(() => !!document.activeElement?.closest('.ProseMirror')), 'B: focus stayed in the editor');
-want(!!(await B.page.$('.fstrip [aria-label="Cards waiting (1)"]')), 'B: the rail shows the card is waiting');
+want((await B.page.textContent('.fstrip [aria-label="Sharing, 1 card waiting"] .share-n').catch(() => '')) === '1', "B: the rail's Sharing button counts the card waiting");
 await B.shot('b-toast-while-typing');
 await wait(B, 300);
 want(rowsWaiting(R2.persist) === 0, "B's relay deleted the card once B acked it (B stored it first)");
 
 // ---------- B inserts it ----------
-await B.page.click('.fstrip [aria-label="Cards waiting (1)"]');
+await B.page.click('.fstrip [aria-label="Sharing, 1 card waiting"]');
 await wait(B, 200);
 want((await B.page.textContent('.co-card .co-what span')).includes("From a code not in your recipients, who says they're Avery"), 'B: the card shows as from an unknown code, with the name it gave');
 await B.shot('b-card-waiting');
@@ -170,7 +170,7 @@ await B.page.click('.co-card button:has-text("Insert")');
 await wait(B, 300);
 const mapB = await B.markMap();
 want(mapB.includes(card), `B: the inserted card's styles and marks match A's exactly:\n${mapB}`);
-want(!(await B.page.$('.fstrip [aria-label^="Cards waiting"]')), 'B: the rail cue is gone');
+want(!!(await B.page.$('.fstrip [aria-label="Sharing"]')) && !(await B.page.$('.fstrip .share-n')), "B: the rail's count is gone (the Sharing button stays)");
 await B.shot('b-inserted');
 
 // ---------- and back: B sends to A, through A's relay ----------

@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import http from 'node:http';
 import { _electron as electron } from 'playwright';
 
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..');
@@ -37,8 +38,21 @@ const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-collab-desktop-')
 const env = { ...process.env, FALCON_HEADLESS: '1', FALCON_USER_DATA: userData };
 delete env.ELECTRON_RUN_AS_NODE;
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
-async function launch() {
-  const app = await electron.launch({ args: ['.'], cwd: REPO, env });
+// a release feed with a newer Falcon whose installer never finishes downloading: the rail's update button stays up
+const feed = http.createServer((req, res) => {
+  const base = `http://127.0.0.1:${feed.address().port}`;
+  if (req.url === '/feed.json') return res.end(JSON.stringify({ tag_name: 'v99.0.0', draft: false, prerelease: false, published_at: new Date().toISOString(), html_url: base, body: 'A test release.',
+    assets: [{ name: `Falcon-99.0.0-${process.arch}.dmg`, size: 1e9, browser_download_url: `${base}/dmg` }, { name: 'Falcon-Setup-99.0.0.exe', size: 1e9, browser_download_url: `${base}/dmg` }, { name: 'SHA256SUMS.txt', browser_download_url: `${base}/sums` }] }));
+  if (req.url === '/sums') return res.end(`${'0'.repeat(64)}  Falcon-99.0.0-${process.arch}.dmg\n${'0'.repeat(64)}  Falcon-Setup-99.0.0.exe\n`);
+  if (req.url === '/dmg') { res.writeHead(200, { 'content-length': String(1e9) }); res.write(Buffer.alloc(1024)); return; } // and then nothing
+  res.statusCode = 404; res.end();
+}).listen(0, '127.0.0.1');
+await new Promise((r) => feed.once('listening', r));
+feed.unref();
+/** The rail's buttons from the bottom group, as their aria-labels: Sharing, then the update (or check) button, then Settings. */
+const railEnd = (win) => win.$$eval('.fstrip > .fs-b, .fstrip > button', (bs) => bs.slice(-3).map((b) => b.getAttribute('aria-label') || b.className));
+async function launch(extra = {}) {
+  const app = await electron.launch({ args: ['.'], cwd: REPO, env: { ...env, ...extra } });
   const win = await app.firstWindow();
   await win.waitForSelector('.ProseMirror');
   await win.keyboard.press('Escape');
@@ -98,10 +112,14 @@ await win.click('.ProseMirror:not(.hm-doc)');
 await win.keyboard.type('Typing here.');
 const toastSeen = await win.waitForFunction(() => document.querySelector('.toast')?.textContent?.startsWith('Card from Robin'), null, { timeout: 15000 }).then(() => true, () => false);
 want(toastSeen, 'desktop: a toast says Robin sent a card');
+want(await win.isVisible('.fstrip [aria-label="Sharing, 1 card waiting"] .share-n'), "desktop: the rail's Sharing button counts the card waiting");
+want((await railEnd(win)).join(' | ') === 'Sharing, 1 card waiting | Check for updates | Settings', `desktop, no update: Sharing sits directly above Check for updates (${(await railEnd(win)).join(' | ')})`);
+want((await app.evaluate(() => global.falconAttention ?? 0)) === 1, 'desktop: with no Falcon window in front, the card raised the Dock/taskbar cue once');
 await win.screenshot({ path: path.join(out, '02-desktop-arrived.png') });
-await win.click('.fstrip [aria-label="Cards waiting (1)"]');
+await win.click('.fstrip [aria-label="Sharing, 1 card waiting"]');
 await win.click('.co-card button:has-text("Insert")');
 await win.waitForTimeout(300);
+want(await win.isVisible('.fstrip [aria-label="Sharing"]') && !(await win.$('.fstrip .share-n')), 'desktop: once inserted, the count is gone and the button stays');
 const map = await win.evaluate(() => window.__falconMarkMap());
 want(map === 'normal: Typing here.\ntag: Desktop gets cards\nnormal: [Lee 25]{cite}\nnormal: [boxed]{emphasis+highlight:green} and [underlined]{underline}', `desktop: inserted with its marks:\n${map}`);
 
@@ -134,14 +152,18 @@ const got = await new Promise((resolve, reject) => {
 want(keyOf(encodeCode(got.from)) === keyOf(code) && parsed.ok && parsed.relay === RELAY, "the card the partner got is proven to come from the desktop code's key (the code also carries the desktop's relay)");
 want(isDeepStrictEqual(got.card.content, card), `and it is the same card, marks and all:\n${JSON.stringify(got.card.content)}`);
 
-// relaunch on the same profile: same identity, same contact
+// relaunch on the same profile (with an update on its way): same identity, same contact
 await app.close();
-({ app, win } = await launch());
+({ app, win } = await launch({ FALCON_UPDATE_FEED: `http://127.0.0.1:${feed.address().port}/feed.json` }));
+const upd = await win.waitForSelector('.fstrip .fs-b.upd', { timeout: 20000 }).then(() => true, () => false);
+const end = await railEnd(win);
+want(upd && end[0] === 'Sharing' && /upd/.test(end[1]) && end[2] === 'Settings', `desktop, update on its way: Sharing sits directly above the update button (${end.join(' | ')})`);
+await win.screenshot({ path: path.join(out, '03-desktop-update-button.png') });
 await command(win, 'card sharing');
 await win.waitForFunction(() => /^[0-9A-Z]/.test(document.querySelector('.co-code')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {});
 want((await win.textContent('.co-code')).trim() === code, 'after a relaunch the pairing code is the same (the key lives in IndexedDB)');
 want((await win.$$eval('.rcp-row .rcp-nm', (x) => x.map((n) => n.value))).join() === 'Robin', 'and Robin is still a recipient');
-await win.screenshot({ path: path.join(out, '03-desktop-relaunched.png') });
+await win.screenshot({ path: path.join(out, '04-desktop-relaunched.png') });
 await app.close();
 if (errors.length) want(false, `page errors: ${errors.join(' | ')}`);
 fs.rmSync(userData, { recursive: true, force: true });

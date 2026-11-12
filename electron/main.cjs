@@ -291,8 +291,9 @@ let lastThemeJson = '';
 // a card or an invite came in: every window hears it, so one cue per arrival, and none while a Falcon window is in front
 let attentionAt = 0;
 ipcMain.on('falcon:attention', (e) => {
-  if (HEADLESS || BrowserWindow.getFocusedWindow() || Date.now() - attentionAt < 2000) return;
+  if (BrowserWindow.getFocusedWindow() || Date.now() - attentionAt < 2000) return;
   attentionAt = Date.now();
+  if (HEADLESS) { global.falconAttention = (global.falconAttention ?? 0) + 1; return; } // tests count it; nothing bounces
   if (process.platform === 'darwin') app.dock?.bounce('informational');
   else BrowserWindow.fromWebContents(e.sender)?.flashFrame(true);
 });
