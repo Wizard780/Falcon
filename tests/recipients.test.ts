@@ -6,7 +6,8 @@ import { RELAY, fakeRelay } from './collab-relay-fake';
 // Recipients in the real <App/>: one list, on one store, in Settings > Sharing and in the Card sharing panel. Its order,
 // hidden and starred are kept, and Send Card to… and Send Card to starred follow them.
 const { encodeCode, inboxId, parseCode } = await import('../src/collab/code');
-const { makeIdentity } = await import('../src/collab/crypto');
+const { makeIdentity, seal } = await import('../src/collab/crypto');
+const store = await import('../src/collab/store');
 const { schema } = await import('../src/editor/schema');
 const collab = await import('../src/collab/service');
 
@@ -113,9 +114,10 @@ describe('Recipients', () => {
     const { pat, kim, lee, keys } = await people();
     for (const [c, n] of [[pat, 'Pat'], [kim, 'Kim'], [lee, 'Lee']]) await collab.addContact(c, n);
     const st = await sharing(app);
-    ($('[aria-label="Move Lee up"]', st) as HTMLElement).focus();
-    await app.click($('[aria-label="Move Lee up"]', st));
-    await app.act(() => {}, 20);
+    const up = $('[aria-label="Move Lee up"]', st) as HTMLElement;
+    up.focus();
+    // Chromium drops focus from a node the reorder moves (jsdom keeps it): drop it as it would, and Falcon puts it back
+    await app.act(() => { up.click(); (document.activeElement as HTMLElement | null)?.blur(); }, 50);
     expect(names(st)).toEqual(['Pat', 'Lee', 'Kim']);
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Move Lee up'); // focus followed the row
     expect(($('[aria-label="Move Pat up"]', st) as HTMLButtonElement).disabled).toBe(true); // the first can't go up
@@ -161,6 +163,81 @@ describe('Recipients', () => {
     expect($('.co-send .co-sub')?.textContent).toBe('Everyone is hidden from this list. Show someone again with the eye in Settings > Sharing.');
   });
 
+  it("a change another window just saved isn't lost when this one edits the list", async () => {
+    await setup();
+    const { pat, kim } = await people();
+    await collab.addContact(pat, 'Pat');
+    await store.saveContacts([...(await store.loadContacts()), { code: kim, name: 'Kim' }]); // the other window
+    await collab.starContact(pat, true);
+    expect(await store.loadContacts()).toEqual([{ code: pat, name: 'Pat', starred: true }, { code: kim, name: 'Kim' }]);
+    expect(collab.current().contacts).toEqual(await store.loadContacts()); // what is shown is what was written
+  });
+
+  it('a rename leaves the row on, so focus moving on from the name box keeps working; Esc in the add row shuts only the row', async () => {
+    const app = await setup();
+    const { pat } = await people();
+    await collab.addContact(pat, 'Pat');
+    const st = await sharing(app);
+    let done = () => {};
+    vi.spyOn(store, 'updateContacts').mockImplementationOnce((f) => new Promise((r) => { done = () => r(f(collab.current().contacts)); }));
+    const nm = $('.rcp-nm', st) as HTMLInputElement;
+    await app.fill(nm, 'Patricia');
+    await app.act(() => { nm.dispatchEvent(new FocusEvent('blur')); nm.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); }, 200);
+    expect(($('[aria-label="Hide Pat from Send Card"]', st) as HTMLButtonElement).disabled).toBe(false); // the save is still going
+    await app.act(() => done(), 50);
+    expect(collab.current().contacts[0].name).toBe('Patricia');
+
+    // Esc on the add row's Cancel button: the row shuts, Settings stays
+    await app.click(button('Add recipient', st));
+    const cancel = button('Cancel', $('.rcp-add', st)!)!;
+    cancel.focus();
+    await app.act(() => { cancel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
+    expect($('.rcp-add', st)).toBeNull();
+    expect($('.st')).not.toBeNull();
+    expect(document.activeElement?.textContent).toBe('Add recipient');
+  });
+
+  it('Add recipient on cards from strangers works again after the panel is closed and opened', async () => {
+    const app = await setup();
+    await until(() => relay.proven() === 1, 'connected');
+    const me = parseCode(collab.current().code) as { pub: Uint8Array };
+    const inbox = await inboxId(me.pub);
+    const [sam, ana] = [await makeIdentity(), await makeIdentity()];
+    for (const [who, name] of [[sam, 'Sam'], [ana, 'Ana']] as const) {
+      await relay.post(inbox, await seal(who, me.pub, { name, at: Date.now(), content: [{ type: 'paragraph', content: [{ type: 'text', text: `From ${name}` }] }] }));
+    }
+    await until(() => collab.current().cards.length === 2, 'two cards in');
+    const addFrom = async (i: number) => {
+      await app.press('F2', { ctrlKey: true, shiftKey: true }, 100);
+      await app.click(button('Add recipient', document.querySelectorAll('.co-card')[i]));
+      return ($('input[aria-label="Their pairing code"]') as HTMLInputElement | null)?.value;
+    };
+    expect(await addFrom(0)).toBe(encodeCode(sam.pub));
+    await app.click(button('Close', $('.cf.co')!));
+    expect(await addFrom(1)).toBe(encodeCode(ana.pub)); // the second time too
+  });
+
+  it('re-adding someone already there updates them, and says they stay hidden; Send Card to starred sends once for a double press', async () => {
+    const app = await setup();
+    const { pat, keys } = await people();
+    await collab.addContact(pat, 'Pat');
+    await collab.hideContact(pat, true);
+    await collab.starContact(pat, true);
+    const st = await sharing(app);
+    await app.click(button('Add recipient', st));
+    await app.fill($('input[aria-label="Their pairing code"]'), pat);
+    await app.fill($('input[aria-label="Their name"]'), 'Pat L');
+    await app.click(button('Add', st));
+    expect(app.toast()).toBe('Updated Pat L. They stay hidden from Send Card');
+    expect(collab.current().contacts).toEqual([{ code: pat, name: 'Pat L', hidden: true, starred: true }]);
+    await app.click($('[aria-label="Close settings"]'));
+    await aCard(app);
+    await app.act(async () => {
+      for (let i = 0; i < 2; i++) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    }, 300);
+    expect(relay.posted.map((p) => p.inbox)).toEqual([await inboxId(keys.pat)]);
+  });
+
   it('Remove folds the row shut where it is, and focus goes to the next row\'s Remove, then to Add recipient', async () => {
     const app = await setup();
     const { pat, kim } = await people();
@@ -187,14 +264,18 @@ describe('Recipients', () => {
     const inner = globalThis.fetch;
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => (String(url).endsWith('/v1/rooms') ? new Response('{"rooms":1}')
       : String(url).endsWith(`/v1/inbox/${'0'.repeat(64)}`) ? new Response('{"error":"bad_envelope"}', { status: 400 }) : inner(url, init)));
-    const st = await sharing(app);
-    await app.click($('.st-help', st));
+    await sharing(app);
+    // a search typed in Settings (the command center's Tab can bring one) that hides the Recipients row
+    await app.fill($('[aria-label="Search settings"]'), 'relay');
+    expect($('.st .rcp')).toBeNull();
+    await app.click($('.st-help'));
     while (!$('.rg input[aria-label="Relay address"]')) await app.click(button('Next', $('.rg')!));
     await app.click(button('Check and save', $('.rg')!), 200);
     await until(() => /^It works/.test($('.rg-note')?.textContent ?? ''), 'the check');
     expect($('.rg-body')?.textContent).toMatch(/Next, swap pairing codes with each person you'll send cards to\. .*Their code goes under Recipients/);
     await app.click(button('Add a recipient', $('.rg')!));
     expect($('.rg')).toBeNull();
+    expect(($('[aria-label="Search settings"]') as HTMLInputElement).value).toBe(''); // back on Sharing, the list in view
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Their pairing code');
   });
 });

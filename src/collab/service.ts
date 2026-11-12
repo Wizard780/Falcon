@@ -246,20 +246,20 @@ export async function addContact(codeText: string, name: string): Promise<string
   if (keyOf(p.code) === keyOf(state.code)) return "That's your own code";
   const nm = name.trim();
   if (!nm) return 'Give them a name';
-  await inTurn(async () => {
-    // the same person with a new code (a new relay) takes the old one's place, keeping where they are and their star
-    const at = state.contacts.findIndex((c) => keyOf(c.code) === keyOf(p.code));
-    const next = { ...(at >= 0 ? state.contacts[at] : {}), code: p.code, name: nm.slice(0, 60) };
-    const contacts = at >= 0 ? state.contacts.map((c, i) => (i === at ? next : c)) : [...state.contacts, next];
-    set({ contacts });
-    await saved(store.saveContacts(contacts));
+  // the same person with a new code (a new relay) takes the old one's place, keeping where they are and their star
+  await editContacts((list) => {
+    const at = list.findIndex((c) => keyOf(c.code) === keyOf(p.code));
+    const next = { ...(at >= 0 ? list[at] : {}), code: p.code, name: nm.slice(0, 60) };
+    return at >= 0 ? list.map((c, i) => (i === at ? next : c)) : [...list, next];
   });
   return null;
 }
-/** Change the recipients list: saved first, then shown, so a save that fails (it rejects) changes nothing. */
+/** Change the recipients list. It is read and written in one transaction, so a change another window just saved
+ *  isn't lost, and what is shown is what was written. A save that fails (it rejects) changes nothing. */
 const editContacts = (f: (list: Contact[]) => Contact[]): Promise<void> => inTurn(async () => {
-  await saved(store.saveContacts(f(state.contacts)));
-  set({ contacts: f(state.contacts) }); // on the list as it is now: another window may have changed it meanwhile
+  const contacts = await store.updateContacts(f);
+  told({ t: 'changed' });
+  set({ contacts });
 });
 const editOne = (code: string, f: (c: Contact) => Contact) => editContacts((list) => list.map((c) => (c.code === code ? f(c) : c)));
 export const renameContact = (code: string, name: string) => { const nm = name.trim().slice(0, 60); return nm ? editOne(code, (c) => ({ ...c, name: nm })) : Promise.resolve(); };

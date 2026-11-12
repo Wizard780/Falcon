@@ -14,7 +14,7 @@ The people cards go to. One list on one store (`src/collab/store.ts` contacts, `
 
 ## Driving it with falcon-verify
 
-- **Journey.** `$V run .claude/skills/verify-falcon/journeys/recipients.mjs` exits 0 with 44 `ok` lines (22 in dark, 22 in light) in under a minute. Codes are made with `src/collab` and carry a relay that isn't there, so a send fails naming who it went to, which proves where Send Card to starred sent it.
+- **Journey.** `$V run .claude/skills/verify-falcon/journeys/recipients.mjs` exits 0 with 48 `ok` lines (24 in dark, 24 in light) in under a minute. Codes are made with `src/collab` and carry a relay that isn't there, so a send fails naming who it went to, which proves where Send Card to starred sent it.
 - **Rows.** `.st .rcp-row[data-code="<code>"]` (Settings) or `.cf.co .rcp-row[...]` (the panel). Name: `.rcp-nm` (read `value`). Actions: `[data-a="up" | "down" | "hide" | "star" | "x"]`, with `aria-pressed` on hide and star. A row folding away is `.co-fold[data-gone]`.
 - **Unit.** `tests/recipients.test.ts` (the real App: Settings, the panel, the picker, Send Card to starred, the guide's Add a recipient).
 - **Proof.** `evidence/recipients/` and `recipients/light/`: empty, a bad code, three with one hovered, the panel, the picker, hidden moved and starred, removing (mid-fold), removed.

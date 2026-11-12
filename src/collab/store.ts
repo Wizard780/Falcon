@@ -80,6 +80,16 @@ export const loadContacts = async () => (await get<Contact[]>('contacts')) ?? []
 export const loadGave = async () => (await get<string>('gave')) ?? '';
 export const saveGave = (code: string) => put('gave', code);
 export const saveContacts = (list: Contact[]) => put('contacts', list);
+/** Change the contacts in one transaction, from what is on disk now (another window may have changed it since this
+ *  one last read it), and answer the list that was written. */
+export async function updateContacts(f: (list: Contact[]) => Contact[]): Promise<Contact[]> {
+  let next: Contact[] = [];
+  await tx(['meta'], 'readwrite', (t) => {
+    const meta = t.objectStore('meta'), q = meta.get('contacts');
+    q.onsuccess = () => { next = f((q.result as Contact[] | undefined) ?? []); meta.put(next, 'contacts'); };
+  });
+  return next;
+}
 
 export const loadCards = () => tx<Received[]>(['cards'], 'readonly', (t) => t.objectStore('cards').getAll() as IDBRequest<Received[]>).then((l) => l.sort((a, b) => a.gotAt - b.gotAt));
 
