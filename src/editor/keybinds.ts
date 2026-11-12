@@ -192,6 +192,12 @@ bind('Card sharing', [
   { id: 'sendCard', label: 'Send Card to…' },
   { id: 'collab', label: 'Card sharing' }, // your pairing code, contacts, and cards sent to you
 ]);
+// live editing (src/collab/live.ts): no keys until you give them one
+bind('Live editing', [
+  { id: 'live', label: 'Live editing' }, // who's in the session, invite, leave, and invites to you
+  { id: 'liveStart', label: 'Start live editing' },
+  { id: 'liveStop', label: 'Leave live editing' },
+]);
 // a plain key on purpose: the page can't type it while it's bound (text boxes still can)
 bind('Speech', [{ id: 'sendToSpeech', label: 'Send to speech', key: '`' }]);
 // second keys that always work: Mod-Shift-] / [ also switch documents

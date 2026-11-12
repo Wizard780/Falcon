@@ -10,12 +10,15 @@ import { encodeCode, inboxId, parseCode } from './code';
 import { BadEnvelope, MAX_ENVELOPE, TooBig, open, proveKey, seal, type Identity } from './crypto';
 import { DEFAULT_RELAY, nextUtcMidnight, relayTransport, type Link, type Transport } from './relay';
 import * as store from './store';
-import type { Contact, Received } from './store';
+import type { Contact, Invited, Received } from './store';
+import type { Invite } from './crypto';
 
-export type { Contact, Received };
+export type { Contact, Invited, Received };
 export type CollabState = {
   status: 'loading' | 'unavailable' | 'ready';
   code: string; name: string; contacts: Contact[]; cards: Received[];
+  /** invites to live-editing sessions waiting to be joined (they aren't cards: not in the rail's count) */
+  invites: Invited[];
   /** the relay in use ('' = none set) */
   relay: string;
   link: Link;
@@ -24,13 +27,14 @@ export type CollabState = {
 };
 
 const LABEL_MAX = 40;
-let state: CollabState = { status: 'loading', code: '', name: '', contacts: [], cards: [], relay: '', link: { kind: 'off' }, pausedUntil: 0 };
+let state: CollabState = { status: 'loading', code: '', name: '', contacts: [], cards: [], invites: [], relay: '', link: { kind: 'off' }, pausedUntil: 0 };
 const subs = new Set<() => void>();
 const arrivals = new Set<(c: Received, contact: Contact | undefined) => void>();
+const invitedArrivals = new Set<(i: Invited, contact: Contact | undefined) => void>();
 const set = (p: Partial<CollabState>) => { state = { ...state, ...p }; for (const f of subs) f(); };
 let me: (Identity & { inbox: string }) | null = null;
 const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('falcon-collab') : null;
-const told = (m: { t: 'changed' } | { t: 'card'; id: string }) => channel?.postMessage(m);
+const told = (m: { t: 'changed' } | { t: 'card'; id: string } | { t: 'invite'; id: string }) => channel?.postMessage(m);
 
 /** The relay's address, or '' for none: anything that isn't an http(s) address counts as none. */
 export const relayUrl = () => { const u = (pref(P.relayUrl).trim() || DEFAULT_RELAY).replace(/\/+$/, ''); return /^https?:\/\/\S+$/i.test(u) ? u : ''; };
@@ -98,8 +102,8 @@ async function loadMe() {
 
 async function reload() {
   const inbox = me?.inbox;
-  const [code, name, contacts, cards] = await Promise.all([loadMe(), store.loadName(), store.loadContacts(), store.loadCards()]);
-  set({ status: 'ready', code, name, contacts, cards, relay: relayUrl() });
+  const [code, name, contacts, cards, invites] = await Promise.all([loadMe(), store.loadName(), store.loadContacts(), store.loadCards(), store.loadInvites()]);
+  set({ status: 'ready', code, name, contacts, cards, invites, relay: relayUrl() });
   if (inbox && inbox !== me!.inbox) relisten(); // the code changed in another window
 }
 
@@ -117,10 +121,11 @@ async function onCard(id: string, envelope: Uint8Array) {
   if (!me) throw new Error('no identity yet');
   let got;
   try { got = await open(me, envelope); } catch (e) { if (e instanceof BadEnvelope) return; throw e; } // junk is acked and dropped
-  const content = cardFragment(got.card.content);
   const from = encodeCode(got.from);
   // the sender's id for this send (theirs alone: another sender can't claim it), so a resend isn't a second card
   const key = got.card.mid ? `${from}:${got.card.mid}` : id;
+  if (got.card.invite) { await onInvite({ id: key, from, claimed: got.card.name, sentAt: got.card.at, gotAt: Date.now(), invite: got.card.invite }); return; }
+  const content = cardFragment(got.card.content);
   // one this Falcon can't open (a newer Falcon's, say) is still shown, so it isn't lost without a word
   const card: Received = content
     ? { id: key, from, claimed: got.card.name, sentAt: got.card.at, gotAt: Date.now(), label: cardLabel(content), content: got.card.content as unknown[] }
@@ -131,6 +136,14 @@ async function onCard(id: string, envelope: Uint8Array) {
   set({ cards: [...state.cards, card] });
   told({ t: 'card', id });
   for (const f of arrivals) f(card, contactFor(from));
+}
+
+/** An invite came in: kept (then acked), and told to the app for its toast. Not a card: the rail's count leaves it out. */
+async function onInvite(inv: Invited) {
+  if (!(await store.keepInvite(inv))) return;
+  set({ invites: [...state.invites.filter((x) => x.invite.room !== inv.invite.room), inv] });
+  told({ t: 'invite', id: inv.id });
+  for (const f of invitedArrivals) f(inv, contactFor(inv.from));
 }
 
 function relisten() {
@@ -162,6 +175,8 @@ export function start(listen: boolean): () => void {
     roomAgain(); // another window dismissed some
     const c = e.data.t === 'card' ? state.cards.find((x) => x.id === e.data.id) : null;
     if (c) for (const f of arrivals) f(c, contactFor(c.from));
+    const i = e.data.t === 'invite' ? state.invites.find((x) => x.id === e.data.id) : null;
+    if (i) for (const f of invitedArrivals) f(i, contactFor(i.from));
   };
   channel?.addEventListener('message', onMsg);
   const offPrefs = onPrefs(() => { if (relayUrl() !== state.relay) relisten(); });
@@ -189,6 +204,13 @@ export const subscribe = (f: () => void) => { subs.add(f); return () => { subs.d
 export const current = () => state;
 /** A card came in (in this window or another): for the toast. */
 export const onArrive = (f: (c: Received, contact: Contact | undefined) => void) => { arrivals.add(f); return () => { arrivals.delete(f); }; };
+/** An invite to a live-editing session came in (in this window or another): for the toast. */
+export const onInvited = (f: (i: Invited, contact: Contact | undefined) => void) => { invitedArrivals.add(f); return () => { invitedArrivals.delete(f); }; };
+/** Done with an invite (joined or dismissed). It leaves the list once the save went through. */
+export async function dropInvite(id: string) {
+  await saved(store.dropInvite(id));
+  set({ invites: state.invites.filter((x) => x.id !== id) });
+}
 
 // ---------- changes ----------
 
@@ -276,6 +298,31 @@ export async function send(contact: Contact, content: Fragment): Promise<{ ok: b
     inbox_full: `${contact.name} has too many cards waiting. The card wasn't sent`,
     bad_envelope: "The relay turned the card down. It wasn't sent",
     relay_error: "The relay had a problem. Send the card again later",
+  };
+  return { ok: false, message: why[r.error] };
+}
+
+/**
+ * Invite a contact to a live-editing session: the room's id and key go to them sealed, through their inbox, the way a
+ * card does (an older Falcon shows it as a card it can't open). Resolves with what to tell the user.
+ */
+export async function sendInvite(contact: Contact, invite: Invite): Promise<{ ok: boolean; message: string }> {
+  const url = relayUrl();
+  if (!url) return { ok: false, message: "No relay is set, so invites can't be sent. Add one in Settings > Sharing" };
+  if (state.pausedUntil > Date.now()) return { ok: false, message: `Sharing is paused until ${resetTime(state.pausedUntil)}, when the relay's daily limit resets. The invite wasn't sent` };
+  const p = parseCode(contact.code);
+  if (!p.ok || !me) return { ok: false, message: "Couldn't send: card sharing isn't ready yet" };
+  let env: Uint8Array;
+  try { env = await seal(me, p.pub, { name: state.name.trim(), at: Date.now(), content: [], mid: crypto.randomUUID(), invite }); } catch { return { ok: false, message: "Couldn't seal the invite. It wasn't sent" }; }
+  const r = await transportFor(url).send(await inboxId(p.pub), env);
+  if (r.ok) return { ok: true, message: `Invited ${contact.name} to “${invite.doc}”` };
+  if (r.error === 'daily_limit') { const until = nextUtcMidnight(); set({ pausedUntil: until }); return { ok: false, message: `Sharing is paused until ${resetTime(until)}, when the relay's daily limit resets. The invite wasn't sent` }; }
+  const why: Record<string, string> = {
+    unreachable: "Couldn't reach the relay. Check the wifi, then invite them again",
+    too_large: "The relay turned the invite down. It wasn't sent",
+    inbox_full: `${contact.name} has too many cards waiting. The invite wasn't sent`,
+    bad_envelope: "The relay turned the invite down. It wasn't sent",
+    relay_error: 'The relay had a problem. Invite them again later',
   };
   return { ok: false, message: why[r.error] };
 }

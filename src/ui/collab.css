@@ -88,3 +88,11 @@
 .rg-note[data-bad] { color: #ff7a7a; }
 :root[data-chrome="light"] .rg-note[data-bad] { color: #c62828; }
 @media (prefers-reduced-motion: reduce) { .rg-body { animation: none; } }
+
+/* live editing: someone else's caret is a bar in their color (their name on hover), and the same color marks them in the panel */
+.f-peer { position: relative; margin: 0 -1px; border-left: 2px solid var(--peer); pointer-events: none; }
+.lv-bar { flex: none; width: 3px; height: 14px; border-radius: 2px; background: var(--peer); }
+.lv-who { margin-bottom: 6px; }
+.lv-st { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.lv-note { font-size: 12.5px; color: var(--u-mut); white-space: normal; }
+.lv-inv { flex-direction: row; align-items: center; }

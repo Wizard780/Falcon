@@ -78,6 +78,8 @@ const NOT_COMMANDS = new Set(['New line', 'Delete back', 'Delete forward']);
 /** Words people search for that the label doesn't say. */
 const SYN: Record<string, string> = {
   sendCard: 'share partner teammate contact pairing code collaborate', collab: 'pairing code contacts received cards waiting share partner collaborate inbox',
+  live: 'collaborate co-edit coedit together realtime real time partner teammate invite session who share', liveStart: 'collaborate co-edit coedit together realtime real time share session invite partner',
+  liveStop: 'end quit exit session collaborate co-edit',
   tutorial: 'tour help onboarding guide walkthrough learn', home: 'start recent', settings: 'preferences options config', outline: 'nav pane navigation sidebar', find: 'search text look for',
   zoomIn: 'bigger magnify', zoomOut: 'smaller', zoomReset: '100% reset zoom', new: 'blank file create', open: 'docx file',
   save: 'write disk', saveAs: 'copy rename export', close: 'tab', nextDoc: 'switch tab', prevDoc: 'switch tab', recentDoc: 'switch tab last previous mru ctrl tab', recentDocBack: 'switch tab mru',

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { checkRelay } from '../collab/relay';
+import { checkRelay, checkRooms } from '../collab/relay';
 import { P, pref, setPref } from '../editor/prefs';
 import { IS_MAC } from '../editor/keybinds';
 import { SvgIcon } from './icons';
@@ -36,7 +36,13 @@ function Connect() {
     setNote({ text: 'Checking…', busy: true });
     const r = await checkRelay(u);
     if (mine !== run.current) return;
-    if (r === 'ok') { setPref(P.relayUrl, u); setUrl(u); setNote({ text: 'It works. Falcon is connected and saved the address. Card sharing is ready' }); }
+    if (r === 'ok') {
+      setPref(P.relayUrl, u); setUrl(u);
+      const rooms = await checkRooms(u);
+      if (mine !== run.current) return;
+      setNote(rooms === 'ok' ? { text: 'It works. Falcon is connected and saved the address. Card sharing and live editing are ready' }
+        : { bad: true, text: 'It works for card sharing, and Falcon saved the address. But this relay is from before live editing: download it again and redeploy it (steps 5 to 7)' });
+    }
     else setNote({ bad: true, text: r === 'unreachable'
       ? "Couldn't reach it. Check the address is the one ending in .workers.dev, and that npx wrangler deploy finished"
       : "Something answered, but it isn't a Falcon relay. Check you copied the whole address" });
@@ -56,7 +62,7 @@ function Connect() {
 
 const STEPS: { title: string; body: ReactNode }[] = [
   { title: 'Set up card sharing', body: <>
-    <p>Sending cards needs a relay: a tiny server where a card waits, sealed, until the other person's Falcon picks it up. It can't read the cards.</p>
+    <p>Sending cards and live editing need a relay: a tiny server where a card waits, sealed, until the other person's Falcon picks it up, and that passes live edits between the people in a session. It can't read either.</p>
     <p>One person on your team sets it up, once, on Cloudflare's free plan. Everyone else just pastes its address. It takes about 10 minutes.</p>
   </> },
   { title: 'Make a free Cloudflare account', body: <>
@@ -76,6 +82,7 @@ const STEPS: { title: string; body: ReactNode }[] = [
     <Cmd text="cd falcon-relay" />
     <Cmd text="npm ci" />
     <p>Trying again? The first line stops if a falcon-relay folder is already there. Delete that folder, then start over from the first line.</p>
+    <p>Set up a relay before live editing came out? Do this step and the next two again (delete the old falcon-relay folder first). Running npx wrangler deploy in the old folder would put the same old relay back. Its address stays the same, and card sharing keeps working.</p>
   </> },
   { title: 'Sign in to Cloudflare', body: <>
     <Cmd text="npx wrangler login" />

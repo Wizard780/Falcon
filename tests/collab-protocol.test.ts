@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Fragment } from 'prosemirror-model';
 import { deflateSync } from 'fflate';
 import { CODE_CHARS, encodeCode, inboxId, parseCode } from '../src/collab/code';
-import { BadEnvelope, makeIdentity, open, proveKey, seal, unb64url, type Identity, TooBig } from '../src/collab/crypto';
+import { BadEnvelope, b64url, makeIdentity, newRoom, open, openFrame, proveKey, roomKey, seal, sealFrame, unb64url, type Identity, TooBig } from '../src/collab/crypto';
 
 // Fixed test keys (never used anywhere else). These pin protocol v1: codes people have already swapped
 // and envelopes already sent must keep reading the same way.
@@ -212,5 +212,34 @@ describe('what a received card may put in a document', async () => {
     const srcs: string[] = [];
     f.descendants((n) => { if (n.type.name === 'image') srcs.push(n.attrs.src); });
     expect(srcs).toEqual([png]);
+  });
+});
+
+describe('live-editing invites and room frames', () => {
+  it('an invite rides in a sealed card envelope, and comes out whole', async () => {
+    const a = await makeIdentity(), b = await makeIdentity();
+    const { room, key } = newRoom();
+    const invite = { room, key: b64url(key), doc: 'Econ DA' };
+    const got = await open(b, await seal(a, b.pub, { name: 'Avery', at: 1, content: [], mid: 'm1', invite }));
+    expect(got.card.invite).toEqual(invite);
+    expect(got.card.content).toEqual([]);
+  });
+  it('a malformed invite is dropped, the envelope still opens', async () => {
+    const a = await makeIdentity(), b = await makeIdentity();
+    for (const bad of [{ room: 'nothex', key: b64url(new Uint8Array(32)), doc: 'x' }, { room: 'a'.repeat(64), key: b64url(new Uint8Array(5)), doc: 'x' }, { room: 'a'.repeat(64), key: 1, doc: 'x' }]) {
+      const got = await open(b, await seal(a, b.pub, { name: 'Avery', at: 1, content: [], invite: bad as never }));
+      expect(got.card.invite).toBeUndefined();
+    }
+  });
+  it('a room frame opens only with its room key, room id and kind', async () => {
+    const { room, key } = newRoom(), other = newRoom();
+    const k = await roomKey(key);
+    const sealed = await sealFrame(k, room, 1, new TextEncoder().encode('an update'));
+    expect(new TextDecoder().decode(await openFrame(k, room, 1, sealed))).toBe('an update');
+    await expect(openFrame(k, room, 3, sealed)).rejects.toThrow(BadEnvelope); // replayed as another kind
+    await expect(openFrame(k, other.room, 1, sealed)).rejects.toThrow(BadEnvelope); // into another room
+    await expect(openFrame(await roomKey(other.key), room, 1, sealed)).rejects.toThrow(BadEnvelope);
+    expect(room).toMatch(/^[0-9a-f]{64}$/);
+    expect(room).not.toBe(other.room);
   });
 });
