@@ -12,12 +12,13 @@
  * - the binding stops listening while its doc is out of the editor (another tab is showing): it would write that doc
  *   into whatever the editor holds now. Shown again, it rebuilds from Loro, so nothing that came in meanwhile is lost.
  */
-import { LoroDoc, UndoManager } from 'loro-crdt';
+import { LoroDoc, UndoManager, type Container } from 'loro-crdt';
 import {
   CursorEphemeralStore, LoroEphemeralCursorPlugin, LoroSyncPlugin, LoroUndoPlugin, createNodeFromLoroObj, loroSyncPluginKey,
   redo, undo, updateLoroToPmState, type LoroDocType,
 } from 'loro-prosemirror';
-import { Mark, type Node as PMNode } from 'prosemirror-model';
+import { Fragment, Mark, Slice, type Node as PMNode } from 'prosemirror-model';
+import type { EditorView } from 'prosemirror-view';
 import { EditorState, Plugin, PluginKey, type Transaction } from 'prosemirror-state';
 import { schema } from '../editor/schema';
 import { liveHooks } from '../editor/live-hooks';
@@ -190,7 +191,10 @@ function attached(b: Binding) {
           const s = loroSyncPluginKey.getState(view.state);
           if (!s || s.doc !== b.doc || s.mapping === mapped) return;
           mapped = s.mapping;
-          sub = (s.docSubscription as (() => void) | null | undefined) ?? null;
+          // the binding's own listener goes, and Falcon's takes its place (listen, below)
+          (s.docSubscription as (() => void) | null | undefined)?.();
+          sub?.();
+          sub = listen(view, b);
           ready = true;
           updateLoroToPmState(b.doc as LoroDocType, s.mapping, view.state);
         },
@@ -198,10 +202,33 @@ function attached(b: Binding) {
         destroy: () => {
           ready = false;
           sub?.();
+          sub = null;
           b.presence.setLocal({}); // not in an editor: no caret to show the others
         },
       };
     },
+  });
+}
+
+/**
+ * Remote changes (and undo) into the editor, in the binding's place. It does what the binding's listener does (forget
+ * the changed containers' nodes, rebuild the doc from Loro, replace it, which narrowLoroReplace narrows) but leaves the
+ * caret to ProseMirror. The binding then also puts the caret back from Loro cursors, which it works out from the old
+ * positions in the doc against Loro's text as the change has already left it: text typed ahead of the caret in the same
+ * paragraph moved the caret a character or more off, so the next key landed early. Narrowed, ProseMirror maps the caret
+ * through the change itself. (Undo still puts it back from the cursors the binding kept when the edit was made.)
+ */
+function listen(view: EditorView, b: Binding): () => void {
+  return b.doc.subscribe((event) => {
+    if (view.isDestroyed || (event.by === 'local' && event.origin !== 'undo')) return;
+    const s = loroSyncPluginKey.getState(view.state);
+    if (!s || s.doc !== b.doc) return;
+    for (const e of event.events) {
+      for (let c: Container | undefined = b.doc.getContainerById(e.target); c; c = c.parent()) s.mapping.delete(c.id);
+    }
+    const node = createNodeFromLoroObj(view.state.schema, (b.doc as LoroDocType).getMap('doc'), s.mapping);
+    const tr = view.state.tr.replace(0, view.state.doc.content.size, new Slice(Fragment.from(node), 0, 0));
+    view.dispatch(tr.setMeta(loroSyncPluginKey, { type: 'non-local-updates' }));
   });
 }
 

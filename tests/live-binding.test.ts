@@ -127,6 +127,19 @@ describe('two editors through Loro', () => {
     expect(B.b.doc.toJSON()).toEqual(A.b.doc.toJSON());
   });
 
+  it('someone typing ahead of my caret in my paragraph moves my caret along: my next key lands where I left off', async () => {
+    const { A, B } = await pair(card());
+    caret(A, 'Temperatures rose again.', 'Temperatures rose again.'.length); // the end of the paragraph
+    caret(B, 'Temperatures');
+    type(B, 'Hot: ');
+    await flush(A, B);
+    await tick(10); // the binding puts the caret back from Loro on a timeout
+    type(A, ' More.');
+    await flush(A, B);
+    expect(mm(A)).toContain('normal: Hot: Temperatures rose again. More.');
+    expect(mm(B)).toBe(mm(A));
+  });
+
   it('typing at the same place, and Enter against typing, converge', async () => {
     const { A, B } = await pair(card());
     caret(A, 'Temperatures'); type(A, 'aaa');
