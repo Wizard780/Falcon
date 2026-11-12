@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { checkRelayPatiently, checkRooms } from '../collab/relay';
 import { bridge, type RelaySetupResult } from '../editor/host';
 import { P, pref, setPref } from '../editor/prefs';
@@ -37,7 +37,18 @@ const ENTER = IS_MAC ? 'Return' : 'Enter';
 
 export const WAITING = 'A new address can take a few minutes to come online. Falcon is still trying. Leave this open';
 const WORKS = 'It works. Falcon is connected and saved the address. Card sharing and live editing are ready';
-const TEAM = <p>Your pairing code now carries this relay, so teammates don't paste it. Each of them sets up a relay of their own with this guide (or uses one your team shares), and then you swap pairing codes in Card sharing.</p>;
+/** What opens Settings' recipients list on an add row (the guide's opener passes it), or null. */
+const AddRecipient = createContext<(() => void) | null>(null);
+/** After a working relay, the next thing to do: swap pairing codes, and add the person to Recipients. */
+function Next() {
+  const add = useContext(AddRecipient);
+  return (
+    <>
+      <p>Next, swap pairing codes with each person you'll send cards to. Your code now carries this relay. Their code goes under Recipients, just below the relay in Settings &gt; Sharing. (Each of them sets up a relay of their own with this guide, or uses one your team shares.)</p>
+      {add && <div className="rg-row"><button className="co-main" data-first="" onClick={add}><SvgIcon name="plus" />Add a recipient</button></div>}
+    </>
+  );
+}
 
 /** The last step by hand: paste the address, and Falcon checks a relay answers there before saving it. */
 function Connect() {
@@ -73,7 +84,7 @@ function Connect() {
         <button className="co-main" disabled={!!note?.busy} onClick={() => void check()}>Check and save</button>
       </div>
       <p className="rg-note" data-bad={note?.bad || undefined} role="status">{note?.text}</p>
-      {TEAM}
+      {note && !note.bad && !note.busy && note.text !== WAITING ? <Next /> : <p>Your pairing code then carries this relay, so the people you swap codes with reach you from their own relays.</p>}
     </>
   );
 }
@@ -154,7 +165,7 @@ function SetUp({ byHand }: { byHand: () => void }) {
           : phase.at === 'run' && phase.waiting ? WAITING : phase.at === 'run' && phase.row === 'token' ? 'Paste the token in the window that opened' : ''}
       </p>
       {phase.at === 'done'
-        ? <><p>Falcon didn't keep the token. You can delete it in Cloudflare, under My Profile, then API Tokens.</p>{TEAM}</>
+        ? <><Next /><p>Falcon didn't keep the token. You can delete it in Cloudflare, under My Profile, then API Tokens.</p></>
         : <>
           {phase.at !== 'run' && <div className="rg-row"><button className="co-main" data-first="" onClick={() => void go()}>{phase.at === 'bad' ? 'Try again' : 'Set up my relay'}</button></div>}
           <p className="rg-alt">Rather use a terminal? <button className="rg-hand" onClick={byHand}>Set it up by hand</button></p>
@@ -221,7 +232,7 @@ const BY_HAND: Step[] = [
  * Settings' step-by-step guide to a relay. In the desktop app Falcon sets it up (BY_FALCON), with the terminal steps
  * one click away; the web build has no main process to do that, so it only has those. Esc, Done or a click outside closes it.
  */
-export function RelayGuide({ onClose }: { onClose: () => void }) {
+export function RelayGuide({ onClose, onAddRecipient }: { onClose: () => void; onAddRecipient?: () => void }) {
   const [hand, setHand] = useState(!bridge.relaySetup);
   const [at, setAt] = useState(0);
   const box = useRef<HTMLDivElement>(null);
@@ -247,7 +258,7 @@ export function RelayGuide({ onClose }: { onClose: () => void }) {
         onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); onClose(); } else if (e.key === 'Tab') trap(e); }}>
         <p className="co-sub">Step {at + 1} of {steps.length}</p>
         <h2 id="rg-t">{step.title}</h2>
-        <div className="rg-body" key={`${hand}-${at}`}>{step.body}</div>
+        <div className="rg-body" key={`${hand}-${at}`}><AddRecipient.Provider value={onAddRecipient ?? null}>{step.body}</AddRecipient.Provider></div>
         <div className="cf-btns">
           {at > 0 && <button onClick={() => setAt(at - 1)}>Back</button>}
           <button className="co-main" onClick={() => (last ? onClose() : setAt(at + 1))}>{last ? 'Done' : 'Next'}</button>

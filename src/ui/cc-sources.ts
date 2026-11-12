@@ -77,7 +77,8 @@ const HIDDEN = new Set(['search', 'commands']);
 const NOT_COMMANDS = new Set(['New line', 'Delete back', 'Delete forward']);
 /** Words people search for that the label doesn't say. */
 const SYN: Record<string, string> = {
-  sendCard: 'share partner teammate contact pairing code collaborate', collab: 'pairing code contacts received cards waiting share partner collaborate inbox',
+  sendCard: 'share partner teammate recipient contact pairing code collaborate', sendStarred: 'share partner teammate recipient contact favorite star quick',
+  collab: 'pairing code recipients contacts received cards waiting share partner collaborate inbox',
   live: 'collaborate co-edit coedit together realtime real time partner teammate invite session who share', liveStart: 'collaborate co-edit coedit together realtime real time share session invite partner',
   liveStop: 'end quit exit session collaborate co-edit',
   tutorial: 'tour help onboarding guide walkthrough learn', home: 'start recent', settings: 'preferences options config', outline: 'nav pane navigation sidebar', find: 'search text look for',

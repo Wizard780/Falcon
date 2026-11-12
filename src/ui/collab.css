@@ -50,20 +50,14 @@
 .co-mono { font-family: var(--mono); font-size: 12px; }
 .cf.co .co-plain { background: transparent; box-shadow: none; color: var(--u-tx2); padding: 0 8px; margin-left: -8px; }
 
-/* contacts: a name and the code's ends, Remove on hover */
+/* rows of people (the live panel's Invite list): a name and the code's ends, the action on hover */
 .co-ct { display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 12px; margin: 0 -12px; border-radius: 8px; }
 .co-ct:hover { background: var(--u-hover); }
 .co-ct .nm { flex: 1; min-width: 0; font-size: 13.5px; color: var(--u-tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .co-ct .cd { font: 12px var(--mono); color: var(--u-mut); }
 .cf.co .co-x { width: 28px; padding: 0; justify-content: center; background: transparent; box-shadow: none; color: var(--u-mut); opacity: 0; }
 .co-ct:hover .co-x, .cf.co .co-x:focus-visible { opacity: 1; }
-.co-add { display: flex; gap: 8px; margin-top: 10px; }
-.co-add .co-in:first-child { flex: 2; }
-.co-add button { height: 32px !important; }
-.co-hint { min-height: 18px; margin: 6px 2px 0 !important; font-size: 12.5px !important; color: #e07070 !important; }
-:root[data-chrome="light"] .co-hint { color: #b23a3a !important; }
-
-/* Send Card to…: the contacts as one list, the lit one marked by the pen color */
+/* Send Card to…: the recipients as one list, the lit one marked */
 .cf.co-send { width: min(420px, calc(100vw - 48px)); }
 .co-pick { display: flex; flex-direction: column; margin: 10px 0 0; }
 .cf.co .co-pk { height: 40px; padding: 0 12px; background: transparent; box-shadow: none; }
@@ -74,6 +68,54 @@
 .fs-b.co-wait { position: relative; }
 .fs-b.co-wait .dot { position: absolute; top: 8px; right: 9px; width: 6px; height: 6px; border-radius: 50%; }
 .fstrip[data-wide] .fs-b.co-wait .dot { position: static; flex: none; margin-left: auto; }
+/* Recipients (Collab.tsx), the same list in the Card sharing panel and in Settings > Sharing, after the Card sharing
+   mockup: 36px rows on a faint hover fill with no borders, the name at 13.5px and the code's ends in 12px mono, 28px
+   icon actions that show on hover or keyboard focus (and stay shown while on: hidden, starred, or saving past 150 ms).
+   The selectors match .cf.co button's weight and come after it, so the panel's own button look doesn't reach them. */
+.rcp { margin: 0 -12px; }
+.rcp-row { display: flex; align-items: center; gap: 12px; min-height: 36px; padding: 0 4px 0 12px; border-radius: 8px; }
+.rcp-row:hover { background: var(--u-hover); }
+.rcp-nm { flex: 1; min-width: 0; height: 28px; margin-left: -6px; padding: 0 6px; border: 0; border-radius: 6px; outline: none; background: transparent; color: var(--u-tx);
+  font: inherit; font-size: 13.5px; text-overflow: ellipsis; }
+.rcp-nm:focus { background: var(--u-ctl2); box-shadow: var(--u-top); }
+.rcp-cd { flex: none; max-width: 45%; margin: 0 -4px; padding: 0 4px; border-radius: 6px; font: 12px/18px var(--mono); color: var(--u-mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; outline: none; }
+.rcp-row:has(.rcp-cd[data-full]) { flex-wrap: wrap; row-gap: 0; padding-bottom: 8px; }
+/* the whole code, on a line of its own under the name and actions */
+.rcp-cd[data-full] { order: 1; flex: 1 0 100%; max-width: none; padding: 2px 4px; white-space: normal; overflow-wrap: anywhere; color: var(--u-tx2); user-select: all; }
+.rcp-cd:focus-visible { box-shadow: 0 0 0 2px var(--u-tx2); }
+.rcp-row[data-hidden] .rcp-nm:not(:focus), .rcp-row[data-hidden] .rcp-cd { color: var(--u-mut); }
+.rcp-acts { flex: none; display: flex; }
+.rcp button.rcp-i { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; box-shadow: none;
+  color: var(--u-mut); opacity: 0; cursor: pointer; transition: opacity 150ms ease-out, background 150ms ease-out, color 150ms ease-out; }
+.rcp-row:hover button.rcp-i, .rcp-row:has(:focus-visible) button.rcp-i, .rcp button.rcp-i[aria-pressed="true"], .rcp button.rcp-i[data-slow] { opacity: 1; }
+.rcp button.rcp-i:hover:not(:disabled) { background: var(--u-hover); color: var(--u-tx); }
+.rcp button.rcp-i:disabled { opacity: 0; cursor: default; }
+.rcp-row:hover button.rcp-i:disabled, .rcp-row:has(:focus-visible) button.rcp-i:disabled { opacity: .3; }
+.rcp button.rcp-i:focus-visible { opacity: 1; outline: 2px solid var(--u-tx2); outline-offset: -2px; }
+.rcp .rcp-i svg { width: 14px; height: 14px; }
+.rcp .rcp-i[data-a="star"] svg { fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linejoin: round; }
+/* starred: Settings' file star, gold and filled */
+.rcp button.rcp-i[data-a="star"][aria-pressed="true"] { color: #e2b33c; }
+.rcp .rcp-i[data-a="star"][aria-pressed="true"] svg { fill: currentColor; }
+.rcp .rcp-i[data-slow] svg { display: none; }
+.rcp-err { flex: 1; min-width: 0; font-size: 12px; color: #e07070; }
+:root[data-chrome="light"] .rcp-err { color: #b23a3a; }
+.rcp-why { margin: 6px 12px 0; }
+.cf .rcp-none, .rcp-none { margin: 2px 12px 8px; font-size: 12.5px; color: var(--u-mut); }
+/* Add recipient: a full-width button under the rows, which opens a row with the code and name to fill in */
+.rcp button.rcp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 12px; border: 0; border-radius: 8px;
+  background: var(--u-ctl2); box-shadow: var(--u-top); color: var(--u-tx); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; transition: background 150ms ease-out; }
+.rcp button.rcp-btn:hover:not(:disabled) { background: var(--u-ctl-on); }
+.rcp button.rcp-btn:disabled { opacity: .45; cursor: default; }
+.rcp button.rcp-btn:focus-visible { outline: 2px solid var(--u-tx2); outline-offset: 2px; }
+.rcp button.rcp-main { font-weight: 500; }
+.rcp button.rcp-new { width: calc(100% - 24px); margin: 6px 12px 0; }
+.rcp .rcp-btn svg { width: 14px; height: 14px; }
+.rcp-add { display: flex; align-items: center; gap: 8px; padding: 6px 12px 0; }
+.rcp-add .co-in { height: 30px; }
+.rcp-add .co-in:first-child { flex: 2; }
+
+@media (prefers-reduced-motion: reduce) { .rcp button.rcp-i, .rcp button.rcp-btn { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .cf.co button { transition: none; } .co-fold { transition: opacity 200ms ease-out, grid-template-rows 0s 200ms; } .co-spin { animation: none; } }
 
 /* Settings' relay setup guide: one step at a time, with lines to copy into a terminal */

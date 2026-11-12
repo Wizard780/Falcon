@@ -6,7 +6,9 @@
  */
 import { makeIdentity, type Identity, type Invite } from './crypto';
 
-export type Contact = { code: string; name: string };
+/** A recipient: someone cards can go to. The list's order is the order Send Card shows them in. `hidden` keeps them
+ *  out of Send Card's list without forgetting them; `starred` (one at most) is where Send Card to starred goes. */
+export type Contact = { code: string; name: string; hidden?: boolean; starred?: boolean };
 /** A card that came in: who sent it (their code), what they call themselves, and the card itself. */
 export type Received = { id: string; from: string; claimed: string; sentAt: number; gotAt: number; label: string; content: unknown[]; /** this Falcon can't open it (a newer Falcon's card): it can only be dismissed */ unreadable?: boolean };
 

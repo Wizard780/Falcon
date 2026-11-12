@@ -102,7 +102,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['tutorial', 'aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'collab', 'live', 'liveStart', 'liveStop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['tutorial', 'aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'sendStarred', 'collab', 'live', 'liveStart', 'liveStop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -1226,6 +1226,16 @@ export function App() {
     setSendLabel(sent.label);
   }, [flash]);
   const closeSendCard = useCallback(() => { setSendLabel(null); sendingRef.current = null; viewRef.current?.focus(); }, []);
+  /** Send Card to starred recipient: the same card, straight to the one starred in Settings > Sharing (hidden or not). */
+  const sendStarred = useCallback(async () => {
+    const v = viewRef.current, to = collab.starred();
+    if (!v) return;
+    if (!to) { flash('No one is starred. Star a recipient in Settings > Sharing first.'); return; }
+    const sent = sendContent(v.state);
+    if (!sent) { flash('Nothing to send. Put the caret in a card or select some text.'); return; }
+    flash(`Sending to ${to.name}…`);
+    flash((await collab.send(to, sent.content)).message);
+  }, [flash]);
   const sendCardTo = useCallback(async (c: collab.Contact) => {
     const content = sendingRef.current;
     closeSendCard();
@@ -1264,7 +1274,7 @@ export function App() {
   // every window loads card sharing; one per launch holds the relay socket. A card coming in is a toast, never a focus change
   useEffect(() => collab.start(true), []);
   useEffect(() => collab.onArrive((c, who) => {
-    flash(`Card from ${who?.name ?? 'a code not in your contacts'}: “${c.label}”`, { label: 'Show', run: () => { if (!locked()) setCollabOpen(true); } });
+    flash(`Card from ${who?.name ?? 'a code not in your recipients'}: “${c.label}”`, { label: 'Show', run: () => { if (!locked()) setCollabOpen(true); } });
   }), [flash]); // eslint-disable-line react-hooks/exhaustive-deps
   // Nimbus and other debate apps send cards in over the bridge (electron/editor-bridge.cjs), the way they do
   // into CardMirror: they list the open docs, then insert into one (usually the speech doc) without taking focus
@@ -1396,12 +1406,13 @@ export function App() {
     else if (id === 'searchCards') setPaletteOpen('cards');
     else if (id === 'sendToSpeech') sendToSpeech();
     else if (id === 'sendCard') openSendCard();
+    else if (id === 'sendStarred') void sendStarred();
     else if (id === 'collab') setCollabOpen(true);
     else if (id === 'live') setLiveOpen(true);
     else if (id === 'liveStart') void live.start();
     else if (id === 'liveStop') live.stop();
     else if (id === 'tutorial') startTour();
-  }, [startTour, fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, zoomTo, sendToSpeech, openSd, closeSd, openSendCard, live.start, live.stop]);
+  }, [startTour, fileSave, fileOpen, fileNew, fileNewSpeech, openFind, closeDoc, cycle, recent, zoomBy, zoomTo, sendToSpeech, openSd, closeSd, openSendCard, sendStarred, live.start, live.stop]);
 
   // app-level shortcuts
   useEffect(() => {
@@ -1820,7 +1831,7 @@ export function App() {
           return d && doc ? [{ id, name: d.meta.name || 'Untitled', dirty: d.dirty, doc, top: tops.current.get(id) ?? 0 }] : [];
         })} />}
       <CommandCenter open={ccOpen} onClose={() => { setCcOpen(false); setCcStart(null); }} ctx={ccCtx} flash={flash} saveScroll={saveScroll} start={ccStart} />
-      <Settings open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsPage(undefined); setSettingsQuery(undefined); }} startPage={settingsPage} startQuery={settingsQuery}
+      <Settings open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsPage(undefined); setSettingsQuery(undefined); }} startPage={settingsPage} startQuery={settingsQuery} flash={flash}
         zoom={zoom} onZoom={setZoom} speechMin={speechMin} onSpeechMin={setSpeechMin}
         showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth}
         highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} onReplay={startTour} />

@@ -6,6 +6,8 @@ import { HIGHLIGHTS, HIGHLIGHT_NAMES } from '../editor/schema';
 import { DEFAULT_RELAY } from '../collab/relay';
 import { RelayGuide, relayAddress } from './RelayGuide';
 import { LiveDocControl, LiveInvitesControl } from './Live';
+import { Recipients, codeNote, copyMyCode, useCollab, type Draft } from './Collab';
+import * as collab from '../collab/service';
 import { SvgIcon } from './icons';
 import { docToolSettings } from '../editor/doc-tools';
 import { cardToolSettings } from '../editor/card-tools';
@@ -38,6 +40,8 @@ const MARKERS: [string, string][] = [['#FF0000', 'Red'], ['#0070C0', 'Blue'], ['
 
 type Props = {
   open: boolean; onClose: () => void;
+  /** a toast (App's), for what Settings > Sharing's rows did: Copied, Added, Removed */
+  flash?: (m: string) => void;
   /** the page to show when Settings opens (default: the last one shown) */
   startPage?: string;
   /** what to search for when Settings opens (the command center's Tab) */
@@ -135,6 +139,10 @@ export function Settings(props: Props) {
   const [, setSpecTick] = useState(0); // a feature setting changed: redraw its row
   const [keyNote, setKeyNote] = useState<KeyNote>(null); // the recorder's note under a shortcut's label
   const [guide, setGuide] = useState(false); // the relay setup guide is open
+  const cs = useCollab(), csReady = cs.status === 'ready';
+  const flash = props.flash ?? (() => {});
+  /** the relay guide's Add a recipient: the recipients list opens its add row */
+  const [rcpDraft, setRcpDraft] = useState<Draft | null>(null);
   const [importNote, setImportNote] = useState<{ text: string; bad?: boolean } | null>(null); // how the last Import went
   const fileInput = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => { if (props.open) { setQuery(props.startQuery ?? ''); if (props.startPage) setPageId(props.startPage); ref.current?.focus({ preventScroll: true }); } }, [props.open, props.startPage, props.startQuery]);
@@ -615,15 +623,26 @@ export function Settings(props: Props) {
     { id: 'sharing', title: 'Sharing', icon: 'inbox', group: 'Debate', sections: [
       ['Card sharing', [
         { label: 'Relay', wide: true, help: <button className="st-help" aria-label="How to set up a relay" title="How to set up a relay, step by step" onClick={() => setGuide(true)}>?</button>, search: 'card sharing relay send card pairing code collaboration server url',
-          hint: `Your relay: where cards sent to you wait until this Falcon picks them up, and where your live sessions run. It only ever sees them sealed. Your pairing code carries it, so people reach you from their own relays. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: click ? to set one up, step by step.'} Your code and contacts are in the command center: Card sharing.`,
+          hint: `Your relay: where cards sent to you wait until this Falcon picks them up, and where your live sessions run. It only ever sees them sealed. Your pairing code carries it, so people reach you from their own relays. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: click ? to set one up, step by step.'} Your code and recipients are below.`,
           control: <RelayField /> },
+        { label: 'Your pairing code', wide: true, search: 'pairing code copy share give partner', hint: codeNote(cs).text, bad: codeNote(cs).changed, control: (
+          <div className="co-me">
+            <code className="co-code" aria-label="Your pairing code">{csReady ? cs.code : '…'}</code>
+            <button className="st-btn" disabled={!csReady} onClick={() => copyMyCode(cs.code, flash)}><SvgIcon name="copy" />Copy</button>
+          </div>) },
+        { label: 'Your name', search: 'display name shown cards caret live editing', hint: 'Shown on cards you send, and to the people you edit with live. Left empty, they see Someone.', control: (
+          <input className="st-text" aria-label="Your name" spellCheck={false} maxLength={60} placeholder="Someone" value={cs.name} disabled={!csReady}
+            onChange={(e) => void collab.setName(e.target.value)} />) },
+        { label: 'Recipients', wide: true, search: 'recipients contacts people partner teammate add remove hide star order send card pairing code',
+          hint: 'People you can send cards to, in the order Send Card lists them. Add one with the pairing code they gave you and a name for them. The eye hides someone from Send Card without removing them. The star marks who Send Card to starred goes to.',
+          control: <Recipients flash={flash} draft={rcpDraft} /> },
       ]],
       ['Live editing', [
         { label: 'This document', search: 'live editing co-edit coedit collaborate session start leave realtime real time together invite',
           hint: 'Everyone you invite edits the open doc with you and sees your edits and caret as you type. It goes through the relay above, sealed: only the people you invite can read it. One session at a time.',
           control: <LiveDocControl /> },
         { label: 'Invites to you', search: 'live editing invite join session co-edit',
-          hint: 'Invites from contacts to their sessions. They also show as a message when they come in.',
+          hint: 'Invites from recipients to their sessions. They also show as a message when they come in.',
           control: <LiveInvitesControl /> },
       ]],
     ] },
@@ -726,7 +745,8 @@ export function Settings(props: Props) {
           </div>
         </div>
       </div>
-      {guide && createPortal(<RelayGuide onClose={() => setGuide(false)} />, document.body)}
+      {guide && createPortal(<RelayGuide onClose={() => setGuide(false)}
+        onAddRecipient={() => { setGuide(false); setRcpDraft((d) => ({ code: '', name: '', n: (d?.n ?? 0) + 1 })); }} />, document.body)}
     </div>
   );
 }
