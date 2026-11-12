@@ -8,7 +8,10 @@ import { Readable } from 'node:stream';
 
 const ACCOUNT = { id: '0123456789abcdef0123456789abcdef', name: 'Someone@example.com\'s Account', type: 'standard' };
 
-export function fakeCloudflare({ token = 'fake-token-0123456789abcdefghij', accounts = [ACCOUNT], subdomain = null, taken = [], scripts = {}, unverified = false, noPermission = false } = {}) {
+/** A made-up token shaped like Cloudflare's account tokens: cfat_ and 48 letters and numbers, 53 in all. */
+export const FAKE_TOKEN = `cfat_${'0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL'}`;
+
+export function fakeCloudflare({ token = FAKE_TOKEN, accounts = [ACCOUNT], subdomain = null, taken = [], scripts = {}, unverified = false, noPermission = false } = {}) {
   const state = {
     subdomain,
     renamed: false, // a PUT over an existing subdomain renames it: Falcon must never do that

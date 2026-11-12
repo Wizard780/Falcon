@@ -16,9 +16,13 @@ It is built to stay on the **Workers Free plan**, and it never needs a paid one.
    until you do). **Don't add a payment method.** With no card on file the account stays on the Free
    plan, so going over a limit pauses the relay for the rest of the day instead of costing anything.
 2. In the Falcon desktop app, open Settings > Sharing and click the ? beside Relay. The guide opens
-   Cloudflare's token page with what Falcon needs filled in (Workers Scripts: Edit, and Account
-   Settings: Read, without which the token can't see the account). You create the token, click
-   **Set up my relay** and paste it once, into a window Falcon's main process owns. Falcon then does
+   Cloudflare's page for a new account API token (`https://dash.cloudflare.com/?to=/:account/api-tokens/create`,
+   Manage account > Account API tokens > Create Token). Nothing is filled in: you click the
+   **Edit Cloudflare Workers** policy, then **Continue to summary** and **Create Token**, and copy
+   the token, which starts with `cfat_` and is about 50 characters (the name at the top of the page
+   is not the token). Then click **Set up my relay** and paste it once, into a window Falcon's main
+   process owns. Something that isn't shaped like a token is turned down there, before anything is
+   sent; quotes or a `Bearer ` pasted along with it are dropped. Falcon then does
    what `wrangler deploy` would, through Cloudflare's API (`electron/relay-setup.cjs`):
    - uploads this Worker, which ships prebuilt inside the app (`dist/relay-worker.json`, made from
      `src/index.ts` and `wrangler.jsonc` by `vite.config.ts` at build time), with only the migrations
@@ -29,7 +33,8 @@ It is built to stay on the **Workers Free plan**, and it never needs a paid one.
    - turns on the Worker's workers.dev address, waits for it to come online, and saves it.
 
    The token is used for that one run and dropped: it's never written to disk or a log, and the page
-   never sees it. You can delete it in Cloudflare afterwards.
+   never sees it. You can delete it in Cloudflare afterwards, under Manage account > Account API
+   tokens.
 3. Or by hand (the web build's only way):
    ```sh
    npx --yes degit Wizard780/Falcon/relay falcon-relay

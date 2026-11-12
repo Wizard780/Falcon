@@ -10,6 +10,14 @@ const BAD_TOKEN = new Set([1000, 6003, 6111, 9106, 9107, 9109, 10000]);
 const NO_SUBDOMAIN = 10007; // the account has no workers.dev subdomain yet (wrangler checks the same code)
 const TAKEN = 10031; // that workers.dev subdomain belongs to someone else
 
+// What often comes along with a pasted token: quotes around it, or `Bearer ` from a curl line.
+const QUOTES = /^["'`‘’“”]+|["'`‘’“”]+$/g;
+const tidy = (t) => t.trim().replace(QUOTES, '').trim().replace(/^bearer\s+/i, '').replace(QUOTES, '').trim();
+// A token is printable ASCII with no spaces, and the shortest real one is 40 (an older user token; an account token is
+// cfat_ and 48 more). Anything else is something else pasted, like the token's name, the page's address or an email,
+// and is never sent: it would be turned down, and could end up in an error.
+const TOKEN = /^[\x21-\x7e]{40,400}$/, NOT_TOKEN = /:\/\/|@/;
+
 /** Why a run stopped: a code the page turns into words, and, for one Cloudflare refused, what Cloudflare said. */
 class Stop extends Error {
   constructor(code, said) { super(code); this.code = code; this.said = said; }
@@ -32,8 +40,12 @@ function migrationsFor(list, tag) {
  */
 function createRelaySetup({ worker, fetch = globalThis.fetch, api = API, relayUrl = null, random = Math.random }) {
   return {
-    /** Answers { ok: true, url, created } or { ok: false, error, said? }. `step` is told 'account', 'upload' and 'address' as each starts. */
-    async deploy(token, step = () => {}) {
+    /**
+     * Answers { ok: true, url, created } or { ok: false, error, said? }. `step` is told 'account', 'upload' and 'address' as
+     * each starts; 'not_token' (what was pasted isn't one) comes before any of them, with nothing sent.
+     */
+    async deploy(pasted, step = () => {}) {
+      const token = typeof pasted === 'string' ? tidy(pasted) : '';
       const name = worker.name;
       const call = async (method, path, { json, form, headers } = {}) => {
         let r;
@@ -63,8 +75,7 @@ function createRelaySetup({ worker, fetch = globalThis.fetch, api = API, relayUr
       };
 
       try {
-        // a token is printable ASCII with no spaces; anything else would never be sent (and could end up in an error)
-        if (typeof token !== 'string' || !/^[\x21-\x7e]{20,400}$/.test(token)) throw new Stop('bad_token');
+        if (!TOKEN.test(token) || NOT_TOKEN.test(token)) throw new Stop('not_token');
         step('account');
         const accounts = must(await call('GET', '/accounts?per_page=50'));
         if (!Array.isArray(accounts) || !accounts.length) throw new Stop('no_account'); // no Account Settings permission

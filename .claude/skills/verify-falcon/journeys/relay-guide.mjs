@@ -1,6 +1,7 @@
 // Settings > Sharing (under Debate) and its ? guide: open it, step through every step, Esc closes the
 // guide but not Settings, and the last step checks a real relay (relay/ under `wrangler dev`) before
-// saving its address. A wrong address is turned down and nothing is saved. Needs `npm ci` in relay/.
+// saving its address. A wrong address is turned down and nothing is saved. Then the Relay box: an address where nothing
+// answers is saved with a line under the box, a real relay with none. Needs `npm ci` in relay/.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -103,6 +104,20 @@ await f.shot('connect-ok');
 await page.click('.rg .cf-btns button:has-text("Done")');
 await wait(250);
 want((await page.inputValue('[aria-label="Relay address"]')) === RELAY, 'the Relay box shows the saved address');
+
+// the Relay box itself checks what it saves: an address where nothing answers is saved anyway, with a line under the box
+await page.fill('[aria-label="Relay address"]', '127.0.0.1:1');
+await page.press('[aria-label="Relay address"]', 'Enter');
+const flagged = await page.waitForSelector('.st-relay small[data-bad]', { timeout: 15_000 }).then(() => true, () => false);
+const line = flagged ? (await page.textContent('.st-relay small')).trim() : '';
+want(flagged && /^No Falcon relay answered at that address\. Cards sent to your code won't arrive until one does\. The \? beside Relay/.test(line) && (await saved()) === 'https://127.0.0.1:1',
+  `an address where nothing answers is saved, and a line under the Relay box says so (${line})`);
+await page.locator('.st-row:has([aria-label="Relay address"])').scrollIntoViewIfNeeded();
+await f.shot('relay-box-nothing-answers');
+await page.fill('[aria-label="Relay address"]', RELAY);
+await page.press('[aria-label="Relay address"]', 'Enter');
+await wait(1500);
+want(!(await page.$('.st-relay small')) && (await saved()) === RELAY, 'a real relay in the Relay box shows no line');
 
 await page.reload();
 await wait(800);

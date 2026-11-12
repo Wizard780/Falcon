@@ -113,13 +113,13 @@ describe('the relay guide waits for a new address to come online', () => {
 
 describe('in the desktop app, Falcon sets the relay up itself', () => {
   const rows = () => [...document.querySelectorAll('.rg-steps li')].map((li) => `${li.getAttribute('data-st')} ${li.textContent}`);
-  /** A main process that walks the steps; `answer` is what it ends with. It's handed the look and the step callback, and nothing else crosses. */
-  function main(answer: RelaySetupResult, upTo = 'address') {
+  /** A main process that walks the steps; `answer` is what it ends with (null: before the first). It's handed the look and the step callback, and nothing else crosses. */
+  function main(answer: RelaySetupResult, upTo: string | null = 'address') {
     const seen: unknown[][] = [];
     bridge.relaySetup = vi.fn(async (...args: unknown[]) => {
       seen.push(args);
       const onStep = args[1] as (s: string) => void;
-      for (const s of ['account', 'upload', 'address']) { onStep(s); await Promise.resolve(); if (s === upTo) break; }
+      for (const s of upTo === null ? [] : ['account', 'upload', 'address']) { onStep(s); await Promise.resolve(); if (s === upTo) break; }
       return answer;
     });
     return seen;
@@ -129,18 +129,26 @@ describe('in the desktop app, Falcon sets the relay up itself', () => {
     while (title() !== 'Set up your relay') await act(async () => button('Next').click());
   }
 
-  it('four steps, the third opening Cloudflare\'s token page with just the two permissions it needs', async () => {
+  it('four steps, the third opening Cloudflare\'s page for a new account token, with steps that match it and what a token looks like', async () => {
     main({ ok: true, url: ADDR, created: true });
     await openGuide();
     const titles = [title()];
     while (button('Next')) { await act(async () => button('Next').click()); titles.push(title()); }
     expect(titles).toEqual(['Set up card sharing', 'Make a free Cloudflare account', 'Make a token for Falcon', 'Set up your relay']);
-    const u = new URL(TOKEN_PAGE);
-    expect(`${u.origin}${u.pathname}`).toBe('https://dash.cloudflare.com/profile/api-tokens');
-    expect(JSON.parse(u.searchParams.get('permissionGroupKeys')!)).toEqual([{ key: 'workers_scripts', type: 'edit' }, { key: 'account_settings', type: 'read' }]);
-    expect([u.searchParams.get('accountId'), u.searchParams.get('zoneId'), u.searchParams.get('name')]).toEqual(['*', 'all', 'Falcon relay']);
+    // the dashboard's own link form: it puts in the account (asking which one if there are several), and promises no prefill
+    expect(TOKEN_PAGE).toBe('https://dash.cloudflare.com/?to=/:account/api-tokens/create');
     await act(async () => button('Back').click());
     expect(document.querySelector<HTMLAnchorElement>('.rg a[href*="api-tokens"]')?.href).toBe(TOKEN_PAGE);
+    const steps = [...document.querySelectorAll('.rg-body ol li')].map((li) => li.textContent);
+    expect(steps.length).toBe(4);
+    expect(steps[1]).toMatch(/Edit Cloudflare Workers/);
+    expect(steps[2]).toMatch(/Continue to summary/);
+    expect(steps[2]).toMatch(/Create Token/);
+    expect(steps[3]).toMatch(/cfat_/);
+    expect(steps[3]).toMatch(/name at the top of the page is not the token/i);
+    const text = document.querySelector('.rg-body')?.textContent ?? '';
+    expect(text).not.toMatch(/filled in/i); // nothing is filled in for them
+    expect(text).toMatch(/Falcon uses it once and forgets it/);
   });
 
   it('one click: shows each stage, waits for the new address to come online, then saves it', async () => {
@@ -165,7 +173,7 @@ describe('in the desktop app, Falcon sets the relay up itself', () => {
     expect(rows().every((r) => r.startsWith('done'))).toBe(true);
     expect(note()).toBe(`It works. Your relay is at ${ADDR}, and Falcon saved it. Card sharing and live editing are ready`);
     expect(saved()).toBe(ADDR);
-    expect(document.querySelector('.rg-body')?.textContent).toMatch(/Falcon didn't keep the token/);
+    expect(document.querySelector('.rg-body')?.textContent).toMatch(/Falcon didn't keep the token\. You can delete it in Cloudflare, under Manage account, then Account API tokens\./);
   });
 
   it('a failure says what to do, marks where it stopped, and Try again starts over', async () => {
@@ -174,7 +182,7 @@ describe('in the desktop app, Falcon sets the relay up itself', () => {
     await act(async () => button('Set up my relay').click());
     await later(0);
     expect(rows()).toEqual(['done Getting the token', 'bad Finding your Cloudflare account', 'todo Uploading the relay', 'todo Turning on its address', 'todo Checking it works']);
-    expect(note()).toBe('Cloudflare turned down that token. Make a new one with the link in step 3, copy all of it, and try again');
+    expect(note()).toBe('Cloudflare turned down that token. Make a new one with the link in step 3, pick Edit Cloudflare Workers, copy all of it, and try again');
     expect(document.activeElement?.textContent).toBe('Try again');
     expect(document.querySelector('.rg-note')?.hasAttribute('data-bad')).toBe(true);
     expect(saved()).toBeNull();
@@ -184,6 +192,18 @@ describe('in the desktop app, Falcon sets the relay up itself', () => {
     await later(0);
     expect(saved()).toBe(ADDR);
     expect(note()).toMatch(/^It works/);
+  });
+
+  it('something pasted that isn\'t a token is marked on Getting the token, says what a token looks like, and doesn\'t blame Cloudflare', async () => {
+    main({ ok: false, error: 'not_token' }, null); // turned down before a single step, as the main process does it
+    await setUpStep();
+    await act(async () => button('Set up my relay').click());
+    await later(0);
+    expect(rows()).toEqual(['bad Getting the token', 'todo Finding your Cloudflare account', 'todo Uploading the relay', 'todo Turning on its address', 'todo Checking it works']);
+    expect(note()).toBe("That doesn't look like a token. A token starts with cfat_ and is about 50 letters and numbers. The name at the top of Cloudflare's page is not the token. Copy the token itself and try again");
+    expect(note()).not.toMatch(/turned down/);
+    expect(document.activeElement?.textContent).toBe('Try again');
+    expect(saved()).toBeNull();
   });
 
   it('what Cloudflare said is passed on, and closing the token window just goes back', async () => {
