@@ -1,6 +1,6 @@
 // The live co-editing spike, kept as tests: two Falcon editors (Falcon's own schema and plugins) bound to Loro docs
 // through loro-prosemirror, with updates held in a queue so edits on both sides are truly concurrent until flush().
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { TextSelection, type Command } from 'prosemirror-state';
 import { addColumnAfter, addRowAfter, TableMap } from 'prosemirror-tables';
 import type { EditorView } from 'prosemirror-view';
@@ -248,6 +248,29 @@ describe('a live doc going in and out of the editor', () => {
     caret(B, 'Temperatures'); type(B, 'back ');
     await flush(A, B);
     expect(mm(A)).toContain('back Temperatures');
+  });
+
+  it("a joiner that already has the host's caret mounts without a sound, and shows it", async () => {
+    const hb = newBinding(); hb.doc.setPeerId(1n);
+    const doc = schema.node('doc', null, Array.from({ length: 300 }, (_, i) => P(i % 4 ? 'normal' : 'tag', `Paragraph ${i}`)));
+    seed(hb, doc);
+    const host = mount(hb, doc, 'Avery');
+    await tick();
+    // Avery's caret, as the cursor plugin sets it when Avery's editor has focus (jsdom gives it none)
+    const text = ((hb.doc.getMap('doc').get('children') as unknown as { get(i: number): { get(k: string): { get(i: number): { getCursor(p: number): unknown } } } }).get(1).get("children").get(0)); // near the top: far paragraphs are drawn as empty placeholders (window.ts)
+    const at = text.getCursor(3) as never;
+    hb.presence.setLocal({ user: (hb.presence as unknown as { mine: { name: string; color: string } }).mine, anchor: at, focus: at });
+    const jb = newBinding(); jb.doc.setPeerId(2n);
+    jb.doc.import(hb.doc.export({ mode: 'snapshot' }));
+    jb.presence.apply(hb.presence.encodeAll());
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const B = mount(jb, docOf(jb)!, 'Blake');
+      await tick();
+      expect(errors).not.toHaveBeenCalled();
+      expect(B.view.dom.querySelector('.f-peer')?.getAttribute('title')).toBe('Avery');
+    } finally { errors.mockRestore(); }
+    expect(host).toBeTruthy();
   });
 
   it('two live docs in one editor, switched between, each keep to their own Loro doc', async () => {

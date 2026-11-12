@@ -15,7 +15,7 @@
 import { LoroDoc, UndoManager, type Container } from 'loro-crdt';
 import {
   CursorEphemeralStore, LoroEphemeralCursorPlugin, LoroSyncPlugin, LoroUndoPlugin, createNodeFromLoroObj, loroSyncPluginKey,
-  redo, undo, updateLoroToPmState, type LoroDocType,
+  redo, undo, updateLoroToPmState, type LoroDocType, type LoroNodeMapping,
 } from 'loro-prosemirror';
 import { Fragment, Mark, Slice, type Node as PMNode } from 'prosemirror-model';
 import type { EditorView } from 'prosemirror-view';
@@ -96,10 +96,15 @@ function caret(b: Binding, peer: string) {
 export function liveState(state: EditorState, b: Binding, me: Peer): EditorState {
   (b.presence as Cursors).mine = me;
   const keep = state.plugins.filter((p) => !isHistory(p) && !isLive(p)).map((p) => guard(p, b));
+  // The binding's node map, filled for this doc now. The carets plugin reads it as soon as the state exists, before the
+  // binding attaches: with it empty, each other person's caret (a joiner always has the host's) logged the whole doc
+  // as JSON once per paragraph, and a 4,800-paragraph join froze the page for over a minute. Equal docs: nothing is written.
+  const mapping: LoroNodeMapping = new Map();
+  updateLoroToPmState(b.doc as LoroDocType, mapping, state);
   return state.reconfigure({
     plugins: [
       ...keep,
-      LoroSyncPlugin({ doc: b.doc as LoroDocType }),
+      LoroSyncPlugin({ doc: b.doc as LoroDocType, mapping }),
       LoroUndoPlugin({ doc: b.doc, undoManager: b.undo }),
       LoroEphemeralCursorPlugin(b.presence, { user: me, createCursor: (peer) => caret(b, peer), createSelection: () => ({ class: 'f-peer-sel' }) }),
       settle,
