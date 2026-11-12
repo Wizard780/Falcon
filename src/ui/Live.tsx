@@ -218,14 +218,14 @@ export function LivePanel(props: { open: boolean; onClose: () => void; docName: 
   const [, tick] = useState(0);
   const first = useRef<HTMLButtonElement>(null);
   useEsc(open, onClose);
-  useLayoutEffect(() => { if (open) (first.current ?? document.querySelector<HTMLElement>('.lv button'))?.focus(); }, [open]);
+  useLayoutEffect(() => { if (open) (first.current ?? document.querySelector<HTMLElement>('.co-live button'))?.focus(); }, [open]);
   useEffect(() => { if (!open) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [open]); // the retry countdown
   if (!open) return null;
   const relay = collab.relayUrl();
   const on = !!i;
   return (
     <div className="cf-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="cf co lv" role="dialog" aria-modal="true" aria-labelledby="lv-t">
+      <div className="cf co co-live" role="dialog" aria-modal="true" aria-labelledby="lv-t">
         <h2 id="lv-t" tabIndex={-1}>Live editing</h2>
         <p className="co-line" role="status">{liveLine(i, relay)}</p>
 

@@ -136,7 +136,11 @@ async function onCard(id: string, envelope: Uint8Array) {
   const from = said?.ok && keyOf(said.code) === keyOf(encodeCode(got.from)) ? said.code : encodeCode(got.from);
   // the sender's id for this send (theirs alone: another sender can't claim it), so a resend isn't a second card
   const key = got.card.mid ? `${from}:${got.card.mid}` : id;
-  if (got.card.invite) { await onInvite({ id: key, from, claimed: got.card.name, sentAt: got.card.at, gotAt: Date.now(), invite: got.card.invite }); return; }
+  if (got.card.invite) {
+    const invite = { ...got.card.invite, relay: relayKey(got.card.invite.relay) ?? undefined }; // an address, or none (then mine)
+    await onInvite({ id: key, from, claimed: got.card.name, sentAt: got.card.at, gotAt: Date.now(), invite });
+    return;
+  }
   const content = cardFragment(got.card.content);
   // one this Falcon can't open (a newer Falcon's, say) is still shown, so it isn't lost without a word
   const card: Received = content

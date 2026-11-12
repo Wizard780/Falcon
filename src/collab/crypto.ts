@@ -10,7 +10,6 @@
  * WebCrypto only: the same code runs in Electron, the web build, Node (tests) and Workers.
  */
 import { deflateSync, inflateSync } from 'fflate';
-import { relayKey } from './code';
 
 export const ENVELOPE_VERSION = 1;
 const KEY_LEN = 32, SALT_LEN = 16, IV_LEN = 12, TAG_LEN = 16;
@@ -61,7 +60,8 @@ const inviteOf = (j: unknown): Invite | undefined => {
   const i = j as Partial<Invite> | null;
   if (!i || typeof i.room !== 'string' || !/^[0-9a-f]{64}$/.test(i.room) || typeof i.key !== 'string' || typeof i.doc !== 'string') return undefined;
   try { if (unb64url(i.key).length !== ROOM_KEY_LEN) return undefined; } catch { return undefined; }
-  return { room: i.room, key: i.key, doc: i.doc.slice(0, 120), relay: relayKey(typeof i.relay === 'string' ? i.relay : null) ?? undefined };
+  // the relay is checked as an address where it's kept (service.ts onInvite); this file stays free of imports Node can't load
+  return { room: i.room, key: i.key, doc: i.doc.slice(0, 120), relay: typeof i.relay === 'string' && i.relay.length <= 200 ? i.relay : undefined };
 };
 /** A card too big to send: thrown by seal. */
 export class TooBig extends Error {}
