@@ -43,6 +43,16 @@ describe('round clocks', () => {
 describe('timer window', () => {
   beforeEach(async () => { await freshStorage(); });
   afterEach(async () => { vi.restoreAllMocks(); await unmountAll(); });
+  /**
+   * A second passes for the running clocks: Date.now jumps a second ahead while their 250 ms tick runs. A real 1.1 s wait
+   * failed on busy CI machines, where a clock's effect could start counting a few hundred ms after the click.
+   */
+  const aSecondLater = async (app: { act: (f: () => void, ms?: number) => Promise<void> }) => {
+    const real = Date.now.bind(Date);
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => real() + 1000);
+    await app.act(() => {}, 400);
+    spy.mockRestore();
+  };
 
   /** window.open hands back a blank page, as Electron and the browser do for the timer window. */
   const fakeOpen = () => {
@@ -66,7 +76,7 @@ describe('timer window', () => {
     // their prep runs; then the speech starts and pauses it
     const theirs = d.querySelectorAll<HTMLButtonElement>('.tw-p')[1];
     await app.act(() => theirs.click());
-    await app.act(() => {}, 1100);
+    await aSecondLater(app);
     expect(theirs.hasAttribute('data-on')).toBe(true);
     expect(theirs.textContent).toBe('Their prep7:59');
     const start = d.querySelector<HTMLButtonElement>('.tw-ctl button')!;
@@ -74,7 +84,7 @@ describe('timer window', () => {
     expect(start.textContent).toBe('Pause');
     expect(theirs.hasAttribute('data-on')).toBe(false);
     // the top bar shows the same speech clock
-    await app.act(() => {}, 1100);
+    await aSecondLater(app);
     expect(btn.textContent).toBe(d.querySelector('[role=timer]')!.textContent);
     expect(btn.textContent).toBe('7:59');
 
@@ -127,7 +137,7 @@ describe('timer window', () => {
     await app.act(() => app.el.querySelector('button.timer')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })));
     const [ours, theirs] = w.document.querySelectorAll<HTMLButtonElement>('.tw-p');
     await app.act(() => ours.click());
-    await app.act(() => {}, 1100);
+    await aSecondLater(app);
     await app.act(() => ours.click()); // paused at 7:59
     const { P, setPref } = await import('../src/editor/prefs');
     await app.act(() => setPref(P.prepMin, 10));
