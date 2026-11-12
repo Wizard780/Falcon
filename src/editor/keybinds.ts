@@ -190,7 +190,8 @@ bind('SpeechDrop', [{ id: 'speechdrop', label: 'SpeechDrop: join a room, upload 
 // card sharing (src/collab): no keys until you give them one
 bind('Card sharing', [
   { id: 'sendCard', label: 'Send Card to…' },
-  { id: 'collab', label: 'Card sharing' }, // your pairing code, contacts, and cards sent to you
+  { id: 'sendStarred', label: 'Send Card to starred recipient' }, // the one starred in Settings > Sharing, without the list
+  { id: 'collab', label: 'Card sharing' }, // your pairing code, recipients, and cards sent to you
 ]);
 // live editing (src/collab/live.ts): no keys until you give them one
 bind('Live editing', [

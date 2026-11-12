@@ -5,7 +5,7 @@ Two or more people edit the same doc at once and see each other's edits and care
 ## Sub-features
 
 - `start` Start live editing on the open doc: the Live editing panel opens, status `Live. Invite someone…`, the status bar says `Live · just you`.
-- `invite` the panel's Invite list (contacts); the toast says `Invited <name> to “<doc>”`. The invite goes to the contact's relay (their code carries it).
+- `invite` the panel's Invite list (recipients); the toast says `Invited <name> to “<doc>”`. The invite goes to the recipient's relay (their code carries it).
 - `join` the invite's toast (`<name> invited you to live-edit “<doc>”`, Join) or the panel's Invites to you; the doc opens in a tab, live. The room is on the host's relay, named in the invite.
 - `converge` typing and F-keys on both sides at once end in the same mark map; carets show as a bar in the other person's color, their name on hover.
 - `who` the status bar (`Live · Blake and Casey`) and the panel's In “<doc>” list.
@@ -15,7 +15,7 @@ Two or more people edit the same doc at once and see each other's edits and care
 - `away` the live doc's tab put away (another tab showing): what comes in keeps its stored state current, and Send to speech into it goes into the session.
 - `leave` Leave live editing (command center, the panel, Settings): the doc stays, history undo is back, nothing more arrives.
 - `save` a .docx saved during or after a session reopens with the same mark map.
-- `old-relay` a relay deployed before rooms: the panel says to download it again and run `npx wrangler deploy`; the editor is unaffected.
+- `old-relay` a relay deployed before rooms: the panel says to update it (desktop: the ? in Settings > Sharing, then Set up my relay; web: download it again and run `npx wrangler deploy`); the editor is unaffected.
 
 ## How to get to it (user POV)
 
@@ -29,7 +29,7 @@ Two or more people edit the same doc at once and see each other's edits and care
 Preconditions:
 
 - `falcon-verify doctor` is all `ok`, and `npm ci` has been run in `relay/` (the journey starts its own `wrangler dev` relays, no account needed).
-- Each person needs a relay set, a name, and the others as contacts (Card sharing).
+- Each person needs a relay set, a name, and the others as recipients (Card sharing or Settings > Sharing).
 
 - **Journey.** `$V run .claude/skills/verify-falcon/journeys/live-editing.mjs` exits 0 with 49 `ok` lines in about 4 minutes. A and C are on relay 1 (the room's), B on relay 2: the invite crosses relays.
 - **Start.** Settings > Sharing: `.st-row:has-text("This document") button:has-text("Start live editing")`. The panel is `.cf.co.co-live`; its status is `.co-live .co-line`; who's in it, `.lv-who .nm`.

@@ -77,9 +77,10 @@ await win.screenshot({ path: path.join(out, '01-desktop-panel.png') });
 
 // the partner (this script) sends a formatted card to that code
 const partner = await makeIdentity();
+await win.click('.cf.co .rcp-new');
 await win.fill('input[aria-label="Their pairing code"]', encodeCode(partner.pub));
 await win.fill('input[aria-label="Their name"]', 'Robin');
-await win.click('.co-add button[type="submit"]');
+await win.click('.rcp-add button[type="submit"]');
 await win.keyboard.press('Escape');
 const card = [
   { type: 'paragraph', attrs: { style: 'tag', indent: 0 }, content: [{ type: 'text', text: 'Desktop gets cards' }] },
@@ -136,7 +137,7 @@ await app.close();
 await command(win, 'card sharing');
 await win.waitForFunction(() => /^[0-9A-Z]/.test(document.querySelector('.co-code')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {});
 want((await win.textContent('.co-code')).trim() === code, 'after a relaunch the pairing code is the same (the key lives in IndexedDB)');
-want((await win.$$eval('.co-ct .nm', (x) => x.map((n) => n.textContent))).join() === 'Robin', 'and Robin is still a contact');
+want((await win.$$eval('.rcp-row .rcp-nm', (x) => x.map((n) => n.value))).join() === 'Robin', 'and Robin is still a recipient');
 await win.screenshot({ path: path.join(out, '03-desktop-relaunched.png') });
 await app.close();
 if (errors.length) want(false, `page errors: ${errors.join(' | ')}`);

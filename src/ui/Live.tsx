@@ -7,6 +7,7 @@ import { shortCode } from '../collab/code';
 import { liveActions, liveInfo, setLiveInfo, subscribeLive, type LiveInfo } from '../collab/live-store';
 import type { LiveSession } from '../collab/live';
 import { createState } from '../editor/editor';
+import { bridge } from '../editor/host';
 import { useCollab } from './Collab';
 import type { Ask } from './Confirm';
 import './collab.css';
@@ -33,7 +34,9 @@ export function liveLine(i: LiveInfo, relay: string): string {
       return `Can't reach the relay. Your edits stay here and go out once it's back. Trying again in ${sec < 60 ? `${sec} s` : `${Math.round(sec / 60)} min`}`; }
     case 'paused': return `Paused until ${collab.resetTime(s.until)}, when the relay's free daily limit resets. Your edits stay here and go out then`;
     case 'full': return 'This session already has 8 people in it. Trying again in a bit';
-    case 'no_rooms': return 'Your relay is from before live editing. Whoever set it up downloads it again and runs npx wrangler deploy (the ? in Settings > Sharing shows how). Card sharing keeps working meanwhile';
+    case 'no_rooms': return bridge.relaySetup
+      ? 'Your relay is from before live editing. Whoever set it up updates it: the ? beside Relay in Settings > Sharing, then Set up my relay. Card sharing keeps working meanwhile'
+      : 'Your relay is from before live editing. Whoever set it up downloads it again and runs npx wrangler deploy (the ? in Settings > Sharing shows how). Card sharing keeps working meanwhile';
     case 'ended': return 'You left the session';
     case 'mismatch': return `${s.name}'s Falcon is a different version, so you can't edit together. Update Falcon, both of you, then start again`;
   }
@@ -187,7 +190,7 @@ export function useLiveSessions(h: LiveHost) {
   }, [start, stop, invite, join]);
   useEffect(() => collab.onInvited((i, who) => {
     // the name an envelope gives is only what the sender typed: a stranger is said to be one, as a card from one is
-    host.current.flash(`${who ? who.name : 'A code not in your contacts'} invited you to live-edit “${i.invite.doc}”`, { label: 'Join', run: () => void join(i) });
+    host.current.flash(`${who ? who.name : 'A code not in your recipients'} invited you to live-edit “${i.invite.doc}”`, { label: 'Join', run: () => void join(i) });
   }), [join]);
   // a closed window leaves: the socket closes with the page, which the room tells the others
   useEffect(() => () => { const r = held.current; if (r) { r.s.binding.shown = undefined; r.away?.(); r.s.stop(); } held.current = null; setLiveInfo(null); }, []);
@@ -224,7 +227,7 @@ const when = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeri
 /** Invites that came in: Join (again, for one you left) or Dismiss. */
 function Invites() {
   const c = useCollab(), i = useLive();
-  if (!c.invites.length) return <p className="co-sub">None waiting. When a contact invites you, it shows here and as a message.</p>;
+  if (!c.invites.length) return <p className="co-sub">None waiting. When a recipient invites you, it shows here and as a message.</p>;
   return (
     <>{[...c.invites].reverse().map((v) => {
       const who = collab.contactFor(v.from), here = i?.room === v.invite.room;
@@ -232,7 +235,7 @@ function Invites() {
         <div key={v.id} className="co-card lv-inv">
           <div className="co-what">
             <b>{v.invite.doc}</b>
-            <span>{who ? `From ${who.name}` : `From a code not in your contacts${v.claimed ? `, who says they're ${v.claimed}` : ''}`} · {when(v.gotAt)}</span>
+            <span>{who ? `From ${who.name}` : `From a code not in your recipients${v.claimed ? `, who says they're ${v.claimed}` : ''}`} · {when(v.gotAt)}</span>
           </div>
           <div className="co-acts">
             <button className="co-main" disabled={here} onClick={() => liveActions.join?.(v)}>{here ? 'In it' : 'Join'}</button>
@@ -266,7 +269,7 @@ export function LivePanel(props: { open: boolean; onClose: () => void; docName: 
           {!on ? (
             <>
               <h3>“{props.docName}”</h3>
-              <p className="co-sub">Start a session on this doc, then invite contacts. Everyone in it edits it with you and sees your edits as you type. Only the people you invite can read it: the relay passes it along sealed.</p>
+              <p className="co-sub">Start a session on this doc, then invite recipients. Everyone in it edits it with you and sees your edits as you type. Only the people you invite can read it: the relay passes it along sealed.</p>
               <button ref={first} className="co-main" disabled={!relay} onClick={() => liveActions.start?.()}>Start live editing</button>
             </>
           ) : (
@@ -285,13 +288,13 @@ export function LivePanel(props: { open: boolean; onClose: () => void; docName: 
           <section className="co-sec" aria-label="Invite">
             <h3>Invite</h3>
             {c.contacts.length ? (
-              <div role="list" aria-label="Contacts">
+              <div role="list" aria-label="Recipients">
                 {c.contacts.map((ct, n) => (
                   <div key={ct.code} className="co-ct" role="listitem"><span className="nm">{ct.name}</span><span className="cd">{shortCode(ct.code)}</span>
                     <button ref={n === 0 ? first : undefined} className="lv-inv-btn" onClick={() => void liveActions.invite?.(ct)}>Invite</button></div>
                 ))}
               </div>
-            ) : <p className="co-sub">No contacts yet. Swap pairing codes in Card sharing (command center) first.</p>}
+            ) : <p className="co-sub">No recipients yet. Swap pairing codes, then add them in Settings &gt; Sharing.</p>}
           </section>
         )}
 

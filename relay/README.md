@@ -12,30 +12,55 @@ It is built to stay on the **Workers Free plan**, and it never needs a paid one.
 
 ## Deploy (once)
 
-1. Make a Cloudflare account at dash.cloudflare.com. **Don't add a payment method.** With no card on
-   file the account stays on the Free plan, so going over a limit pauses the relay for the rest of
-   the day instead of costing anything.
-2. From this folder:
-   ```sh
-   npm ci
-   npx wrangler login     # opens the browser once
-   npx wrangler deploy
-   ```
-   Wrangler prints the URL, like `https://falcon-relay.<your-subdomain>.workers.dev`.
-3. Put that URL in Falcon: Settings > Sharing > Relay. Your pairing code then carries it (code v2,
-   `src/collab/code.ts`), so people send to you through your relay from theirs, and each person's
-   free allowance is their own. Teammates don't paste your address: each sets up a relay of their
-   own (or a team shares one), and you swap codes. A code from before this (v1) has no relay, and
-   cards to it go through the sender's own relay, as they always did.
-   For everyone at once instead, set `DEFAULT_RELAY` in `src/collab/relay.ts` and ship a build.
+1. Make a Cloudflare account at dash.cloudflare.com and confirm its email (Cloudflare won't take a Worker
+   until you do). **Don't add a payment method.** With no card on file the account stays on the Free
+   plan, so going over a limit pauses the relay for the rest of the day instead of costing anything.
+2. In the Falcon desktop app, open Settings > Sharing and click the ? beside Relay. The guide opens
+   Cloudflare's token page with what Falcon needs filled in (Workers Scripts: Edit, and Account
+   Settings: Read, without which the token can't see the account). You create the token, click
+   **Set up my relay** and paste it once, into a window Falcon's main process owns. Falcon then does
+   what `wrangler deploy` would, through Cloudflare's API (`electron/relay-setup.cjs`):
+   - uploads this Worker, which ships prebuilt inside the app (`dist/relay-worker.json`, made from
+     `src/index.ts` and `wrangler.jsonc` by `vite.config.ts` at build time), with only the migrations
+     the account's copy still lacks, so running it again over a relay is safe and is how an older
+     relay gains live-editing rooms;
+   - registers a workers.dev subdomain if the account has none (`falcon-` and six random letters,
+     another if that's taken), and never touches one that exists;
+   - turns on the Worker's workers.dev address, waits for it to come online, and saves it.
 
-Set up a relay before live editing came out? Download it again (step 2's folder deleted first, then
+   The token is used for that one run and dropped: it's never written to disk or a log, and the page
+   never sees it. You can delete it in Cloudflare afterwards.
+3. Or by hand (the web build's only way):
+   ```sh
+   npx --yes degit Wizard780/Falcon/relay falcon-relay
+   cd falcon-relay
+   npm ci                 # warnings about install scripts are fine to ignore
+   npx wrangler login     # opens the browser once
+   npx wrangler deploy    # asked for a workers.dev subdomain? type any name; it can't be empty
+   ```
+   Wrangler prints the URL, like `https://falcon-relay.<your-subdomain>.workers.dev`. Paste it into
+   the guide's last step (Settings > Sharing > ?).
+
+A brand-new workers.dev subdomain has no TLS certificate for its first few minutes (about 4 to 5 in
+practice), and until then its address fails exactly like a wrong one. Both ways, Falcon keeps trying
+every 10 seconds for up to 10 minutes and says so, and only then asks you to check the address.
+
+Your pairing code then carries the relay's address (code v2, `src/collab/code.ts`), so people send to
+you through your relay from theirs, and each person's free allowance is their own. Teammates don't
+paste your address: each sets up a relay of their own (or a team shares one), and you swap codes and add
+each other under Recipients (Settings > Sharing). A
+code from before this (v1) has no relay, and cards to it go through the sender's own relay, as they
+always did. For everyone at once instead, set `DEFAULT_RELAY` in `src/collab/relay.ts` and ship a build.
+
+Set up a relay by hand before live editing came out? In the desktop app, run Set up my relay: it
+updates it in place. By hand, download it again (the old folder deleted first, then
 `npx --yes degit Wizard780/Falcon/relay falcon-relay`, `npm ci`) and run `npx wrangler deploy`. Running
 it in the old folder puts the same old relay back. The address stays the same, and card sharing keeps
 working. Falcon tells a relay without rooms apart (`GET /v1/rooms` answers 404) and says to do this.
 
-The migration in `wrangler.jsonc` uses `new_sqlite_classes`, the Durable Object storage the Free plan
-allows. Keep it that way.
+The migrations in `wrangler.jsonc` use `new_sqlite_classes`, the Durable Object storage the Free plan
+allows. Keep it that way. The app's copy reads them from there, so a new migration only needs adding
+there.
 
 ## Daily limits (Free plan)
 

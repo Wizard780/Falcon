@@ -239,7 +239,7 @@ export async function dropInvite(id: string) {
 
 const saved = async (p: Promise<unknown>) => { await p; told({ t: 'changed' }); };
 
-/** Add (or rename) a contact. Returns why not, or null. */
+/** Add (or rename) a recipient. Returns why not, or null. */
 export async function addContact(codeText: string, name: string): Promise<string | null> {
   const p = parseCode(codeText);
   if (!p.ok) return p.error;
@@ -247,13 +247,38 @@ export async function addContact(codeText: string, name: string): Promise<string
   const nm = name.trim();
   if (!nm) return 'Give them a name';
   await inTurn(async () => {
-    // the same person with a new code (a new relay) takes the old one's place
-    const contacts = [...state.contacts.filter((c) => keyOf(c.code) !== keyOf(p.code)), { code: p.code, name: nm.slice(0, 60) }];
+    // the same person with a new code (a new relay) takes the old one's place, keeping where they are and their star
+    const at = state.contacts.findIndex((c) => keyOf(c.code) === keyOf(p.code));
+    const next = { ...(at >= 0 ? state.contacts[at] : {}), code: p.code, name: nm.slice(0, 60) };
+    const contacts = at >= 0 ? state.contacts.map((c, i) => (i === at ? next : c)) : [...state.contacts, next];
     set({ contacts });
     await saved(store.saveContacts(contacts));
   });
   return null;
 }
+/** Change the recipients list: saved first, then shown, so a save that fails (it rejects) changes nothing. */
+const editContacts = (f: (list: Contact[]) => Contact[]): Promise<void> => inTurn(async () => {
+  await saved(store.saveContacts(f(state.contacts)));
+  set({ contacts: f(state.contacts) }); // on the list as it is now: another window may have changed it meanwhile
+});
+const editOne = (code: string, f: (c: Contact) => Contact) => editContacts((list) => list.map((c) => (c.code === code ? f(c) : c)));
+export const renameContact = (code: string, name: string) => { const nm = name.trim().slice(0, 60); return nm ? editOne(code, (c) => ({ ...c, name: nm })) : Promise.resolve(); };
+/** Move a recipient one place up (-1) or down (1). Send Card lists them in this order. */
+export const moveContact = (code: string, by: -1 | 1) => editContacts((list) => {
+  const i = list.findIndex((c) => c.code === code), j = i + by;
+  if (i < 0 || j < 0 || j >= list.length) return list;
+  const next = [...list];
+  [next[i], next[j]] = [next[j], next[i]];
+  return next;
+});
+/** Keep a recipient out of Send Card's list, or put them back. Send Card to starred still reaches a hidden one. */
+export const hideContact = (code: string, hidden: boolean) => editOne(code, ({ hidden: _, ...c }) => (hidden ? { ...c, hidden: true } : c));
+/** Star a recipient (the star moves off whoever had it), or take it off. */
+export const starContact = (code: string, on: boolean) => editContacts((list) => list.map(({ starred: _, ...c }) => (on && c.code === code ? { ...c, starred: true } : c)));
+/** The recipients Send Card lists, in order. */
+export const sendable = (s: CollabState = state) => s.contacts.filter((c) => !c.hidden);
+/** Where Send Card to starred goes. */
+export const starred = (s: CollabState = state) => s.contacts.find((c) => c.starred);
 let turn: Promise<unknown> = Promise.resolve();
 /** Contact saves, one at a time: each writes the whole list, so each works from what the last one left. */
 function inTurn<T>(f: () => Promise<T>): Promise<T> {
@@ -262,10 +287,7 @@ function inTurn<T>(f: () => Promise<T>): Promise<T> {
   return mine;
 }
 /** Remove a contact. It leaves the list once the save went through, so a save that fails (it rejects) keeps them. */
-export const removeContact = (code: string): Promise<void> => inTurn(async () => {
-  await saved(store.saveContacts(state.contacts.filter((c) => c.code !== code)));
-  set({ contacts: state.contacts.filter((c) => c.code !== code) }); // the list as it is now: another window may have changed it meanwhile
-});
+export const removeContact = (code: string): Promise<void> => editContacts((list) => list.filter((c) => c.code !== code));
 export async function setName(name: string) {
   set({ name });
   await saved(store.saveName(name.slice(0, 60)));

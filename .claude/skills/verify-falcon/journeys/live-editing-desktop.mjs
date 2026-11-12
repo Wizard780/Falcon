@@ -69,9 +69,10 @@ async function setUp(page, name) {
 }
 async function addContact(page, code, name) {
   await command(page, 'card sharing');
+  await page.click('.cf.co .rcp-new');
   await page.fill('input[aria-label="Their pairing code"]', code);
   await page.fill('input[aria-label="Their name"]', name);
-  await page.click('.co-add button[type="submit"]');
+  await page.click('.rcp-add button[type="submit"]');
   await page.waitForTimeout(200);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);

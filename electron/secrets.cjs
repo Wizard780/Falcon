@@ -29,27 +29,38 @@ function createSecrets({ safeStorage, dir }) {
   };
 }
 
-/** Asks for a secret in a small window main owns. Resolves true if one was saved. `look` is the page's CSS variables, so it matches the app. */
-function promptSecret({ BrowserWindow, parent, secrets, id, look, show = true }) {
-  if (!ok(id)) return Promise.resolve(false);
+/**
+ * Asks for a secret in a small window main owns, and resolves with what was typed ('' if it was closed). Only main
+ * code gets the value: the page that asked never sees it. `look` is the page's CSS variables, so it matches the app;
+ * `note` and `button` change the line under the box and the Save button.
+ */
+function askSecret({ BrowserWindow, parent, label, note, button, look, show = true }) {
   return new Promise((resolve) => {
     const w = new BrowserWindow({
       parent, modal: !!parent, show: false, width: 460, height: 185, useContentSize: true, resizable: false, minimizable: false, maximizable: false,
-      title: NAMES[id], autoHideMenuBar: true,
+      title: label, autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, 'secret-preload.cjs'), contextIsolation: true, sandbox: true },
     });
-    let saved = false;
-    const onSubmit = (e, value) => {
+    let value = '';
+    const onSubmit = (e, v) => {
       if (e.sender !== w.webContents) return; // only this window may hand in the value
-      saved = secrets.set(id, value);
+      value = typeof v === 'string' ? v.trim() : '';
       w.close();
     };
     const { ipcMain } = require('electron');
     ipcMain.on('falcon:secret-submit', onSubmit);
-    w.on('closed', () => { ipcMain.off('falcon:secret-submit', onSubmit); resolve(saved); });
-    w.loadFile(path.join(__dirname, 'secret-prompt.html'), { query: { ...look, label: NAMES[id] } });
+    w.on('closed', () => { ipcMain.off('falcon:secret-submit', onSubmit); resolve(value); });
+    // from the page's look, only its colors (CSS variables) and its font: the words in this window are main's
+    const style = Object.fromEntries(Object.entries(look && typeof look === 'object' ? look : {}).filter(([k, v]) => (k.startsWith('--') || k === 'font') && typeof v === 'string'));
+    w.loadFile(path.join(__dirname, 'secret-prompt.html'), { query: { ...style, label, ...(note ? { note } : {}), ...(button ? { button } : {}) } });
     if (show) w.once('ready-to-show', () => w.show());
   });
 }
 
-module.exports = { createSecrets, promptSecret, SECRET_NAMES: NAMES };
+/** Asks for a secret by name and saves it encrypted. Resolves true if one was saved. */
+function promptSecret({ BrowserWindow, parent, secrets, id, look, show = true }) {
+  if (!ok(id)) return Promise.resolve(false);
+  return askSecret({ BrowserWindow, parent, label: NAMES[id], look, show }).then((v) => !!v && secrets.set(id, v));
+}
+
+module.exports = { createSecrets, askSecret, promptSecret, SECRET_NAMES: NAMES };

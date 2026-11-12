@@ -138,6 +138,26 @@ export async function checkRelay(base: string): Promise<'ok' | 'not_relay' | 'un
   try { return r.status === 400 && (await r.json()).error === 'bad_envelope' ? 'ok' : 'not_relay'; } catch { return 'not_relay'; }
 }
 
+/** How often, and for how long, checkRelayPatiently tries an address that can't be reached yet. */
+export const WAIT_EVERY = 10_000, WAIT_FOR = 10 * 60_000;
+
+/**
+ * checkRelay for an address that may be brand new. A workers.dev subdomain has no certificate for its first few
+ * minutes, and until then it fails exactly like a wrong address. So an unreachable one is tried again every 10 s for
+ * up to 10 minutes, calling `waiting()` before each wait. Once `gone()` is true it stops and answers null.
+ */
+export async function checkRelayPatiently(base: string, gone: () => boolean, waiting: () => void): Promise<'ok' | 'not_relay' | 'unreachable' | null> {
+  const until = Date.now() + WAIT_FOR;
+  for (;;) {
+    const r = await checkRelay(base);
+    if (gone()) return null;
+    if (r !== 'unreachable' || Date.now() + WAIT_EVERY > until) return r;
+    waiting();
+    await new Promise((res) => setTimeout(res, WAIT_EVERY));
+    if (gone()) return null;
+  }
+}
+
 /**
  * Does the relay at `base` have live-editing rooms? The Worker answers GET /v1/rooms itself (no Durable Object); a relay
  * deployed before rooms existed answers 404, and whoever set it up has to download it again and redeploy.

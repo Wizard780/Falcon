@@ -76,9 +76,10 @@ async function identity(f, name) {
 }
 async function addContact(f, code, name) {
   await command(f, 'card sharing');
+  await f.page.click('.cf.co .rcp-new');
   await f.page.fill('input[aria-label="Their pairing code"]', code);
   await f.page.fill('input[aria-label="Their name"]', name);
-  await f.page.click('.co-add button[type="submit"]');
+  await f.page.click('.rcp-add button[type="submit"]');
   await wait(f, 200);
   await f.page.keyboard.press('Escape');
   await wait(f, 200);

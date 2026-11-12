@@ -26,6 +26,8 @@ const KEYS = { 'falcon.key.sendCard': 'Mod-Shift-F1', 'falcon.key.collab': 'Mod-
 const $ = (sel: string) => document.querySelector(sel);
 // a button in the dialog that's up (the toolbar has its own Insert)
 const button = (text: string, within: ParentNode = [...document.querySelectorAll('.cf-back')].pop() ?? document) => [...within.querySelectorAll('button')].find((b) => b.textContent?.trim() === text) ?? null;
+/** The recipients' names as their rows show them (each is a box you can edit), or only the ones folding away. */
+const names = (sel = '.rcp-row') => [...document.querySelectorAll<HTMLInputElement>(`${sel} .rcp-nm`)].map((n) => n.value);
 const until = async (ok: () => boolean, what: string, ms = 3000) => {
   for (let t = 0; t < ms; t += 20) { if (ok()) return; await tick(20); }
   throw new Error(`timed out waiting for ${what}`);
@@ -71,16 +73,17 @@ describe('card sharing in the app', () => {
     await app.act(() => {}, 50);
 
     // noticed: a toast and the rail's cue; not taken: focus and the document are as they were
-    expect(app.toast()).toContain('Card from a code not in your contacts: “Warming causes resource wars”');
+    expect(app.toast()).toContain('Card from a code not in your recipients: “Warming causes resource wars”');
     expect($('[aria-label="Cards waiting (1)"]')).not.toBeNull();
     expect(document.activeElement).toBe(focused);
     expect(app.text()).toBe('My own notes. ');
     expect(relay.inboxes.get(inbox)).toEqual([]); // acked only after it was stored, so the relay forgot it
 
-    // the panel lists it from an unknown code; Add contact fills in what they call themselves
+    // the panel lists it from an unknown code; Add recipient opens the add row with their code and what they call themselves
     await app.click($('[aria-label="Cards waiting (1)"]'));
-    expect($('.co-card .co-what span')?.textContent).toContain("From a code not in your contacts, who says they're Sam");
-    await app.click(button('Add contact'));
+    expect($('.co-card .co-what span')?.textContent).toContain("From a code not in your recipients, who says they're Sam");
+    await app.click(button('Add recipient', $('.co-card')!));
+    expect(($('input[aria-label="Their pairing code"]') as HTMLInputElement).value).toBe(encodeCode(sam.pub));
     expect(($('input[aria-label="Their name"]') as HTMLInputElement).value).toBe('Sam');
     await app.click(button('Add'));
     expect(collab.current().contacts).toEqual([{ code: encodeCode(sam.pub), name: 'Sam' }]);
@@ -97,6 +100,11 @@ describe('card sharing in the app', () => {
     expect(map).toContain('[conflict]{emphasis+highlight:yellow}');
     expect(collab.current().cards).toEqual([]);
     expect($('[aria-label^="Cards waiting"]')).toBeNull();
+    // the panel opened again starts with the add row shut (that draft is done), so Esc closes it
+    await openPanel(app);
+    expect($('.rcp-add')).toBeNull();
+    await app.press('Escape');
+    expect($('.cf.co')).toBeNull();
     // and it's done for good: gone after a restart too
     await unmountAll();
     await mountApp();
@@ -109,6 +117,7 @@ describe('card sharing in the app', () => {
     const app = await setup();
     const pat = await makeIdentity();
     await openPanel(app);
+    await app.click(button('Add recipient'));
     await app.fill($('input[aria-label="Their pairing code"]'), encodeCode(pat.pub).toLowerCase());
     await app.fill($('input[aria-label="Their name"]'), 'Pat');
     await app.fill($('#co-name'), 'Jordan');
@@ -138,14 +147,15 @@ describe('card sharing in the app', () => {
     await expect(open(await makeIdentity(), data)).rejects.toThrow();
   });
 
-  it('with no relay set, sharing is inert and says so; the code and contacts still work', async () => {
+  it('with no relay set, sharing is inert and says so; the code and recipients still work', async () => {
     const app = await setup({});
     await openPanel(app);
-    expect($('.co-line')?.textContent).toBe('No relay is set, so nobody can send you cards yet, and yours go only to contacts whose code carries their relay. Add one in Settings > Sharing');
+    expect($('.co-line')?.textContent).toBe('No relay is set, so nobody can send you cards yet, and yours go only to recipients whose code carries their relay. Add one in Settings > Sharing');
     expect(parseCode($('.co-code')?.textContent ?? '').ok).toBe(true);
     expect((parseCode($('.co-code')?.textContent ?? '') as { relay: string | null }).relay).toBeNull(); // a v1 code: who you are, no relay
     expect($('.co-me')?.previousElementSibling?.textContent).toMatch(/^Nobody can send you cards until you set a relay in Settings > Sharing/);
     const pat = await makeIdentity();
+    await app.click(button('Add recipient'));
     await app.fill($('input[aria-label="Their pairing code"]'), encodeCode(pat.pub));
     await app.fill($('input[aria-label="Their name"]'), 'Pat');
     await app.click(button('Add'));
@@ -230,7 +240,7 @@ describe('card sharing in the app', () => {
     await until(() => app.toast().startsWith('Pat invited you to live-edit “Doc 1”'), "Pat's toast");
     // a stranger is named as one, whatever name they typed
     await relay.post(inbox, await seal(await makeIdentity(), me.pub, { name: 'Coach Smith', at: Date.now(), content: [], mid: 'x-coach', invite: invite(99) }));
-    await until(() => app.toast().startsWith('A code not in your contacts invited you to live-edit “Doc 99”'), `the stranger's toast (${app.toast()})`);
+    await until(() => app.toast().startsWith('A code not in your recipients invited you to live-edit “Doc 99”'), `the stranger's toast (${app.toast()})`);
     for (let i = 0; i < 21; i++) {
       const x = await makeIdentity();
       await relay.post(inbox, await seal(x, me.pub, { name: 'Stranger', at: Date.now(), content: [], mid: `x${i}`, invite: invite(100 + i) }));
@@ -307,28 +317,28 @@ describe('card sharing in the app', () => {
     expect(collab.current().code).toBe(fresh);
   });
 
-  it('Remove takes a contact off for good', async () => {
+  it('Remove takes a recipient off for good', async () => {
     const app = await setup({});
     const pat = await makeIdentity(), kim = await makeIdentity();
     expect(await collab.addContact(encodeCode(pat.pub), 'Pat')).toBeNull();
     expect(await collab.addContact(encodeCode(kim.pub), 'Kim')).toBeNull();
     await openPanel(app);
     expect($('.cf.co')).not.toBeNull();
-    expect([...document.querySelectorAll('.co-ct .nm')].map((n) => n.textContent)).toEqual(['Pat', 'Kim']);
+    expect(names()).toEqual(['Pat', 'Kim']);
     ($('[aria-label="Remove Pat"]') as HTMLElement).focus(); // as a real click does
     await app.click($('[aria-label="Remove Pat"]'));
     // the row folds shut where it is, then goes
-    expect([...document.querySelectorAll('.co-fold[data-gone] .nm')].map((n) => n.textContent)).toEqual(['Pat']);
+    expect(names('.co-fold[data-gone] .rcp-row')).toEqual(['Pat']);
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Remove Kim'); // focus went to the next row
     await app.act(() => {}, 400);
-    expect([...document.querySelectorAll('.co-ct .nm')].map((n) => n.textContent)).toEqual(['Kim']);
+    expect(names()).toEqual(['Kim']);
     await unmountAll();
     await mountApp();
     await until(() => collab.current().status === 'ready', 'reload');
     expect(collab.current().contacts.map((c) => c.name)).toEqual(['Kim']);
   });
 
-  it('a card or contact whose save fails stays, and says so in its row; Dismiss all asks first and takes every card', async () => {
+  it('a card or recipient whose save fails stays, and says so in its row; Dismiss all asks first and takes every card', async () => {
     const store = await import('../src/collab/store');
     const app = await setup();
     await until(() => relay.proven() === 1, 'connected');
@@ -352,11 +362,11 @@ describe('card sharing in the app', () => {
     await until(() => document.querySelectorAll('.co-card').length === 2, 'the row folded shut and went');
     expect(drop).toHaveBeenCalledTimes(2);
     expect([...document.querySelectorAll('.co-card b')].map((b) => b.textContent)).toEqual(['Card 1', 'Card 3']);
-    // the same for a contact
+    // the same for a recipient
     vi.spyOn(store, 'saveContacts').mockRejectedValueOnce(new Error('disk full'));
     await app.click($('[aria-label="Remove Pat"]'));
     expect(collab.current().contacts.map((c) => c.name)).toEqual(['Pat']);
-    expect(document.querySelector('.co-ct [role="alert"]')?.textContent).toBe("Couldn't save that. Try again");
+    expect(document.querySelector('.rcp-row [role="alert"]')?.textContent).toBe("Couldn't save that. Try again");
     // Dismiss all: Cancel keeps them, Dismiss all takes both and the section with them
     await app.click(button('Dismiss all'));
     expect($('#cf-t')?.textContent).toBe('Dismiss all 2 cards?');
@@ -386,7 +396,7 @@ describe('card sharing in the app', () => {
     expect(collab.current().cards.map((c) => c.label)).toEqual(["A card this Falcon can't open", 'Fine card']);
     await openPanel(app);
     const odd = document.querySelectorAll('.co-card')[0];
-    expect([...odd.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Add contact', 'Dismiss']);
+    expect([...odd.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Add recipient', 'Dismiss']);
     expect(odd.textContent).toContain('It may need a newer Falcon');
     await app.click(button('Dismiss', odd));
     await app.click(button('Close'));

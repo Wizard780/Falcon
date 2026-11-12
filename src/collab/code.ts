@@ -130,5 +130,5 @@ export async function inboxId(pub: Uint8Array): Promise<string> {
   return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', pub as BufferSource)));
 }
 
-/** The code's first and last groups, for telling contacts apart at a glance. */
-export const shortCode = (code: string) => { const g = code.split('-'); return g.length > 2 ? `${g[0]}…${g[g.length - 1]}` : code; };
+/** The code's two ends, for telling recipients apart at a glance: 09NM…WY3G (the Card sharing mockup's K7QD…X2MF). */
+export const shortCode = (code: string) => { const c = code.replace(/[^0-9a-z]/gi, ''); return c.length > 8 ? `${c.slice(0, 4)}…${c.slice(-4)}` : code; };
