@@ -553,6 +553,7 @@ export function Settings(props: Props) {
         tog(P.smartPaste, 'Smart paste', 'Word and Verbatim formatting pastes as cites, underlining and highlights. F2 always pastes plain.'),
         tog(P.citeNearest, 'Copy previous cite: first line only', 'Off, Alt-F8 also copies the cite lines right after it.'),
         tog(P.hlUnderlined, 'Highlight underlined text only', 'Highlighting skips text that isn\'t underlined, emphasized or cited.'),
+        tog(P.repeatRedo, 'Redo repeats the last action', `Like Word's Repeat: ${keyText('Mod-y')} with nothing left to redo does your last edit again where the cursor is, whether that's typing, a paste, Backspace, Enter or a formatting key.`),
         tog(P.styleOffClears, 'Clear formatting when underline comes off', 'Taking underline off also clears size, bold, italic, highlight and background color, so the text goes back to plain.'),
       ]],
       ['Enter at the end of a heading', (['pocket', 'hat', 'block', 'tag', 'analytic', 'undertag'] as const).map((st) => {

@@ -76,9 +76,23 @@ f.want(!now.some((l) => l.startsWith('tag: Second') || l === 'tag: ') && now.inc
 await f.shot('line-deleted');
 await press('Meta+z');
 f.want((await lines()).includes('tag: Second tag'), 'one undo brings it back');
-// Chromium's own triple click stays inside the line: then the line is emptied and keeps its style
+// Chromium's own triple click stays inside the line: deleting it still takes the whole line, not just its text
 await tripleClick('Second tag');
 await press('Backspace');
 now = await lines();
-f.want(now.includes('normal: Smith 24') && !now.some((l) => l.includes('Second tag')), `a triple-clicked tag is cleared, the cite under it untouched: ${now.join(' | ')}`);
+f.want(!now.some((l) => l.includes('Second tag') || l === 'tag: ') && now.includes('normal: Smith 24'), `a triple-clicked tag line goes, no empty tag left behind: ${now.join(' | ')}`);
+await press('Meta+z');
+
+// typing over a tag selected down to the start of its cite replaces the tag, and the cite stays a cite line
+await page.evaluate(() => {
+  const v = window.__falconView;
+  let from = -1, to = -1;
+  v.state.doc.forEach((n, pos) => { if (n.textContent === 'Second tag') from = pos + 1; else if (from > 0 && to < 0) to = pos + 1; });
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, from, to)));
+  v.focus();
+});
+await page.keyboard.type('Retyped tag');
+now = await lines();
+f.want(now.includes('tag: Retyped tag') && now.includes('normal: Smith 24'), `typing over it keeps the next line apart: ${now.join(' | ')}`);
+await f.shot('retyped');
 await f.done();

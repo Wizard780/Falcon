@@ -175,6 +175,7 @@ const CM_MAP: [string, string, (get: Get) => string | undefined][] = [
   ['citeBold', 'unboldCites', (g) => not(g('unboldCites'))],
   ['smartPaste', 'smartPasteConversion', (g) => bool(g('smartPasteConversion'))],
   ['smartQuotes', 'smartQuotes', (g) => bool(g('smartQuotes'))],
+  ['repeatRedo', 'repeatWithModY', (g) => bool(g('repeatWithModY'))],
   ['hlUnderlined', 'highlightUnderlinedOnly', (g) => bool(g('highlightUnderlinedOnly'))],
   ['aiOn', 'aiFeaturesEnabled', (g) => bool(g('aiFeaturesEnabled'))],
   ['aiModel', 'aiModelOverride', (g) => { const v = g('aiModelOverride'); return typeof v === 'string' && v ? v : undefined; }],

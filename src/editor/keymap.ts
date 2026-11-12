@@ -1,5 +1,5 @@
 import { chainCommands, deleteSelection, joinBackward, joinForward, selectAll, splitBlockKeepMarks, createParagraphNear, liftEmptyBlock } from 'prosemirror-commands';
-import { redo, undo } from 'prosemirror-history';
+import { undo } from 'prosemirror-history';
 import { keydownHandler } from 'prosemirror-keymap';
 import { Plugin, TextSelection, type Command } from 'prosemirror-state';
 import {
@@ -18,6 +18,8 @@ import { CARD_TOOLS } from './card-tools';
 import { compareText } from './doc-tools/compare';
 import { navBinds, navFixed } from './nav-keys';
 import { BINDINGS, bind, bindingOf, isRecording, keyOf, reserve } from './keybinds';
+import { deleteWholeLines } from './line-edits';
+import { redoOrRepeat, repeatable } from './repeat';
 
 const M = schema.marks;
 
@@ -122,13 +124,13 @@ const FIXED: [key: string, label: string, run: Command][] = [
   ['Mod-i', 'Italic', toggleTypingMark(M.italic)],
   ['Mod-Shift-=', 'Superscript', toggleTypingMark(M.sup)],
   ['Mod-z', 'Undo', undo],
-  ['Mod-Shift-z', 'Redo', redo],
-  ['Mod-y', 'Redo', redo],
-  ['Tab', 'Indent', indent(1)],
-  ['Shift-Tab', 'Outdent', indent(-1)],
-  ['Enter', 'New line', enter],
-  ['Backspace', 'Delete back', chainCommands(deleteSelection, backspaceAtCardEdge, joinBackward)],
-  ['Delete', 'Delete forward', chainCommands(deleteSelection, deleteAtCardEdge, joinForward)],
+  ['Mod-Shift-z', 'Redo', redoOrRepeat],
+  ['Mod-y', 'Redo', redoOrRepeat],
+  ['Tab', 'Indent', repeatable(indent(1))],
+  ['Shift-Tab', 'Outdent', repeatable(indent(-1))],
+  ['Enter', 'New line', repeatable(enter)],
+  ['Backspace', 'Delete back', repeatable(chainCommands(deleteWholeLines, deleteSelection, backspaceAtCardEdge, joinBackward))],
+  ['Delete', 'Delete forward', repeatable(chainCommands(deleteWholeLines, deleteSelection, deleteAtCardEdge, joinForward))],
   ['Mod-a', 'Select all', selectAll],
   ['Ctrl-ArrowUp', 'Previous paragraph', moveByParagraph(-1, false)],
   ['Ctrl-ArrowDown', 'Next paragraph', moveByParagraph(1, false)],
@@ -147,7 +149,9 @@ reserve(FIXED.map(([k, what]) => [k, what]));
 export const fixedCommands = FIXED.map(([key, label, run]) => ({ key, label, run }));
 
 // the commands Settings can rebind, in the order Settings lists them (App and Files come first, from keybinds.ts)
-bind('Cutting', [
+// the formatting keys are what Redo can repeat (F2 reads the clipboard, so it's left out)
+const repeats = <T extends { id: string; run: Command }>(list: T[]) => list.map((b) => (b.id === 'pastePlain' ? b : { ...b, run: repeatable(b.run) }));
+bind('Cutting', repeats([
   { id: 'pastePlain', label: 'Paste as plain text', key: 'F2', run: (_s, _d, view) => { if (view) void pastePlainFromClipboard(view); return true; } },
   // F3 runs the condense Settings picks; Alt-F3 and Mod-Alt-F3 always merge (Card tools)
   { id: 'condense', label: 'Condense paragraph', key: 'F3', run: condenseBySettings },
@@ -167,7 +171,7 @@ bind('Cutting', [
   { id: 'clear', label: 'Clear formatting', key: 'F12', run: clearFormatting },
   { id: 'shrink', label: 'Shrink card', key: 'Mod-8', run: shrink },
   { id: 'regrow', label: 'Undo shrink', key: 'Mod-Shift-8', run: regrow },
-]);
+]));
 bind('Moving around', [
   { id: 'prevHeading', label: 'Previous heading', key: 'PageUp', run: moveByHeading(-1, false) },
   { id: 'nextHeading', label: 'Next heading', key: 'PageDown', run: moveByHeading(1, false) },
