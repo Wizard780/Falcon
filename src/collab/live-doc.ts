@@ -42,7 +42,8 @@ export type Binding = {
  * only runs between Falcons that agree (live.ts checks it in each person's name frame).
  */
 export const SCHEMA_ID = (() => {
-  const text = [...Object.entries(schema.nodes), ...Object.entries(schema.marks)]
+  // and the room's own parts: a Falcon from before End and Remove (live.ts T_END, T_REMOVE) would skip them and stay
+  const text = 'proto2;' + [...Object.entries(schema.nodes), ...Object.entries(schema.marks)]
     .map(([name, t]) => `${name}(${Object.keys(t.spec.attrs ?? {}).sort().join(',')})`).sort().join(';');
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }

@@ -18,7 +18,9 @@ export const liveHooks: {
 export type Mark = { doc: EditorState['doc']; mine: number | undefined };
 export const markOf = (s: EditorState): Mark => ({ doc: s.doc, mine: isLive(s) ? liveHooks.mine?.(s) : undefined });
 /** Nothing done to `s` since `m`. In a live doc others' edits don't count: its undo takes back only this person's. */
-export const untouched = (s: EditorState, m: Mark) => (m.mine !== undefined && isLive(s) ? liveHooks.mine?.(s) === m.mine : s.doc === m.doc);
+export const untouched = (s: EditorState, m: Mark) => (m.mine !== undefined ? isLive(s) && liveHooks.mine?.(s) === m.mine : s.doc === m.doc);
+/** The doc was live at `m` and isn't now: its undo went with the session. */
+export const leftSince = (s: EditorState, m: Mark) => m.mine !== undefined && !isLive(s);
 
 /** A live doc has no prosemirror-history: its undo is Loro's, which takes back only this person's edits. */
 const isLive = (s: EditorState) => s.plugins.some((p) => (p as unknown as { key: string }).key.startsWith('loro-undo$'));

@@ -37,8 +37,9 @@ const FIRST_RETRY = 1_000, MAX_RETRY = 30_000, STABLE = 60_000;
 const TICK = 30_000, SLEPT = 150_000;
 const FRAME_UPDATE = 1, FRAME_ASK = 2, FRAME_TO = 3;
 /** T_END: whoever sent it ended the session for everyone. T_REMOVE: the peer id it holds is to leave. A Falcon that
- * doesn't know a tag skips it, and the schema check keeps a session to Falcons that do. */
-const T_UPDATE = 1, T_PRESENCE = 2, T_VERSION = 3, T_ME = 4, T_END = 5, T_REMOVE = 6;
+ * doesn't know a tag skips it, so SCHEMA_ID counts these in: a session only runs between Falcons that know them.
+ * T_CATCHUP marks a frame of edits made while away, not typed now. */
+const T_UPDATE = 1, T_PRESENCE = 2, T_VERSION = 3, T_ME = 4, T_END = 5, T_REMOVE = 6, T_CATCHUP = 7;
 /** Caret colors, one per peer (chosen from its Loro peer id, so it's the same on every screen). */
 const COLORS = ['#2563eb', '#db2777', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
 
@@ -331,7 +332,7 @@ export class LiveSession {
     const cmp = this.binding.doc.oplogVersion().compare(from);
     if (cmp !== undefined && cmp <= 0) return;
     this.lastSent = Date.now(); // it counts as this window's frame
-    void this.send(FRAME_UPDATE, [[T_UPDATE, this.binding.doc.export({ mode: 'update', from })], this.mePart()]);
+    void this.send(FRAME_UPDATE, [[T_UPDATE, this.binding.doc.export({ mode: 'update', from })], this.mePart(), [T_CATCHUP, new Uint8Array()]]);
   }
 
   /** Done syncing, with whatever there is. */
@@ -355,7 +356,7 @@ export class LiveSession {
       if ((tag === T_END || tag === T_REMOVE) && !this.names.get(from)?.host) continue;
       if (tag === T_END || (tag === T_REMOVE && td.decode(bytes) === this.binding.doc.peerIdStr)) {
         // what came with it goes in first: the doc is left as they had it
-        if (updates.length) { try { this.binding.doc.importBatch(updates); } catch { /* skip */ } }
+        this.take(updates);
         const by = this.names.get(from)?.name ?? 'Someone';
         this.stop();
         this.set({ kind: tag === T_END ? 'closed' : 'removed', by: by === '…' ? 'Someone' : by });
@@ -381,10 +382,10 @@ export class LiveSession {
       }
     }
     if (updates.length) {
-      try { this.binding.doc.importBatch(updates); } catch { /* a frame Loro can't read: the next sync covers it */ }
+      this.take(updates);
       // an edit as they make it (not the catch-up a sync carries): they're typing now
       const m = this.names.get(from);
-      if (m && kind === FRAME_UPDATE) { const was = m.at ?? 0; m.at = Date.now(); if (m.at - was > TYPING_MS) this.setMembers(); } // the screens re-read `at` as they tick
+      if (m && kind === FRAME_UPDATE && !list.some(([t]) => t === T_CATCHUP)) { const was = m.at ?? 0; m.at = Date.now(); if (m.at - was > TYPING_MS) this.setMembers(); } // the screens re-read `at` as they tick
     }
     if (kind === FRAME_ASK && version) this.answer(from, version);
     else if (kind === FRAME_TO && this.status.kind === 'syncing' && !updates.length && !docOf(this.binding) && this.ask.attempt + 1 < this.ask.peers) {
@@ -396,6 +397,14 @@ export class LiveSession {
       if (version) this.sendSince(VersionVector.decode(version));
       this.synced();
     } else if (this.status.kind === 'waiting' && docOf(this.binding)) this.synced();
+  }
+
+  /**
+   * Others' updates into the doc, one at a time. importBatch with more than one fires a checkout event, and Loro's
+   * UndoManager clears its stacks on checkout: a frame carrying two of someone's edits took away this person's Mod-Z.
+   */
+  private take(updates: Uint8Array[]) {
+    for (const u of updates) { try { this.binding.doc.import(u); } catch { /* one Loro can't read: the next sync covers it */ } }
   }
 
   /** Someone asked for what they're missing: send it to them alone. Someone with nothing gets the whole doc as a snapshot. */

@@ -6,7 +6,7 @@ import { TextSelection, type EditorState } from 'prosemirror-state';
 import { Fragment, Node as PMNode, Slice } from 'prosemirror-model';
 import { createState, createView, brushKey, emptyDoc, swapState } from '../editor/editor';
 import { topChildAt } from '../editor/window';
-import { markOf, undo, untouched, type Mark } from '../editor/live-hooks';
+import { leftSince, markOf, undo, untouched, type Mark } from '../editor/live-hooks';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
 import { IS_MAC, bindingOf, isRecording, keyLabel, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
@@ -1170,6 +1170,7 @@ export function App() {
     const on = liveView(id);
     const now = on?.state ?? docsRef.current.find((d) => d.id === id)?.state;
     if (!now) return undefined;
+    if (leftSince(now, sent)) return `The live session on ${name} has ended, so the card stays. Delete it there if you don't want it.`;
     if (!untouched(now, sent)) return `${name} has changed since. Undo it there with ${keyText('Mod-z')}.`;
     undo(now, (t) => { if (on) on.dispatch(t); else patch(id, { state: now.apply(t), dirty: true }); });
     return undefined;

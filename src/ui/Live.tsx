@@ -197,10 +197,11 @@ export function useLiveSessions(h: LiveHost) {
   useEffect(() => {
     Object.assign(liveActions, {
       start: () => void start(), stop: () => stop(), invite, join: (i: collab.Invited) => void join(i), open: () => host.current.openPanel(),
-      end: async () => { const r = held.current; if (!r) return; await r.s.end(); stop(false); },
+      end: async () => { const r = held.current; if (!r || r.s.status.kind !== 'live') return; await r.s.end(); stop(false); },
       remove: (peer: string) => {
         const r = held.current, m = r?.s.members.find((x) => x.peer === peer);
         if (!r || !m) return;
+        if (r.s.status.kind !== 'live') { host.current.flash("Can't reach the relay right now, so nobody can be removed. Try again once it's back"); return; }
         r.s.remove(peer);
         host.current.flash(`Removed ${named(m)}. They keep their copy`);
       },
@@ -406,11 +407,13 @@ export function WhoHere({ docId }: { docId: number }) {
   const [lit, setLit] = useState<string | null>(null);
   /** the session as it was when this Falcon ended it: the popover stays to say so */
   const [over, setOver] = useState<NonNullable<LiveInfo> | null>(null);
+  const shown = useRef(false);
   const [folding, setFolding] = useState<Set<number>>(new Set());
   const [, tick] = useState(0);
   const [at, setAt] = useState<{ top: number; right: number } | null>(null);
   const wrap = useRef<HTMLDivElement>(null), head = useRef<HTMLHeadingElement>(null), endYes = useRef<HTMLButtonElement>(null), endAsk = useRef<HTMLButtonElement>(null);
-  const i = live?.docId === docId ? live : over;
+  const i = live?.docId === docId ? live : over?.docId === docId ? over : null;
+  shown.current = open;
   const close = useCallback(() => { setOpen(false); setAsking(false); setOver(null); setFolding(new Set()); setLit(null); }, []);
   useEffect(() => { if (!open) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [open]);
   useEffect(() => {
@@ -443,6 +446,7 @@ export function WhoHere({ docId }: { docId: number }) {
     const snap = i;
     // one after another, then the session goes
     for (const m of byLast(snap.members)) { setFolding((f) => new Set(f).add(m.slot)); await new Promise((r) => setTimeout(r, 110)); }
+    if (!shown.current) { setFolding(new Set()); await liveActions.end?.(); return; } // closed while folding: it ends, with nothing left to show
     setOver({ ...snap, members: [] });
     setAsking(false);
     await liveActions.end?.();
@@ -473,7 +477,7 @@ export function WhoHere({ docId }: { docId: number }) {
                 <div><div className="pr">
                   <span className="d" style={{ '--c': m.color } as React.CSSProperties} />
                   <div className="t"><b>{named(m)}</b><span>{doing(m, now)}</span></div>
-                  {i.hosting && !over && m.peer && (
+                  {i.hosting && !over && k === 'live' && m.peer && (
                     <button className="lv-btn" aria-label={`Remove ${named(m)}`} onClick={() => { liveActions.remove?.(m.peer!); setLit(null); }}>Remove</button>
                   )}
                 </div></div>
@@ -493,7 +497,8 @@ export function WhoHere({ docId }: { docId: number }) {
               ) : (
                 <>
                   {i.docId !== null ? <button className="lv-btn plain lv-l" onClick={() => { close(); liveActions.open?.(); }}>Invite…</button> : <span />}
-                  {i.hosting
+                  {i.hosting && k !== 'live' ? <span />
+                    : i.hosting
                     ? <button ref={endAsk} className="lv-btn plain" onClick={() => setAsking(true)}>End session for everyone…</button>
                     : <button className="lv-btn plain" onClick={() => { close(); liveActions.stop?.(); }}>Leave</button>}
                 </>
