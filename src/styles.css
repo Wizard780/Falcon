@@ -325,7 +325,7 @@ button.b:active { transform: scale(.97); }
 .findbar button { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--u-mut); }
 .findbar button:hover { background: var(--u-hover); color: var(--u-tx); }
 
-.toast { position: fixed; left: 50%; bottom: 72px; z-index: 3000; display: flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 10px; background: var(--u-raised); color: var(--u-tx); font-size: 13px;
+.toast { position: fixed; left: 50%; bottom: 72px; z-index: 3300; /* over every full-window layer (dialogs 3100, the switcher 3200): an arriving card or invite is never hidden under a backdrop */ display: flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 10px; background: var(--u-raised); color: var(--u-tx); font-size: 13px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, calc(.32 * var(--u-sh))); transform: translate(-50%, 8px); opacity: 0; pointer-events: none; transition: transform 200ms cubic-bezier(.23, 1, .32, 1), opacity 150ms ease-out; }
 .toast.show { transform: translate(-50%, 0); opacity: 1; }
 .toast:empty { visibility: hidden; transition: none; } /* the message and the class go together: its fade-out would play hidden, a quarter second of frames for nothing */
