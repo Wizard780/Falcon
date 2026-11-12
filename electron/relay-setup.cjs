@@ -91,6 +91,7 @@ function createRelaySetup({ worker, fetch = globalThis.fetch, api = API, relayUr
         const now = await call('GET', `${at}/subdomain`);
         let subdomain = now.ok ? now.result?.subdomain : null, created = false;
         if (!now.ok && !now.codes.includes(NO_SUBDOMAIN)) must(now);
+        if (now.ok && !subdomain) throw new Stop('cloudflare'); // an answer that isn't "none" and names none: don't guess
         for (let i = 0; !subdomain && i < 5; i++) {
           const pick = `falcon-${Array.from({ length: 6 }, () => String.fromCharCode(97 + Math.floor(random() * 26))).join('')}`;
           const made = await call('PUT', `${at}/subdomain`, { json: { subdomain: pick } });

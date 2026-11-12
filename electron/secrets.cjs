@@ -50,7 +50,9 @@ function askSecret({ BrowserWindow, parent, label, note, button, look, show = tr
     const { ipcMain } = require('electron');
     ipcMain.on('falcon:secret-submit', onSubmit);
     w.on('closed', () => { ipcMain.off('falcon:secret-submit', onSubmit); resolve(value); });
-    w.loadFile(path.join(__dirname, 'secret-prompt.html'), { query: { ...look, label, ...(note ? { note } : {}), ...(button ? { button } : {}) } });
+    // from the page's look, only its colors (CSS variables) and its font: the words in this window are main's
+    const style = Object.fromEntries(Object.entries(look && typeof look === 'object' ? look : {}).filter(([k, v]) => (k.startsWith('--') || k === 'font') && typeof v === 'string'));
+    w.loadFile(path.join(__dirname, 'secret-prompt.html'), { query: { ...style, label, ...(note ? { note } : {}), ...(button ? { button } : {}) } });
     if (show) w.once('ready-to-show', () => w.show());
   });
 }

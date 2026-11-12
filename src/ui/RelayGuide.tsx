@@ -98,31 +98,45 @@ function setupFailure(r: Extract<RelaySetupResult, { ok: false }>): string {
 /** The steps Set up my relay goes through. The first four happen in the main process, the last one here. */
 const ROWS = [['token', 'Getting the token'], ['account', 'Finding your Cloudflare account'], ['upload', 'Uploading the relay'], ['address', 'Turning on its address'], ['online', 'Checking it works']] as const;
 type Row = typeof ROWS[number][0];
-type Phase = { at: 'idle' } | { at: 'run'; row: Row; waiting?: boolean } | { at: 'bad'; row: Row; text: string } | { at: 'done'; url: string };
+// a failure after the relay went up keeps its `url`: trying again then only checks again, with no new token
+type Phase = { at: 'idle' } | { at: 'run'; row: Row; waiting?: boolean } | { at: 'bad'; row: Row; text: string; url?: string } | { at: 'done'; url: string };
 
 /** The desktop's last step: Falcon makes the relay on the user's account, then checks it like Connect does and saves it. */
 function SetUp({ byHand }: { byHand: () => void }) {
   const [phase, setPhase] = useState<Phase>({ at: 'idle' });
   const run = useRef(0); // as in Connect: going Back or closing the guide drops a run's answer and stops its waiting
   useEffect(() => () => { run.current++; }, []);
+  // the button that started a run goes away with it: keep focus in the dialog (so Esc and Tab stay its own), and
+  // on the button again once there is one
+  const mark = useRef<HTMLParagraphElement>(null), first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; } // the guide focuses the step when it opens
+    const dialog = mark.current?.closest<HTMLElement>('.rg');
+    (phase.at === 'run' ? dialog : dialog?.querySelector<HTMLElement>('[data-first]') ?? dialog)?.focus();
+  }, [phase.at]);
   const go = async () => {
     const mine = ++run.current, gone = () => mine !== run.current;
     let row: Row = 'token';
     const at = (r: Row, waiting?: boolean) => { row = r; if (!gone()) setPhase({ at: 'run', row: r, waiting }); };
-    at('token');
-    const r = await bridge.relaySetup!(chromeLook(), (s) => { if (ROWS.some(([k]) => k === s)) at(s as Row); });
-    if (gone()) return;
-    if (!r.ok) { setPhase(r.error === 'cancelled' ? { at: 'idle' } : { at: 'bad', row, text: setupFailure(r) }); return; }
+    let url = phase.at === 'bad' ? phase.url : undefined;
+    if (!url) {
+      at('token');
+      const r: RelaySetupResult = await bridge.relaySetup!(chromeLook(), (s) => { if (ROWS.some(([k]) => k === s)) at(s as Row); })
+        .catch(() => ({ ok: false, error: 'failed' }));
+      if (gone()) return;
+      if (!r.ok) { setPhase(r.error === 'cancelled' ? { at: 'idle' } : { at: 'bad', row, text: setupFailure(r) }); return; }
+      url = r.url;
+    }
     at('online');
-    const c = await checkRelayPatiently(r.url, gone, () => at('online', true));
+    const c = await checkRelayPatiently(url, gone, () => at('online', true));
     if (c === null) return;
     if (c !== 'ok') {
-      setPhase({ at: 'bad', row, text: c === 'unreachable' ? "The relay is on Cloudflare, but its address didn't come online in 10 minutes. Click Try again: Falcon puts the same relay back and checks again"
+      setPhase({ at: 'bad', row, url, text: c === 'unreachable' ? "The relay is on Cloudflare, but its address didn't come online in 10 minutes. Click Try again to keep checking"
         : 'Something else answered at the relay\'s address. Try again, or set it up by hand' });
       return;
     }
-    setPref(P.relayUrl, r.url);
-    setPhase({ at: 'done', url: r.url });
+    setPref(P.relayUrl, url);
+    setPhase({ at: 'done', url });
   };
   const now = phase.at === 'idle' ? -1 : phase.at === 'done' ? ROWS.length : ROWS.findIndex(([k]) => k === phase.row);
   return (
@@ -135,7 +149,7 @@ function SetUp({ byHand }: { byHand: () => void }) {
             return <li key={k} data-st={st}><i>{st === 'done' ? <SvgIcon name="check" /> : st === 'now' ? <span className="co-spin" /> : null}</i>{label}</li>;
           })}
         </ol>}
-      <p className="rg-note" data-bad={phase.at === 'bad' || undefined} role="status">
+      <p ref={mark} className="rg-note" data-bad={phase.at === 'bad' || undefined} role="status">
         {phase.at === 'bad' ? phase.text : phase.at === 'done' ? `It works. Your relay is at ${phase.url}, and Falcon saved it. Card sharing and live editing are ready`
           : phase.at === 'run' && phase.waiting ? WAITING : phase.at === 'run' && phase.row === 'token' ? 'Paste the token in the window that opened' : ''}
       </p>

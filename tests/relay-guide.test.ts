@@ -116,8 +116,9 @@ describe('in the desktop app, Falcon sets the relay up itself', () => {
   /** A main process that walks the steps; `answer` is what it ends with. It's handed the look and the step callback, and nothing else crosses. */
   function main(answer: RelaySetupResult, upTo = 'address') {
     const seen: unknown[][] = [];
-    bridge.relaySetup = vi.fn(async (look: Record<string, string>, onStep: (s: string) => void) => {
-      seen.push([look, typeof onStep]);
+    bridge.relaySetup = vi.fn(async (...args: unknown[]) => {
+      seen.push(args);
+      const onStep = args[1] as (s: string) => void;
       for (const s of ['account', 'upload', 'address']) { onStep(s); await Promise.resolve(); if (s === upTo) break; }
       return answer;
     });
@@ -148,7 +149,12 @@ describe('in the desktop app, Falcon sets the relay up itself', () => {
     expect(document.activeElement?.textContent).toBe('Set up my relay');
     await act(async () => button('Set up my relay').click());
     await later(0);
-    expect(seen).toEqual([[expect.objectContaining({}), 'function']]);
+    // all that crosses to the main process: the page's colors and font, and where to report the steps
+    expect(seen.length).toBe(1);
+    expect(seen[0].length).toBe(2);
+    expect(Object.keys(seen[0][0] as object).every((k) => k.startsWith('--') || k === 'font')).toBe(true);
+    expect(typeof seen[0][1]).toBe('function');
+    expect(document.activeElement).toBe(document.querySelector('.rg')); // the button went away; focus stays in the dialog
     expect(rows()).toEqual(['done Getting the token', 'done Finding your Cloudflare account', 'done Uploading the relay', 'done Turning on its address', 'now Checking it works']);
     expect(note()).toBe(WAITING);
     expect(saved()).toBeNull();
@@ -169,6 +175,7 @@ describe('in the desktop app, Falcon sets the relay up itself', () => {
     await later(0);
     expect(rows()).toEqual(['done Getting the token', 'bad Finding your Cloudflare account', 'todo Uploading the relay', 'todo Turning on its address', 'todo Checking it works']);
     expect(note()).toBe('Cloudflare turned down that token. Make a new one with the link in step 3, copy all of it, and try again');
+    expect(document.activeElement?.textContent).toBe('Try again');
     expect(document.querySelector('.rg-note')?.hasAttribute('data-bad')).toBe(true);
     expect(saved()).toBeNull();
     online = true;
@@ -191,6 +198,55 @@ describe('in the desktop app, Falcon sets the relay up itself', () => {
     expect(document.querySelector('.rg-steps')).toBeNull();
     expect(button('Set up my relay')).toBeTruthy();
     expect(note()).toBe('');
+    expect(document.activeElement?.textContent).toBe('Set up my relay');
+  });
+
+  it('if the main process throws, the guide says so instead of hanging', async () => {
+    bridge.relaySetup = vi.fn(async () => { throw new Error('boom'); });
+    await setUpStep();
+    await act(async () => button('Set up my relay').click());
+    await later(0);
+    expect(note()).toBe('Something went wrong. Try again, or set it up by hand');
+    expect(button('Try again')).toBeTruthy();
+  });
+
+  it('an address that never comes online: Try again only checks again, without asking for another token', async () => {
+    main({ ok: true, url: ADDR, created: true });
+    await setUpStep();
+    await act(async () => button('Set up my relay').click());
+    await later(WAIT_FOR + WAIT_EVERY);
+    expect(note()).toBe("The relay is on Cloudflare, but its address didn't come online in 10 minutes. Click Try again to keep checking");
+    expect(rows().at(-1)).toBe('bad Checking it works');
+    online = true;
+    await act(async () => button('Try again').click());
+    await later(0);
+    expect(bridge.relaySetup).toHaveBeenCalledTimes(1);
+    expect(saved()).toBe(ADDR);
+    expect(note()).toMatch(/^It works/);
+  });
+
+  it('going Back, or to the terminal steps, while it waits stops the waiting', async () => {
+    main({ ok: true, url: ADDR, created: true });
+    await setUpStep();
+    await act(async () => button('Set up my relay').click());
+    await later(WAIT_EVERY);
+    await act(async () => button('Back').click());
+    const n = calls.length;
+    online = true;
+    await later(WAIT_EVERY * 5);
+    expect(calls.length).toBe(n);
+    expect(saved()).toBeNull();
+
+    online = false;
+    await act(async () => button('Next').click());
+    await act(async () => button('Set up my relay').click());
+    await later(WAIT_EVERY);
+    await act(async () => button('Set it up by hand').click());
+    const m = calls.length;
+    online = true;
+    await later(WAIT_EVERY * 5);
+    expect(calls.length).toBe(m);
+    expect(saved()).toBeNull();
   });
 
   it('Set it up by hand goes to the terminal steps, which end at the same Connect', async () => {

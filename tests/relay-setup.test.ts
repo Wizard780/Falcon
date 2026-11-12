@@ -76,6 +76,17 @@ describe('Falcon sets up the relay on a Cloudflare account', () => {
     expect(cf.state.subdomain).toBe('coach');
   });
 
+  it('an answer that names no subdomain without saying there is none stops too, instead of making one', async () => {
+    const cf = fakeCloudflare({ subdomain: 'coach' });
+    const blank = async (url: string, init?: RequestInit) => (url.endsWith('/workers/subdomain') && !init?.method?.startsWith('P')
+      ? new Response(JSON.stringify({ success: true, errors: [], messages: [], result: { subdomain: null } }), { status: 200 })
+      : cf.fetch(url, init));
+    const r: Result = await createRelaySetup({ worker, fetch: blank }).deploy(cf.token);
+    expect(r).toEqual({ ok: false, error: 'cloudflare' });
+    expect(cf.state.log.some((l: { call: string }) => l.call.startsWith('PUT') && l.call.endsWith('/subdomain'))).toBe(false);
+    expect(cf.state.subdomain).toBe('coach');
+  });
+
   it('redeploys over an existing relay safely: a current one gets no migration, an older one only the steps it lacks', async () => {
     const now = fakeCloudflare({ subdomain: 'coach', scripts: { 'falcon-relay': { tag: 'v2', classes: ['Inbox', 'Room'], workersDev: true } } });
     expect((await run(now)).r.ok).toBe(true);

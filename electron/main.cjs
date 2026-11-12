@@ -1,5 +1,5 @@
 // Falcon main process: the windows, native file dialogs, and the clipboard bridge.
-const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, safeStorage, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, net, safeStorage, shell, utilityProcess } = require('electron');
 const crypto = require('node:crypto');
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
@@ -706,10 +706,15 @@ ipcMain.handle('falcon:relay-setup', async (e, look) => {
     const token = await askSecret({ BrowserWindow, parent: BrowserWindow.fromWebContents(e.sender), label: 'Cloudflare token', note: 'Used once to set up your relay, then forgotten.',
       button: 'Set up', look, show: !HEADLESS });
     if (!token) return { ok: false, error: 'cancelled' };
+    // off the clipboard, so a paste into a card later can't put it in a document (and from there in a file or a shared card)
+    if ((await clipboard.readText().catch(() => '')).trim() === token) clipboard.clear();
     // tests only: a stand-in for Cloudflare's API, and the address to report. A shipped app only ever sends the token to Cloudflare
     const test = HEADLESS && process.env.FALCON_CF_API ? { api: process.env.FALCON_CF_API, relayUrl: process.env.FALCON_CF_RELAY_URL || null } : {};
-    return await require('./relay-setup.cjs').createRelaySetup({ worker, ...test })
+    // Chromium's network stack, as the updater uses: the system's proxy and certificates, which school networks need
+    return await require('./relay-setup.cjs').createRelaySetup({ worker, fetch: (url, init) => net.fetch(url, init), ...test })
       .deploy(token, (step) => { if (!e.sender.isDestroyed()) e.sender.send('falcon:relay-step', step); });
+  } catch {
+    return { ok: false, error: 'failed' }; // a thrown error's message would reach the page; nothing from a run may
   } finally { relayBusy = false; }
 });
 ipcMain.handle('falcon:bridge-apps', () => linkedApps());
