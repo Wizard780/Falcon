@@ -1,0 +1,2 @@
+// The old-relay stand-in for journeys/live-editing.mjs, run from relay/ with --config (relay/'s wrangler, no install here)
+{ "name": "falcon-old-relay", "main": "index.ts", "compatibility_date": "2026-10-01" }

@@ -15,9 +15,9 @@ const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../.
 setTimeout(() => { console.log('FAIL timed out'); process.exit(1); }, 600_000).unref();
 
 /** wrangler dev on `dir` (relay/ or a copy of an older one), on a port of its own. */
-async function startRelay(dir, port, persist) {
+async function startRelay(dir, port, persist, config) {
   let log = '';
-  const p = spawn('npx', ['wrangler', 'dev', '--ip', '127.0.0.1', '--port', String(port), '--persist-to', persist, '--show-interactive-dev-session=false'],
+  const p = spawn('npx', ['wrangler', 'dev', ...(config ? ['--config', config] : []), '--ip', '127.0.0.1', '--port', String(port), '--persist-to', persist, '--show-interactive-dev-session=false'],
     { cwd: dir, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   p.stdout.on('data', (d) => { log += d; });
   p.stderr.on('data', (d) => { log += d; });
@@ -224,6 +224,11 @@ await command(A, 'live editing');
 want((await A.page.$$eval('.lv-who .nm', (x) => x.map((n) => n.textContent))).join() === 'You (Avery),Blake,Casey', 'A: the panel lists everyone in it');
 await A.shot('a-panel-three');
 await A.page.keyboard.press('Escape');
+await command(A, 'theme light');
+await command(A, 'live editing');
+await A.shot('a-panel-three-light');
+await A.page.keyboard.press('Escape');
+await command(A, 'theme dark');
 
 // ---------- A saves mid-session; the .docx reopens the same ----------
 const midA = await map(A);
@@ -280,14 +285,9 @@ want((await map(E)) === finalB, "B's .docx saved after leaving reopens with the 
 await B.shot('b-after-leaving');
 
 // ---------- a relay from before rooms ----------
-const old = fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-old-relay-'));
-for (const f of ['package.json', 'tsconfig.json']) fs.copyFileSync(path.join(REPO, 'relay', f), path.join(old, f));
-fs.mkdirSync(path.join(old, 'src'));
-const oldSrc = await new Promise((res, rej) => { const g = spawn('git', ['show', 'origin/main:relay/src/index.ts'], { cwd: REPO }); let o = ''; g.stdout.on('data', (d) => { o += d; }); g.on('close', (c) => (c ? rej(new Error('git show')) : res(o))); });
-fs.writeFileSync(path.join(old, 'src/index.ts'), oldSrc);
-fs.writeFileSync(path.join(old, 'wrangler.jsonc'), JSON.stringify({ name: 'falcon-relay', main: 'src/index.ts', compatibility_date: '2026-10-01', durable_objects: { bindings: [{ name: 'INBOX', class_name: 'Inbox' }] }, migrations: [{ tag: 'v1', new_sqlite_classes: ['Inbox'] }] }));
-fs.symlinkSync(path.join(REPO, 'relay', 'node_modules'), path.join(old, 'node_modules'));
-const oldRelay = await startRelay(old, port + 300, fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-old-persist-')));
+// the stand-in answers 404 to everything, as a relay deployed before rooms does for /v1/rooms and /v1/room/:id
+const oldRelay = await startRelay(path.join(REPO, 'relay'), port + 300, fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-old-persist-')),
+  path.join(REPO, '.claude/skills/verify-falcon/fixtures/old-relay/wrangler.jsonc'));
 stoppers.push(() => oldRelay.stop());
 const F = await openFalcon('live-editing/old-relay'); extra.push(F);
 await setRelay(F, oldRelay.url);
