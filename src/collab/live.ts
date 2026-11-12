@@ -4,7 +4,8 @@
  * passes along bytes it can't read and stores none of them.
  *
  * Built for the Workers free plan (scripts/live-free-tier.mjs), where each frame a client sends is 1/20 of a request:
- * - this peer's own edits go out at most once every BATCH_MS, all of them in one frame, with its caret. Nothing it
+ * - this peer's own edits go out at most once every EDIT_MS, all of them in one frame, with its caret; a caret that only
+ *   moved waits for CARET_MS, so clicking around costs little and never holds up the next key. Nothing it
  *   only received is sent on (that would multiply frames by the number of people), and an idle peer sends nothing;
  * - nobody stores the doc but the people in the room. Joining (or coming back after a drop) asks one peer for what's
  *   missing by version vector, and sends back what that peer lacks;
@@ -20,8 +21,12 @@ import { docOf, newBinding, SCHEMA_ID, seed, type Binding, type Peer } from './l
 import { checkRooms, nextUtcMidnight } from './relay';
 import type { Node as PMNode } from 'prosemirror-model';
 
-/** One frame of this peer's edits per this long, at most (scripts/live-free-tier.mjs is worked out at 400). */
-export const BATCH_MS = 400;
+/**
+ * One frame of this peer's edits per EDIT_MS at most, so a key shows on the others' screens within about that (plus the
+ * trip through the relay). A frame with only a caret move in it waits CARET_MS. scripts/live-free-tier.mjs is worked out
+ * at these.
+ */
+export const EDIT_MS = 100, CARET_MS = 400;
 const PIECE = 256 * 1024;
 /** Messages being put back together at once, and pieces in one (a whole doc is far less): past them, they're dropped. */
 const MAX_OPEN = 16, MAX_PIECES = 256;
@@ -97,6 +102,7 @@ export class LiveSession {
   private meDirty = true;
   private caretDirty = false;
   private timer = 0;
+  private due = 0;
   private lastSent = 0;
   private retry = 0;
   private delay = FIRST_RETRY;
@@ -367,10 +373,13 @@ export class LiveSession {
 
   // ---------- sending ----------
 
-  /** Something of mine to send: now if the last frame went out BATCH_MS ago, else when it's due. */
+  /** Something of mine to send: an edit EDIT_MS after the last frame, a caret move CARET_MS after it (now, if that's past). */
   private kick() {
-    if (this.timer || this.stopped) return;
-    this.timer = window.setTimeout(() => { this.timer = 0; this.flush(); }, Math.max(0, this.lastSent + BATCH_MS - Date.now()));
+    if (this.stopped) return;
+    const due = this.lastSent + (this.pending.length ? EDIT_MS : CARET_MS);
+    if (this.timer) { if (due >= this.due) return; window.clearTimeout(this.timer); } // an edit after a caret move goes sooner
+    this.due = due;
+    this.timer = window.setTimeout(() => { this.timer = 0; this.flush(); }, Math.max(0, due - Date.now()));
   }
 
   private flush() {

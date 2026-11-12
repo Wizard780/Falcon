@@ -20,12 +20,14 @@ const GB = 128 / 1024; // each object is billed for its 128 MB
 // ---------- the round ----------
 const HOURS = 2;
 const SECONDS = HOURS * 3600;
-const BATCH_MS = 400; // a client sends at most one frame (doc update + its cursor) per 400 ms window
+const BATCH_MS = 100; // a client sends at most one frame (doc update + its cursor) per 100 ms while editing (src/collab/live.ts EDIT_MS);
+// a caret that only moved waits 400 ms, so counting every window as 100 ms overstates it
 const HANDLER_MS = 2; // the room's webSocketMessage: check size, fan the frame out to the other sockets; no awaits, no storage
 const CONNECTS = 6; // each person: the first connect plus reconnects (wifi drops, a laptop lid)
 const LATE_JOINERS = 1; // one person joins after the start, and once more after a reconnect gap
 const SNAPSHOT_MB = 8; // a several-hundred-page block file's Loro snapshot, sent by a peer in chunks
 const CHUNK_KB = 256;
+const KEYS = 8; // transactions a second while someone edits flat out (keys, caret moves)
 
 /** The share of the round each person is editing or moving their caret: a frame every window while they are. */
 const PROFILES = { realistic: 0.5, worst: 1 };
@@ -33,7 +35,7 @@ const PROFILES = { realistic: 0.5, worst: 1 };
 function round(people, active, design) {
   const framesPerPerson = design.perKeystroke
     ? SECONDS * active * design.perKeystroke // every transaction (keys, caret moves) is its own message
-    : SECONDS * active * (1000 / BATCH_MS);
+    : SECONDS * active * Math.min(1000 / BATCH_MS, KEYS); // never more frames than the person makes edits
   const frames = framesPerPerson * people;
   const connects = people * CONNECTS;
   // each connect: {"t":"join"}, the ask, one peer's answer, a catch-up update, and every other person's name frame
@@ -51,8 +53,8 @@ function round(people, active, design) {
 }
 
 const DESIGNS = {
-  falcon: { label: 'Falcon: hibernating room, ciphertext rebroadcast only, 400 ms batches, snapshot from a peer', hibernates: true },
-  perKeystroke: { label: 'no batching: one message per transaction (~8 a second while editing)', hibernates: true, perKeystroke: 8 },
+  falcon: { label: 'Falcon: hibernating room, ciphertext rebroadcast only, 100 ms batches, snapshot from a peer', hibernates: true },
+  perKeystroke: { label: 'no batching: one message per transaction (~8 a second while editing; a paste or a burst of formatting is several more)', hibernates: true, perKeystroke: KEYS },
   stores: { label: 'a storage row per update, late joiner reads them back', hibernates: true, storesUpdates: true, snapshotFromStorage: true },
   noHibernate: { label: 'room calls ws.accept() (no hibernation)', hibernates: false },
 };

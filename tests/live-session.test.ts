@@ -8,7 +8,7 @@ import { createState, createView, markMap } from '../src/editor/editor';
 import { falconKeys as K } from '../src/editor/keymap';
 import { schema } from '../src/editor/schema';
 import { docOf, liveState } from '../src/collab/live-doc';
-import { host, join, BATCH_MS, type LiveSession } from '../src/collab/live';
+import { host, join, CARET_MS, EDIT_MS, type LiveSession } from '../src/collab/live';
 import { checkRooms, nextUtcMidnight } from '../src/collab/relay';
 import { openFrame, roomKey, sealFrame, unb64url } from '../src/collab/crypto';
 import { LoroDoc } from 'loro-crdt';
@@ -89,14 +89,14 @@ describe('a live session through the relay', { timeout: 30_000 }, () => {
     await until(() => A.s.status.kind === 'live');
     const B = await enter('Blake', A.s);
     await until(() => B.s.status.kind === 'live' && A.s.members.some((m) => m.name === 'Blake'));
-    await sleep(BATCH_MS * 2);
+    await sleep(CARET_MS * 2);
     const a0 = A.s.sent, b0 = B.s.sent, t0 = Date.now();
     caret(A.view, 'Growth');
     for (let i = 0; i < 20; i++) { type(A.view, 'x'); await sleep(100); }
     await until(() => mm(B.view).includes('x'.repeat(20)), 6000, 'B has the typing');
     const secs = (Date.now() - t0) / 1000;
     expect(B.s.sent - b0).toBe(0);
-    expect(A.s.sent - a0).toBeLessThanOrEqual(Math.ceil((secs * 1000) / BATCH_MS) + 1);
+    expect(A.s.sent - a0).toBeLessThanOrEqual(Math.ceil((secs * 1000) / EDIT_MS) + 1);
     expect(A.s.sent - a0).toBeGreaterThan(1);
   });
 
@@ -128,7 +128,7 @@ describe('a live session through the relay', { timeout: 30_000 }, () => {
     await until(() => A.s.members.length === 1 && C.s.members.length === 1, 6000, 'B gone');
     caret(A.view, 'Growth'); type(A.view, 'after B left ');
     await until(() => mm(C.view).includes('after B left'));
-    await sleep(BATCH_MS * 2);
+    await sleep(CARET_MS * 2);
     expect(mm(B.view)).toBe(kept);
   });
 

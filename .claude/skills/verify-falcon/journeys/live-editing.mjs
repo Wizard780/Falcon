@@ -183,9 +183,26 @@ await typeSlowly(A, 'steady typing here ', 100);
 const secs = (Date.now() - t0) / 1000;
 await wait(A, 800);
 const aFrames = fa.sent - a0, bFrames = fb.sent - b0;
-want(aFrames <= Math.ceil(secs / 0.4) + 2 && aFrames >= 2, `A typed for ${secs.toFixed(1)} s and sent ${aFrames} frames (at most one per 400 ms)`);
+want(aFrames <= Math.ceil(secs / 0.1) + 2 && aFrames >= 2, `A typed for ${secs.toFixed(1)} s and sent ${aFrames} frames (at most one per 100 ms)`);
 want(bFrames === 0, `B, idle, sent ${bFrames} frames meanwhile`);
 want(await converge([A, B]), 'B has the steady typing');
+
+// ---------- latency: how soon each key A types shows on B (local relay, so this is Falcon's own delay) ----------
+await B.page.evaluate(() => { window.__seen = []; let last = ''; const ed = document.querySelector('.ProseMirror');
+  new MutationObserver(() => { const t = ed.textContent; if (t !== last) { last = t; window.__seen.push([Date.now(), (t.match(/Q/g) || []).length]); } }).observe(ed, { subtree: true, childList: true, characterData: true }); });
+await A.page.evaluate(() => { window.__typed = []; addEventListener('keydown', (e) => { if (e.key === 'Q') window.__typed.push(Date.now()); }, true); });
+await caret(A, 'Global'); // a caret move, then a key at once: the key doesn't wait out the caret's frame
+await A.page.keyboard.type('Q');
+await wait(A, 1000);
+for (let i = 0; i < 24; i++) { await A.page.keyboard.type('Q'); await wait(A, 125); }
+await wait(A, 1000);
+{
+  const typed = await A.page.evaluate(() => window.__typed), seen = await B.page.evaluate(() => window.__seen);
+  const lag = typed.map((t, i) => (seen.find(([, n]) => n >= i + 1)?.[0] ?? Infinity) - t), steady = lag.slice(1);
+  const avg = Math.round(steady.reduce((a, b) => a + b, 0) / steady.length);
+  want(lag[0] < 150, `the first key after a caret move shows on B in ${lag[0]} ms`);
+  want(avg < 120 && Math.max(...steady) < 250, `steady typing (8 keys a second) shows on B in ${avg} ms on average, ${Math.max(...steady)} ms at most`);
+}
 
 // ---------- the relay restarts: both keep editing, then catch up ----------
 relay.stop();

@@ -9,7 +9,8 @@ Two or more people edit the same doc at once and see each other's edits and care
 - `join` the invite's toast (`<name> invited you to live-edit “<doc>”`, Join; from a stranger, `A code not in your recipients, who says they're <name>, invited you…`) or the panel's Invites to you, or the rail's Sharing button (it opens Live editing when only invites wait); the doc opens in a tab, live. The room is on the host's relay, named in the invite.
 - `converge` typing and F-keys on both sides at once end in the same mark map; carets show as a bar in the other person's color, their name on hover.
 - `who` the status bar (`Live · Blake and Casey`) and the panel's In “<doc>” list.
-- `frames` a typist sends at most one frame per 400 ms; an idle person sends none (`scripts/live-free-tier.mjs`).
+- `frames` a typist sends at most one frame per 100 ms (a caret that only moved, one per 400 ms); an idle person sends none (`scripts/live-free-tier.mjs`).
+- `latency` keys typed at a steady pace show on the other screen within 120 ms on average (local relay), and the first key after a click goes at once.
 - `reconnect` the relay drops: edits stay local (`Live · reconnecting`, the panel says so), and on reconnect each side gets what the other did.
 - `late` someone joining late gets the whole doc from a peer, not from storage.
 - `away` the live doc's tab put away (another tab showing): what comes in keeps its stored state current, and Send to speech into it goes into the session.
