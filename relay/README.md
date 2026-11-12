@@ -22,9 +22,17 @@ It is built to stay on the **Workers Free plan**, and it never needs a paid one.
    npx wrangler deploy
    ```
    Wrangler prints the URL, like `https://falcon-relay.<your-subdomain>.workers.dev`.
-3. Put that URL in Falcon. Either:
-   - per install: Settings > Sharing > Relay, or
-   - for everyone: set `DEFAULT_RELAY` in `src/collab/relay.ts` and ship a build.
+3. Put that URL in Falcon: Settings > Sharing > Relay. Your pairing code then carries it (code v2,
+   `src/collab/code.ts`), so people send to you through your relay from theirs, and each person's
+   free allowance is their own. Teammates don't paste your address: each sets up a relay of their
+   own (or a team shares one), and you swap codes. A code from before this (v1) has no relay, and
+   cards to it go through the sender's own relay, as they always did.
+   For everyone at once instead, set `DEFAULT_RELAY` in `src/collab/relay.ts` and ship a build.
+
+Set up a relay before live editing came out? Download it again (step 2's folder deleted first, then
+`npx --yes degit Wizard780/Falcon/relay falcon-relay`, `npm ci`) and run `npx wrangler deploy`. Running
+it in the old folder puts the same old relay back. The address stays the same, and card sharing keeps
+working. Falcon tells a relay without rooms apart (`GET /v1/rooms` answers 404) and says to do this.
 
 The migration in `wrangler.jsonc` uses `new_sqlite_classes`, the Durable Object storage the Free plan
 allows. Keep it that way.
@@ -74,6 +82,27 @@ text isn't documented; it is reported as `Exceeded allowed rows written in Durab
 (or rows read, duration, volume of requests). The Worker answers 429 for that and 503 for anything
 else. When the Worker's own 100,000 requests run out, Cloudflare answers with its error 1027 page
 before the Worker runs. That page has no CORS header, so Falcon sees it as the relay being unreachable.
+
+## Live-editing rooms
+
+A Room is a Durable Object that passes sealed frames between the people in a live-editing session
+and stores nothing (no rows, no alarms). Who is in it lives in each socket's attachment, which
+survives hibernation, so idle sessions cost no duration. The room key never reaches the relay: it
+goes to each invitee inside a sealed card envelope. A joiner gets the document from a peer, never
+from storage. `scripts/live-free-tier.mjs` works out what a round costs on the free plan.
+
+- `GET /v1/rooms`: `200 {rooms:1,...}` from the Worker itself (no Durable Object request). An older
+  relay answers 404.
+- `GET /v1/room/:id` (64 hex) as a WebSocket. The client sends `{"t":"join"}`, and gets
+  `{"t":"welcome","slot","peers":[...]}` (peers in join order). The others get `{"t":"joined","slot"}`,
+  and `{"t":"left","slot"}` when a socket closes.
+- Binary frames in: `[kind][...][sealed]`. Out: `[kind][from slot u32][sealed]`.
+  - kind 1 (update) goes to everyone else.
+  - kind 2 (ask, one more byte: the attempt) goes to the peer in longest, the next one on a retry.
+    With nobody else in, the asker gets `{"t":"alone"}`.
+  - kind 3 (answer, a u32 target slot) goes to that slot only.
+- Limits: 8 people (`{"t":"error","code":"room_full"}`), 1 MiB a frame. Over the daily limit, the
+  upgrade gets a socket that says `{"t":"error","code":"daily_limit"}` and closes.
 
 ## Protocol v1
 

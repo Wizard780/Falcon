@@ -4,11 +4,16 @@
  * contacts, and cards that came in. The same path in Electron and the web build. None of it is a
  * setting: Export settings and Restore defaults leave it alone.
  */
-import { makeIdentity, type Identity } from './crypto';
+import { makeIdentity, type Identity, type Invite } from './crypto';
 
 export type Contact = { code: string; name: string };
 /** A card that came in: who sent it (their code), what they call themselves, and the card itself. */
 export type Received = { id: string; from: string; claimed: string; sentAt: number; gotAt: number; label: string; content: unknown[]; /** this Falcon can't open it (a newer Falcon's card): it can only be dismissed */ unreadable?: boolean };
+
+/** An invite to a live-editing session that came in: who sent it (their code), what they call themselves, the room. */
+export type Invited = { id: string; from: string; claimed: string; sentAt: number; gotAt: number; invite: Invite };
+/** Invites kept at most (the newest); one per room. */
+export const MAX_INVITES = 20;
 
 const NAME = 'falcon-collab';
 const GONE_KEEP = 300; // ids of cards dismissed or inserted, so one delivered twice isn't shown twice
@@ -69,6 +74,9 @@ export async function regenerate(): Promise<Identity> {
 export const loadName = async () => (await get<string>('name')) ?? '';
 export const saveName = (name: string) => put('name', name);
 export const loadContacts = async () => (await get<Contact[]>('contacts')) ?? [];
+/** The code last copied from the panel (see service gaveCode). */
+export const loadGave = async () => (await get<string>('gave')) ?? '';
+export const saveGave = (code: string) => put('gave', code);
 export const saveContacts = (list: Contact[]) => put('contacts', list);
 
 export const loadCards = () => tx<Received[]>(['cards'], 'readonly', (t) => t.objectStore('cards').getAll() as IDBRequest<Received[]>).then((l) => l.sort((a, b) => a.gotAt - b.gotAt));
@@ -97,5 +105,40 @@ export async function keepCard(card: Received): Promise<boolean> {
 export const dropCard = (id: string) => tx(['meta', 'cards'], 'readwrite', (t) => {
   t.objectStore('cards').delete(id);
   const meta = t.objectStore('meta'), gone = meta.get('gone');
+  gone.onsuccess = () => meta.put([...((gone.result as string[] | undefined) ?? []).filter((x) => x !== id), id].slice(-GONE_KEEP), 'gone');
+});
+
+export const loadInvites = async () => (await get<Invited[]>('invites')) ?? [];
+/**
+ * Keep an invite that came in. Resolves once saved (then the relay may forget it); false: had it already, or it was dismissed.
+ * Past MAX_INVITES the oldest from a code that isn't a contact (`known`) goes first, so a stranger can't flood out a teammate's.
+ */
+export async function keepInvite(inv: Invited, known: (code: string) => boolean = () => false): Promise<boolean> {
+  let added = false;
+  await tx(['meta'], 'readwrite', (t) => {
+    const meta = t.objectStore('meta'), gone = meta.get('gone');
+    gone.onsuccess = () => {
+      if ((gone.result as string[] | undefined)?.includes(inv.id)) return;
+      const have = meta.get('invites');
+      have.onsuccess = () => {
+        const list = (have.result as Invited[] | undefined) ?? [];
+        if (list.some((x) => x.id === inv.id)) return;
+        // a newer invite to the same room takes the older one's place
+        const next = [...list.filter((x) => x.invite.room !== inv.invite.room), inv];
+        while (next.length > MAX_INVITES) {
+          const stranger = next.findIndex((x) => x !== inv && !known(x.from));
+          next.splice(stranger >= 0 ? stranger : 0, 1);
+        }
+        meta.put(next, 'invites');
+        added = true;
+      };
+    };
+  });
+  return added;
+}
+/** Done with an invite (joined or dismissed): it isn't shown again if the relay delivers it twice. */
+export const dropInvite = (id: string) => tx(['meta'], 'readwrite', (t) => {
+  const meta = t.objectStore('meta'), have = meta.get('invites'), gone = meta.get('gone');
+  have.onsuccess = () => meta.put(((have.result as Invited[] | undefined) ?? []).filter((x) => x.id !== id), 'invites');
   gone.onsuccess = () => meta.put([...((gone.result as string[] | undefined) ?? []).filter((x) => x !== id), id].slice(-GONE_KEEP), 'gone');
 });

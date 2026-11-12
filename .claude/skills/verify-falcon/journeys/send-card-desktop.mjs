@@ -11,7 +11,7 @@ import { _electron as electron } from 'playwright';
 
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..');
 const { makeIdentity, open, seal, proveKey, b64url, unb64url } = await import(path.join(REPO, 'src/collab/crypto.ts'));
-const { encodeCode, inboxId, parseCode } = await import(path.join(REPO, 'src/collab/code.ts'));
+const { encodeCode, inboxId, keyOf, parseCode } = await import(path.join(REPO, 'src/collab/code.ts'));
 const out = path.join(process.env.FALCON_EVIDENCE, 'send-card-desktop');
 fs.mkdirSync(out, { recursive: true });
 const results = [];
@@ -127,7 +127,7 @@ const got = await new Promise((resolve, reject) => {
     resolve(await open(partner, b.slice(36)));
   };
 });
-want(encodeCode(got.from) === code, 'the card the partner got is proven to come from the desktop code');
+want(keyOf(encodeCode(got.from)) === keyOf(code) && parsed.ok && parsed.relay === RELAY, "the card the partner got is proven to come from the desktop code's key (the code also carries the desktop's relay)");
 want(isDeepStrictEqual(got.card.content, card), `and it is the same card, marks and all:\n${JSON.stringify(got.card.content)}`);
 
 // relaunch on the same profile: same identity, same contact

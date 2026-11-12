@@ -11,6 +11,9 @@ export const alias = [
   { find: /^react\/jsx-runtime$/, replacement: 'preact/jsx-runtime' },
   { find: /^react\/jsx-dev-runtime$/, replacement: 'preact/jsx-dev-runtime' },
   { find: /^react$/, replacement: 'preact/compat' },
+  // live editing's CRDT with its wasm inline: the app loads its page from file://, where fetching a .wasm file fails.
+  // Only a live session imports it, so it's a chunk of its own, loaded then
+  { find: /^loro-crdt$/, replacement: 'loro-crdt/base64' },
 ];
 
 export default defineConfig({

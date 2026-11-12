@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { redo, undo } from 'prosemirror-history';
+import { redo, undo } from '../editor/live-hooks';
 import { IS_MAC, keyParts } from '../editor/keybinds';
 import { PREFIXES, loadRecent, matchRanges, noteRecent, parseArgs, parseQuery, rank, type Entry, type SourceId } from './command-center';
 import { argEntries, blockEntries, canFold, commandEntries, fileEntries, headingEntries, settingEntries, startFolded, templateEntries, textEntries, visibleTree, type Ctx } from './cc-sources';

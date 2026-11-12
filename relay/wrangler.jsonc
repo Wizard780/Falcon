@@ -1,10 +1,12 @@
-// Falcon's card relay. Free plan only: SQLite-backed Durable Objects (new_sqlite_classes) are the
-// kind the Workers free plan allows. See README.md for deploying it.
+// Falcon's relay: card sharing (Inbox) and live editing (Room). Free plan only: SQLite-backed Durable
+// Objects (new_sqlite_classes) are the kind the Workers free plan allows. See README.md for deploying it.
 {
   "name": "falcon-relay",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  "durable_objects": { "bindings": [{ "name": "INBOX", "class_name": "Inbox" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Inbox"] }],
+  "durable_objects": { "bindings": [{ "name": "INBOX", "class_name": "Inbox" }, { "name": "ROOM", "class_name": "Room" }] },
+  // v2 adds live-editing rooms. A Room never writes to its storage; it is SQLite-backed only because that is the
+  // kind of Durable Object the free plan has
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Inbox"] }, { "tag": "v2", "new_sqlite_classes": ["Room"] }],
   "observability": { "enabled": false }
 }
