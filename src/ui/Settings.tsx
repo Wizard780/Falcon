@@ -1,4 +1,5 @@
-import { MAX_PRESETS, aiService, citePresets, currentPreset, deletePreset, editPreset, newPreset } from '../editor/ai-cite';
+import { BUILT_IN_PROMPT, MAX_PRESETS, aiService, citePresets, currentPreset, deletePreset, promptInUse, savePreset } from '../editor/ai-cite';
+import { PromptEditor, type PromptEdit } from './PromptEditor';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { version } from '../../package.json';
@@ -176,7 +177,7 @@ export function Settings(props: Props) {
   const [linked, setLinked] = useState<LinkedApp[]>([]);
   useEffect(() => { if (props.open && bridge.linkedApps) bridge.linkedApps().then(setLinked, () => {}); }, [props.open]);
   const [aiKeys, setAiKeys] = useState<string[]>([]); // which providers have a key saved, by name
-  const [promptOpen, setPromptOpen] = useState(false);
+  const [editing, setEditing] = useState<PromptEdit | null>(null); // the prompt editor window, when it's open
   const [delArmed, setDelArmed] = useState<string | null>(null); // the preset whose Delete was clicked once: it takes two
   useEffect(() => { if (!props.open) { setDelArmed(null); setDelTemplate(null); } }, [props.open]);
   useEffect(() => { if (props.open && bridge.secretList) bridge.secretList().then(setAiKeys, () => {}); }, [props.open]);
@@ -448,19 +449,16 @@ export function Settings(props: Props) {
             <input className="st-text st-wide" aria-label="AI model" spellCheck={false} placeholder={router ? 'deepseek/deepseek-chat' : 'claude-opus-5-5'} maxLength={200} value={pref(aiModelPref)} onChange={(e) => setPref(aiModelPref, e.target.value)} />) },
           { label: 'Max output tokens', search: 'budget thinking', hint: 'Thinking spends from this too, so too low a number can cut the cite off. Minimum 1024.', control: (
             <input className="st-text" aria-label="Max output tokens" inputMode="numeric" maxLength={6} spellCheck={false} value={pref(P.aiMaxTokens) || ''} onChange={(e) => setPref(P.aiMaxTokens, Number(e.target.value.replace(/\D/g, '')))} />) },
-          { label: 'AI cite-creator prompt', wide: true, search: 'format style preset instructions', hint: `What the AI is told when it formats a cite, so it sets your citation style. Pick the built-in prompt or save up to ${MAX_PRESETS} of your own.`, control: (
+          { label: 'AI cite-creator prompt', wide: true, search: 'format style preset instructions edit prompt', hint: `What the AI is told when it formats a cite, so it sets your citation style. Edit opens the prompt in a big editor. Save up to ${MAX_PRESETS} of your own.`, control: (
             <span className="st-fold">
-              {select('AI cite-creator prompt', preset?.id ?? '', [['', 'Built-in prompt'], ...citePresets().map((f): [string, string] => [f.id, f.name])], (v) => { setPref(P.aiCitePreset, v); setDelArmed(null); })}
-              {preset && <button className="st-btn" onClick={() => setPromptOpen((o) => !o)}>{promptOpen ? 'Done' : 'Edit'}</button>}
-              <button className="st-btn" disabled={citePresets().length >= MAX_PRESETS} onClick={() => { newPreset(); setPromptOpen(true); setDelArmed(null); }}>New preset</button>
-              {preset && <button className="st-btn" onClick={() => { const armed = delArmed === preset.id; if (armed) { deletePreset(preset.id); setPromptOpen(false); } setDelArmed(armed ? null : preset.id); }}>{delArmed === preset.id ? 'Really delete?' : 'Delete'}</button>}
+              {select('AI cite-creator prompt', preset?.id ?? '', [['', 'Built-in prompt'], ...citePresets().map((f, i): [string, string] => [f.id, `${i + 1}. ${f.name}`])], (v) => { setPref(P.aiCitePreset, v); setDelArmed(null); })}
+              {/* the built-in prompt can't change, so Edit on it starts a preset from it */}
+              <button className="st-btn" disabled={!preset && citePresets().length >= MAX_PRESETS} title={preset ? 'Edit this prompt' : 'Start a preset from the built-in prompt'}
+                onClick={() => { setDelArmed(null); setEditing(preset ? { id: preset.id, name: preset.name, prompt: preset.prompt, placeholder: preset.name } : { id: null, name: '', prompt: BUILT_IN_PROMPT, placeholder: `Preset ${citePresets().length + 1}` }); }}>Edit</button>
+              <button className="st-btn" disabled={citePresets().length >= MAX_PRESETS} title={citePresets().length >= MAX_PRESETS ? `Up to ${MAX_PRESETS} presets` : 'Start a preset from the prompt in use'}
+                onClick={() => { setDelArmed(null); setEditing({ id: null, name: '', prompt: promptInUse(), placeholder: `Preset ${citePresets().length + 1}` }); }}>New preset</button>
+              {preset && <button className="st-btn" onClick={() => { const armed = delArmed === preset.id; if (armed) { deletePreset(preset.id); } setDelArmed(armed ? null : preset.id); }}>{delArmed === preset.id ? 'Really delete?' : 'Delete'}</button>}
             </span>) },
-          ...(preset && promptOpen ? [
-            { label: 'Preset name', control: <input className="st-text st-wide" aria-label="Preset name" spellCheck={false} maxLength={40} value={preset.name} onChange={(e) => editPreset(preset.id, { name: e.target.value })} /> },
-            { id: 'ai-prompt', label: '', wide: true, control: (
-              <textarea className="st-area" aria-label="Preset prompt" spellCheck={false} rows={20} value={preset.prompt} onChange={(e) => editPreset(preset.id, { prompt: e.target.value })} />) },
-            { label: 'Writing your own prompt', hint: 'Ask for any style. Whatever the AI answers becomes the cite. To say which part gets the cite style, have it answer with [[CITE]], [[TOKENS]] and [[END]] like the built-in prompt. {DATE} becomes today.', control: null },
-          ] : []),
         ]],
     ] },
     { id: 'search', title: 'File search', icon: 'search', sections: [
@@ -758,6 +756,8 @@ export function Settings(props: Props) {
           </div>
         </div>
       </div>
+      {editing && createPortal(<PromptEditor edit={editing} onClose={() => setEditing(null)}
+        onSave={(name, prompt) => { savePreset(editing.id, name, prompt); setEditing(null); }} />, document.body)}
       {guide && createPortal(<RelayGuide onClose={() => setGuide(false)}
         onAddRecipient={() => { setGuide(false); setQuery(''); setPageId('sharing'); setRcpDraft({ code: '', name: '' }); }} />, document.body)}
     </div>

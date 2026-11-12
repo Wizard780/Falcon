@@ -155,3 +155,14 @@
 .st-help { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 6px; vertical-align: 1px; border-radius: 50%; background: var(--u-ctl2); color: var(--u-mut); font-size: 11px; font-weight: 600; line-height: 1; cursor: pointer; transition: color 150ms ease-out, background 150ms ease-out; }
 .st-help:hover { background: var(--u-ctl-on); color: var(--u-tx); }
 .st-help:focus-visible { outline: 2px solid var(--u-tx2); outline-offset: 2px; }
+
+/* the AI cite-creator prompt editor, a big window over Settings like CardMirror's Edit prompt */
+.cf.pe { width: min(780px, calc(100vw - 48px)); max-height: calc(100vh - 56px); display: flex; flex-direction: column; }
+.pe-note { margin-bottom: 14px !important; }
+.pe-note code { font: 12px var(--mono); color: var(--u-tx); }
+.pe-lab { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 13px; color: var(--u-tx2); }
+.pe-lab .st-text { flex: 1; }
+.pe-area { flex: 1; width: 100%; min-height: 220px; height: 54vh; resize: vertical; box-sizing: border-box; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--u-ctl); color: var(--u-tx); font: 12.5px/1.55 var(--mono); outline: none; }
+.pe-area:focus-visible { box-shadow: 0 0 0 2px var(--u-tx2); }
+.cf-btns .pe-left { margin-right: auto; }
+.cf-btns .pe-save { font-weight: 600; }

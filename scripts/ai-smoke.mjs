@@ -21,9 +21,23 @@ const server = http.createServer((req, res) => {
       return;
     }
     const text = body.system[0].text.startsWith('PLAIN') ? 'Doe, Jane. "A Title." Journal, 2020.' : `[[CITE]]\nSmith ${n} [John Smith, professor; May 1, 2024; "Title," Journal, https://example.com/a]\n[[TOKENS]]\nSmith ${n}\n[[END]]`;
+    // the app streams (big max output tokens need it), so answer the way the API streams
+    const events = [
+      ['message_start', { type: 'message_start', message: { id: `msg_${n}`, type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 0 } } }],
+      ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }],
+      ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } }],
+      ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+      ['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } }],
+      ['message_stop', { type: 'message_stop' }],
+    ];
     setTimeout(() => {
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ id: `msg_${n}`, type: 'message', role: 'assistant', model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text }], usage: { input_tokens: 1, output_tokens: 1 } }));
+      if (!body.stream) {
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ id: `msg_${n}`, type: 'message', role: 'assistant', model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text }], usage: { input_tokens: 1, output_tokens: 1 } }));
+        return;
+      }
+      res.setHeader('content-type', 'text/event-stream');
+      res.end(events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join(''));
     }, 300);
   });
 });
@@ -77,10 +91,27 @@ const insideCard = () => win.evaluate(() => {
   return [...row.querySelectorAll('button, select')].every((e) => e.getBoundingClientRect().right <= card.right - 20);
 });
 want(await insideCard(), 'the prompt buttons stay inside the card');
+// New preset opens the prompt editor, starting from the prompt in use; nothing saves until Save
 await win.click('text=New preset');
-want(await insideCard(), 'and still do with a preset picked');
+await win.waitForSelector('.cf.pe');
+want((await win.inputValue('textarea[aria-label="Preset prompt"]')).includes('[[TOKENS]]'), 'New preset opens a big editor with the prompt in use in it');
+await win.keyboard.press('Escape');
+await win.waitForTimeout(150);
+want(!(await win.$('.cf.pe')) && !!(await win.$('.st')), 'Esc closes the editor, and Settings stays open');
+want((await win.$$eval('select[aria-label="AI cite-creator prompt"] option', (o) => o.length)) === 1, 'and closing it without saving makes no preset');
+await win.click('text=New preset');
 await win.fill('input[aria-label="Preset name"]', 'House style');
 await win.fill('textarea[aria-label="Preset prompt"]', 'house rules for {DATE} [[CITE]] [[TOKENS]] [[END]]');
+await win.waitForTimeout(300); // let it fade in for the picture
+await win.screenshot({ path: 'shots/ai-prompt-editor.png' });
+await win.click('.pe-save');
+await win.waitForTimeout(150);
+want((await win.$eval('select[aria-label="AI cite-creator prompt"]', (s) => s.selectedOptions[0].textContent)) === '1. House style', 'Save makes the preset and puts it in use');
+want(await insideCard(), 'and the buttons still fit with a preset picked');
+// Edit reopens it with what was saved
+await win.click('.st-row:has-text("AI cite-creator prompt") button:text-is("Edit")');
+want((await win.inputValue('textarea[aria-label="Preset prompt"]')).startsWith('house rules') && (await win.inputValue('input[aria-label="Preset name"]')) === 'House style', 'Edit opens the saved preset');
+await win.click('.pe-save');
 await win.waitForTimeout(100);
 await win.click('[aria-label="Close settings"]');
 await win.waitForTimeout(200);
@@ -100,7 +131,8 @@ const r = seen[0];
 want(r.path.startsWith('/v1/messages') && r.auth === 'Bearer test-key-for-the-stand-in', `request hit the messages endpoint with the key: ${r.path}`);
 want(r.beta?.includes('server-side-fallback-2026-07-01') && r.body.fallbacks === 'default' && r.body.model === 'claude-opus-5-5', 'default model with refusal fallbacks');
 want(r.body.system[0].text.startsWith('house rules for '), 'the preset in use is what the model gets');
-want(!r.body.system[0].text.includes('{DATE}') && r.body.system[0].text.includes(String(new Date().getFullYear())), 'the date is filled in');
+const d = new Date();
+want(r.body.system[0].text.includes(`for ${d.getMonth() + 1}-${d.getDate()}-${d.getFullYear()} `), `the date is filled in, M-D-YYYY like CardMirror: ${r.body.system[0].text.slice(0, 40)}`);
 await win.screenshot({ path: 'shots/ai-formatted.png' });
 await win.keyboard.press(`${MOD}+z`);
 await win.waitForTimeout(200);
@@ -136,9 +168,11 @@ await win.click('.fstrip [aria-label="Settings"]');
 await win.click('.st-nav >> text=AI');
 await win.waitForTimeout(200);
 await win.fill('input[aria-label="AI model"]', 'vendor/some-model:v2');
-if (!(await win.$('textarea[aria-label="Preset prompt"]'))) await win.click('button:text-is("Edit")');
+await win.click('.st-row:has-text("AI cite-creator prompt") button:text-is("Edit")');
 await win.fill('textarea[aria-label="Preset prompt"]', 'PLAIN mla style please');
+await win.keyboard.press(`${MOD}+Enter`);
 await win.waitForTimeout(100);
+want(!(await win.$('.cf.pe')), `${MOD}+Enter saves and closes the editor`);
 await win.click('[aria-label="Close settings"]');
 await win.waitForTimeout(200);
 await win.click(editor);
@@ -202,6 +236,23 @@ await win.waitForTimeout(200);
 await win.click('button:text-is("Anthropic")');
 await win.waitForSelector('text=Anthropic API key');
 want(await win.inputValue('input[aria-label="AI model"]') === 'vendor/some-model:v2' && !!(await win.$('text=Remove key')), 'switching back finds the Anthropic key and model untouched');
+
+// a big max output tokens: the SDK won't send those without streaming, which used to come back as 'The AI request failed.'
+// (Settings is still open on AI, back on Anthropic, from the step above)
+await win.fill('input[aria-label="Max output tokens"]', '64000');
+await win.click('[aria-label="Close settings"]');
+await win.waitForTimeout(200);
+const beforeBig = seen.length;
+await win.click(editor);
+await win.keyboard.press(`${MOD}+ArrowDown`);
+await win.keyboard.press('Enter');
+await win.keyboard.type('big budget 2024');
+await win.keyboard.press('Shift+Home');
+await win.keyboard.press(`${MOD}+Shift+x`);
+await win.waitForFunction(() => !document.querySelector('.ProseMirror').textContent.includes('big budget 2024'), null, { timeout: 8000 }).catch(() => {});
+const big = seen.slice(beforeBig).find((r) => r.path.startsWith('/v1/messages'));
+want(big?.body.max_tokens === 64000 && big?.body.stream === true, `64000 max output tokens goes out, streamed: ${JSON.stringify(big && { max: big.body.max_tokens, stream: big.body.stream })}`);
+want(!(await win.textContent(editor)).includes('big budget 2024'), 'and the cite comes back');
 
 await app.close();
 server.close();

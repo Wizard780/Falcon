@@ -16,8 +16,9 @@ const safeStorage = {
 };
 const dir = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-ai-')), 'secrets');
 function clientWith(...answers: unknown[]) {
-  const create = vi.fn(async () => { const a = answers.shift(); if (a instanceof Error) throw a; return a; });
-  return { create, Client: class { beta = { messages: { create } }; } };
+  const create = vi.fn(async (_body?: unknown) => { const a = answers.shift(); if (a instanceof Error) throw a; return a; });
+  // the app streams, so stream(body).finalMessage() stands in for one create(body)
+  return { create, Client: class { beta = { messages: { create, stream: (body: unknown) => ({ finalMessage: () => create(body) }) } }; } };
 }
 const done = (text: string) => ({ stop_reason: 'end_turn', content: [{ type: 'text', text }] });
 const req = { system: 's', text: 't', model: '', maxTokens: 8192 };
@@ -140,6 +141,10 @@ describe('asking', () => {
     expect(await ready(c1.Client).ask({ ...req, model: 'gpt-x' })).toMatchObject({ stop: true, error: expect.stringContaining('gpt-x') });
     const c2 = clientWith(new Anthropic.BadRequestError(400, { error: { message: 'max_tokens is too big' } }, 'no', new Headers()));
     expect((await ready(c2.Client).ask(req)).error).toContain('max_tokens is too big');
+  });
+  it('says what went wrong when the SDK itself gives up, instead of a bare failure', async () => {
+    const { Client } = clientWith(new Error('Streaming is required for operations that may take longer than 10 minutes.'));
+    expect((await ready(Client).ask(req)).error).toBe('The AI request failed: Streaming is required for operations that may take longer than 10 minutes.');
   });
   it('turns a refusal into a message', async () => {
     const { Client } = clientWith({ stop_reason: 'refusal', content: [] });
