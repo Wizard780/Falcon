@@ -51,6 +51,8 @@ const P16: Record<string, string> = {
   refresh: '<path d="M13 6.5a5 5 0 0 0-9.3-1.6"/><path d="M3.5 2.3v2.8h2.8"/><path d="M3 9.5a5 5 0 0 0 9.3 1.6"/><path d="M12.5 13.7v-2.8H9.7"/>',
   download: '<path d="M8 2.5v7.5M5 7l3 3 3-3"/><path d="M2.5 10.5v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-1.5"/>',
   upload: '<path d="M8 10.5V3M5 6l3-3 3 3"/><path d="M2.5 10.5v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-1.5"/>',
+  // sharing (cards to and from recipients, live editing): a paper plane
+  send: '<path d="M14.2 1.8 7.2 8.8"/><path d="M14.2 1.8 9.8 14.2 7.2 8.8 1.8 6.2z"/>',
   // SpeechDrop's tab: a tray that files drop into
   inbox: '<path d="M2.5 9.5h3l1 1.5h3l1-1.5h3"/><path d="M4.2 3.5h7.6l1.7 6v3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-3z"/>',
   copy: '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/>',

@@ -8,7 +8,8 @@ Each Falcon has a pairing code, which carries the relay it listens on (code v2; 
 - `name` Your name is sent with each card, and saved as you type.
 - `recipients` Add recipient, then paste a code and a name. A typo, a short code or a newer Falcon's code is refused in the row with its own reason. Remove is the x on hover. Order, hide and star: see [Recipients](./recipients.md).
 - `send` Send Card to… lists the recipients not hidden, in their order (arrows, Enter or a click) and names the card it sends; the toast says Sent, or why it didn't go.
-- `receive` a card arrives while typing: a toast with Show and the rail's `Cards waiting (n)` button. Focus and the text stay put.
+- `receive` a card arrives while typing: a toast with Show (drawn over any open dialog), and the count on the rail's Sharing button (`Sharing, 1 card waiting`). Focus and the text stay put. A card from a code not in your recipients says so, with the name it gave: `Card from a code not in your recipients, who says they're Avery: “…”`. On the desktop app, with no Falcon window in front, the Dock icon bounces once (Windows: the taskbar button flashes).
+- `rail` the Sharing button (a paper plane) is always on the rail, directly above the update button (or Check for updates; on the web, above Settings). Its count is cards waiting plus invites not joined yet, and stays until they're inserted, dismissed or joined. It opens Card sharing, or Live editing when only invites wait. See `journeys/sharing-rail.mjs`.
 - `insert` Insert puts it below the caret's paragraph with every style and mark. Read mode refuses. Copy and Dismiss do what they say.
 - `unknown` a card from a code not in recipients shows the name it claims, and Add recipient fills it in.
 - `fail` relay stopped: the send says it failed and the panel says it's retrying. Relay over its daily limit: paused until 00:00 UTC, shown in local time (app test). The editor keeps working.
@@ -18,7 +19,7 @@ Each Falcon has a pairing code, which carries the relay it listens on (code v2; 
 ## How to get to it (user POV)
 
 - Command center (Mod-Shift-Space): `Card sharing` opens the panel; `Send Card to…` opens the picker. Neither has a key until one is set in Settings > Keybindings (Card sharing group).
-- The rail's inbox button above Settings, shown only while cards are waiting.
+- The rail's Sharing button (paper plane), above the update button.
 - The toast's Show button when a card arrives.
 - Settings > Sharing > Relay (search "relay"), the relay's address.
 
@@ -29,12 +30,13 @@ Preconditions:
 - `falcon-verify doctor` is all `ok`, and `npm ci` has been run in `relay/` (the journey starts its own `wrangler dev`, no account needed).
 
 - **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/send-card.mjs`. It exits 0 with 52 `ok` lines. A is on relay 1 and B on relay 2 (two `wrangler dev`s). It opens three browser contexts (A, B, and C with no relay), so three identities, plus a second window in B that waits for the socket and takes it over when the first closes.
-- **Desktop.** After `npm run build`, run `$V run .claude/skills/verify-falcon/journeys/send-card-desktop.mjs`. It exits 0 with 12 `ok` lines. The hidden Electron window (file://) connects and proves its key, takes a card from the script (the partner, using `src/collab` itself), inserts it with its marks, sends one back that the partner opens and verifies, and keeps the same code and contacts after a relaunch.
+- **Desktop.** After `npm run build`, run `$V run .claude/skills/verify-falcon/journeys/send-card-desktop.mjs`. It exits 0 with 17 `ok` lines. The hidden Electron window (file://) connects and proves its key, takes a card from the script (the partner, using `src/collab` itself) and counts it on the rail's Sharing button directly above Check for updates, raises the attention cue once (counted as `global.falconAttention` in the headless main process, which never bounces), inserts it with its marks, sends one back that the partner opens and verifies, and keeps the same code and contacts after a relaunch, where a fake release feed (`FALCON_UPDATE_FEED`) puts the update button up and Sharing sits directly above it.
 - **Relay.** In Settings, fill `input[aria-label="Relay address"]` and press Enter (it is saved on Enter or on leaving the box, not as it is typed; an address without `https://` gets it; then it's checked, and a line under the box says when no Falcon relay answers there). `localStorage['falcon.relayUrl']` holds it, and the panel's `.co-line` reads `Connected. Cards sent to your code arrive here`.
 - **Code.** `.co-code` is the code. `.co-me button` copies it and the toast reads `Copied your pairing code`.
 - **Recipient.** Click `.rcp-new` (Add recipient), fill `input[aria-label="Their pairing code"]` and `input[aria-label="Their name"]`, then click `.rcp-add button[type="submit"]`. A bad code shows in `.rcp-why`. Saved recipients are `.rcp-row`, each name an input: read `.rcp-nm` values, not text.
 - **Send.** Put the caret in a card, run `Send Card to…`. `#co-st` reads `Send “<tag>” to…`. Enter sends to the lit `.co-pk`, and the toast reads `Sent “<tag>” to <name>`. The page makes one POST and no OPTIONS preflight.
-- **Receive.** On the other side, `.toast` starts `Card from`, `.fstrip [aria-label="Cards waiting (1)"]` appears, and typing continues in the editor. Click it, then `.co-card button:has-text("Insert")`. The mark map gains the sent card's lines exactly.
+- **Receive.** On the other side, `.toast` starts `Card from`, `.fstrip [aria-label="Sharing, 1 card waiting"] .share-n` reads `1`, and typing continues in the editor. Click it, then `.co-card button:has-text("Insert")`. The mark map gains the sent card's lines exactly.
+- **Rail.** `$V run .claude/skills/verify-falcon/journeys/sharing-rail.mjs` exits 0 with 18 `ok` lines in about 1 minute: a stranger's invite while Card sharing is open (the toast on top, checked with `elementFromPoint`), the count staying after the toast goes, Sharing opening Live editing, Join and Dismiss clearing it, a card counting and opening Card sharing, the wide rail after a reload, light and dark. The button is `.fstrip .share-b`, aria-label `Sharing` or `Sharing, <n> card(s) and <n> invite(s) waiting`; the count is `.share-n`.
 - **Proof.** `evidence/send-card/` holds A's screens (recipient added, send picker in dark and light, relay stopped) and `results.txt`. `b/` holds B's screens (panel dark and light, the toast while typing, the waiting card, inserted). `c/` holds the no-relay panel.
 
 ## Gotchas

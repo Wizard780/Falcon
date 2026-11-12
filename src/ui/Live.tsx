@@ -62,6 +62,8 @@ export type LiveHost = {
   flash: (m: string, action?: { label: string; run: () => void }) => void;
   confirm: (a: Omit<Ask, 'done'>) => Promise<boolean>;
   openPanel: () => void;
+  /** a dialog, a question or read mode is up: a toast's Join waits for it (the invite still waits on the rail) */
+  busy: () => boolean;
 };
 
 type Mods = [typeof import('../collab/live'), typeof import('../collab/live-doc')];
@@ -153,7 +155,7 @@ export function useLiveSessions(h: LiveHost) {
   }, [publish]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const join = useCallback(async (inv: collab.Invited) => {
-    if (held.current?.s.room === inv.invite.room) { host.current.openPanel(); return; }
+    if (held.current?.s.room === inv.invite.room) { void collab.joinedInvite(inv.id).catch(() => {}); host.current.openPanel(); return; }
     // the room is on the host's relay, which the invite names; mine is for an invite that names none
     const relay = inv.invite.relay || collab.relayUrl();
     if (!relay) { host.current.flash('Live editing goes through a relay, and none is set. Add one in Settings > Sharing'); return; }
@@ -172,6 +174,7 @@ export function useLiveSessions(h: LiveHost) {
     if (!view) { stop(false); return; }
     r.docId = id;
     r.plugins = view.state.plugins;
+    void collab.joinedInvite(inv.id).catch(() => {}); // in it: no longer waiting on the rail
     follow(r, ld);
     view.updateState(ld.liveState(view.state, s.binding, s.me));
     publish();
@@ -189,8 +192,15 @@ export function useLiveSessions(h: LiveHost) {
     Object.assign(liveActions, { start: () => void start(), stop: () => stop(), invite, join: (i: collab.Invited) => void join(i), open: () => host.current.openPanel() });
   }, [start, stop, invite, join]);
   useEffect(() => collab.onInvited((i, who) => {
-    // the name an envelope gives is only what the sender typed: a stranger is said to be one, as a card from one is
-    host.current.flash(`${who ? who.name : 'A code not in your recipients'} invited you to live-edit “${i.invite.doc}”`, { label: 'Join', run: () => void join(i) });
+    // invited again to the room I'm in (they pressed Invite twice): nothing to join, nothing waiting
+    if (held.current?.s.room === i.invite.room) { void collab.joinedInvite(i.id).catch(() => {}); return; }
+    // the name an envelope gives is only what the sender typed: a stranger is said to be one, as the panel says it
+    const from = collab.fromWho(who, i.claimed);
+    host.current.flash(`${from[0].toUpperCase()}${from.slice(1)}${!who && i.claimed.trim() ? ',' : ''} invited you to live-edit “${i.invite.doc}”`, {
+      label: 'Join',
+      // the toast draws over dialogs: what's open is dealt with first, and the invite waits on the rail meanwhile
+      run: () => { if (host.current.busy()) host.current.flash(WAITS); else void join(i); },
+    });
   }), [join]);
   // a closed window leaves: the socket closes with the page, which the room tells the others
   useEffect(() => () => { const r = held.current; if (r) { r.s.binding.shown = undefined; r.away?.(); r.s.stop(); } held.current = null; setLiveInfo(null); }, []);
@@ -199,6 +209,9 @@ export function useLiveSessions(h: LiveHost) {
   const closed = useCallback((id: number) => { if (held.current?.docId === id) stop(); }, [stop]);
   return { start, stop, closed };
 }
+
+/** Said when a toast's button can't act yet. */
+export const WAITS = "Close what's open first. It waits on the rail's Sharing button.";
 
 /** The status bar's live line, when the shown doc is in a session. Opens the panel. */
 export function LiveBit({ docId, onOpen }: { docId: number; onOpen: () => void }) {

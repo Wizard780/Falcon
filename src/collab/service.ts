@@ -19,7 +19,7 @@ export type CollabState = {
   code: string; name: string; contacts: Contact[]; cards: Received[];
   /** the code last copied from the panel: when mine differs (my relay changed), people need the new one */
   gave: string;
-  /** invites to live-editing sessions waiting to be joined (they aren't cards: not in the rail's count) */
+  /** invites to live-editing sessions (they aren't cards); the ones not joined yet count as waiting on the rail's Sharing button */
   invites: Invited[];
   /** my relay ('' = none set): I listen there, and my code carries it */
   relay: string;
@@ -154,7 +154,7 @@ async function onCard(id: string, envelope: Uint8Array) {
   for (const f of arrivals) f(card, contactFor(from));
 }
 
-/** An invite came in: kept (then acked), and told to the app for its toast. Not a card: the rail's count leaves it out. */
+/** An invite came in: kept (then acked), and told to the app for its toast and the rail's Sharing count. */
 async function onInvite(inv: Invited) {
   if (!(await store.keepInvite(inv, (code) => !!contactFor(code)))) return;
   set({ invites: await store.loadInvites() }); // what was kept, after any stranger's old invite made room
@@ -229,7 +229,23 @@ export const current = () => state;
 export const onArrive = (f: (c: Received, contact: Contact | undefined) => void) => { arrivals.add(f); return () => { arrivals.delete(f); }; };
 /** An invite to a live-editing session came in (in this window or another): for the toast. */
 export const onInvited = (f: (i: Invited, contact: Contact | undefined) => void) => { invitedArrivals.add(f); return () => { invitedArrivals.delete(f); }; };
-/** Done with an invite (joined or dismissed). It leaves the list once the save went through. */
+/** What waits on the rail's Sharing button: cards, and invites not joined yet. */
+export const waiting = (s: CollabState = state) => ({ cards: s.cards.length, invites: s.invites.filter((i) => !i.joined).length });
+/** Who sent something, said as the Card sharing and Live editing panels say it: a contact's name, or "a code not in
+ *  your recipients, who says they're X". A stranger's name for themselves is only what they typed, so it's said to be
+ *  theirs, and cut to fit a toast. */
+export function fromWho(contact: Contact | undefined, claimed: string): string {
+  if (contact) return contact.name;
+  const c = claimed.trim().replace(/\s+/g, ' ');
+  return `a code not in your recipients${c ? `, who says they're ${c.length > 30 ? `${c.slice(0, 29).trimEnd()}…` : c}` : ''}`;
+}
+/** Joined an invite: it stays listed (to join again after leaving) but no longer waits on the rail. */
+export async function joinedInvite(id: string) {
+  if (!state.invites.some((x) => x.id === id && !x.joined)) return;
+  await saved(store.markJoined(id));
+  set({ invites: state.invites.map((x) => (x.id === id ? { ...x, joined: true } : x)) });
+}
+/** Done with an invite (dismissed). It leaves the list once the save went through. */
 export async function dropInvite(id: string) {
   await saved(store.dropInvite(id));
   set({ invites: state.invites.filter((x) => x.id !== id) });

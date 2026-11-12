@@ -148,7 +148,7 @@ want(/^Live · just you$/.test((await A.page.textContent('.status .lv-bit').catc
 
 want(await until(B, () => document.querySelector('.toast')?.textContent?.includes('invited you to live-edit')), `B: a toast says Avery invited B (${await toast(B)})`);
 want((await toast(B)).startsWith('Avery invited you to live-edit “seed”'), 'B: it names who and which doc');
-want(!(await B.page.$('.fstrip [aria-label^="Cards waiting"]')), "B: an invite isn't a card waiting");
+want(!!(await B.page.$('.fstrip [aria-label="Sharing, 1 invite waiting"] .share-n')), "B: the rail's Sharing button counts the invite waiting");
 await B.shot('b-invite-toast');
 await B.page.click('.toast button:has-text("Join")');
 want(await until(B, () => document.querySelector('.doc-row .doc-nm[aria-label="seed"]') && document.querySelector('.status .lv-bit')?.textContent?.startsWith('Live')), 'B: joining opens "seed" in a tab, live');
@@ -156,6 +156,7 @@ want((await map(B)) === seedMap, 'B: the doc that came in is A\'s, every style a
 want(bRoomSockets.length >= 1 && bRoomSockets.every((u) => u.startsWith(RELAY.replace('http', 'ws'))), `B: the room is on A's relay, which the invite named, not B's own (${bRoomSockets.join()})`);
 want(await until(A, () => document.querySelector('.status .lv-bit')?.textContent === 'Live · Blake'), `A: the status bar says Live · Blake (${await A.page.textContent('.status .lv-bit').catch(() => '')})`);
 want(await until(B, () => document.querySelector('.status .lv-bit')?.textContent === 'Live · Avery'), 'B: the status bar says Live · Avery');
+want(await until(B, () => !!document.querySelector('.fstrip [aria-label="Sharing"]') && !document.querySelector('.fstrip .share-n')), "B: joined, the invite no longer waits on the rail");
 
 // ---------- both type and format at once ----------
 await A.select('Growth'); await A.page.keyboard.press('F11');

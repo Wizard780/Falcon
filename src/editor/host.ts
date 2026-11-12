@@ -80,6 +80,8 @@ type FalconBridge = {
   installUpdate?: (version: string) => Promise<void>;
   /** Check for a newer Falcon now, without waiting on a download: 'ready' when there is one (onUpdate says how far along it is), 'none' when this is the latest, 'failed' offline. */
   checkUpdate?: () => Promise<'ready' | 'none' | 'failed'>;
+  /** A card or an invite came in: the Dock icon bounces (the taskbar button flashes) when no Falcon window is in front. */
+  attention?: () => void;
   /** Anonymous usage count (electron/telemetry.cjs drops unknown events and any non-word value). */
   track?: (event: string, props?: Record<string, string | number | boolean>) => void;
   /** SpeechDrop (electron/speechdrop.cjs): rooms, live file lists, uploads and downloads. */
