@@ -11,13 +11,12 @@ import './collab.css';
 export const relayAddress = (typed: string) => { const u = typed.trim(); return !u || /^https?:\/\//i.test(u) ? u : `https://${u}`; };
 
 /**
- * Cloudflare's page for making an API token, with what Falcon needs filled in (Cloudflare's token template link): edit
- * Workers scripts, which covers uploading the relay, its workers.dev subdomain and turning its address on, and read
- * Account Settings, without which the token can't see the account at all.
+ * Cloudflare's page for making an account API token, in the dashboard's own link form: `:account` becomes the user's
+ * account (it asks which, if they have several). Nothing is filled in: the user picks the Edit Cloudflare Workers policy,
+ * which covers uploading the relay, its workers.dev subdomain and turning its address on, and reading the account.
+ * (Cloudflare's prefill link for user tokens landed a new account on this same page with nothing filled in.)
  */
-export const TOKEN_PAGE = 'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys='
-  + encodeURIComponent(JSON.stringify([{ key: 'workers_scripts', type: 'edit' }, { key: 'account_settings', type: 'read' }]))
-  + '&accountId=%2A&zoneId=all&name=Falcon%20relay';
+export const TOKEN_PAGE = 'https://dash.cloudflare.com/?to=/:account/api-tokens/create';
 
 /** A line to paste into the terminal, with its own Copy. */
 function Cmd({ text }: { text: string }) {
@@ -92,9 +91,10 @@ function Connect() {
 /** What went wrong with Set up my relay, and what to do about it. */
 function setupFailure(r: Extract<RelaySetupResult, { ok: false }>): string {
   switch (r.error) {
-    case 'bad_token': return 'Cloudflare turned down that token. Make a new one with the link in step 3, copy all of it, and try again';
-    case 'no_account': return "That token can't see your Cloudflare account. Make it again with the link in step 3, and keep both permissions it fills in";
-    case 'many_accounts': return 'That token reaches more than one Cloudflare account. Make it again with the link in step 3, and under Account Resources pick the one to use';
+    case 'not_token': return "That doesn't look like a token. A token starts with cfat_ and is about 50 letters and numbers. The name at the top of Cloudflare's page is not the token. Copy the token itself and try again";
+    case 'bad_token': return 'Cloudflare turned down that token. Make a new one with the link in step 3, pick Edit Cloudflare Workers, copy all of it, and try again';
+    case 'no_account': return "That token can't see your Cloudflare account. Make a new one with the link in step 3, and pick Edit Cloudflare Workers";
+    case 'many_accounts': return 'That token reaches more than one Cloudflare account. Make a new one with the link in step 3: it makes a token for just one account';
     case 'verify_email': return 'Cloudflare wants you to confirm your email first. Click the link in the email Cloudflare sent you, then try again';
     case 'newer_relay': return 'Your relay was set up by a newer Falcon. Update Falcon, then try again';
     case 'no_subdomain': return "Cloudflare didn't give your account a workers.dev address. Try again in a minute";
@@ -165,7 +165,7 @@ function SetUp({ byHand }: { byHand: () => void }) {
           : phase.at === 'run' && phase.waiting ? WAITING : phase.at === 'run' && phase.row === 'token' ? 'Paste the token in the window that opened' : ''}
       </p>
       {phase.at === 'done'
-        ? <><Next /><p>Falcon didn't keep the token. You can delete it in Cloudflare, under My Profile, then API Tokens.</p></>
+        ? <><Next /><p>Falcon didn't keep the token. You can delete it in Cloudflare, under Manage account, then Account API tokens.</p></>
         : <>
           {phase.at !== 'run' && <div className="rg-row"><button className="co-main" data-first="" onClick={() => void go()}>{phase.at === 'bad' ? 'Try again' : 'Set up my relay'}</button></div>}
           <p className="rg-alt">Rather use a terminal? <button className="rg-hand" onClick={byHand}>Set it up by hand</button></p>
@@ -189,9 +189,13 @@ const BY_FALCON = (byHand: () => void): Step[] => [
   intro(true),
   ACCOUNT,
   { title: 'Make a token for Falcon', body: <>
-    <p>A token lets Falcon put the relay on your account. It can only manage Workers (Cloudflare's small servers) and read your account settings. Falcon uses it once and then forgets it.</p>
-    <p><Link href={TOKEN_PAGE}>Open Cloudflare's token page</Link>. Everything is filled in. Scroll down, click <b>Continue to summary</b>, then click <b>Create Token</b>.</p>
-    <p>Cloudflare shows the token once. Click <b>Copy</b> beside it.</p>
+    <p>A token lets Falcon put the relay on your account. Falcon uses it once and forgets it.</p>
+    <ol className="rg-do">
+      <li><Link href={TOKEN_PAGE}>Open Cloudflare's token page</Link>. If it shows a list of tokens, click <b>Create Token</b>.</li>
+      <li>Under Permission policies, click <b>Edit Cloudflare Workers</b>.</li>
+      <li>Leave the rest as it is. At the bottom, click <b>Continue to summary</b> (it may say Review token), then <b>Create Token</b>.</li>
+      <li>Cloudflare shows the token once. Copy it. It starts with <b>cfat_</b> and is about 50 letters and numbers. The name at the top of the page is not the token.</li>
+    </ol>
   </> },
   { title: 'Set up your relay', body: <SetUp byHand={byHand} /> },
 ];

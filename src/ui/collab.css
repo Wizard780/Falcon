@@ -125,6 +125,8 @@
 .cf.co.rg { width: min(460px, calc(100vw - 48px)); }
 .rg-body { min-height: 150px; animation: st-fade 160ms ease-out; }
 .cf .rg-body p { margin: 0 0 10px; }
+.cf .rg-body .rg-do { margin: 0 0 10px; padding-left: 20px; }
+.cf .rg-body .rg-do li { margin: 0 0 6px; }
 .rg-body b { color: var(--u-tx); font-weight: 500; }
 .rg-link { color: var(--u-tx); text-decoration: underline; text-underline-offset: 2px; }
 .rg-cmd, .rg-row { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
