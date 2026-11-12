@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { act } from 'preact/test-utils';
 import { createRoot, type Root } from 'react-dom/client';
-import { RelayGuide, WAITING } from '../src/ui/RelayGuide';
+import { RelayGuide, TOKEN_PAGE, WAITING } from '../src/ui/RelayGuide';
+import { bridge, type RelaySetupResult } from '../src/editor/host';
 import { WAIT_EVERY, WAIT_FOR } from '../src/collab/relay';
 
 // The guide's Connect step against a relay that isn't online yet: a new workers.dev address fails its TLS handshake
@@ -22,15 +23,20 @@ beforeEach(() => {
   vi.stubGlobal('fetch', relay);
   localStorage.clear(); calls = []; online = false;
 });
-afterEach(async () => { await act(async () => root?.unmount()); root = null; document.body.innerHTML = ''; vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root?.unmount()); root = null; document.body.innerHTML = ''; delete bridge.relaySetup; vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 const note = () => document.querySelector('.rg-note')?.textContent ?? '';
 const saved = () => localStorage.getItem('falcon.relayUrl');
 const button = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('.rg button')].find((b) => b.textContent?.trim() === text)!;
 const later = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
-async function connectStep() {
+async function openGuide() {
   const el = document.body.appendChild(document.createElement('div'));
   await act(async () => { root = createRoot(el); root.render(createElement(RelayGuide, { onClose: () => {} })); });
+}
+const title = () => document.querySelector('.rg h2')?.textContent;
+const stepOf = () => document.querySelector('.rg .co-sub')?.textContent;
+async function connectStep() {
+  await openGuide();
   while (!document.querySelector('.rg input[aria-label="Relay address"]')) await act(async () => button('Next').click());
   const box = document.querySelector<HTMLInputElement>('.rg input')!;
   await act(async () => { box.value = ADDR; box.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -102,5 +108,114 @@ describe('the relay guide waits for a new address to come online', () => {
     const n = calls.length;
     await later(WAIT_EVERY * 3);
     expect(calls.length - n).toBe(3); // one loop: one try per 10 s, not two
+  });
+});
+
+describe('in the desktop app, Falcon sets the relay up itself', () => {
+  const rows = () => [...document.querySelectorAll('.rg-steps li')].map((li) => `${li.getAttribute('data-st')} ${li.textContent}`);
+  /** A main process that walks the steps; `answer` is what it ends with. It's handed the look and the step callback, and nothing else crosses. */
+  function main(answer: RelaySetupResult, upTo = 'address') {
+    const seen: unknown[][] = [];
+    bridge.relaySetup = vi.fn(async (look: Record<string, string>, onStep: (s: string) => void) => {
+      seen.push([look, typeof onStep]);
+      for (const s of ['account', 'upload', 'address']) { onStep(s); await Promise.resolve(); if (s === upTo) break; }
+      return answer;
+    });
+    return seen;
+  }
+  async function setUpStep() {
+    await openGuide();
+    while (title() !== 'Set up your relay') await act(async () => button('Next').click());
+  }
+
+  it('four steps, the third opening Cloudflare\'s token page with just the two permissions it needs', async () => {
+    main({ ok: true, url: ADDR, created: true });
+    await openGuide();
+    const titles = [title()];
+    while (button('Next')) { await act(async () => button('Next').click()); titles.push(title()); }
+    expect(titles).toEqual(['Set up card sharing', 'Make a free Cloudflare account', 'Make a token for Falcon', 'Set up your relay']);
+    const u = new URL(TOKEN_PAGE);
+    expect(`${u.origin}${u.pathname}`).toBe('https://dash.cloudflare.com/profile/api-tokens');
+    expect(JSON.parse(u.searchParams.get('permissionGroupKeys')!)).toEqual([{ key: 'workers_scripts', type: 'edit' }, { key: 'account_settings', type: 'read' }]);
+    expect([u.searchParams.get('accountId'), u.searchParams.get('zoneId'), u.searchParams.get('name')]).toEqual(['*', 'all', 'Falcon relay']);
+    await act(async () => button('Back').click());
+    expect(document.querySelector<HTMLAnchorElement>('.rg a[href*="api-tokens"]')?.href).toBe(TOKEN_PAGE);
+  });
+
+  it('one click: shows each stage, waits for the new address to come online, then saves it', async () => {
+    const seen = main({ ok: true, url: ADDR, created: true });
+    await setUpStep();
+    expect(document.activeElement?.textContent).toBe('Set up my relay');
+    await act(async () => button('Set up my relay').click());
+    await later(0);
+    expect(seen).toEqual([[expect.objectContaining({}), 'function']]);
+    expect(rows()).toEqual(['done Getting the token', 'done Finding your Cloudflare account', 'done Uploading the relay', 'done Turning on its address', 'now Checking it works']);
+    expect(note()).toBe(WAITING);
+    expect(saved()).toBeNull();
+    await later(WAIT_EVERY * 20); // three minutes and more
+    expect(note()).toBe(WAITING);
+    online = true;
+    await later(WAIT_EVERY);
+    expect(rows().every((r) => r.startsWith('done'))).toBe(true);
+    expect(note()).toBe(`It works. Your relay is at ${ADDR}, and Falcon saved it. Card sharing and live editing are ready`);
+    expect(saved()).toBe(ADDR);
+    expect(document.querySelector('.rg-body')?.textContent).toMatch(/Falcon didn't keep the token/);
+  });
+
+  it('a failure says what to do, marks where it stopped, and Try again starts over', async () => {
+    main({ ok: false, error: 'bad_token' }, 'account');
+    await setUpStep();
+    await act(async () => button('Set up my relay').click());
+    await later(0);
+    expect(rows()).toEqual(['done Getting the token', 'bad Finding your Cloudflare account', 'todo Uploading the relay', 'todo Turning on its address', 'todo Checking it works']);
+    expect(note()).toBe('Cloudflare turned down that token. Make a new one with the link in step 3, copy all of it, and try again');
+    expect(document.querySelector('.rg-note')?.hasAttribute('data-bad')).toBe(true);
+    expect(saved()).toBeNull();
+    online = true;
+    main({ ok: true, url: ADDR, created: false });
+    await act(async () => button('Try again').click());
+    await later(0);
+    expect(saved()).toBe(ADDR);
+    expect(note()).toMatch(/^It works/);
+  });
+
+  it('what Cloudflare said is passed on, and closing the token window just goes back', async () => {
+    main({ ok: false, error: 'cloudflare', said: 'Your account has hit its limit of Workers.' }, 'upload');
+    await setUpStep();
+    await act(async () => button('Set up my relay').click());
+    await later(0);
+    expect(note()).toBe('Cloudflare said: Your account has hit its limit of Workers. Try again, or set it up by hand');
+    main({ ok: false, error: 'cancelled' }, 'none');
+    await act(async () => button('Try again').click());
+    await later(0);
+    expect(document.querySelector('.rg-steps')).toBeNull();
+    expect(button('Set up my relay')).toBeTruthy();
+    expect(note()).toBe('');
+  });
+
+  it('Set it up by hand goes to the terminal steps, which end at the same Connect', async () => {
+    main({ ok: true, url: ADDR, created: true });
+    await setUpStep();
+    await act(async () => button('Set it up by hand').click());
+    expect([stepOf(), title()]).toEqual(['Step 3 of 8', 'Install Node.js']);
+    while (button('Next')) await act(async () => button('Next').click());
+    expect(title()).toBe('Connect Falcon');
+    expect(document.querySelector('.rg input[aria-label="Relay address"]')).toBeTruthy();
+  });
+
+  it('the web build, with no main process to do it, only has the terminal steps', async () => {
+    await openGuide();
+    expect(stepOf()).toBe('Step 1 of 8');
+    expect(document.querySelector('.rg-body')?.textContent).toMatch(/You set one up once/);
+  });
+});
+
+describe('an older relay, from the live-editing panel', () => {
+  it('points the desktop at Set up my relay, and the web build at the terminal', async () => {
+    const { liveLine } = await import('../src/ui/Live');
+    const old = { status: { kind: 'no_rooms' } } as unknown as Parameters<typeof liveLine>[0];
+    expect(liveLine(old, ADDR)).toMatch(/npx wrangler deploy/);
+    bridge.relaySetup = vi.fn();
+    expect(liveLine(old, ADDR)).toBe('Your relay is from before live editing. Whoever set it up updates it: the ? beside Relay in Settings > Sharing, then Set up my relay. Card sharing keeps working meanwhile');
   });
 });

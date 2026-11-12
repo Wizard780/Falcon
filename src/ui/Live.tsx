@@ -7,6 +7,7 @@ import { shortCode } from '../collab/code';
 import { liveActions, liveInfo, setLiveInfo, subscribeLive, type LiveInfo } from '../collab/live-store';
 import type { LiveSession } from '../collab/live';
 import { createState } from '../editor/editor';
+import { bridge } from '../editor/host';
 import { useCollab } from './Collab';
 import type { Ask } from './Confirm';
 import './collab.css';
@@ -33,7 +34,9 @@ export function liveLine(i: LiveInfo, relay: string): string {
       return `Can't reach the relay. Your edits stay here and go out once it's back. Trying again in ${sec < 60 ? `${sec} s` : `${Math.round(sec / 60)} min`}`; }
     case 'paused': return `Paused until ${collab.resetTime(s.until)}, when the relay's free daily limit resets. Your edits stay here and go out then`;
     case 'full': return 'This session already has 8 people in it. Trying again in a bit';
-    case 'no_rooms': return 'Your relay is from before live editing. Whoever set it up downloads it again and runs npx wrangler deploy (the ? in Settings > Sharing shows how). Card sharing keeps working meanwhile';
+    case 'no_rooms': return bridge.relaySetup
+      ? 'Your relay is from before live editing. Whoever set it up updates it: the ? beside Relay in Settings > Sharing, then Set up my relay. Card sharing keeps working meanwhile'
+      : 'Your relay is from before live editing. Whoever set it up downloads it again and runs npx wrangler deploy (the ? in Settings > Sharing shows how). Card sharing keeps working meanwhile';
     case 'ended': return 'You left the session';
     case 'mismatch': return `${s.name}'s Falcon is a different version, so you can't edit together. Update Falcon, both of you, then start again`;
   }

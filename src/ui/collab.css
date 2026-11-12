@@ -87,6 +87,18 @@
 .cf .rg-note { font-size: 12.5px; color: var(--u-tx); }
 .rg-note[data-bad] { color: #ff7a7a; }
 :root[data-chrome="light"] .rg-note[data-bad] { color: #c62828; }
+/* Set up my relay: where it's got to, one quiet row per stage */
+.rg-steps { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 12px; padding: 0; list-style: none; }
+.rg-steps li { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 19px; color: var(--u-mut); }
+.rg-steps li[data-st="done"], .rg-steps li[data-st="now"] { color: var(--u-tx); }
+.rg-steps li[data-st="bad"] { color: #ff7a7a; }
+:root[data-chrome="light"] .rg-steps li[data-st="bad"] { color: #c62828; }
+.rg-steps i { display: grid; flex: none; place-items: center; width: 14px; height: 14px; }
+.rg-steps svg { width: 14px; height: 14px; }
+.rg-steps .co-spin { display: block; }
+.cf .rg-body .rg-alt { margin-top: 14px; font-size: 12.5px; }
+.cf.co .rg-hand { height: auto; padding: 0; background: none; box-shadow: none; color: var(--u-tx); font-size: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.cf.co .rg-hand:hover:not(:disabled) { background: none; }
 @media (prefers-reduced-motion: reduce) { .rg-body { animation: none; } }
 
 /* live editing: someone else's caret is a bar in their color (their name on hover), and the same color marks them in the panel */
