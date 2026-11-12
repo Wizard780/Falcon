@@ -169,7 +169,9 @@ function relisten() {
   // my code carries my relay: a new relay is a new code. Whoever has the old one needs it, Copy or not (it may have
   // been selected and copied, or read out), so the old one counts as given out until the new one is copied
   const prev = state.code, code = myCode();
-  if (prev && code && code !== prev && !state.gave && keyOf(prev) === keyOf(code)) { set({ gave: prev }); void store.saveGave(prev).catch(() => {}); }
+  // (only for one relay replacing another: a first relay is no change to tell anyone about)
+  const was = prev ? parseCode(prev) : null;
+  if (was?.ok && was.relay && code && code !== prev && !state.gave && keyOf(prev) === keyOf(code)) { set({ gave: prev }); void store.saveGave(prev).catch(() => {}); }
   set({ relay: url, code });
   if (!leading || !me || !url) { set({ link: { kind: 'off' } }); return; }
   const mine = me;

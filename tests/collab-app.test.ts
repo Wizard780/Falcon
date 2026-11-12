@@ -218,7 +218,7 @@ describe('card sharing in the app', () => {
   });
 
   it("a flood of live-editing invites from strangers never pushes out a contact's", async () => {
-    await setup();
+    const app = await setup();
     await until(() => relay.proven() === 1, 'connected');
     const me = parseCode(collab.current().code) as { pub: Uint8Array };
     const inbox = await inboxId(me.pub);
@@ -227,6 +227,10 @@ describe('card sharing in the app', () => {
     const invite = (n: number) => ({ room: n.toString(16).padStart(64, '0'), key: b64url(new Uint8Array(32).fill(n % 256)), doc: `Doc ${n}` });
     await relay.post(inbox, await seal(pat, me.pub, { name: 'Pat', at: Date.now(), content: [], mid: 'pat-1', invite: invite(1) }));
     await until(() => collab.current().invites.length === 1, "Pat's invite");
+    await until(() => app.toast().startsWith('Pat invited you to live-edit “Doc 1”'), "Pat's toast");
+    // a stranger is named as one, whatever name they typed
+    await relay.post(inbox, await seal(await makeIdentity(), me.pub, { name: 'Coach Smith', at: Date.now(), content: [], mid: 'x-coach', invite: invite(99) }));
+    await until(() => app.toast().startsWith('A code not in your contacts invited you to live-edit “Doc 99”'), `the stranger's toast (${app.toast()})`);
     for (let i = 0; i < 21; i++) {
       const x = await makeIdentity();
       await relay.post(inbox, await seal(x, me.pub, { name: 'Stranger', at: Date.now(), content: [], mid: `x${i}`, invite: invite(100 + i) }));
@@ -235,8 +239,8 @@ describe('card sharing in the app', () => {
     const docs = collab.current().invites.map((v) => v.invite.doc);
     expect(docs).toHaveLength(20);
     expect(docs).toContain('Doc 1'); // Pat's stays
-    expect(docs).not.toContain('Doc 100'); // the oldest strangers' went
-    expect(docs).not.toContain('Doc 101');
+    expect(docs).not.toContain('Doc 99'); // the oldest strangers' went
+    expect(docs).not.toContain('Doc 100');
     expect(collab.current().cards).toHaveLength(0); // and none of it counts as a card waiting
   });
 

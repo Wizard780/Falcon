@@ -16,13 +16,15 @@
  */
 import { VersionVector } from 'loro-crdt';
 import { b64url, BadEnvelope, newRoom, openFrame, roomKey, sealFrame, unb64url, type Invite } from './crypto';
-import { docOf, newBinding, seed, type Binding, type Peer } from './live-doc';
+import { docOf, newBinding, SCHEMA_ID, seed, type Binding, type Peer } from './live-doc';
 import { checkRooms, nextUtcMidnight } from './relay';
 import type { Node as PMNode } from 'prosemirror-model';
 
 /** One frame of this peer's edits per this long, at most (scripts/live-free-tier.mjs is worked out at 400). */
 export const BATCH_MS = 400;
 const PIECE = 256 * 1024;
+/** Messages being put back together at once, and pieces in one (a whole doc is far less): past them, they're dropped. */
+const MAX_OPEN = 16, MAX_PIECES = 256;
 /** No answer to an ask in this long: ask the next peer. */
 const ASK_WAIT = 10_000;
 const FIRST_RETRY = 1_000, MAX_RETRY = 30_000, STABLE = 60_000;
@@ -45,6 +47,8 @@ export type LiveStatus =
   | { kind: 'full' }
   /** the relay is older than live editing: whoever set it up redeploys it */
   | { kind: 'no_rooms' }
+  /** someone in the room runs a Falcon whose documents differ from this one's: the session ends */
+  | { kind: 'mismatch'; name: string }
   | { kind: 'ended' };
 export type Member = { slot: number; name: string; color: string; peer?: string };
 
@@ -236,8 +240,10 @@ export class LiveSession {
     const dv = new DataView(plain.buffer, plain.byteOffset);
     const id = dv.getUint32(0), i = dv.getUint16(4), n = dv.getUint16(6), slice = plain.subarray(8);
     let whole: Uint8Array | null = slice;
+    if (n > MAX_PIECES || i >= n) return;
     if (n > 1) {
       const k = `${from}:${kind}:${id}`;
+      if (!this.pieces.has(k) && this.pieces.size >= MAX_OPEN) this.pieces.clear();
       const p = this.pieces.get(k) ?? { n, got: [], count: 0 };
       if (!p.got[i]) { p.got[i] = slice.slice(); p.count++; }
       this.pieces.set(k, p);
@@ -308,7 +314,7 @@ export class LiveSession {
     this.kick();
   }
 
-  private mePart(): [number, Uint8Array] { return [T_ME, te.encode(JSON.stringify({ peer: this.binding.doc.peerIdStr, name: this.me.name, color: this.me.color }))]; }
+  private mePart(): [number, Uint8Array] { return [T_ME, te.encode(JSON.stringify({ peer: this.binding.doc.peerIdStr, name: this.me.name, color: this.me.color, schema: SCHEMA_ID }))]; }
 
   private onParts(kind: number, from: number, list: [number, Uint8Array][]) {
     const updates: Uint8Array[] = [];
@@ -319,7 +325,13 @@ export class LiveSession {
       else if (tag === T_PRESENCE) { try { this.binding.presence.apply(bytes); } catch { /* not ours */ } }
       else if (tag === T_ME) {
         try {
-          const j = JSON.parse(td.decode(bytes)) as { peer?: unknown; name?: unknown; color?: unknown };
+          const j = JSON.parse(td.decode(bytes)) as { peer?: unknown; name?: unknown; color?: unknown; schema?: unknown };
+          if (j.schema !== SCHEMA_ID) {
+            // their Falcon's documents differ from this one's: editing together would lose what either can't show
+            this.stop();
+            this.set({ kind: 'mismatch', name: typeof j.name === 'string' ? j.name.slice(0, 60) : 'Someone' });
+            return;
+          }
           if (typeof j.peer === 'string' && /^\d{1,20}$/.test(j.peer) && typeof j.name === 'string') {
             this.names.set(from, { slot: from, peer: j.peer, name: j.name.slice(0, 60) || 'Someone', color: COLORS.includes(String(j.color)) ? String(j.color) : colorOf(j.peer) });
             this.setMembers();
@@ -331,7 +343,11 @@ export class LiveSession {
       try { this.binding.doc.importBatch(updates); } catch { /* a frame Loro can't read: the next sync covers it */ }
     }
     if (kind === FRAME_ASK && version) this.answer(from, version);
-    else if (kind === FRAME_TO && this.status.kind === 'syncing') {
+    else if (kind === FRAME_TO && this.status.kind === 'syncing' && !updates.length && !docOf(this.binding) && this.ask.attempt + 1 < this.ask.peers) {
+      // they had no doc either (joined a moment ago themselves): ask the next one
+      this.ask.attempt++;
+      this.sendAsk();
+    } else if (kind === FRAME_TO && this.status.kind === 'syncing') {
       // they sent what I lacked; now send everyone what they lack (edits made here while away)
       if (version) this.sendSince(VersionVector.decode(version));
       this.synced();

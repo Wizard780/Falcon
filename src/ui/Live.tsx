@@ -35,6 +35,7 @@ export function liveLine(i: LiveInfo, relay: string): string {
     case 'full': return 'This session already has 8 people in it. Trying again in a bit';
     case 'no_rooms': return 'Your relay is from before live editing. Whoever set it up downloads it again and runs npx wrangler deploy (the ? in Settings > Sharing shows how). Card sharing keeps working meanwhile';
     case 'ended': return 'You left the session';
+    case 'mismatch': return `${s.name}'s Falcon is a different version, so you can't edit together. Update Falcon, both of you, then start again`;
   }
 }
 
@@ -73,7 +74,13 @@ export function useLiveSessions(h: LiveHost) {
   const publish = useCallback(() => {
     const r = held.current;
     setLiveInfo(r ? { docId: r.docId, room: r.s.room, doc: r.s.invite().doc, status: r.s.status, me: r.s.me, members: r.s.members } : null);
+    // someone runs a Falcon whose documents differ: the session has ended, so the doc goes back to a plain one
+    if (r?.s.status.kind === 'mismatch') {
+      const why = liveLine(liveInfo(), collab.relayUrl());
+      setTimeout(() => { if (held.current === r) { stopRef.current(false); host.current.flash(why); } }, 0);
+    }
   }, []);
+  const stopRef = useRef<(say?: boolean) => void>(() => {});
   const myName = () => collab.current().name.trim() || 'Someone';
 
   /**
@@ -111,6 +118,8 @@ export function useLiveSessions(h: LiveHost) {
     publish();
     if (say) host.current.flash(`Left the live session. “${r.s.invite().doc}” stays open as it is`);
   }, [publish]);
+
+  stopRef.current = stop;
 
   /** Only one session at a time: asks before leaving the one there is. */
   const leaveFirst = async (what: string) => {
@@ -177,10 +186,11 @@ export function useLiveSessions(h: LiveHost) {
     Object.assign(liveActions, { start: () => void start(), stop: () => stop(), invite, join: (i: collab.Invited) => void join(i), open: () => host.current.openPanel() });
   }, [start, stop, invite, join]);
   useEffect(() => collab.onInvited((i, who) => {
-    host.current.flash(`${who?.name ?? (i.claimed || 'Someone')} invited you to live-edit “${i.invite.doc}”`, { label: 'Join', run: () => void join(i) });
+    // the name an envelope gives is only what the sender typed: a stranger is said to be one, as a card from one is
+    host.current.flash(`${who ? who.name : 'A code not in your contacts'} invited you to live-edit “${i.invite.doc}”`, { label: 'Join', run: () => void join(i) });
   }), [join]);
   // a closed window leaves: the socket closes with the page, which the room tells the others
-  useEffect(() => () => { held.current?.s.stop(); held.current = null; setLiveInfo(null); }, []);
+  useEffect(() => () => { const r = held.current; if (r) { r.s.binding.shown = undefined; r.away?.(); r.s.stop(); } held.current = null; setLiveInfo(null); }, []);
 
   /** The doc `id` closed: its session ends with it. */
   const closed = useCallback((id: number) => { if (held.current?.docId === id) stop(); }, [stop]);

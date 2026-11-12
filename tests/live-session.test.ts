@@ -10,7 +10,7 @@ import { schema } from '../src/editor/schema';
 import { docOf, liveState } from '../src/collab/live-doc';
 import { host, join, BATCH_MS, type LiveSession } from '../src/collab/live';
 import { checkRooms, nextUtcMidnight } from '../src/collab/relay';
-import { openFrame, roomKey, unb64url } from '../src/collab/crypto';
+import { openFrame, roomKey, sealFrame, unb64url } from '../src/collab/crypto';
 import { LoroDoc } from 'loro-crdt';
 import { fakeRooms, ROOMS } from './live-relay-fake';
 
@@ -162,6 +162,27 @@ describe('a live session through the relay', { timeout: 30_000 }, () => {
     peer.import(before);
     peer.importBatch(updates);
     expect(JSON.stringify(peer.toJSON())).toContain('offline edit ');
+  });
+
+  it('someone whose Falcon has different documents (another version) ends the session for both, before any edit is lost', async () => {
+    const A = start('Avery');
+    await until(() => A.s.status.kind === 'live');
+    const inv = A.s.invite();
+    // a Falcon from another version: its name frame says which documents it knows, and they differ
+    const ws = new WebSocket(`wss://rooms.test/v1/room/${inv.room}`);
+    await new Promise<void>((r) => { ws.onopen = () => { ws.send(JSON.stringify({ t: 'join' })); r(); }; });
+    await sleep(50);
+    const me = new TextEncoder().encode(JSON.stringify({ peer: '77', name: 'Newer', color: '#2563eb', schema: 'another' }));
+    const body = new Uint8Array(8 + 5 + me.length), dv = new DataView(body.buffer);
+    dv.setUint32(0, 1); dv.setUint16(4, 0); dv.setUint16(6, 1);
+    body[8] = 4; dv.setUint32(9, me.length); body.set(me, 13);
+    const sealed = await sealFrame(await roomKey(unb64url(inv.key)), inv.room, 1, body);
+    const frame = new Uint8Array(1 + sealed.length); frame[0] = 1; frame.set(sealed, 1);
+    ws.send(frame);
+    await until(() => A.s.status.kind === 'mismatch', 3000, 'mismatch');
+    expect(A.s.status).toEqual({ kind: 'mismatch', name: 'Newer' });
+    caret(A.view, 'Growth'); type(A.view, 'still mine ');
+    expect(mm(A.view)).toContain('still mine Growth');
   });
 
   it('a joiner with nobody in the room waits, and gets the doc when someone who has it comes back', async () => {
