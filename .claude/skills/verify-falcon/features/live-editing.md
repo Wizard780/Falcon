@@ -12,6 +12,7 @@ Two or more people edit the same doc at once and see each other's edits and care
 - `frames` a typist sends at most one frame per 400 ms; an idle person sends none (`scripts/live-free-tier.mjs`).
 - `reconnect` the relay drops: edits stay local (`Live · reconnecting`, the panel says so), and on reconnect each side gets what the other did.
 - `late` someone joining late gets the whole doc from a peer, not from storage.
+- `away` the live doc's tab put away (another tab showing): what comes in keeps its stored state current, and Send to speech into it goes into the session.
 - `leave` Leave live editing (command center, the panel, Settings): the doc stays, history undo is back, nothing more arrives.
 - `save` a .docx saved during or after a session reopens with the same mark map.
 - `old-relay` a relay deployed before rooms: the panel says to download it again and run `npx wrangler deploy`; the editor is unaffected.
@@ -30,7 +31,7 @@ Preconditions:
 - `falcon-verify doctor` is all `ok`, and `npm ci` has been run in `relay/` (the journey starts its own `wrangler dev` relays, no account needed).
 - Each person needs a relay set, a name, and the others as contacts (Card sharing).
 
-- **Journey.** `$V run .claude/skills/verify-falcon/journeys/live-editing.mjs` exits 0 with 44 `ok` lines in about 4 minutes. A and C are on relay 1 (the room's), B on relay 2: the invite crosses relays.
+- **Journey.** `$V run .claude/skills/verify-falcon/journeys/live-editing.mjs` exits 0 with 49 `ok` lines in about 4 minutes. A and C are on relay 1 (the room's), B on relay 2: the invite crosses relays.
 - **Start.** Settings > Sharing: `.st-row:has-text("This document") button:has-text("Start live editing")`. The panel is `.cf.co.co-live`; its status is `.co-live .co-line`; who's in it, `.lv-who .nm`.
 - **Invite.** `.co-live section[aria-label="Invite"] .co-ct:has-text("<name>") button`.
 - **Join.** `.toast button:has-text("Join")`, or `.co-live section[aria-label="Invites"] button:has-text("Join")`.

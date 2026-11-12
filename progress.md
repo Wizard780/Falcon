@@ -292,7 +292,7 @@ A round = 2 h, 400 ms client batches, 2 ms room handler per frame, 6 connects a 
 | design | 4 people, editing 50% of the time | 4 people, editing 100% | runs out first |
 | --- | --- | --- | --- |
 | Falcon: hibernating room, rebroadcast only, 400 ms batches, peer snapshot | 1,829 DO req, 9 GB-s, 0 rows → **54 rounds/day** | 3,629 DO req, 18 GB-s → **27 rounds/day** | DO requests |
-| same with 2 / 3 people (50%) | 109 / 72 rounds/day | 55 / 36 | DO requests |
+| same with 2 / 3 people (50%) | 108 / 72 rounds/day | 54 / 36 | DO requests |
 | no batching (one message per transaction, ~8/s) | 17 rounds/day | 8 | DO requests |
 | a storage row per update, late joiner reads them back | 2 rounds/day | 1 | rows written |
 | ws.accept() instead of hibernation | 14 rounds/day | 14 | duration (900 GB-s a round) |
@@ -335,7 +335,7 @@ Pairing codes v2 (user's scope addition, 2026-11-11):
 - [x] RelayGuide: teammates don't paste your relay; each sets up their own (or a team shares one) and you swap codes. relay/README.md the same, plus rooms and updating an old relay
 Verification (run 20261112T003507, origin/relay-help + this branch):
 - vitest: see the final line below; tsc clean; relay tests 14/14
-- journeys: live-editing 44 ok (A and C on relay 1, B on relay 2: the invite went to relay 2, B's room socket to relay 1), live-editing-desktop 12 ok (the Electron file:// page loads the CRDT chunk only when a session starts, edits both ways), send-card 52 ok (A on relay 1, B on relay 2, both ways), plus send-card-desktop, relay-guide and the undo-using journeys (results below)
+- journeys: live-editing 49 ok (A and C on relay 1, B on relay 2: the invite went to relay 2, B's room socket to relay 1; a put-away live tab takes Send to speech), live-editing-desktop 12 ok (the Electron file:// page loads the CRDT chunk only when a session starts, edits both ways), send-card 52 ok (A on relay 1, B on relay 2, both ways), plus send-card-desktop, relay-guide and the undo-using journeys (results below)
 Decisions:
 - Falcon listens to Loro in the binding's place (live-doc `listen`): the binding put the caret back from cursors computed against already-changed text, so typing ahead of someone's caret in their paragraph moved it (seen in the desktop journey screenshot: "Body from And back. the desktop."). The narrowed replace maps the caret instead; undo keeps the binding's restore
 - The invite carries the room's relay (the user's design), though an earlier review suggested using only the invitee's own relay: joining is an explicit click, from a contact named in the toast
@@ -348,4 +348,15 @@ Known limits:
 - Concurrent table structure changes are tidied by one peer (the one in the room longest); if that peer has the doc's tab put away, a ragged table waits until someone edits it
 - Settling underline vs emphasis is a local edit, so it lands on the undo stack of the peer that settled it
 - No session persistence across app restarts: a session ends when its window closes; the invite stays, so Join again works while anyone is in the room
-Next action: big-file presence cost in the browser, fresh-subagent review, PR.
+Browser numbers (headless Chromium, the web build, 4,830-paragraph block file, scratch script):
+- typing (keydown to frame, median / p90): alone 12.5 / 15 ms; live with the other's caret in the same card 13.8 / 16.7 ms; live while the other types elsewhere 12.2 / 14 ms. Carets cost nothing noticeable
+- start live editing 1.4 s (command center, seed, panel); a joiner has the doc open and live in 1.1 s (an 0.9 MB snapshot in 4 pieces)
+- found and fixed: a joiner who already had the host's caret froze 72 s (the binding's carets plugin logged the whole doc as JSON once per paragraph, 2,416 console errors, while its node map was still empty); now 0 errors, 1.1 s
+Review (fresh subagent, read-only) and what came of it:
+- [x] a joined doc's attrs reached inline styles unchecked (CSS injection: url() beacons, overlays) and table spans were unbounded: the schema now checks every value it draws into a style; spans, styles and content a node can't hold are repaired as they come from Loro, and the repair goes back into Loro; caret colors are plain hex
+- [x] /v1/rooms answering anything but 200 was taken as "an old relay" and retrying stopped, so a spent day at first connect said "redeploy": only 404 means old now; 429 pauses until 00:00 UTC; 5xx retries
+- [x] Send to speech into a live speech doc in a background tab was dropped while the toast said Sent, and that tab's state went stale (crash recovery, block search, unsaved dot): a put-away live tab is now kept current from Loro and takes edits (unit test + journey)
+- [x] offline edits could miss the room when no peer answered the ask: sent from the version at the drop
+- [x] smaller: half-received messages cleared on close/leave; leaving empties the carets store; the catch-up frame counts toward the batch window; a stranger's invite flood can't push out a contact's (oldest stranger's goes first); the free-tier maths counts each connect's handshake frames (numbers above barely move)
+- not changed: an invite's relay can be any http(s) address, LAN included (joining is an explicit click on a named invite; the user asked for the invite to carry the relay); the two-letter typo guarantee was checked for workers.dev codes only (a full-URL code is longer: every one-letter typo is still caught)
+Next action: PR against main (stacked on #147), watch CI.

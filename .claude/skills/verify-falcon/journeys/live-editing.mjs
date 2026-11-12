@@ -232,6 +232,27 @@ const D = await openFalcon('live-editing/d'); extra.push(D);
 await D.open(savedA);
 want((await map(D)) === midA, "A's .docx saved during the session reopens with the same mark map");
 
+// ---------- B puts the live doc away (another tab) and sends to speech into it; A types meanwhile ----------
+await B.page.click('.tools [aria-label="Speech doc"]'); // the live doc is B's speech doc
+await wait(B, 300);
+await B.page.keyboard.press(`${MOD}+n`); // a new Untitled tab: the live doc goes out of the editor
+await wait(B, 400);
+want((await B.page.$eval('.doc-row[data-on] .doc-nm', (e) => e.getAttribute('aria-label')).catch(() => '')) === 'Untitled', 'B: a new tab is showing; the live doc is put away');
+await caret(A, 'Temperatures');
+await A.page.keyboard.type('while B looks away ');
+await B.page.click('.ProseMirror:not(.hm-doc)');
+await B.page.keyboard.press('F7');
+await B.page.keyboard.type('Sent from Blake');
+await B.page.keyboard.press('`');
+want(await until(B, () => /^Sent “Sent from Blake”/.test(document.querySelector('.toast')?.textContent ?? '')), `B: Send to speech into the put-away live doc says sent (${await toast(B)})`);
+want(await until(A, () => window.__falconMarkMap().includes('tag: Sent from Blake')), 'A: the card B sent to speech arrives: it went into the live doc, not nowhere');
+await B.page.click('.doc-row .doc-nm[aria-label="seed (speech doc)"], .doc-row .doc-nm[aria-label="seed"]');
+await wait(B, 500);
+const backB = await map(B);
+want(backB.includes('while B looks away') && backB.includes('tag: Sent from Blake'), "B: back on the live tab, A's typing and B's sent card are both there");
+want(await converge([A, B, C]), 'and all three agree');
+await B.shot('b-back-from-another-tab');
+
 // ---------- B leaves ----------
 want((await command(B, 'leave live editing')) === 'Leave live editing', 'B: the command center has Leave live editing');
 want(await until(B, () => !document.querySelector('.status .lv-bit')), "B: the status bar's live line is gone");
