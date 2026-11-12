@@ -81,6 +81,7 @@ export const P = {
   smartShrink: def('smartShrink', false),
   smartPaste: def('smartPaste', true),
   smartQuotes: def('smartQuotes', true), // typed ' and " curl (quotes.ts)
+  repeatRedo: def('repeatRedo', false), // Redo with nothing to redo repeats the last edit, like Word (repeat.ts)
   citeNearest: def('citeNearest', true),
   hlUnderlined: def('hlUnderlined', false),
   styleOffClears: def('styleOffClears', true), // taking underline off also clears size, bold, highlight... (CardMirror's default)

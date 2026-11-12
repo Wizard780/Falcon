@@ -1,5 +1,5 @@
 import { chainCommands, deleteSelection, joinBackward, joinForward, selectAll, splitBlockKeepMarks, createParagraphNear, liftEmptyBlock } from 'prosemirror-commands';
-import { redo, undo } from './live-hooks';
+import { undo } from './live-hooks';
 import { keydownHandler } from 'prosemirror-keymap';
 import { Plugin, TextSelection, type Command } from 'prosemirror-state';
 import {
@@ -7,6 +7,7 @@ import {
   toggleBold, toggleCase, toggleCharMark, toggleColorMark, toggleTypingMark,
 } from './commands';
 import { schema } from './schema';
+import type { Node as PMNode } from 'prosemirror-model';
 import { ENTER_AFTER, onPrefs, pref } from './prefs';
 import { activeColors, pastePlainFromClipboard } from './host';
 import { moveByHeading, moveByParagraph, moveContainer } from './motion';
@@ -17,12 +18,18 @@ import { CARD_TOOLS } from './card-tools';
 import { compareText } from './doc-tools/compare';
 import { navBinds, navFixed } from './nav-keys';
 import { BINDINGS, bind, bindingOf, isRecording, keyOf, reserve } from './keybinds';
+import { deleteWholeLines } from './line-edits';
+import { redoOrRepeat, repeatable } from './repeat';
 
 const M = schema.marks;
 
+// a line with nothing but spaces counts as blank, same as an empty one
+const blank = (n: PMNode) => n.isTextblock && !/\S/.test(n.textContent);
+
 /**
- * Backspace at a card's edges: never merge body text up into a tag.
- * At the start of a tag, a blank line above is removed; otherwise nothing happens.
+ * Backspace at a card's edges, the way CardMirror does it: body text never merges up into a tag.
+ * At the start of a tag: a blank tag goes away, a blank line above goes away, and a tag right under another
+ * tag (a card with nothing in it yet) joins it. Otherwise nothing happens.
  * An analytic is just text, so it joins the line above.
  * On an empty line right below a tag, the line is removed.
  */
@@ -38,10 +45,18 @@ const backspaceAtCardEdge: Command = (state, dispatch) => {
   const prevPos = $c.before(1) - prev.nodeSize;
   if (isCardHead(cur)) {
     if (cur.content.size === 0) return false; // empty tag: let it join up and disappear
-    if (prev.content.size === 0) {
+    if (blank(cur) && prev.isTextblock) {
+      if (dispatch) {
+        const tr = state.tr.delete($c.before(1), $c.after(1));
+        dispatch(tr.setSelection(TextSelection.create(tr.doc, prevPos + prev.nodeSize - 1)).scrollIntoView());
+      }
+      return true;
+    }
+    if (blank(prev)) {
       if (dispatch) dispatch(state.tr.delete(prevPos, prevPos + prev.nodeSize).scrollIntoView());
       return true;
     }
+    if (prev.attrs.style === cur.attrs.style && cur.attrs.style === 'tag') return false; // tag under a bare tag: join them
     // swallow: don't merge a tag into the paragraph above. An analytic joins a line, but under a table or other
     // block that isn't a line it stays put (the editor's own Backspace would select the table, and a second one delete it)
     return cur.attrs.style !== 'analytic' || !prev.isTextblock;
@@ -59,7 +74,10 @@ const backspaceAtCardEdge: Command = (state, dispatch) => {
   return false;
 };
 
-/** Delete at the end of a tag: merge with a following tag, drop a following blank line, else nothing. */
+/**
+ * Delete at the end of a tag: drop a blank line after it, or join a tag or analytic right under it, else nothing.
+ * At the end of any other line, a blank tag after it goes away, and a real one isn't pulled up into the text.
+ */
 const deleteAtCardEdge: Command = (state, dispatch) => {
   const sel = state.selection;
   if (!sel.empty) return false;
@@ -70,15 +88,14 @@ const deleteAtCardEdge: Command = (state, dispatch) => {
   const cur = $c.parent;
   const next = state.doc.child(idx + 1);
   const nextPos = $c.after(1);
+  const dropNext = () => { if (dispatch) dispatch(state.tr.delete(nextPos, nextPos + next.nodeSize)); return true; };
   if (isCardHead(cur)) {
-    if (next.content.size === 0) {
-      if (dispatch) dispatch(state.tr.delete(nextPos, nextPos + next.nodeSize));
-      return true;
-    }
-    if (isCardHead(next)) return false; // tag + tag merge normally
+    if (blank(next)) return dropNext();
+    // the mirror of Backspace: what Backspace at the start of the next line would join, Delete joins too
+    if (next.attrs.style === 'analytic' || (next.attrs.style === 'tag' && cur.attrs.style === 'tag')) return false;
     return true;
   }
-  if (next.attrs.style === 'tag' && cur.content.size > 0) return true; // don't pull a tag into body text
+  if (next.attrs.style === 'tag' && cur.content.size > 0) return blank(next) ? dropNext() : true; // don't pull a tag into body text
   return false;
 };
 
@@ -107,13 +124,13 @@ const FIXED: [key: string, label: string, run: Command][] = [
   ['Mod-i', 'Italic', toggleTypingMark(M.italic)],
   ['Mod-Shift-=', 'Superscript', toggleTypingMark(M.sup)],
   ['Mod-z', 'Undo', undo],
-  ['Mod-Shift-z', 'Redo', redo],
-  ['Mod-y', 'Redo', redo],
-  ['Tab', 'Indent', indent(1)],
-  ['Shift-Tab', 'Outdent', indent(-1)],
-  ['Enter', 'New line', enter],
-  ['Backspace', 'Delete back', chainCommands(deleteSelection, backspaceAtCardEdge, joinBackward)],
-  ['Delete', 'Delete forward', chainCommands(deleteSelection, deleteAtCardEdge, joinForward)],
+  ['Mod-Shift-z', 'Redo', redoOrRepeat],
+  ['Mod-y', 'Redo', redoOrRepeat],
+  ['Tab', 'Indent', repeatable(indent(1))],
+  ['Shift-Tab', 'Outdent', repeatable(indent(-1))],
+  ['Enter', 'New line', repeatable(enter)],
+  ['Backspace', 'Delete back', repeatable(chainCommands(deleteWholeLines, deleteSelection, backspaceAtCardEdge, joinBackward))],
+  ['Delete', 'Delete forward', repeatable(chainCommands(deleteWholeLines, deleteSelection, deleteAtCardEdge, joinForward))],
   ['Mod-a', 'Select all', selectAll],
   ['Ctrl-ArrowUp', 'Previous paragraph', moveByParagraph(-1, false)],
   ['Ctrl-ArrowDown', 'Next paragraph', moveByParagraph(1, false)],
@@ -132,7 +149,9 @@ reserve(FIXED.map(([k, what]) => [k, what]));
 export const fixedCommands = FIXED.map(([key, label, run]) => ({ key, label, run }));
 
 // the commands Settings can rebind, in the order Settings lists them (App and Files come first, from keybinds.ts)
-bind('Cutting', [
+// the formatting keys are what Redo can repeat (F2 reads the clipboard, so it's left out)
+const repeats = <T extends { id: string; run: Command }>(list: T[]) => list.map((b) => (b.id === 'pastePlain' ? b : { ...b, run: repeatable(b.run) }));
+bind('Cutting', repeats([
   { id: 'pastePlain', label: 'Paste as plain text', key: 'F2', run: (_s, _d, view) => { if (view) void pastePlainFromClipboard(view); return true; } },
   // F3 runs the condense Settings picks; Alt-F3 and Mod-Alt-F3 always merge (Card tools)
   { id: 'condense', label: 'Condense paragraph', key: 'F3', run: condenseBySettings },
@@ -152,7 +171,7 @@ bind('Cutting', [
   { id: 'clear', label: 'Clear formatting', key: 'F12', run: clearFormatting },
   { id: 'shrink', label: 'Shrink card', key: 'Mod-8', run: shrink },
   { id: 'regrow', label: 'Undo shrink', key: 'Mod-Shift-8', run: regrow },
-]);
+]));
 bind('Moving around', [
   { id: 'prevHeading', label: 'Previous heading', key: 'PageUp', run: moveByHeading(-1, false) },
   { id: 'nextHeading', label: 'Next heading', key: 'PageDown', run: moveByHeading(1, false) },

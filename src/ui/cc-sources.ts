@@ -257,6 +257,7 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.shrinkProtect, 'Keep omission notes full size', 'editor'),
     tog(P.smartShrink, 'Smart Shrink', 'editor', 'Mod-8 shrinks in one pass instead of cycling sizes.'),
     tog(P.smartQuotes, 'Smart quotes', 'editor'),
+    tog(P.repeatRedo, 'Redo repeats the last action', 'editor', 'Redo with nothing to redo does your last edit again, like Word.'),
     tog(P.smartPaste, 'Smart paste', 'editor', 'Word and Verbatim formatting pastes as cites, underlining and highlights.'),
     tog(P.citeNearest, 'Copy previous cite: first line only', 'editor'),
     tog(P.hlUnderlined, 'Highlight underlined text only', 'editor'),

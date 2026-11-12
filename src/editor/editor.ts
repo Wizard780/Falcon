@@ -1,4 +1,6 @@
 import { aiCitePlugin } from './ai-cite';
+import { lineEditsPlugin } from './line-edits';
+import { repeatPlugin } from './repeat';
 import { baseKeymap } from 'prosemirror-commands';
 import { dropCursor } from 'prosemirror-dropcursor';
 import { gapCursor } from 'prosemirror-gapcursor';
@@ -157,6 +159,7 @@ export function createState(doc: PMNode = emptyDoc()) {
   const state = EditorState.create({
     doc,
     plugins: [
+      repeatPlugin, // only watches typing and pastes for Redo's repeat, so it can go ahead of everything
       readPlugin, // first, so its keyboard lock runs before the formatting keys
       aiCitePlugin,
       multiSelectionPlugin,
@@ -164,6 +167,7 @@ export function createState(doc: PMNode = emptyDoc()) {
       ...tablePlugins, // before the keymap (Tab moves between cells) and mouse selection (column edges, cell drags)
       falconKeymap(),
       keymap(baseKeymap),
+      lineEditsPlugin, // ahead of smart quotes: typing over whole lines has to replace the right stretch
       smartQuotesPlugin,
       history({ newGroupDelay: 500 }),
       dropCursor({ color: '#3b82f6', width: 2 }),

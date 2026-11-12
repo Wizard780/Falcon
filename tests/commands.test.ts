@@ -152,6 +152,45 @@ describe('card edges', () => {
     const t = make([['normal', 'para '], ['tag', 'Two']]);
     expect(map(run(caret(t, 'para ', 5), K.Delete))).toBe(map(t));
   });
+  it('Backspace at the start of a tag joins it to a bare tag above, but never to a card with text', () => {
+    expect(map(run(caret(make([['tag', 'Warming is real '], ['tag', 'and fast']]), 'and'), K.Backspace))).toBe('tag: Warming is real and fast');
+    const card2 = make([['tag', 'One'], ['normal', 'body'], ['tag', 'Two']]);
+    expect(map(run(caret(card2, 'Two'), K.Backspace))).toBe(map(card2));
+    // a tag doesn't join an analytic or a heading either
+    for (const style of ['analytic', 'block'] as ParaStyle[]) {
+      const s = make([[style, 'Above'], ['tag', 'Two']]);
+      expect(map(run(caret(s, 'Two'), K.Backspace))).toBe(map(s));
+    }
+  });
+  it('Delete at the end of a tag joins a tag or analytic under it, nothing else', () => {
+    expect(map(run(caret(make([['tag', 'One '], ['tag', 'Two']]), 'One ', 4), K.Delete))).toBe('tag: One Two');
+    expect(map(run(caret(make([['tag', 'One '], ['analytic', 'Two']]), 'One ', 4), K.Delete))).toBe('tag: One Two');
+    const s = make([['analytic', 'One '], ['tag', 'Two']]);
+    expect(map(run(caret(s, 'One ', 4), K.Delete))).toBe(map(s));
+  });
+  it('a line of only spaces counts as blank at a card edge', () => {
+    expect(map(run(caret(make([['normal', 'para'], ['normal', '   '], ['tag', 'Tag']]), 'Tag'), K.Backspace))).toBe('normal: para\ntag: Tag');
+    const s = run(caret(make([['normal', 'para'], ['tag', '  ']]), '  ', 0), K.Backspace);
+    expect(map(s)).toBe('normal: para');
+    expect(s.selection.from).toBe(at(s, 'para', 4));
+    expect(map(run(caret(make([['tag', 'Tag'], ['normal', '  '], ['normal', 'body']]), 'Tag', 3), K.Delete))).toBe('tag: Tag\nnormal: body');
+    expect(map(run(caret(make([['normal', 'body'], ['tag', ' ']]), 'body', 4), K.Delete))).toBe('normal: body');
+  });
+  it('Backspace at the start of a tag leaves a table above alone', () => {
+    const p = (t: string, style: ParaStyle = 'normal') => schema.node('paragraph', { style }, [schema.text(t)]);
+    const table = schema.node('table', null, [schema.node('table_row', null, [schema.node('table_cell', null, [p('cell')])])]);
+    const s = createState(schema.node('doc', null, [p('above'), table, p('Tag', 'tag')]));
+    expect(map(run(caret(s, 'Tag'), K.Backspace))).toBe(map(s));
+  });
+  it('deleting a triple-clicked line takes the whole line, and the next one keeps its style', () => {
+    const s = make([['tag', 'Tag'], ['normal', 'Smith 24'], ['normal', 'body']]);
+    const tripled = s.apply(s.tr.setSelection(TextSelection.create(s.doc, at(s, 'Tag'), at(s, 'Smith'))));
+    for (const key of [K.Backspace, K.Delete]) {
+      const after = run(tripled, key);
+      expect(map(after)).toBe('normal: Smith 24\nnormal: body');
+      expect(after.selection.from).toBe(at(after, 'Smith'));
+    }
+  });
   it('Backspace on an empty line under a tag removes it', () => {
     const s = make([['tag', 'Tag'], ['normal', '']]);
     const after = run(s.apply(s.tr.setSelection(Selection.atEnd(s.doc))), K.Backspace);
