@@ -20,7 +20,7 @@ const copied = await f.page.evaluate(() => {
   document.removeEventListener('copy', grab);
   return html;
 });
-f.want(/class="f-cite" style="font-size:13pt;font-weight:bold"/.test(copied), 'copied cite carries inline bold 13pt');
+f.want(/class="f-cite[^"]*" style="font-size:13pt;font-weight:bold"/.test(copied), 'copied cite carries inline bold 13pt');
 f.want(/mso-highlight:yellow/.test(copied), 'copied highlight carries mso-highlight for Word');
 f.want(/border:1pt solid/.test(copied), 'copied emphasis carries its box');
 
