@@ -334,8 +334,8 @@ Pairing codes v2 (user's scope addition, 2026-11-11):
 - [x] invites name the room's relay (the host's) and the joiner connects there; invites go to the invitee's relay
 - [x] RelayGuide: teammates don't paste your relay; each sets up their own (or a team shares one) and you swap codes. relay/README.md the same, plus rooms and updating an old relay
 Verification (run 20261112T003507, origin/relay-help + this branch):
-- vitest: see the final line below; tsc clean; relay tests 14/14
-- journeys: live-editing 49 ok (A and C on relay 1, B on relay 2: the invite went to relay 2, B's room socket to relay 1; a put-away live tab takes Send to speech), live-editing-desktop 12 ok (the Electron file:// page loads the CRDT chunk only when a session starts, edits both ways), send-card 52 ok (A on relay 1, B on relay 2, both ways), plus send-card-desktop, relay-guide and the undo-using journeys (results below)
+- vitest 725 pass / 1 skipped (baseline 674), tsc clean, relay tests 14/14; the live and collab suites 5 runs in a row clean (49 each); tests/live-real-docs.test.ts: going live leaves real files unchanged (3 fixtures always; locally 24 real files, 137 tables, 80 pictures)
+- journeys (final run 20261112T012507): live-editing 49 ok (A and C on relay 1, B on relay 2: the invite went to relay 2, B's room socket to relay 1; a put-away live tab takes Send to speech; an older relay via a checked-in stand-in), live-editing-desktop 12 ok (the Electron file:// page loads the CRDT chunk only when a session starts, edits both ways), send-card 52 ok (A on relay 1, B on relay 2, both ways), plus send-card-desktop, relay-guide and the undo-using journeys (results below)
 Decisions:
 - Falcon listens to Loro in the binding's place (live-doc `listen`): the binding put the caret back from cursors computed against already-changed text, so typing ahead of someone's caret in their paragraph moved it (seen in the desktop journey screenshot: "Body from And back. the desktop."). The narrowed replace maps the caret instead; undo keeps the binding's restore
 - The invite carries the room's relay (the user's design), though an earlier review suggested using only the invitee's own relay: joining is an explicit click, from a contact named in the toast
@@ -359,4 +359,15 @@ Review (fresh subagent, read-only) and what came of it:
 - [x] offline edits could miss the room when no peer answered the ask: sent from the version at the drop
 - [x] smaller: half-received messages cleared on close/leave; leaving empties the carets store; the catch-up frame counts toward the batch window; a stranger's invite flood can't push out a contact's (oldest stranger's goes first); the free-tier maths counts each connect's handshake frames (numbers above barely move)
 - not changed: an invite's relay can be any http(s) address, LAN included (joining is an explicit click on a named invite; the user asked for the invite to carry the relay); the two-letter typo guarantee was checked for workers.dev codes only (a full-URL code is longer: every one-letter typo is still caught)
-Next action: PR against main (stacked on #147), watch CI.
+Second review (fresh subagent, after the fixes above): nothing broke the hard constraints in ordinary use; hostile-peer and narrow cases fixed:
+- [x] the binding's rebuild throws on a node with a non-string name (or a child that's neither node nor text), so one such write stopped all later remote changes showing: taken out of Loro and rebuilt (test: a raw Loro peer writes it and keeps typing; fails without the fix)
+- [x] a caret whose bytes don't decode broke the carets plugin on every remote change: left out, and the plugin drops carets rather than throwing (test fails without the fix)
+- [x] pictures from Loro: only embedded or web sources, sane sizes. A Falcon with other document types would drop what it can't build and then delete it for everyone: each name frame carries a schema fingerprint, and a mismatch ends the session (the doc stays)
+- [x] an invite from a stranger is toasted as "A code not in your contacts", not the name they typed; a joiner whose first answer brings no doc asks the next peer; reassembly is capped; the code-changed note shows only when one relay replaced another
+Known limits (not done):
+- caret colors come from the Loro peer id (6 colors), so two people can share one; names on hover tell them apart
+- web (https) pictures in a live doc load from where they point, as they do in an opened .docx (cards strip them; a live doc is joined on purpose)
+- an invite's relay can be any http(s) address, LAN included (joining is a click on a named invite)
+- a session ends when its window closes; Join again from the same invite works while anyone is in the room
+- the binding deletes absent null attrs (a few bytes per table cell edit); settling underline vs emphasis lands on the settling peer's undo stack
+Next action: PR against main (#147 merged at c28e1767, so the PR is just this branch), watch CI.
