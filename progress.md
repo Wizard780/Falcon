@@ -277,10 +277,11 @@ Task: two or more people open the same doc by invite and see each other's edits 
 Done means:
 - [x] free-tier maths by a script from Cloudflare's published limits (`node scripts/live-free-tier.mjs`), numbers below
 - [x] headless spike: two Falcon editors through Loro converge under concurrent F-keys, tables and footnotes; undo is local only; a block file types at usable speed (`tests/live-binding.test.ts`)
-- [ ] relay: a hibernating Room DO that only rebroadcasts ciphertext, new migration, Send Card tests still pass; an old relay without rooms is detected and the user told to redeploy (RelayGuide says so)
-- [ ] invites: the room key goes to a contact through Send Card's seal + inbox
-- [ ] UI: Settings > Sharing and the command center: start/stop for the open doc, invite a contact, accept an invite, who's in it, carets; leaving keeps the doc; .docx save after a session works
-- [ ] verify-falcon journey (two contexts, `wrangler dev`): concurrent typing + formatting converge, disconnect/reconnect, late joiner, leaving, .docx saved and reopened with the same mark map; npm test, tsc, send-card and relay-guide journeys pass
+- [x] relay: a hibernating Room DO that only rebroadcasts ciphertext, new migration, Send Card tests still pass; an old relay without rooms is detected and the user told to redeploy (RelayGuide says so)
+- [x] invites: the room key goes to a contact through Send Card's seal + inbox
+- [x] UI: Settings > Sharing and the command center: start/stop for the open doc, invite a contact, accept an invite, who's in it, carets; leaving keeps the doc; .docx save after a session works
+- [x] (scope added by the user) pairing codes carry their owner's relay (code v2): everyone can run their own relay, each with its own free allowance; cards and invites go to the recipient's relay, the room lives on the host's
+- [x] verify-falcon journey (two contexts, `wrangler dev`): concurrent typing + formatting converge, disconnect/reconnect, late joiner, leaving, .docx saved and reopened with the same mark map; npm test, tsc, send-card and relay-guide journeys pass
 - [ ] fresh-subagent review fixed; PR against main noting it's stacked on #147; CI green. No version bump (#147 has 0.1.12)
 Baseline (origin/relay-help 99ab853d, fresh npm ci): vitest 674 pass / 1 skipped, tsc clean, relay tests 8/8.
 
@@ -317,4 +318,34 @@ Decisions:
 Known limits: a paragraph split (Enter) is a delete plus a new paragraph in the binding, so text someone typed at the same moment after the split point lands at the end of the first half (both peers agree, nothing lost). The binding deletes absent null attrs, which Loro records as ops (harmless; the harness must deliver them, not drop them).
 Failed attempts:
 - First narrowing used one findDiffStart/findDiffEnd range: a batch touching the start and end of the doc replaced everything between. Replaced by per-gap narrowing.
-Next action: relay Room DO + migration v2 + old-relay detection.
+Relay (relay/src/index.ts, migration v2 `new_sqlite_classes: ["Room"]`):
+- [x] Room DO: hibernation API, no storage, no alarms; who's in it lives in socket attachments. Updates to everyone else, a joiner's ask to the peer in longest (the next on a retry: a half-dead socket can't stall a join), answers to one slot. 8 people, 1 MiB frames. `GET /v1/rooms` is answered by the Worker alone (an older relay: 404). Over the daily limit the upgrade gets a socket that says daily_limit (the browser can't see an upgrade's status)
+- [x] relay tests 14/14 (8 Send Card + 6 rooms, including "a burst of frames leaves no rows": only wrangler dev's own `__miniflare_do_name` table exists, production has none)
+Client (src/collab/live.ts, live-doc.ts, crypto.ts; ui/Live.tsx):
+- [x] frames: [msg u32][piece u16][pieces u16][slice], parts inside; sealed AES-GCM with the room key, AAD = "falcon room v1" + room id + kind. Only this peer's own commits go out (subscribeLocalUpdates), at most one frame per 400 ms with its caret; reconnects and late joiners sync by version vector with one peer and send back what that peer lacks
+- [x] fail closed: any socket loss retries (1 s to 30 s); daily_limit pauses until 00:00 UTC; an old relay says to redeploy; the doc stays editable throughout
+- [x] tests/live-session.test.ts (8, an in-memory relay with rooms): join, convergence, an idle peer sends 0 frames while a typist sends ≤ 1 per 400 ms, drop + reconnect, late joiner, leave, a joiner who arrives before anyone with the doc, daily limit, old relay, relay down
+- [x] invites ride in Send Card's sealed envelope (Card.invite, empty content: an older Falcon shows "a card this Falcon can't open"), kept apart from cards (not in the rail's count)
+- [x] UI: Settings > Sharing > Live editing (This document: Start / Invite… / Leave; Invites to you), the Live editing panel (who's in it with their caret color, Invite per contact, Invites to you with Join/Dismiss, Leave), command center (Live editing, Start live editing, Leave live editing), status bar `Live · Blake and Casey`, carets as a bar in the person's color with their name on hover. One session per window. A joined doc opens as an unsaved tab
+Pairing codes v2 (user's scope addition, 2026-11-11):
+- [x] src/collab/code.ts: [2][key][kind][relay][crc]; a falcon-relay.<sub>.workers.dev relay is stored as its subdomain (76 letters for an 11-letter subdomain; a full localhost URL is 100). v1 still parses (relay null). Every one-letter typo in a v2 code is caught (unit test, every position × every letter); every two-letter typo was checked once by brute force: 0 of 1.48M (v1) and 0 of 2.74M (workers.dev v2) read as another valid code
+- [x] contacts are matched by key, so the same person with a new relay replaces their old entry; a card goes to the relay the contact's code carries, else mine; each relay's daily limit pauses sends to it alone; a card carries the sender's code, so Add contact gets their relay
+- [x] my code carries my relay and changes with it; the panel says people need the new one (after a Copy); with no relay my code is v1 and the panel says nobody can send to me yet (I can still send to codes that carry a relay)
+- [x] invites name the room's relay (the host's) and the joiner connects there; invites go to the invitee's relay
+- [x] RelayGuide: teammates don't paste your relay; each sets up their own (or a team shares one) and you swap codes. relay/README.md the same, plus rooms and updating an old relay
+Verification (run 20261112T003507, origin/relay-help + this branch):
+- vitest: see the final line below; tsc clean; relay tests 14/14
+- journeys: live-editing 44 ok (A and C on relay 1, B on relay 2: the invite went to relay 2, B's room socket to relay 1), live-editing-desktop 12 ok (the Electron file:// page loads the CRDT chunk only when a session starts, edits both ways), send-card 52 ok (A on relay 1, B on relay 2, both ways), plus send-card-desktop, relay-guide and the undo-using journeys (results below)
+Decisions:
+- Falcon listens to Loro in the binding's place (live-doc `listen`): the binding put the caret back from cursors computed against already-changed text, so typing ahead of someone's caret in their paragraph moved it (seen in the desktop journey screenshot: "Body from And back. the desktop."). The narrowed replace maps the caret instead; undo keeps the binding's restore
+- The invite carries the room's relay (the user's design), though an earlier review suggested using only the invitee's own relay: joining is an explicit click, from a contact named in the toast
+- An invite stays listed after joining (Join again, from the same invite, if the session drops or you leave); Dismiss removes it
+- Live editing on a doc swaps its prosemirror-history for Loro's undo; leaving brings a fresh history back
+Failed attempts:
+- A live panel class `.lv` collided with the outline's level picker (flex row, mono buttons): renamed co-live
+- `crypto.ts` importing `./code` broke Node's direct imports of it (relay tests, journeys): the invite relay is checked in service.ts instead
+Known limits:
+- Concurrent table structure changes are tidied by one peer (the one in the room longest); if that peer has the doc's tab put away, a ragged table waits until someone edits it
+- Settling underline vs emphasis is a local edit, so it lands on the undo stack of the peer that settled it
+- No session persistence across app restarts: a session ends when its window closes; the invite stays, so Join again works while anyone is in the room
+Next action: big-file presence cost in the browser, fresh-subagent review, PR.
