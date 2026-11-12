@@ -19,6 +19,7 @@ import { VersionVector } from 'loro-crdt';
 import { b64url, BadEnvelope, newRoom, openFrame, roomKey, sealFrame, unb64url, type Invite } from './crypto';
 import { docOf, newBinding, SCHEMA_ID, seed, type Binding, type Peer } from './live-doc';
 import { checkRooms, nextUtcMidnight } from './relay';
+import { TYPING_MS } from './live-store';
 import type { Node as PMNode } from 'prosemirror-model';
 
 /**
@@ -35,7 +36,9 @@ const ASK_WAIT = 10_000;
 const FIRST_RETRY = 1_000, MAX_RETRY = 30_000, STABLE = 60_000;
 const TICK = 30_000, SLEPT = 150_000;
 const FRAME_UPDATE = 1, FRAME_ASK = 2, FRAME_TO = 3;
-const T_UPDATE = 1, T_PRESENCE = 2, T_VERSION = 3, T_ME = 4;
+/** T_END: whoever sent it ended the session for everyone. T_REMOVE: the peer id it holds is to leave. A Falcon that
+ * doesn't know a tag skips it, and the schema check keeps a session to Falcons that do. */
+const T_UPDATE = 1, T_PRESENCE = 2, T_VERSION = 3, T_ME = 4, T_END = 5, T_REMOVE = 6;
 /** Caret colors, one per peer (chosen from its Loro peer id, so it's the same on every screen). */
 const COLORS = ['#2563eb', '#db2777', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
 
@@ -54,8 +57,12 @@ export type LiveStatus =
   | { kind: 'no_rooms' }
   /** someone in the room runs a Falcon whose documents differ from this one's: the session ends */
   | { kind: 'mismatch'; name: string }
+  /** someone in it ended the session for everyone, or took this peer out of it (each keeps their copy) */
+  | { kind: 'closed'; by: string }
+  | { kind: 'removed'; by: string }
   | { kind: 'ended' };
-export type Member = { slot: number; name: string; color: string; peer?: string };
+/** `host`: started the session. `at`: when an edit of theirs last came in. */
+export type Member = { slot: number; name: string; color: string; peer?: string; host?: boolean; at?: number };
 
 const te = new TextEncoder(), td = new TextDecoder();
 function parts(list: [number, Uint8Array][]): Uint8Array {
@@ -78,6 +85,8 @@ function unparts(b: Uint8Array): [number, Uint8Array][] {
 const colorOf = (peer: string) => COLORS[Number(BigInt(peer) % BigInt(COLORS.length))];
 
 export type SessionOpts = { relay: string; room: string; key: Uint8Array; doc: string; name: string; onChange: () => void;
+  /** this peer started the session */
+  host?: boolean;
   /** how long an ask waits for its answer before trying the next peer (tests shorten it) */
   askWait?: number };
 
@@ -149,6 +158,21 @@ export class LiveSession {
   invite(): Invite { return { room: this.o.room, key: b64url(this.o.key), doc: this.o.doc, relay: this.o.relay }; }
   get room() { return this.o.room; }
   get relay() { return this.o.relay; }
+
+  get hosting() { return !!this.o.host; }
+
+  /** End it for everyone: they leave as this peer does, each keeping the doc as it is. What's unsent goes with it. */
+  async end() {
+    if (this.stopped) return;
+    const list: [number, Uint8Array][] = this.pending.map((u) => [T_UPDATE, u]);
+    this.pending = [];
+    list.push([T_END, new Uint8Array()]);
+    await this.send(FRAME_UPDATE, list);
+    this.stop();
+  }
+
+  /** Ask one person to leave (by Loro peer id). Their Falcon does; anyone with the invite could still come back. */
+  remove(peer: string) { void this.send(FRAME_UPDATE, [[T_REMOVE, te.encode(peer)]]); }
 
   /** Leave: the socket closes and the others see you go. The doc stays as it is here. */
   stop() {
@@ -320,18 +344,26 @@ export class LiveSession {
     this.kick();
   }
 
-  private mePart(): [number, Uint8Array] { return [T_ME, te.encode(JSON.stringify({ peer: this.binding.doc.peerIdStr, name: this.me.name, color: this.me.color, schema: SCHEMA_ID }))]; }
+  private mePart(): [number, Uint8Array] { return [T_ME, te.encode(JSON.stringify({ peer: this.binding.doc.peerIdStr, name: this.me.name, color: this.me.color, schema: SCHEMA_ID, host: this.hosting }))]; }
 
   private onParts(kind: number, from: number, list: [number, Uint8Array][]) {
     const updates: Uint8Array[] = [];
     let version: Uint8Array | null = null;
     for (const [tag, bytes] of list) {
+      if (tag === T_END || (tag === T_REMOVE && td.decode(bytes) === this.binding.doc.peerIdStr)) {
+        // what came with it goes in first: the doc is left as they had it
+        if (updates.length) { try { this.binding.doc.importBatch(updates); } catch { /* skip */ } }
+        const by = this.names.get(from)?.name ?? 'Someone';
+        this.stop();
+        this.set({ kind: tag === T_END ? 'closed' : 'removed', by: by === '…' ? 'Someone' : by });
+        return;
+      }
       if (tag === T_UPDATE) updates.push(bytes.slice());
       else if (tag === T_VERSION) version = bytes;
       else if (tag === T_PRESENCE) { try { this.binding.presence.apply(bytes); } catch { /* not ours */ } }
       else if (tag === T_ME) {
         try {
-          const j = JSON.parse(td.decode(bytes)) as { peer?: unknown; name?: unknown; color?: unknown; schema?: unknown };
+          const j = JSON.parse(td.decode(bytes)) as { peer?: unknown; name?: unknown; color?: unknown; schema?: unknown; host?: unknown };
           if (j.schema !== SCHEMA_ID) {
             // their Falcon's documents differ from this one's: editing together would lose what either can't show
             this.stop();
@@ -339,7 +371,7 @@ export class LiveSession {
             return;
           }
           if (typeof j.peer === 'string' && /^\d{1,20}$/.test(j.peer) && typeof j.name === 'string') {
-            this.names.set(from, { slot: from, peer: j.peer, name: j.name.slice(0, 60) || 'Someone', color: COLORS.includes(String(j.color)) ? String(j.color) : colorOf(j.peer) });
+            this.names.set(from, { slot: from, peer: j.peer, name: j.name.slice(0, 60) || 'Someone', color: COLORS.includes(String(j.color)) ? String(j.color) : colorOf(j.peer), host: j.host === true, at: this.names.get(from)?.at });
             this.setMembers();
           }
         } catch { /* skip */ }
@@ -347,6 +379,9 @@ export class LiveSession {
     }
     if (updates.length) {
       try { this.binding.doc.importBatch(updates); } catch { /* a frame Loro can't read: the next sync covers it */ }
+      // an edit as they make it (not the catch-up a sync carries): they're typing now
+      const m = this.names.get(from);
+      if (m && kind === FRAME_UPDATE) { const was = m.at ?? 0; m.at = Date.now(); if (m.at - was > TYPING_MS) this.setMembers(); } // the screens re-read `at` as they tick
     }
     if (kind === FRAME_ASK && version) this.answer(from, version);
     else if (kind === FRAME_TO && this.status.kind === 'syncing' && !updates.length && !docOf(this.binding) && this.ask.attempt + 1 < this.ask.peers) {
@@ -419,7 +454,7 @@ export function host(o: Omit<SessionOpts, 'room' | 'key'>, doc: PMNode): LiveSes
   const b = newBinding();
   seed(b, doc);
   const { room, key } = newRoom();
-  return new LiveSession({ ...o, room, key }, b);
+  return new LiveSession({ ...o, room, key, host: true }, b);
 }
 
 /** Join a room from an invite: the doc comes from whoever is in it (`ready`). */

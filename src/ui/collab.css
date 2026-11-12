@@ -151,7 +151,42 @@
 
 /* live editing: someone else's caret is a bar in their color (their name on hover), and the same color marks them in the panel */
 .f-peer { position: relative; margin: 0 -1px; border-left: 2px solid var(--peer); pointer-events: none; }
-.lv-bar { flex: none; width: 3px; height: 14px; border-radius: 2px; background: var(--peer); }
+/* their name rides above the caret while their row in Who's here is hovered */
+.f-peer::after { content: attr(data-n); position: absolute; left: -2px; bottom: 100%; padding-bottom: 1px; font: 600 10px/1 var(--ui-font); color: var(--peer); white-space: nowrap; opacity: 0; transition: opacity 150ms ease-out; }
+.lv-bar { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--peer); }
+
+/* Who's here (Live.tsx WhoHere): the live doc's people, from the toolbar */
+.lv-whowrap { display: flex; align-items: center; }
+.who { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-radius: 8px; font: 12.5px/1 var(--ui-font); color: var(--u-tx2); white-space: nowrap; cursor: pointer; }
+.who:hover, .who[aria-expanded="true"] { background: var(--u-hover); color: var(--u-tx); }
+.who .dots { display: flex; padding-left: 2px; }
+.who .dots i { width: 8px; height: 8px; margin-left: -2px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--u-deep); }
+.lv-pop { position: fixed; z-index: 2000; width: 308px; padding: 14px 14px 12px; border-radius: 14px; background: var(--u-pop); color: var(--u-tx); font: 13px/1.3 var(--ui-font); user-select: text;
+  box-shadow: var(--u-top), 0 16px 44px rgba(0, 0, 0, calc(.55 * var(--u-sh))); animation: lv-in 180ms var(--u-ease); }
+@keyframes lv-in { from { opacity: 0; transform: translateY(-4px); } }
+.lv-pop h3 { margin: 0 0 2px; font-size: 13px; font-weight: 600; outline: none; }
+.lv-pop .line { margin: 0 0 8px; font-size: 12px; color: var(--u-mut); }
+.lv-fold { display: grid; grid-template-rows: 1fr; margin: 0 -10px; transition: grid-template-rows 320ms var(--u-ease), opacity 220ms ease-out; }
+.lv-fold > div { min-height: 0; overflow: hidden; }
+.lv-fold[data-gone] { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
+.lv-pop .pr { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; }
+.lv-pop .pr:hover { background: var(--u-hover); }
+.lv-pop .pr .d { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.lv-pop .pr .t { flex: 1; min-width: 0; }
+.lv-pop .pr .t b { display: block; font-size: 13px; font-weight: 500; }
+.lv-pop .pr .t span { display: block; font-size: 12px; color: var(--u-mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-btn { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 8px; background: var(--u-ctl2); box-shadow: var(--u-top); color: var(--u-tx); font: 12.5px/1 var(--ui-font); white-space: nowrap; cursor: pointer; transition: background 150ms ease-out; }
+.lv-btn:hover { background: var(--u-ctl-on); }
+.lv-btn:focus-visible { outline: 2px solid var(--u-tx2); outline-offset: 2px; }
+.lv-btn.plain { background: none; box-shadow: none; color: var(--u-tx2); padding: 0 8px; margin-right: -8px; }
+.lv-btn.plain.lv-l { margin: 0 0 0 -8px; }
+.lv-btn.plain:hover { background: var(--u-hover); color: var(--u-tx); }
+.lv-pop .pr .lv-btn { opacity: 0; }
+.lv-pop .pr:hover .lv-btn, .lv-pop .pr .lv-btn:focus-visible { opacity: 1; }
+.lv-pop .end { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding-top: 8px; }
+.lv-pop .end > span { font-size: 12px; color: var(--u-tx2); }
+.lv-pop .acts { display: flex; gap: 6px; }
+@media (prefers-reduced-motion: reduce) { .lv-fold { transition: opacity 200ms ease-out, grid-template-rows 0s 200ms; } .lv-pop { animation: none; } .f-peer::after { transition: none; } }
 .lv-who { margin-bottom: 6px; }
 .lv-st { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .lv-note { font-size: 12.5px; color: var(--u-mut); white-space: normal; }

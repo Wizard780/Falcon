@@ -4,8 +4,8 @@ import type { EditorState, Plugin } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import * as collab from '../collab/service';
 import { shortCode } from '../collab/code';
-import { liveActions, liveInfo, setLiveInfo, subscribeLive, type LiveInfo } from '../collab/live-store';
-import type { LiveSession } from '../collab/live';
+import { liveActions, liveInfo, setLiveInfo, subscribeLive, TYPING_MS, type LiveInfo } from '../collab/live-store';
+import type { LiveSession, Member } from '../collab/live';
 import { createState } from '../editor/editor';
 import { bridge } from '../editor/host';
 import { useCollab } from './Collab';
@@ -38,6 +38,8 @@ export function liveLine(i: LiveInfo, relay: string): string {
       ? 'Your relay is from before live editing. Whoever set it up updates it: the ? beside Relay in Settings > Sharing, then Set up my relay. Card sharing keeps working meanwhile'
       : 'Your relay is from before live editing. Whoever set it up downloads it again and runs npx wrangler deploy (the ? in Settings > Sharing shows how). Card sharing keeps working meanwhile';
     case 'ended': return 'You left the session';
+    case 'closed': return `${s.by} ended the session. “${i.doc}” stays open here as it is`;
+    case 'removed': return `${s.by} took you out of the session. “${i.doc}” stays open here as it is`;
     case 'mismatch': return `${s.name}'s Falcon is a different version, so you can't edit together. Update Falcon, both of you, then start again`;
   }
 }
@@ -78,10 +80,14 @@ export function useLiveSessions(h: LiveHost) {
   const load = async () => (mods.current ??= await Promise.all([import('../collab/live'), import('../collab/live-doc')]));
   const publish = useCallback(() => {
     const r = held.current;
-    setLiveInfo(r ? { docId: r.docId, room: r.s.room, doc: r.s.invite().doc, status: r.s.status, me: r.s.me, members: r.s.members } : null);
-    // someone runs a Falcon whose documents differ: the session has ended, so the doc goes back to a plain one
-    if (r?.s.status.kind === 'mismatch') {
+    setLiveInfo(r ? { docId: r.docId, room: r.s.room, doc: r.s.invite().doc, status: r.s.status, me: r.s.me, members: r.s.members, hosting: r.s.hosting } : null);
+    // the session is over from the other side (a Falcon whose documents differ, ended for everyone, or taken out of it):
+    // the doc goes back to a plain one
+    const k = r?.s.status.kind;
+    if (k === 'mismatch' || k === 'closed' || k === 'removed') {
       const why = liveLine(liveInfo(), collab.relayUrl());
+      // taken out: the invite to that room goes too, so it isn't one click from coming back in
+      if (k === 'removed') for (const v of collab.current().invites) if (v.invite.room === r!.s.room) void collab.dropInvite(v.id).catch(() => {});
       setTimeout(() => { if (held.current === r) { stopRef.current(false); host.current.flash(why); } }, 0);
     }
   }, []);
@@ -189,7 +195,16 @@ export function useLiveSessions(h: LiveHost) {
   }, []);
 
   useEffect(() => {
-    Object.assign(liveActions, { start: () => void start(), stop: () => stop(), invite, join: (i: collab.Invited) => void join(i), open: () => host.current.openPanel() });
+    Object.assign(liveActions, {
+      start: () => void start(), stop: () => stop(), invite, join: (i: collab.Invited) => void join(i), open: () => host.current.openPanel(),
+      end: async () => { const r = held.current; if (!r) return; await r.s.end(); stop(false); },
+      remove: (peer: string) => {
+        const r = held.current, m = r?.s.members.find((x) => x.peer === peer);
+        if (!r || !m) return;
+        r.s.remove(peer);
+        host.current.flash(`Removed ${named(m)}. They keep their copy`);
+      },
+    });
   }, [start, stop, invite, join]);
   useEffect(() => collab.onInvited((i, who) => {
     // invited again to the room I'm in (they pressed Invite twice): nothing to join, nothing waiting
@@ -212,15 +227,6 @@ export function useLiveSessions(h: LiveHost) {
 
 /** Said when a toast's button can't act yet. */
 export const WAITS = "Close what's open first. It waits on the rail's Sharing button.";
-
-/** The status bar's live line, when the shown doc is in a session. Opens the panel. */
-export function LiveBit({ docId, onOpen }: { docId: number; onOpen: () => void }) {
-  const i = useLive();
-  if (!i || i.docId !== docId) return null;
-  const k = i.status.kind;
-  const what = k === 'live' ? `Live · ${whoLine(i)}` : k === 'paused' ? 'Live · paused' : k === 'no_rooms' ? 'Live · relay needs an update' : k === 'syncing' ? 'Live · catching up' : 'Live · reconnecting';
-  return <button className="lit lv-bit" title="Live editing: who's in it, invite, leave" onClick={onOpen}>{what}</button>;
-}
 
 /** Esc closes, wherever focus is. */
 function useEsc(open: boolean, close: () => void) {
@@ -341,4 +347,161 @@ export function LiveInvitesControl() {
   const c = useCollab();
   if (!c.invites.length) return <span className="lv-note">None waiting</span>;
   return <button className="st-btn" onClick={() => liveActions.open?.()}>{c.invites.length === 1 ? '1 invite…' : `${c.invites.length} invites…`}</button>;
+}
+
+const HEADS = ['tag', 'block', 'hat', 'pocket', 'analytic'];
+/** The heading above someone's caret on this screen (their tag, else their block…), from the page itself. */
+function whereIs(peer?: string): string {
+  if (!peer) return '';
+  const c = document.querySelector(`.ProseMirror .f-peer[data-peer="${peer}"]`);
+  let el = c?.closest('.ProseMirror > *') ?? null;
+  for (; el; el = el.previousElementSibling) {
+    const st = (el as HTMLElement).dataset.style;
+    if (st && HEADS.includes(st) && el.textContent?.trim()) { const t = el.textContent.trim(); return t.length > 40 ? `${t.slice(0, 39)}…` : t; }
+  }
+  return '';
+}
+/** "Econ Advantage · typing now", "Okafor 24 · idle 3 min" */
+function doing(m: Member, now: number): string {
+  if (m.name === '…') return 'Joining…';
+  const bits = [whereIs(m.peer)];
+  if (m.at && now - m.at < TYPING_MS) bits.push('typing now');
+  else if (m.at && now - m.at >= 60_000) bits.push(`idle ${Math.floor((now - m.at) / 60_000)} min`);
+  if (m.host) bits.push('hosting');
+  return bits.filter(Boolean).join(' · ') || 'Here';
+}
+/** You first, then whoever typed last. */
+const byLast = (ms: Member[]) => [...ms].sort((a, b) => (b.at ?? 0) - (a.at ?? 0) || a.slot - b.slot);
+
+const FOLD_MS = 340;
+/** Rows that leave stay a moment, folding shut where they were (Card sharing's motion). */
+function useLeaving<T>(items: T[], key: (t: T) => string): { x: T; gone: boolean }[] {
+  const [gone, setGone] = useState<Map<string, { x: T; i: number }>>(new Map());
+  const prev = useRef<T[]>(items);
+  const keys = items.map(key).join();
+  useEffect(() => {
+    const now = new Set(items.map(key));
+    const left = prev.current.map((x, i) => ({ x, i })).filter(({ x }) => !now.has(key(x)));
+    prev.current = items;
+    if (!left.length) return;
+    setGone((g) => { const n = new Map(g); for (const l of left) n.set(key(l.x), l); return n; });
+    setTimeout(() => setGone((g) => { const n = new Map(g); for (const l of left) n.delete(key(l.x)); return n; }), FOLD_MS);
+  }, [keys]); // eslint-disable-line react-hooks/exhaustive-deps
+  const out = items.map((x) => ({ x, gone: false }));
+  for (const [k, l] of gone) if (!items.some((x) => key(x) === k)) out.splice(Math.min(l.i, out.length), 0, { x: l.x, gone: true });
+  return out;
+}
+
+const short = (k: string) => (k === 'syncing' ? 'Catching up…' : k === 'paused' ? 'Paused' : k === 'no_rooms' ? 'Relay needs an update' : k === 'connecting' ? 'Connecting…' : 'Reconnecting…');
+
+/**
+ * Who's here: the live doc's people, on the toolbar. Their colors, and how many; open, each person with where they are
+ * and whether they're typing (hover one to find their caret). Whoever started it can take someone out, or end it for
+ * everyone; the others leave.
+ */
+export function WhoHere({ docId }: { docId: number }) {
+  const live = useLive();
+  const [open, setOpen] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [lit, setLit] = useState<string | null>(null);
+  /** the session as it was when this Falcon ended it: the popover stays to say so */
+  const [over, setOver] = useState<NonNullable<LiveInfo> | null>(null);
+  const [folding, setFolding] = useState<Set<number>>(new Set());
+  const [, tick] = useState(0);
+  const [at, setAt] = useState<{ top: number; right: number } | null>(null);
+  const wrap = useRef<HTMLDivElement>(null), head = useRef<HTMLHeadingElement>(null), endYes = useRef<HTMLButtonElement>(null), endAsk = useRef<HTMLButtonElement>(null);
+  const i = live?.docId === docId ? live : over;
+  const close = useCallback(() => { setOpen(false); setAsking(false); setOver(null); setFolding(new Set()); setLit(null); }, []);
+  useEffect(() => { if (!open) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) close(); };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || document.querySelector('.cf[role="alertdialog"], .cf-back')) return;
+      e.preventDefault(); e.stopPropagation();
+      if (asking) { setAsking(false); setTimeout(() => endAsk.current?.focus(), 0); } else close(); // Esc backs out of the question first
+    };
+    addEventListener('mousedown', down, true);
+    addEventListener('keydown', key, true);
+    return () => { removeEventListener('mousedown', down, true); removeEventListener('keydown', key, true); };
+  }, [open, asking, close]);
+  useLayoutEffect(() => { if (open) head.current?.focus({ preventScroll: true }); }, [open]);
+  useLayoutEffect(() => { if (asking) endYes.current?.focus({ preventScroll: true }); }, [asking]);
+  // the order is set when it opens: a row never moves under the pointer (someone typing would bring theirs to the top)
+  const order = useRef<number[]>([]);
+  if (!open) order.current = [];
+  const ranked = byLast(i?.members ?? []);
+  for (const m of ranked) if (!order.current.includes(m.slot)) order.current.push(m.slot);
+  const people = ranked.sort((a, b) => order.current.indexOf(a.slot) - order.current.indexOf(b.slot)).filter((m) => !folding.has(m.slot));
+  const rows = useLeaving(people, (m) => String(m.slot));
+  if (!i) return null;
+  const k = i.status.kind, here = k === 'live' || over;
+  const n = 1 + i.members.length;
+  const now = Date.now();
+
+  const end = async () => {
+    const snap = i;
+    // one after another, then the session goes
+    for (const m of byLast(snap.members)) { setFolding((f) => new Set(f).add(m.slot)); await new Promise((r) => setTimeout(r, 110)); }
+    setOver({ ...snap, members: [] });
+    setAsking(false);
+    await liveActions.end?.();
+    head.current?.focus({ preventScroll: true });
+  };
+
+  return (
+    <div className="lv-whowrap" ref={wrap}>
+      {lit && <style>{`.ProseMirror .f-peer[data-peer="${lit}"]::after{opacity:1}`}</style>}
+      <button className="who" aria-haspopup="dialog" aria-expanded={open} aria-label={`Live editing with ${whoLine(i)}`} title={`Live editing with ${whoLine(i)}`}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={(e) => { if (open) { close(); return; } const r = e.currentTarget.getBoundingClientRect(); setAt({ top: r.bottom + 6, right: Math.max(8, innerWidth - r.right) }); setOpen(true); }}>
+        <span className="dots" aria-hidden>{[i.me, ...i.members].map((m, j) => <i key={j} style={{ '--c': m.color } as React.CSSProperties} />)}</span>
+        <span>{over ? 'Just you' : here ? (n > 1 ? `${n} here` : 'Just you') : short(k)}</span>
+      </button>
+      {open && (
+        <div className="lv-pop" role="dialog" aria-label="In this file" style={at ?? undefined}>
+          <h3 tabIndex={-1} ref={head}>In this file</h3>
+          <p className="line" role="status">{over ? 'The session is over. This file is yours alone again.' : k === 'live' ? `People editing ${i.doc} with you.` : liveLine(i, collab.relayUrl())}</p>
+          <div role="list" aria-label="In this session">
+            <div className="lv-fold" role="listitem"><div><div className="pr">
+              <span className="d" style={{ '--c': i.me.color } as React.CSSProperties} />
+              <div className="t"><b>You</b><span>This Falcon{i.hosting && !over ? ' · hosting' : ''}</span></div>
+            </div></div></div>
+            {rows.map(({ x: m, gone }) => (
+              <div key={m.slot} className="lv-fold" data-gone={gone || undefined} role="listitem"
+                onMouseEnter={() => setLit(m.peer ?? null)} onMouseLeave={() => setLit(null)}>
+                <div><div className="pr">
+                  <span className="d" style={{ '--c': m.color } as React.CSSProperties} />
+                  <div className="t"><b>{named(m)}</b><span>{doing(m, now)}</span></div>
+                  {i.hosting && !over && m.peer && (
+                    <button className="lv-btn" aria-label={`Remove ${named(m)}`} onClick={() => { liveActions.remove?.(m.peer!); setLit(null); }}>Remove</button>
+                  )}
+                </div></div>
+              </div>
+            ))}
+          </div>
+          {!over && (
+            <div className="end">
+              {asking ? (
+                <>
+                  <span>Everyone keeps their own copy.</span>
+                  <div className="acts">
+                    <button className="lv-btn" onClick={() => { setAsking(false); setTimeout(() => endAsk.current?.focus(), 0); }}>Cancel</button>
+                    <button className="lv-btn" ref={endYes} onClick={() => void end()}>End session</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {i.docId !== null ? <button className="lv-btn plain lv-l" onClick={() => { close(); liveActions.open?.(); }}>Invite…</button> : <span />}
+                  {i.hosting
+                    ? <button ref={endAsk} className="lv-btn plain" onClick={() => setAsking(true)}>End session for everyone…</button>
+                    : <button className="lv-btn plain" onClick={() => { close(); liveActions.stop?.(); }}>Leave</button>}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }

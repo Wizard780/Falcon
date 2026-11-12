@@ -228,6 +228,8 @@ function caret(b: Binding, peer: string) {
   el.className = 'f-peer';
   el.style.setProperty('--peer', /^#[0-9a-f]{6}$/i.test(String(user?.color)) ? user!.color : '#888'); // their Falcon says it: only a plain color goes in
   el.title = user?.name ?? 'Someone';
+  el.dataset.peer = peer; // Who's here lights this caret's name while their row is hovered (ui/Live.tsx)
+  el.dataset.n = user?.name ?? 'Someone';
   el.append('⁠');
   return el;
 }
@@ -484,4 +486,10 @@ function gaps(a: PMNode, b: PMNode, at: Map<PMNode, number>) {
   return out;
 }
 
-Object.assign(liveHooks, { undo, redo, narrow: narrowLoroReplace });
+/** This peer's own change count in the live doc `state` is bound to (see liveHooks.mine). */
+function mine(state: EditorState): number | undefined {
+  const d = loroSyncPluginKey.getState(state)?.doc as LoroDoc | undefined;
+  return d ? d.oplogVersion().get(d.peerId) ?? 0 : undefined;
+}
+
+Object.assign(liveHooks, { undo, redo, narrow: narrowLoroReplace, mine });
