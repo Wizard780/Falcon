@@ -18,11 +18,14 @@ export function cleanPastedHTML(html: string, smart = pref(P.smartPaste)): strin
   // our own copy: the classes say it all, the inline styles were only for other apps
   if (doc.body.querySelector(OWN)) {
     doc.body.querySelectorAll('[class^="f-"], [class*=" f-"]').forEach((el) => el.removeAttribute('style'));
+    // the copy wrote font colors CardMirror's way, without the #
+    doc.body.querySelectorAll<HTMLElement>('span.f-color').forEach((el) => { if (/^[0-9a-f]{6}$/i.test(el.dataset.color ?? '')) el.dataset.color = `#${el.dataset.color}`; });
     return doc.body.innerHTML;
   }
   // Word's own shell, not a stray mso- property (Falcon's copies carry mso-highlight for Word)
   const word = smart && /urn:schemas-microsoft-com|mso-style|class="?Mso/.test(html);
   const list = blocks(doc.body, smart, word);
+  if (smart) list.forEach(analyticByColor);
   if (smart && /docs-internal-guid/.test(html)) list.forEach(headingBySize);
   return emit(doc, list, smart);
 }
@@ -45,6 +48,30 @@ function headingBySize(b: Item) {
   for (const r of runs) if (r.bold === false) r.unbold = true;
 }
 
+/**
+ * Google Docs, Gmail and the web drop an analytic's style and keep its look: bold text at the analytic
+ * size, in blue. A whole paragraph like that (or a tag-level heading in blue: tags are never blue) is
+ * an analytic. Without the color it's a cite or a tag, so the color is what decides.
+ */
+function analyticByColor(b: Item) {
+  if (isTable(b) || (b.style !== 'normal' && b.style !== 'tag')) return;
+  const runs = b.runs.filter((r) => r.text && /\S/.test(r.text));
+  // a link is blue too, but underlined: an analytic never is
+  if (!runs.length || !runs.every((r) => r.color && isBlue(r.color) && !r.underline)) return;
+  if (b.style === 'normal' && !runs[0].bold) return;
+  if (runs.some((r) => !r.pt || Math.abs(r.pt - pref(P.szAnalytic)) >= 0.25)) return;
+  b.style = 'analytic';
+  b.heading = true;
+  for (const r of runs) if (r.bold === false) r.unbold = true;
+}
+/** Verbatim's and Falcon's analytic blues (and a custom Settings color, or its dark-paper shade): blue well above red and green. */
+function isBlue(hex: string) {
+  const own = toHex(pref(P.colorAnalytic));
+  if (own && own === hex) return true;
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return b >= 0x60 && b - Math.max(r, g) >= 0x28;
+}
+
 /** Falcon's paragraph classes: every copy of ours has at least one. */
 // (a cut of one footnote or picture alone has no paragraph around it: those count too)
 const OWN = [...['normal', 'pocket', 'hat', 'block', 'tag', 'analytic', 'undertag'].map((s) => `[class~="f-${s}"]`), 'sup.f-footnote', 'img.f-image', 'table.f-table'].join(', ');
@@ -55,6 +82,8 @@ type Run = {
   img?: { src: string; width?: number; height?: number; alt: string };
   bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; box?: boolean; va?: 'sup' | 'sub';
   pt?: number; ptUnit?: boolean; hl?: string; unbold?: boolean;
+  /** the text color as #RRGGBB: only an analytic's blue is read from it */
+  color?: string;
   /** the size where the bold was set: a cite shrunk to 8pt inside is still a 13pt bold cite */
   boldPt?: number;
   /** a character style named by a class (Word, CardMirror): beats what the inline style implies */
@@ -71,12 +100,20 @@ const px = (v: string | null | undefined) => {
   const m = v?.match(/^\s*([\d.]+)\s*(px|pt)?\s*$/i);
   return m ? Math.round(Number(m[1]) * (m[2]?.toLowerCase() === 'pt' ? 96 / 72 : 1)) || undefined : undefined;
 };
+/** A CSS color (a name, #RGB, #RRGGBB, rgb() or a visible rgba()) as #RRGGBB, or undefined. */
+function toHex(value: string): string | undefined {
+  const v = value.trim().toLowerCase();
+  if (NAMED[v]) return NAMED[v];
+  if (/^#[0-9a-f]{6}$/.test(v)) return v.toUpperCase();
+  if (/^#[0-9a-f]{3}$/.test(v)) return `#${v.slice(1).split('').map((c) => c + c).join('')}`.toUpperCase();
+  const rgb = v.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+  if (rgb && (rgb[4] === undefined || Number(rgb[4]) > 0)) return `#${rgb.slice(1, 4).map((n) => Number(n).toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+  return undefined;
+}
+
 /** A cell's background as #RRGGBB (white and anything unreadable are no background). */
 function cellColor(el: HTMLElement): string | undefined {
-  const v = (el.getAttribute('bgcolor') ?? prop(el.getAttribute('style') ?? '', 'background-color') ?? prop(el.getAttribute('style') ?? '', 'background') ?? '').trim().toLowerCase();
-  let hex = NAMED[v] ?? (/^#[0-9a-f]{6}$/.test(v) ? v.toUpperCase() : undefined);
-  const rgb = v.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-  if (!hex && rgb && (rgb[4] === undefined || Number(rgb[4]) > 0)) hex = `#${rgb.slice(1, 4).map((n) => Number(n).toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+  const hex = toHex(el.getAttribute('bgcolor') ?? prop(el.getAttribute('style') ?? '', 'background-color') ?? prop(el.getAttribute('style') ?? '', 'background') ?? '');
   return hex && hex !== '#FFFFFF' ? hex : undefined;
 }
 
@@ -170,11 +207,7 @@ const HL_BY_HEX: Record<string, string> = Object.fromEntries(Object.entries(HIGH
 /** One of Word's 15 highlight colors, from a name, hex or rgb(); anything else (a web page's background) is no highlight. */
 export function highlightName(value: string): string | null {
   const v = value.trim().toLowerCase();
-  let hex = NAMED[v];
-  if (!hex && /^#[0-9a-f]{6}$/.test(v)) hex = v.toUpperCase();
-  if (!hex && /^#[0-9a-f]{3}$/.test(v)) hex = `#${v.slice(1).split('').map((c) => c + c).join('')}`.toUpperCase();
-  const rgb = v.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/);
-  if (!hex && rgb && (rgb[4] === undefined || Number(rgb[4]) > 0)) hex = `#${rgb.slice(1, 4).map((n) => Number(n).toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+  const hex = toHex(v);
   if (hex) return HL_BY_HEX[hex] ?? null;
   return Object.keys(HIGHLIGHTS).find((k) => k.toLowerCase() === v) ?? null; // Word's own names: darkBlue, lightGray
 }
@@ -219,6 +252,8 @@ function own(el: HTMLElement, smart: boolean, word: boolean): Run {
   if (r.named || /\bpmd-/.test(cls)) return r;
   const fw = prop(style, 'font-weight');
   if (fw) r.bold = /bold|bolder/.test(fw) || Number(fw) >= 600;
+  const fg = prop(style, 'color');
+  if (fg) r.color = toHex(fg) ?? '#000000'; // an unreadable color still blocks the parent's
   const fs = prop(style, 'font-style');
   if (fs) r.italic = fs.startsWith('italic') || fs.startsWith('oblique');
   const td = [prop(style, 'text-decoration'), prop(style, 'text-decoration-line')].filter(Boolean).join(' ');

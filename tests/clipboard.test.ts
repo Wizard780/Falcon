@@ -61,6 +61,25 @@ describe('copy out', () => {
     expect(el('.f-highlight[data-color=cyan]')).toMatch(/mso-highlight:aqua/);
     expect(el('.f-size')).toMatch(/font-size: ?8pt/);
   });
+  it("carries CardMirror's names for each style, which its paste reads instead of the look", () => {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    for (const s of ['pocket', 'hat', 'block', 'tag', 'analytic', 'cite', 'underline', 'emphasis']) expect(doc.querySelector(`.f-${s}`)!.classList).toContain(`pmd-${s}`);
+    expect(doc.querySelector('p.f-analytic.pmd-analytic')).not.toBeNull();
+    // CardMirror reads data-color as a font color: a highlight goes by its name, anything else as a fill
+    expect(doc.querySelector<HTMLElement>('.f-highlight[data-color=cyan]')!.className).toBe('f-highlight pmd-highlight');
+    expect(doc.querySelector<HTMLElement>('.f-highlight[data-color=cyan]')!.dataset.highlight).toBe('cyan');
+    const other = new DOMParser().parseFromString(clipboardHTML(schema.node('doc', null, [para('normal',
+      t('deep', M.highlight.create({ color: 'deepTurquoise' })), t('gray', M.shading.create({ color: '#D9D9D9' })))]).content), 'text/html');
+    expect(other.querySelector<HTMLElement>('.f-highlight')!.dataset.shading).toBe('00DAFF');
+    expect(other.querySelector<HTMLElement>('.f-highlight')!.classList).not.toContain('pmd-highlight');
+    expect(other.querySelector<HTMLElement>('.f-shading')!.dataset.shading).toBe('D9D9D9');
+  });
+  it('a font color goes to CardMirror without its #, and comes back into Falcon with it', () => {
+    const d = schema.node('doc', null, [para('normal', t('red', M.color.create({ color: '#C00000' })))]);
+    const out = clipboardHTML(d.content);
+    expect(new DOMParser().parseFromString(out, 'text/html').querySelector<HTMLElement>('.f-color')!.dataset.color).toBe('C00000');
+    expect(paste(out)).toBe(markMap(d));
+  });
   it('pastes back into Falcon exactly as it was copied', () => {
     expect(paste(html)).toBe(markMap(rich()));
   });
@@ -76,8 +95,8 @@ describe('copy out', () => {
       'normal: [a note under the tag]{italic}',
       'normal: [Smith 24]{cite}, Professor at MIT, ["The Crunch"]{italic}',
       'normal: [The rapid expansion of AI has ]{size:8pt}[pushed utilities]{highlight:yellow+underline}[ to their limits]{underline}[ and ]{size:8pt}[rolling blackouts]{emphasis+highlight:cyan}[ loom]{bold}[.]{size:8pt}',
-      // an analytic is bold 13pt text, so without its class it reads as a cite
-      'normal: [Extend the blackout impact]{cite}',
+      // an analytic is bold 13pt text: its blue is what keeps it from reading as a cite
+      'analytic: Extend the blackout impact',
     ]);
   });
 });
@@ -164,6 +183,26 @@ describe('paste in', () => {
       const html = '<b style="font-weight:normal;" id="docs-internal-guid-1"><p><span style="font-size:14pt;font-weight:700;">Tag at 14</span></p></b>';
       expect(paste(html)).toBe('tag: Tag at 14');
     } finally { setPref(P.szTag, 13); }
+  });
+  it('Google Docs: an analytic is told from a tag or cite by its blue', () => {
+    const docs = (inner: string) => `<meta charset="utf-8"><b style="font-weight:normal;" id="docs-internal-guid-1">${inner}</b>`;
+    const run = (text: string, color = '#1f3f8a', weight = 700) => `<span style="font-size:13pt;font-family:Calibri,sans-serif;color:${color};background-color:transparent;font-weight:${weight};font-style:normal;text-decoration:none;vertical-align:baseline;white-space:pre-wrap;">${text}</span>`;
+    expect(paste(docs(`<p dir="ltr" style="line-height:1.38;margin-top:0pt">${run('Extend the impact')}</p>`))).toBe('analytic: Extend the impact');
+    // a Verbatim .docx opened in Docs: Analytic is based on Heading 4, so Docs writes an h4
+    expect(paste(docs(`<h4 dir="ltr">${run('From a docx')}</h4>`))).toBe('analytic: From a docx');
+    // Verbatim's own analytic blue, with an unbolded word
+    expect(paste(docs(`<p>${run('Verbatim ', '#1f3864')}${run('blue', '#1f3864', 400)}</p>`))).toBe('analytic: Verbatim [blue]{unbold}');
+    // a heading that's only a link is blue too, but underlined: still a tag
+    expect(paste(docs(`<h4><a href="https://x.y"><span style="font-size:13pt;font-weight:700;color:#0563c1;text-decoration:underline">Smith 20 evidence</span></a></h4>`))).toBe('tag: Smith 20 evidence');
+    // black stays a tag; a blue cite inside a sentence stays a cite
+    expect(paste(docs(`<p>${run('A tag', '#000000')}</p>`))).toBe('tag: A tag');
+    expect(paste(docs(`<p>${run('Smith 24')}<span style="font-size:11pt;color:#000000">, Prof</span></p>`))).toBe('normal: [Smith 24]{cite}, Prof');
+  });
+  it('a custom analytic color in Settings is read back too', () => {
+    setPref(P.colorAnalytic, '#7a1fa2');
+    try {
+      expect(paste('<p><span style="font-size:13pt;font-weight:bold;color:rgb(122, 31, 162)">Purple analytic</span></p>')).toBe('analytic: Purple analytic');
+    } finally { setPref(P.colorAnalytic, ''); }
   });
   it('Gmail: rgb() colors and px sizes, no classes', () => {
     const html = '<div dir="ltr"><div><span style="font-weight:bold;font-size:17.3333px">Smith 24</span> says</div>'
