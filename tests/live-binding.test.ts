@@ -4,7 +4,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { TextSelection, type Command } from 'prosemirror-state';
 import { addColumnAfter, addRowAfter, TableMap } from 'prosemirror-tables';
 import type { EditorView } from 'prosemirror-view';
-import type { Node as PMNode } from 'prosemirror-model';
+import { Fragment, type Node as PMNode } from 'prosemirror-model';
+import { insertIntoSpeech } from '../src/editor/speech';
 import { createState, createView, markMap, swapState } from '../src/editor/editor';
 import { falconKeys as K } from '../src/editor/keymap';
 import { schema } from '../src/editor/schema';
@@ -222,6 +223,39 @@ describe('two editors through Loro', () => {
     await tick(10);
     expect(mm(B)).not.toContain('very ');
     expect(mm(B)).toContain('mine ');
+  });
+});
+
+describe('undo steps in a live doc', () => {
+  const block = () => Fragment.from([P('tag', 'INSERTED TAG'), P('normal', 'inserted body')]);
+  it('a card inserted right after typing is its own step: one Mod-Z takes the card, the next the typing', async () => {
+    const { A } = await pair(card());
+    caret(A, 'Temperatures'); type(A, 'mine ');
+    A.view.dispatch(insertIntoSpeech(A.view.state, block())); // within the 500 ms the typing merges over
+    await tick(10);
+    run(A, undo);
+    await tick(10);
+    expect(mm(A)).not.toContain('INSERTED TAG');
+    expect(mm(A)).toContain('mine ');
+    run(A, undo);
+    await tick(10);
+    expect(mm(A)).not.toContain('mine ');
+    // and typing after it merges again as before
+    caret(A, 'Temperatures'); type(A, 'ab');
+    run(A, undo);
+    await tick(10);
+    expect(mm(A)).not.toContain('abTemperatures');
+    expect(mm(A)).not.toContain('aTemperatures');
+  });
+  it('a paste right after typing is its own step too', async () => {
+    const { A } = await pair(card());
+    caret(A, 'Temperatures'); type(A, 'mine ');
+    A.view.dispatch(A.view.state.tr.insert(A.view.state.doc.content.size, block()).setMeta('uiEvent', 'paste'));
+    await tick(10);
+    run(A, undo);
+    await tick(10);
+    expect(mm(A)).not.toContain('INSERTED TAG');
+    expect(mm(A)).toContain('mine ');
   });
 });
 
