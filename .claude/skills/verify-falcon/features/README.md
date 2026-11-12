@@ -50,7 +50,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Send to speech](./send-to-speech.md) covers the `` ` `` key (changeable in Settings), the speech doc in the rail, send order, the Undo toast, Mod-Z and the Speech doc button.
 - [Send Card](./send-card.md) covers pairing codes (which carry their owner's relay), contacts, Send Card to…, a card arriving without taking focus, Insert with its marks, a stopped relay and no relay set, through two local `wrangler dev` relays, one per person.
 - [Live editing](./live-editing.md) covers starting a session, inviting a contact (across relays), joining, converging edits and carets, frames per the free plan, a relay restart, a late joiner, leaving, saving, and an older relay without rooms.
-- Settings > Sharing and its ? relay guide: `journeys/relay-guide.mjs` steps through the guide, checks Esc leaves Settings open, and checks a dead and a live relay address on the last step, through a local `wrangler dev` relay.
+- [Relay setup](./relay-setup.md) covers Settings > Sharing's ? guide: on the desktop, Falcon putting the relay on a Cloudflare account itself from a token (against a fake of Cloudflare's API), its progress, failures and waiting for a new address; on the web, the terminal steps and Connect, through a local `wrangler dev` relay.
 - [Settings](./settings.md) covers the nine panes and the highlighter pen with its stored value and effect.
 - [Themes](./themes.md) covers the preset tiles, custom themes and their colors, Document paper, System, and the desktop window following the theme.
 - [Keybindings](./keybindings.md) covers changing a shortcut in Settings and the editor and app following it.

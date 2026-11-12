@@ -6,7 +6,7 @@ Falcon ships as an Electron app for Mac and Windows. The shell adds what the web
 
 - `launch` the app loads `dist/index.html` and the editor renders, with the window never shown (`FALCON_HEADLESS=1`).
 - `keys` real F-keys format a card in the desktop window.
-- `bridge` the preload exposes only the functions `scripts/electron-smoke.mjs` lists (files, index, dictionary, menu, close guard, theme, updates).
+- `bridge` the preload exposes only the functions `scripts/electron-smoke.mjs` lists (files, index, dictionary, menu, close guard, theme, updates, relay setup).
 - `path-guard` `openPath` refuses any path that was not picked in a dialog before.
 - `save-in-place` Save writes an already-open file without a dialog.
 - `close-guard` closing with unsaved work asks first.

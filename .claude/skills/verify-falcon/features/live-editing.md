@@ -15,7 +15,7 @@ Two or more people edit the same doc at once and see each other's edits and care
 - `away` the live doc's tab put away (another tab showing): what comes in keeps its stored state current, and Send to speech into it goes into the session.
 - `leave` Leave live editing (command center, the panel, Settings): the doc stays, history undo is back, nothing more arrives.
 - `save` a .docx saved during or after a session reopens with the same mark map.
-- `old-relay` a relay deployed before rooms: the panel says to download it again and run `npx wrangler deploy`; the editor is unaffected.
+- `old-relay` a relay deployed before rooms: the panel says to update it (desktop: the ? in Settings > Sharing, then Set up my relay; web: download it again and run `npx wrangler deploy`); the editor is unaffected.
 
 ## How to get to it (user POV)
 
