@@ -14,9 +14,9 @@ const TAKEN = 10031; // that workers.dev subdomain belongs to someone else
 const QUOTES = /^["'`‘’“”]+|["'`‘’“”]+$/g;
 const tidy = (t) => t.trim().replace(QUOTES, '').trim().replace(/^bearer\s+/i, '').replace(QUOTES, '').trim();
 // A token is printable ASCII with no spaces, and the shortest real one is 40 (an older user token; an account token is
-// cfat_ and 48 more). Anything else is something else pasted, like the token's name, and is never sent: it would be
-// turned down, and could end up in an error.
-const TOKEN = /^[\x21-\x7e]{40,400}$/;
+// cfat_ and 48 more). Anything else is something else pasted, like the token's name, the page's address or an email,
+// and is never sent: it would be turned down, and could end up in an error.
+const TOKEN = /^[\x21-\x7e]{40,400}$/, NOT_TOKEN = /:\/\/|@/;
 
 /** Why a run stopped: a code the page turns into words, and, for one Cloudflare refused, what Cloudflare said. */
 class Stop extends Error {
@@ -75,7 +75,7 @@ function createRelaySetup({ worker, fetch = globalThis.fetch, api = API, relayUr
       };
 
       try {
-        if (!TOKEN.test(token)) throw new Stop('not_token');
+        if (!TOKEN.test(token) || NOT_TOKEN.test(token)) throw new Stop('not_token');
         step('account');
         const accounts = must(await call('GET', '/accounts?per_page=50'));
         if (!Array.isArray(accounts) || !accounts.length) throw new Stop('no_account'); // no Account Settings permission

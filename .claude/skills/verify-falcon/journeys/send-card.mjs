@@ -140,7 +140,8 @@ await A.page.keyboard.press('Enter');
 await A.page.waitForFunction(() => document.querySelector('.toast')?.textContent?.startsWith('Sent'), null, { timeout: 10000 }).catch(() => {});
 want((await toast(A)) === 'Sent “Growth is slowing” to Blake', `A: the toast says it went (${await toast(A)})`);
 want(reqs.join() === 'POST', `A: one POST to B's relay (relay 2, not A's own) and no preflight (${reqs.join()}); relay saw ${(R2.log.match(/OPTIONS \/v1/g) ?? []).length} OPTIONS`);
-want(!/OPTIONS \/v1/.test(R2.log) && !/POST \/v1\/inbox/.test(R1.log), "B's relay log has no OPTIONS request, and A's relay saw no POST");
+// (the all-zero inbox is the Relay box checking A's relay when it was entered: no card goes there)
+want(!/OPTIONS \/v1/.test(R2.log) && !/POST \/v1\/inbox\/(?!0{64})/.test(R1.log), "B's relay log has no OPTIONS request, and A's relay saw no card POSTed");
 
 await B.page.waitForFunction(() => document.querySelector('.toast')?.textContent?.startsWith('Card from'), null, { timeout: 15000 }).catch(() => {});
 await B.page.keyboard.type('it arrives.');

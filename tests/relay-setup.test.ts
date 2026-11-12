@@ -122,7 +122,8 @@ describe('Falcon sets up the relay on a Cloudflare account', () => {
 
   it('what is plainly not a token is not_token, before any step and without asking Cloudflare: the name at the top of the token page, a few words, a key', async () => {
     const junk = ['', 'short', 'snowy-morning-63bf', 'quiet-butterfly-3f2a', 'Edit Cloudflare Workers', 'has a space in it 0123456789abcdefghijklmnop',
-      `tab\there${'0'.repeat(40)}`, `${'x'.repeat(30)}\n`, 'x'.repeat(39), '0123456789abcdef0123456789abcdef01234', 'Bearer', '""'];
+      `tab\there${'0'.repeat(40)}`, `${'x'.repeat(30)}\n`, 'x'.repeat(39), '0123456789abcdef0123456789abcdef01234', 'Bearer', '""',
+      `https://dash.cloudflare.com/${'0'.repeat(32)}/api-tokens`, 'someone.with.a.long.name@example-school.edu'];
     for (const t of junk) {
       const quiet = fakeCloudflare();
       const { r, steps } = await run(quiet, t);

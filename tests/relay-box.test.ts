@@ -4,7 +4,7 @@ import { freshStorage, mountApp, tick, unmountAll } from './app-harness';
 
 // Settings > Sharing > Relay in the real <App/>: an address is still saved when it's entered, and then checked the way the
 // guide checks one. When no Falcon relay answers there, a line under the box says so. Only entering an address checks it.
-const NOWHERE = 'https://falcon-relay.debate.vidyut.pg'; // the address a real user had saved: no such domain
+const NOWHERE = 'https://falcon-relay.debate.invalid'; // no such domain, like the address a real user had saved
 const RELAY = 'https://falcon-relay.coach.workers.dev';
 const PAGE = 'https://example.test'; // something answers, but not a Falcon relay
 const SLOW = 'https://slow.test';
@@ -49,8 +49,8 @@ const NO_RELAY = /^No Falcon relay answered at that address\. Cards sent to your
 describe('the Relay box checks the address it saves', () => {
   it('an address where nothing answers is still saved, and a quiet line under the box says cards to your code won\'t arrive', async () => {
     const { app, box, enter, warning } = await relayBox();
-    await app.fill(box(), 'falcon-relay.debate.vid');
-    await app.fill(box(), 'falcon-relay.debate.vidyut.pg');
+    await app.fill(box(), 'falcon-relay.debate.inv');
+    await app.fill(box(), 'falcon-relay.debate.invalid');
     expect(checks).toEqual([]); // nothing is checked as it's typed
     await enter();
     expect(localStorage.getItem('falcon.relayUrl')).toBe(NOWHERE); // saved all the same: a relay can be briefly offline
@@ -86,7 +86,7 @@ describe('the Relay box checks the address it saves', () => {
     expect(warning()).toBe('');
   });
 
-  it('an answer that comes after the box changed is dropped', async () => {
+  it('an answer shows only while the box shows the address it was for, and an older check\'s answer is dropped', async () => {
     const { app, box, enter, warning } = await relayBox();
     await app.fill(box(), SLOW);
     await enter();
@@ -94,7 +94,11 @@ describe('the Relay box checks the address it saves', () => {
     await app.fill(box(), `${SLOW}/x`); // typing again while it checks
     await app.act(() => slow[0](new TypeError('Failed to fetch')));
     expect(warning()).toBe('');
+    await app.act(() => { box().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(box().value).toBe(SLOW); // Escape puts the saved address back, and with it what its check found
+    expect(warning()).toMatch(NO_RELAY);
 
+    await app.fill(box(), `${SLOW}/x`);
     await enter(); // a newer address, then the older check comes back late
     expect(slow.length).toBe(2);
     await app.fill(box(), RELAY);
@@ -103,5 +107,18 @@ describe('the Relay box checks the address it saves', () => {
     await tick(50);
     expect(warning()).toBe('');
     expect(localStorage.getItem('falcon.relayUrl')).toBe(RELAY);
+  });
+
+  it('the guide opening and closing starts the box over: it may have saved the same address, checked', async () => {
+    const { app, box, enter, warning } = await relayBox();
+    await app.fill(box(), NOWHERE);
+    await enter();
+    expect(warning()).toMatch(NO_RELAY);
+    await app.click($('.st-help'));
+    expect($('.rg')).toBeTruthy();
+    await app.act(() => { $('.rg')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect($('.rg')).toBeNull();
+    expect(box().value).toBe(NOWHERE);
+    expect(warning()).toBe('');
   });
 });
