@@ -139,7 +139,9 @@ export async function keepInvite(inv: Invited, known: (code: string) => boolean 
         // a newer invite to the same room takes the older one's place
         const next = [...list.filter((x) => x.invite.room !== inv.invite.room), inv];
         while (next.length > MAX_INVITES) {
-          const stranger = next.findIndex((x) => x !== inv && !known(x.from));
+          // a stranger's, one already joined first, then the oldest stranger's, then the oldest
+          const joined = next.findIndex((x) => x !== inv && !known(x.from) && x.joined);
+          const stranger = joined >= 0 ? joined : next.findIndex((x) => x !== inv && !known(x.from));
           next.splice(stranger >= 0 ? stranger : 0, 1);
         }
         meta.put(next, 'invites');

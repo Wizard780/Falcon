@@ -62,6 +62,8 @@ export type LiveHost = {
   flash: (m: string, action?: { label: string; run: () => void }) => void;
   confirm: (a: Omit<Ask, 'done'>) => Promise<boolean>;
   openPanel: () => void;
+  /** a dialog, a question or read mode is up: a toast's Join waits for it (the invite still waits on the rail) */
+  busy: () => boolean;
 };
 
 type Mods = [typeof import('../collab/live'), typeof import('../collab/live-doc')];
@@ -190,12 +192,14 @@ export function useLiveSessions(h: LiveHost) {
     Object.assign(liveActions, { start: () => void start(), stop: () => stop(), invite, join: (i: collab.Invited) => void join(i), open: () => host.current.openPanel() });
   }, [start, stop, invite, join]);
   useEffect(() => collab.onInvited((i, who) => {
+    // invited again to the room I'm in (they pressed Invite twice): nothing to join, nothing waiting
+    if (held.current?.s.room === i.invite.room) { void collab.joinedInvite(i.id).catch(() => {}); return; }
     // the name an envelope gives is only what the sender typed: a stranger is said to be one, as the panel says it
     const from = collab.fromWho(who, i.claimed);
     host.current.flash(`${from[0].toUpperCase()}${from.slice(1)}${!who && i.claimed.trim() ? ',' : ''} invited you to live-edit “${i.invite.doc}”`, {
       label: 'Join',
-      // the toast draws over dialogs: while a question is up, it gets answered first (the invite still waits on the rail)
-      run: () => { if (!document.querySelector('.cf[role="alertdialog"]')) void join(i); },
+      // the toast draws over dialogs: what's open is dealt with first, and the invite waits on the rail meanwhile
+      run: () => { if (host.current.busy()) host.current.flash(WAITS); else void join(i); },
     });
   }), [join]);
   // a closed window leaves: the socket closes with the page, which the room tells the others
@@ -205,6 +209,9 @@ export function useLiveSessions(h: LiveHost) {
   const closed = useCallback((id: number) => { if (held.current?.docId === id) stop(); }, [stop]);
   return { start, stop, closed };
 }
+
+/** Said when a toast's button can't act yet. */
+export const WAITS = "Close what's open first. It waits on the rail's Sharing button.";
 
 /** The status bar's live line, when the shown doc is in a session. Opens the panel. */
 export function LiveBit({ docId, onOpen }: { docId: number; onOpen: () => void }) {

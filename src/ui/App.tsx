@@ -41,7 +41,7 @@ import { aiService, formatCite, reformatCites, reformatCount, usePreset } from '
 import { Confirm, nameList, type Ask } from './Confirm';
 import { ComparePanel } from './ComparePanel';
 import { CollabPanel, SendCard, linkLine, useCollab } from './Collab';
-import { LiveBit, LivePanel, useLiveSessions } from './Live';
+import { LiveBit, LivePanel, WAITS, useLiveSessions } from './Live';
 import * as collab from '../collab/service';
 import { copySlice } from '../editor/nav/clipboard';
 import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
@@ -1258,6 +1258,7 @@ export function App() {
     flash,
     confirm: confirmAsk,
     openPanel: () => setLiveOpen(true),
+    busy: () => !!locked(),
   });
   liveClosed.current = live.closed;
   /** A card that came in, into the open document below the caret's paragraph; why not, or null. */
@@ -1279,7 +1280,7 @@ export function App() {
   // a card or an invite while Falcon is behind other apps: the Dock or taskbar says so (the rail's Sharing count stays)
   useEffect(() => { const cue = () => bridge.attention?.(); const a = collab.onArrive(cue), b = collab.onInvited(cue); return () => { a(); b(); }; }, []);
   useEffect(() => collab.onArrive((c, who) => {
-    flash(`Card from ${collab.fromWho(who, c.claimed)}: “${c.label}”`, { label: 'Show', run: () => { if (!locked()) setCollabOpen(true); } });
+    flash(`Card from ${collab.fromWho(who, c.claimed)}: “${c.label}”`, { label: 'Show', run: () => { if (locked()) flash(WAITS); else setCollabOpen(true); } });
   }), [flash]); // eslint-disable-line react-hooks/exhaustive-deps
   // Nimbus and other debate apps send cards in over the bridge (electron/editor-bridge.cjs), the way they do
   // into CardMirror: they list the open docs, then insert into one (usually the speech doc) without taking focus

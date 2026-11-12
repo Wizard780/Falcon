@@ -102,6 +102,10 @@ try {
   want(t.onTop, 'B: the toast draws over the Card sharing dialog, not under its backdrop');
   await A.page.keyboard.press('Escape'); // A's Live editing panel
   await B.shot('invite-toast-over-card-sharing');
+  // Join on the toast with Card sharing still open: what's open comes first, and it says where the invite waits
+  await B.page.click('.toast button:has-text("Join")');
+  want(await until(B, () => document.querySelector('.toast.show')?.textContent?.startsWith("Close what's open first")), `B: Join over an open dialog says to close it first (${(await toastOnTop(B)).text})`);
+  want(await B.page.isVisible('.cf.co') && !(await B.page.$('.status .lv-bit')), 'B: Card sharing is still up, and nothing was joined under it');
   await B.page.keyboard.press('Escape');
   await wait(B, 7000); // the toast is gone; the count stays
   want(!(await B.page.$('.toast.show')), `B: the toast has gone by now (${await B.page.textContent('.toast').catch(() => '')})`);
@@ -120,6 +124,16 @@ try {
   want((await B.page.textContent('.co-live section[aria-label="Invites"] .lv-inv button')).trim() === 'In it', 'B: the joined invite stays listed (In it)');
   await B.shot('joined');
   await B.page.keyboard.press('Escape');
+  // A presses Invite again for the room B is in: nothing to join, so no toast and no count
+  const storedInvites = () => B.page.evaluate(() => new Promise((r) => { const q = indexedDB.open('falcon-collab'); q.onsuccess = () => { const g = q.result.transaction('meta').objectStore('meta').get('invites'); g.onsuccess = () => { r((g.result ?? []).map((i) => `${i.id}:${!!i.joined}`)); q.result.close(); }; }; }));
+  const before = await storedInvites();
+  await A.page.click('.status .lv-bit');
+  await A.page.click('.co-live section[aria-label="Invite"] .co-ct:has-text("Blake") button');
+  await A.page.waitForFunction(() => document.querySelector('.toast')?.textContent?.startsWith('Invited Blake'), null, { timeout: 15000 });
+  await A.page.keyboard.press('Escape');
+  const again = await until(B, () => document.querySelector('.toast.show')?.textContent?.includes('invited you') || !!document.querySelector(".fstrip .share-n"), null, 8000);
+  const after = await storedInvites();
+  want(!again && after.length === 1 && after[0] !== before[0] && after[0].endsWith(':true'), `B: invited again to the room B is in: it arrived (${before} -> ${after}), marked joined, no toast, no count`);
 
   // ---------- a second invite, dismissed ----------
   await A.page.click('.status .lv-bit');
