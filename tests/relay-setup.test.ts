@@ -134,7 +134,7 @@ describe('Falcon sets up the relay on a Cloudflare account', () => {
   });
 
   it('takes both shapes a real token has: cfat_ and 48 more (account tokens, 53 in all), and the older 40-character user tokens', async () => {
-    const shapes = [`cfat_${'aB3dE6gH9-'.repeat(5).slice(0, 48)}`, `cfut_${'Zy_8xW7vU6'.repeat(5).slice(0, 48)}`, 'Qm4-Lp7_Rt2sVw9xYz1Ab5Cd8Ef0Gh3Jk6Mn9Pq2'];
+    const shapes = [`cfat_${'aB3dE6gH9-'.repeat(5).slice(0, 48)}`, `cfut_${'Zy_8xW7vU6'.repeat(5).slice(0, 48)}`, 'Qm4-Lp7_Rt'.repeat(4)];
     expect(shapes.map((s) => s.length)).toEqual([53, 53, 40]);
     for (const token of shapes) {
       const cf = fakeCloudflare({ token });
