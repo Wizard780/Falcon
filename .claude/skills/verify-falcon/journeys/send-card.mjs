@@ -96,20 +96,21 @@ await B.page.keyboard.press('Escape');
 await wait(B, 200);
 want(!(await B.page.$('.cf.co')), 'B: Esc closes the panel');
 
-// ---------- A: relay, contact, a formatted card ----------
+// ---------- A: relay, recipient, a formatted card ----------
 await setRelay(A, RELAY);
 await command(A, 'card sharing');
 await A.page.fill('#co-name', 'Avery');
+await A.page.click('.cf.co .rcp-new');
 await A.page.fill('input[aria-label="Their pairing code"]', codeB.toLowerCase().replace(/-/g, ' ').slice(0, -1) + 'X');
-await A.page.click('.co-add button[type="submit"]');
+await A.page.click('.rcp-add button[type="submit"]');
 await wait(A, 150);
-want((await A.page.textContent('.co-hint')) === 'That code has a typo. Copy it again', `A: a mistyped code is turned down with a clear reason (${await A.page.textContent('.co-hint')})`);
+want((await A.page.textContent('.rcp-why')) === 'That code has a typo. Copy it again', `A: a mistyped code is turned down with a clear reason (${await A.page.textContent('.rcp-why')})`);
 await A.page.fill('input[aria-label="Their pairing code"]', codeB.toLowerCase().replace(/-/g, ' '));
 await A.page.fill('input[aria-label="Their name"]', 'Blake');
-await A.page.click('.co-add button[type="submit"]');
+await A.page.click('.rcp-add button[type="submit"]');
 await wait(A, 200);
-want((await A.page.$$eval('.co-ct .nm', (x) => x.map((n) => n.textContent))).join() === 'Blake', 'A: Blake is in contacts');
-await A.shot('a-contact-added');
+want((await A.page.$$eval('.rcp-row .rcp-nm', (x) => x.map((n) => n.value))).join() === 'Blake', 'A: Blake is in recipients');
+await A.shot('a-recipient-added');
 await A.page.keyboard.press('Escape');
 await A.open(SEED);
 await A.select('next year');
@@ -144,7 +145,7 @@ want(!/OPTIONS \/v1/.test(R2.log) && !/POST \/v1\/inbox/.test(R1.log), "B's rela
 await B.page.waitForFunction(() => document.querySelector('.toast')?.textContent?.startsWith('Card from'), null, { timeout: 15000 }).catch(() => {});
 await B.page.keyboard.type('it arrives.');
 const bText = await B.page.evaluate(() => window.__falconView.state.doc.textContent);
-want((await toast(B)).startsWith('Card from a code not in your contacts: “Growth is slowing”'), `B: a toast says a card came (${await toast(B)})`);
+want((await toast(B)).startsWith('Card from a code not in your recipients: “Growth is slowing”'), `B: a toast says a card came (${await toast(B)})`);
 want(bText === 'Typing while it arrives.', `B: typing went on uninterrupted (${bText})`);
 want(await B.page.evaluate(() => !!document.activeElement?.closest('.ProseMirror')), 'B: focus stayed in the editor');
 want(!!(await B.page.$('.fstrip [aria-label="Cards waiting (1)"]')), 'B: the rail shows the card is waiting');
@@ -155,13 +156,13 @@ want(rowsWaiting(R2.persist) === 0, "B's relay deleted the card once B acked it 
 // ---------- B inserts it ----------
 await B.page.click('.fstrip [aria-label="Cards waiting (1)"]');
 await wait(B, 200);
-want((await B.page.textContent('.co-card .co-what span')).includes("From a code not in your contacts, who says they're Avery"), 'B: the card shows as from an unknown code, with the name it gave');
+want((await B.page.textContent('.co-card .co-what span')).includes("From a code not in your recipients, who says they're Avery"), 'B: the card shows as from an unknown code, with the name it gave');
 await B.shot('b-card-waiting');
-await B.page.click('.co-card button:has-text("Add contact")');
-want((await B.page.inputValue('input[aria-label="Their name"]')) === 'Avery', 'B: Add contact fills in their name');
+await B.page.click('.co-card button:has-text("Add recipient")');
+want((await B.page.inputValue('input[aria-label="Their name"]')) === 'Avery', 'B: Add recipient fills in their name');
 const filled = parseCode(await B.page.inputValue('input[aria-label="Their pairing code"]'));
 want(filled.ok && filled.relay === RELAY && keyOf(filled.code) === keyOf(codeA), "B: and A's code with A's relay (the card carried it)");
-await B.page.click('.co-add button[type="submit"]');
+await B.page.click('.rcp-add button[type="submit"]');
 await wait(B, 200);
 want((await B.page.textContent('.co-card .co-what span')).startsWith('From Avery'), 'B: now it is from Avery');
 await B.page.click('.co-card button:has-text("Insert")');
@@ -188,19 +189,19 @@ await command(B, 'card sharing');
 await B.shot('b-panel-light');
 await B.page.keyboard.press('Escape');
 
-// ---------- a contact that is removed folds shut where it is, then goes ----------
+// ---------- a recipient that is removed folds shut where it is, then goes ----------
 await command(B, 'card sharing');
 await wait(B, 200);
-await B.page.hover('.co-ct');
+await B.page.hover('.rcp-row .rcp-cd');
 await B.page.click('[aria-label="Remove Avery"]');
 await wait(B, 120);
-want(await B.page.locator('.co-fold[data-gone] .co-ct').count() === 1, 'B: the removed contact is still there, folding shut');
+want(await B.page.locator('.co-fold[data-gone] .rcp-row').count() === 1, 'B: the removed recipient is still there, folding shut');
 const mid = await B.page.$eval('.co-fold[data-gone]', (e) => e.getBoundingClientRect().height);
 want(mid > 0 && mid < 36, `B: part way shut (${mid}px of 36)`);
 await wait(B, 600);
-want(await B.page.locator('.co-ct').count() === 0 && (await B.page.textContent('.cf.co')).includes('No one yet'), 'B: then it is gone');
+want(await B.page.locator('.rcp-row').count() === 0 && (await B.page.textContent('.cf.co')).includes('No one yet'), 'B: then it is gone');
 want((await toast(B)) === 'Removed Avery', `B: and says so (${await toast(B)})`);
-await B.shot('b-contact-removed');
+await B.shot('b-recipient-removed');
 await B.page.keyboard.press('Escape');
 
 await command(A, 'theme light');
@@ -252,7 +253,7 @@ await wait(A, 100);
 want((await A.markMap()).includes('tag: Temperatures rose again.'), 'a relay stopped: the editor still formats (F7 made a tag)');
 
 // ---------- no relay set ----------
-const NO_RELAY = 'No relay is set, so nobody can send you cards yet, and yours go only to contacts whose code carries their relay. Add one in Settings > Sharing';
+const NO_RELAY = 'No relay is set, so nobody can send you cards yet, and yours go only to recipients whose code carries their relay. Add one in Settings > Sharing';
 const C = await openFalcon('send-card/c');
 await command(C, 'card sharing');
 want((await status(C)) === NO_RELAY, 'no relay: the panel says nobody can send here yet, and where to set one');
@@ -261,12 +262,13 @@ want(/^[0-9A-Z-]{63}$/.test(codeC) && parseCode(codeC).ok && parseCode(codeC).re
 want((await C.page.textContent('.co-sec[aria-label="Your code"] .co-sub')).startsWith('Nobody can send you cards until you set a relay'), 'no relay: under the code it says nobody can send to it yet');
 const v1 = encodeCode((await makeIdentity()).pub);
 for (const [code, name] of [[codeA, 'Avery'], [v1, 'Old Code']]) {
+  await C.page.click('.cf.co .rcp-new');
   await C.page.fill('input[aria-label="Their pairing code"]', code);
   await C.page.fill('input[aria-label="Their name"]', name);
-  await C.page.click('.co-add button[type="submit"]');
+  await C.page.click('.rcp-add button[type="submit"]');
   await wait(C, 200);
 }
-want((await C.page.$$eval('.co-ct .nm', (x) => x.map((n) => n.textContent))).join() === 'Avery,Old Code', 'no relay: contacts still work, a v2 code and a v1 one');
+want((await C.page.$$eval('.rcp-row .rcp-nm', (x) => x.map((n) => n.value))).join() === 'Avery,Old Code', 'no relay: recipients still work, a v2 code and a v1 one');
 await C.shot('c-no-relay');
 await C.page.keyboard.press('Escape');
 await C.page.click('.ProseMirror:not(.hm-doc)');
@@ -277,7 +279,7 @@ want((await C.page.textContent('.co-send .co-line')) === NO_RELAY, 'no relay: th
 await C.page.keyboard.press('Enter'); // Avery: their code carries their relay
 await C.page.waitForFunction(() => /^Sent|^Couldn/.test(document.querySelector('.toast')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {});
 want((await toast(C)) === 'Sent “A tag to send” to Avery', `no relay of its own: C can still send to Avery, through Avery's relay (${await toast(C)})`);
-want(await A.page.waitForFunction(() => /^Card from a code not in your contacts: “A tag to send”/.test(document.querySelector('.toast')?.textContent ?? ''), null, { timeout: 15000 }).then(() => true, () => false), `A: C's card arrives (${await toast(A)})`);
+want(await A.page.waitForFunction(() => /^Card from a code not in your recipients: “A tag to send”/.test(document.querySelector('.toast')?.textContent ?? ''), null, { timeout: 15000 }).then(() => true, () => false), `A: C's card arrives (${await toast(A)})`);
 await command(C, 'send card');
 await C.page.keyboard.press('ArrowDown');
 await C.page.keyboard.press('Enter'); // Old Code: a v1 code, and C has no relay

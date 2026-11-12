@@ -5,7 +5,7 @@ Two or more people edit the same doc at once and see each other's edits and care
 ## Sub-features
 
 - `start` Start live editing on the open doc: the Live editing panel opens, status `Live. Invite someone…`, the status bar says `Live · just you`.
-- `invite` the panel's Invite list (contacts); the toast says `Invited <name> to “<doc>”`. The invite goes to the contact's relay (their code carries it).
+- `invite` the panel's Invite list (recipients); the toast says `Invited <name> to “<doc>”`. The invite goes to the recipient's relay (their code carries it).
 - `join` the invite's toast (`<name> invited you to live-edit “<doc>”`, Join) or the panel's Invites to you; the doc opens in a tab, live. The room is on the host's relay, named in the invite.
 - `converge` typing and F-keys on both sides at once end in the same mark map; carets show as a bar in the other person's color, their name on hover.
 - `who` the status bar (`Live · Blake and Casey`) and the panel's In “<doc>” list.
@@ -29,7 +29,7 @@ Two or more people edit the same doc at once and see each other's edits and care
 Preconditions:
 
 - `falcon-verify doctor` is all `ok`, and `npm ci` has been run in `relay/` (the journey starts its own `wrangler dev` relays, no account needed).
-- Each person needs a relay set, a name, and the others as contacts (Card sharing).
+- Each person needs a relay set, a name, and the others as recipients (Card sharing or Settings > Sharing).
 
 - **Journey.** `$V run .claude/skills/verify-falcon/journeys/live-editing.mjs` exits 0 with 49 `ok` lines in about 4 minutes. A and C are on relay 1 (the room's), B on relay 2: the invite crosses relays.
 - **Start.** Settings > Sharing: `.st-row:has-text("This document") button:has-text("Start live editing")`. The panel is `.cf.co.co-live`; its status is `.co-live .co-line`; who's in it, `.lv-who .nm`.

@@ -47,7 +47,8 @@ every 10 seconds for up to 10 minutes and says so, and only then asks you to che
 
 Your pairing code then carries the relay's address (code v2, `src/collab/code.ts`), so people send to
 you through your relay from theirs, and each person's free allowance is their own. Teammates don't
-paste your address: each sets up a relay of their own (or a team shares one), and you swap codes. A
+paste your address: each sets up a relay of their own (or a team shares one), and you swap codes and add
+each other under Recipients (Settings > Sharing). A
 code from before this (v1) has no relay, and cards to it go through the sender's own relay, as they
 always did. For everyone at once instead, set `DEFAULT_RELAY` in `src/collab/relay.ts` and ship a build.
 
