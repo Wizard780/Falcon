@@ -614,7 +614,7 @@ export function Settings(props: Props) {
     { id: 'sharing', title: 'Sharing', icon: 'inbox', group: 'Debate', sections: [
       ['Card sharing', [
         { label: 'Relay', wide: true, help: <button className="st-help" aria-label="How to set up a relay" title="How to set up a relay, step by step" onClick={() => setGuide(true)}>?</button>, search: 'card sharing relay send card pairing code collaboration server url',
-          hint: `Where sent cards wait until the other person's Falcon picks them up. It only ever sees them sealed. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: click ? to set one up, step by step.'} Your code and contacts are in the command center: Card sharing.`,
+          hint: `Your relay: where cards sent to you wait until this Falcon picks them up, and where your live sessions run. It only ever sees them sealed. Your pairing code carries it, so people reach you from their own relays. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: click ? to set one up, step by step.'} Your code and contacts are in the command center: Card sharing.`,
           control: <RelayField /> },
       ]],
       ['Live editing', [

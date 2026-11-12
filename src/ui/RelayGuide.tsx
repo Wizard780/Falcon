@@ -55,7 +55,7 @@ function Connect() {
         <button className="co-main" disabled={!!note?.busy} onClick={() => void check()}>Check and save</button>
       </div>
       <p className="rg-note" data-bad={note?.bad || undefined} role="status">{note?.text}</p>
-      <p>Then send the address to your teammates. Each of them pastes it into Settings › Sharing › Relay. Nobody else has to do the steps before this one.</p>
+      <p>Your pairing code now carries this relay, so teammates don't paste it. Each of them sets up a relay of their own with this guide (or uses one your team shares), and then you swap pairing codes in Card sharing.</p>
     </>
   );
 }
@@ -63,7 +63,7 @@ function Connect() {
 const STEPS: { title: string; body: ReactNode }[] = [
   { title: 'Set up card sharing', body: <>
     <p>Sending cards and live editing need a relay: a tiny server where a card waits, sealed, until the other person's Falcon picks it up, and that passes live edits between the people in a session. It can't read either.</p>
-    <p>One person on your team sets it up, once, on Cloudflare's free plan. Everyone else just pastes its address. It takes about 10 minutes.</p>
+    <p>You set one up once, on Cloudflare's free plan, and your pairing code carries its address, so people reach you from their own relays and each of you has your own free daily allowance. (A team can also share one.) It takes about 10 minutes.</p>
   </> },
   { title: 'Make a free Cloudflare account', body: <>
     <p><Link href="https://dash.cloudflare.com/sign-up">Sign up at dash.cloudflare.com</Link> and confirm your email.</p>
