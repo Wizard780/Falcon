@@ -367,6 +367,55 @@ describe('what a doc from someone else can and can\'t do', () => {
   });
 });
 
+describe('a modified Falcon in the room', () => {
+  type LMap = { get(k: string): unknown; set(k: string, v: unknown): void };
+  it("a node it writes that the binding can't rebuild is taken out, and what it writes after still shows", async () => {
+    const { A, B } = await pair(card());
+    const { LoroDoc, LoroMap } = await import('loro-crdt');
+    // the modified Falcon writes into Loro directly, never through an editor (an editor's own edits would take it out)
+    const H = new LoroDoc(); H.setPeerId(9n);
+    H.import(A.b.doc.export({ mode: 'snapshot' }));
+    const root = H.getMap('doc') as unknown as LMap;
+    const kids = root.get('children') as { insertContainer(i: number, c: unknown): LMap; get(i: number): LMap };
+    const bad = kids.insertContainer(1, new LoroMap());
+    bad.set('nodeName', 42);
+    H.commit();
+    const last = ((kids.get(5).get('children') as { get(i: number): unknown }).get(0)) as { insert(at: number, t: string): void };
+    last.insert(0, 'hostile typed ');
+    H.commit();
+    B.b.doc.import(H.export({ mode: 'update', from: B.b.doc.oplogVersion() }));
+    await tick();
+    expect(valid(B)).toBe(true);
+    expect(mm(B)).toContain('hostile typed Temperatures');
+    expect(JSON.stringify(B.b.doc.toJSON())).not.toContain('"nodeName":42'); // B took it out of Loro
+  });
+  it("a caret whose bytes don't decode is left out; edits keep coming", async () => {
+    const { A, B } = await pair(card());
+    const { EphemeralStore } = await import('loro-crdt');
+    const evil = new EphemeralStore(60_000);
+    evil.set('99', { anchor: new Uint8Array([1, 2, 3, 4]), focus: new Uint8Array([9, 9]), user: { name: 'Mallory', color: 'red;background:url(x)' } });
+    B.b.presence.apply(evil.encodeAll());
+    caret(A, 'Temperatures'); type(A, 'still arriving ');
+    await flush(A, B);
+    expect(mm(B)).toContain('still arriving Temperatures');
+  });
+  it('a picture whose source is a file on disk is left out; an absurd size is the picture\'s own', async () => {
+    const { A, B } = await pair(card());
+    const img = (attrs: Record<string, unknown>) => schema.nodes.image.create({ alt: '', crop: null, ...attrs });
+    caret(A, 'Temperatures');
+    run(A, (st, d) => { d!(st.tr.replaceSelectionWith(img({ src: 'data:image/png;base64,iVBORw0KGgo=', width: 1e9, height: 5 }))); return true; });
+    caret(A, 'Smith');
+    run(A, (st, d) => { d!(st.tr.replaceSelectionWith(img({ src: 'file:///etc/passwd', width: 10, height: 10 }))); return true; });
+    await flush(A, B);
+    const imgs: Record<string, unknown>[] = [];
+    B.view.state.doc.descendants((n) => { if (n.type.name === 'image') imgs.push(n.attrs); return true; });
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0].src).toBe('data:image/png;base64,iVBORw0KGgo=');
+    expect(imgs[0].width).toBeNull();
+    expect(valid(B)).toBe(true);
+  });
+});
+
 describe('a live doc whose tab is put away', () => {
   it('is kept up to date with what comes in, and an edit to it (Send to speech) goes into Loro', async () => {
     const { A, B } = await pair(card());

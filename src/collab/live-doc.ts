@@ -12,15 +12,15 @@
  * - the binding stops listening while its doc is out of the editor (another tab is showing): it would write that doc
  *   into whatever the editor holds now. Shown again, it rebuilds from Loro, so nothing that came in meanwhile is lost.
  */
-import { LoroDoc, UndoManager, type Container, type LoroEventBatch } from 'loro-crdt';
+import { Cursor, LoroDoc, LoroList, LoroMap, LoroText, UndoManager, type Container, type LoroEventBatch } from 'loro-crdt';
 import {
   CursorEphemeralStore, LoroEphemeralCursorPlugin, LoroSyncPlugin, LoroUndoPlugin, createNodeFromLoroObj, loroSyncPluginKey,
   redo, undo, updateLoroToPmState, type LoroDocType, type LoroNodeMapping,
 } from 'loro-prosemirror';
 import { Fragment, Mark, Slice, type Node as PMNode } from 'prosemirror-model';
-import type { EditorView } from 'prosemirror-view';
+import { DecorationSet, type EditorView } from 'prosemirror-view';
 import { EditorState, Plugin, PluginKey, type Transaction } from 'prosemirror-state';
-import { PARA_STYLES, schema } from '../editor/schema';
+import { imageSrc, PARA_STYLES, schema } from '../editor/schema';
 import { liveHooks } from '../editor/live-hooks';
 
 export type Peer = { name: string; color: string };
@@ -36,6 +36,19 @@ export type Binding = {
   shown?: (shown: boolean, last: EditorState | null) => void;
 };
 
+/**
+ * Which document shapes this Falcon knows: its node types, marks and their attrs. Two Falcons that differ (one has a mark
+ * the other lacks) would each drop what they can't build, and the next edit would take it out for both, so a session
+ * only runs between Falcons that agree (live.ts checks it in each person's name frame).
+ */
+export const SCHEMA_ID = (() => {
+  const text = [...Object.entries(schema.nodes), ...Object.entries(schema.marks)]
+    .map(([name, t]) => `${name}(${Object.keys(t.spec.attrs ?? {}).sort().join(',')})`).sort().join(';');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(36);
+})();
+
 /** Remote carets that stopped moving stay shown this long; leaving the room removes them at once (live.ts). */
 const PRESENCE_TIMEOUT = 10 * 60_000;
 
@@ -49,6 +62,19 @@ class Cursors extends CursorEphemeralStore {
   setLocal(s: Parameters<CursorEphemeralStore['setLocal']>[0]) {
     if ((s.anchor || s.focus) && s.user !== this.mine) return;
     super.setLocal(s);
+  }
+  /** Everyone's carets, leaving out any whose bytes don't decode (another Falcon's frame can carry anything): the
+   *  binding reads this on every remote change, and one bad entry would otherwise stop them all. */
+  getAll() {
+    const out: ReturnType<CursorEphemeralStore['getAll']> = {};
+    for (const [peer, st] of Object.entries(this.getAllStates())) {
+      if (!st) continue;
+      try {
+        const user = st.user && typeof st.user === 'object' ? { name: String(st.user.name ?? '').slice(0, 60), color: String(st.user.color ?? '') } : undefined;
+        out[peer as `${number}`] = { anchor: st.anchor ? Cursor.decode(st.anchor) : undefined, focus: st.focus ? Cursor.decode(st.focus) : undefined, user };
+      } catch { /* left out */ }
+    }
+    return out;
   }
 }
 
@@ -73,12 +99,40 @@ export function seed(b: Binding, doc: PMNode) {
   updateLoroToPmState(b.doc as LoroDocType, new Map(), EditorState.create({ schema, doc }));
 }
 
-/** The doc Loro holds now (repaired: see repairDoc), or null when it holds none yet (nothing synced). */
+/** The doc Loro holds now (repaired: see repairDoc), or null when it holds none yet (nothing synced) or can't make one. */
 export function docOf(b: Binding): PMNode | null {
   const root = (b.doc as LoroDocType).getMap('doc');
   if (!root.size) return null;
-  const node = createNodeFromLoroObj(schema, root, new Map());
+  const node = build(b, new Map());
   return node?.type === schema.topNodeType ? repairDoc(node) : null;
+}
+
+/**
+ * The binding's rebuild of the doc from Loro, which throws (it doesn't skip) on a node whose name isn't a string or a
+ * child that is neither a node nor text: a modified Falcon could write those, and every rebuild after would throw, so
+ * nothing more that came in would show. Those are taken out of Loro (an edit everyone gets) and it's built again.
+ */
+function build(b: Binding, mapping: LoroNodeMapping): PMNode | null {
+  const root = (b.doc as LoroDocType).getMap('doc');
+  try { return createNodeFromLoroObj(schema, root, mapping); } catch { /* scrubbed, then once more */ }
+  if (!scrub(root as unknown as LoroMap)) return null;
+  b.doc.commit({ origin: 'sys:scrub' });
+  mapping.clear();
+  try { return createNodeFromLoroObj(schema, root, mapping); } catch { return null; }
+}
+function scrub(node: LoroMap): boolean {
+  if (typeof node.get('nodeName') !== 'string') return false; // the caller takes this one out
+  const kids = node.get('children');
+  if (!(kids instanceof LoroList)) return false;
+  let changed = false;
+  for (let i = kids.length - 1; i >= 0; i--) {
+    const c = kids.get(i);
+    if (c instanceof LoroText) continue;
+    if (c instanceof LoroMap && typeof c.get('nodeName') === 'string') { if (scrub(c)) changed = true; continue; }
+    kids.delete(i, 1);
+    changed = true;
+  }
+  return changed;
 }
 
 /**
@@ -95,7 +149,7 @@ export function repairDoc(doc: PMNode, known?: Map<PMNode, number>): PMNode {
   doc.forEach((c) => {
     const r = known?.has(c) ? c : c.isInline ? schema.nodes.paragraph.create(null, c.isText ? c : null) : repair(c);
     if (r !== c) changed = true;
-    kids.push(r);
+    if (r) kids.push(r);
   });
   if (!kids.length) { kids.push(schema.nodes.paragraph.create()); changed = true; }
   if (changed) repaired = true;
@@ -103,13 +157,22 @@ export function repairDoc(doc: PMNode, known?: Map<PMNode, number>): PMNode {
 }
 const MAX_SPAN = 63;
 const spanOf = (v: unknown) => (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= MAX_SPAN ? (v as number) : 1);
-function repair(n: PMNode): PMNode {
+/** A picture's size: a positive number of pixels a page can hold, else null (its own size). */
+const px = (v: unknown) => (typeof v === 'number' && v > 0 && v <= 5000 ? v : null);
+/** `n` as Falcon can lay it out; null to leave it out (a picture whose source isn't an embedded or web picture). */
+function repair(n: PMNode): PMNode | null {
+  if (n.type === schema.nodes.image) {
+    const src = imageSrc(n.attrs.src);
+    if (!src) return null; // not data: or http(s) (a file: or anything else): nothing to draw
+    const width = px(n.attrs.width), height = width ? px(n.attrs.height) : null;
+    return src === n.attrs.src && width === n.attrs.width && height === n.attrs.height ? n : n.type.create({ ...n.attrs, src, width, height }, null, n.marks);
+  }
   if (n.isLeaf) return n;
   let kids: PMNode[] | null = null;
   n.forEach((c, _o, i) => {
     const r = repair(c);
     if (r !== c && !kids) { kids = []; n.forEach((x, _p, j) => { if (j < i) kids!.push(x); }); }
-    kids?.push(r);
+    if (r) kids?.push(r);
   });
   let attrs = n.attrs;
   const role = n.type.spec.tableRole;
@@ -159,7 +222,7 @@ export function liveState(state: EditorState, b: Binding, me: Peer): EditorState
       ...keep,
       LoroSyncPlugin({ doc: b.doc as LoroDocType, mapping }),
       LoroUndoPlugin({ doc: b.doc, undoManager: b.undo }),
-      LoroEphemeralCursorPlugin(b.presence, { user: me, createCursor: (peer) => caret(b, peer), createSelection: () => ({ class: 'f-peer-sel' }) }),
+      contained(LoroEphemeralCursorPlugin(b.presence, { user: me, createCursor: (peer) => caret(b, peer), createSelection: () => ({ class: 'f-peer-sel' }) })),
       settle,
       attached(b),
     ],
@@ -169,6 +232,22 @@ export function liveState(state: EditorState, b: Binding, me: Peer): EditorState
 /** Back to a plain doc: the live plugins out, `plugins` (what the doc had before, history included, empty) back in. */
 export function localState(state: EditorState, plugins: readonly Plugin[]): EditorState {
   return state.reconfigure({ plugins: [...plugins] });
+}
+
+/**
+ * The carets plugin, made so that a caret it can't place (another Falcon's frame can carry anything) drops the carets
+ * instead of throwing: its state is worked out in every transaction, so a throw there would stop remote edits showing.
+ * Same key, so the plugin's own lookups still find its state.
+ */
+function contained(p: Plugin<DecorationSet>): Plugin<DecorationSet> {
+  const st = p.spec.state!;
+  return new Plugin<DecorationSet>({
+    ...p.spec,
+    state: {
+      init: (config, state) => { try { return st.init.call(p, config, state); } catch { return DecorationSet.empty; } },
+      apply: (tr, value, old, state) => { try { return st.apply.call(p, tr, value, old, state); } catch { return DecorationSet.empty; } },
+    },
+  });
 }
 
 /**
@@ -280,7 +359,8 @@ function remoteTr(state: EditorState, b: Binding, event: LoroEventBatch): Transa
   for (const e of event.events) {
     for (let c: Container | undefined = b.doc.getContainerById(e.target); c; c = c.parent()) s.mapping.delete(c.id);
   }
-  const node = createNodeFromLoroObj(state.schema, (b.doc as LoroDocType).getMap('doc'), s.mapping);
+  const node = build(b, s.mapping);
+  if (!node) return null; // nothing Falcon can show came of it: the doc stays as it is
   return state.tr.replace(0, state.doc.content.size, new Slice(Fragment.from(node), 0, 0)).setMeta(loroSyncPluginKey, { type: 'non-local-updates' });
 }
 
