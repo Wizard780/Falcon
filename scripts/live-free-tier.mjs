@@ -36,7 +36,8 @@ function round(people, active, design) {
     : SECONDS * active * (1000 / BATCH_MS);
   const frames = framesPerPerson * people;
   const connects = people * CONNECTS;
-  const handshake = connects * 1; // {"t":"join"} after the upgrade
+  // each connect: {"t":"join"}, the ask, one peer's answer, a catch-up update, and every other person's name frame
+  const handshake = connects * (4 + (people - 1));
   const snapshotFrames = LATE_JOINERS * 2 * (1 + Math.ceil((SNAPSHOT_MB * 1024) / CHUNK_KB)); // the ask, then the peer's chunks
   const incoming = frames + handshake + snapshotFrames;
   return {
