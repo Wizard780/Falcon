@@ -183,6 +183,18 @@ describe('card sharing in the app', () => {
     expect(note?.hasAttribute('data-changed')).toBe(true);
   });
 
+  it('a new relay says people need the new code even when it was never copied with Copy', async () => {
+    const app = await setup();
+    await openPanel(app);
+    const first = $('.co-code')?.textContent ?? '';
+    await app.click(button('Close'));
+    const { P, setPref } = await import('../src/editor/prefs');
+    await app.act(async () => { setPref(P.relayUrl, 'https://falcon-relay.other-team.workers.dev'); await tick(50); });
+    await openPanel(app);
+    expect($('.co-code')?.textContent).not.toBe(first);
+    expect($('.co-me')?.previousElementSibling?.textContent).toBe('Your relay changed, so your code did too. People who send you cards need this new one.');
+  });
+
   it("a card goes to the relay its contact's code carries, even with no relay of my own; a v1 contact uses mine", async () => {
     const other = 'https://pat-relay.test';
     relay = fakeRelay([other]);
