@@ -13,7 +13,8 @@ export type Contact = { code: string; name: string; hidden?: boolean; starred?: 
 export type Received = { id: string; from: string; claimed: string; sentAt: number; gotAt: number; label: string; content: unknown[]; /** this Falcon can't open it (a newer Falcon's card): it can only be dismissed */ unreadable?: boolean };
 
 /** An invite to a live-editing session that came in: who sent it (their code), what they call themselves, the room. */
-export type Invited = { id: string; from: string; claimed: string; sentAt: number; gotAt: number; invite: Invite };
+/** `joined`: joined once already, so it no longer counts as waiting (it stays listed, to join again after leaving). */
+export type Invited = { id: string; from: string; claimed: string; sentAt: number; gotAt: number; invite: Invite; joined?: boolean };
 /** Invites kept at most (the newest); one per room. */
 export const MAX_INVITES = 20;
 
@@ -148,7 +149,12 @@ export async function keepInvite(inv: Invited, known: (code: string) => boolean 
   });
   return added;
 }
-/** Done with an invite (joined or dismissed): it isn't shown again if the relay delivers it twice. */
+/** Joined an invite: kept in the list, no longer waiting. */
+export const markJoined = (id: string) => tx(['meta'], 'readwrite', (t) => {
+  const meta = t.objectStore('meta'), have = meta.get('invites');
+  have.onsuccess = () => meta.put(((have.result as Invited[] | undefined) ?? []).map((x) => (x.id === id ? { ...x, joined: true } : x)), 'invites');
+});
+/** Dismissed an invite: it isn't shown again if the relay delivers it twice. */
 export const dropInvite = (id: string) => tx(['meta'], 'readwrite', (t) => {
   const meta = t.objectStore('meta'), have = meta.get('invites'), gone = meta.get('gone');
   have.onsuccess = () => meta.put(((have.result as Invited[] | undefined) ?? []).filter((x) => x.id !== id), 'invites');

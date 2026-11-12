@@ -73,14 +73,14 @@ describe('card sharing in the app', () => {
     await app.act(() => {}, 50);
 
     // noticed: a toast and the rail's cue; not taken: focus and the document are as they were
-    expect(app.toast()).toContain('Card from a code not in your recipients: “Warming causes resource wars”');
-    expect($('[aria-label="Cards waiting (1)"]')).not.toBeNull();
+    expect(app.toast()).toContain("Card from a code not in your recipients, who says they're Sam: “Warming causes resource wars”");
+    expect($('.fstrip [aria-label="Sharing, 1 card waiting"] .share-n')?.textContent).toBe('1');
     expect(document.activeElement).toBe(focused);
     expect(app.text()).toBe('My own notes. ');
     expect(relay.inboxes.get(inbox)).toEqual([]); // acked only after it was stored, so the relay forgot it
 
     // the panel lists it from an unknown code; Add recipient opens the add row with their code and what they call themselves
-    await app.click($('[aria-label="Cards waiting (1)"]'));
+    await app.click($('.fstrip [aria-label="Sharing, 1 card waiting"]'));
     expect($('.co-card .co-what span')?.textContent).toContain("From a code not in your recipients, who says they're Sam");
     await app.click(button('Add recipient', $('.co-card')!));
     expect(($('input[aria-label="Their pairing code"]') as HTMLInputElement).value).toBe(encodeCode(sam.pub));
@@ -99,7 +99,8 @@ describe('card sharing in the app', () => {
     expect(map).toContain('[rising heat]{highlight:cyan+underline}');
     expect(map).toContain('[conflict]{emphasis+highlight:yellow}');
     expect(collab.current().cards).toEqual([]);
-    expect($('[aria-label^="Cards waiting"]')).toBeNull();
+    expect($('.fstrip [aria-label="Sharing"]')).not.toBeNull(); // the button stays, its count gone
+    expect($('.fstrip .share-n')).toBeNull();
     // the panel opened again starts with the add row shut (that draft is done), so Esc closes it
     await openPanel(app);
     expect($('.rcp-add')).toBeNull();
@@ -238,9 +239,9 @@ describe('card sharing in the app', () => {
     await relay.post(inbox, await seal(pat, me.pub, { name: 'Pat', at: Date.now(), content: [], mid: 'pat-1', invite: invite(1) }));
     await until(() => collab.current().invites.length === 1, "Pat's invite");
     await until(() => app.toast().startsWith('Pat invited you to live-edit “Doc 1”'), "Pat's toast");
-    // a stranger is named as one, whatever name they typed
+    // a stranger is named as one, and their name is only what they say it is
     await relay.post(inbox, await seal(await makeIdentity(), me.pub, { name: 'Coach Smith', at: Date.now(), content: [], mid: 'x-coach', invite: invite(99) }));
-    await until(() => app.toast().startsWith('A code not in your recipients invited you to live-edit “Doc 99”'), `the stranger's toast (${app.toast()})`);
+    await until(() => app.toast().startsWith("A code not in your recipients, who says they're Coach Smith, invited you to live-edit “Doc 99”"), `the stranger's toast (${app.toast()})`);
     for (let i = 0; i < 21; i++) {
       const x = await makeIdentity();
       await relay.post(inbox, await seal(x, me.pub, { name: 'Stranger', at: Date.now(), content: [], mid: `x${i}`, invite: invite(100 + i) }));
@@ -252,6 +253,40 @@ describe('card sharing in the app', () => {
     expect(docs).not.toContain('Doc 99'); // the oldest strangers' went
     expect(docs).not.toContain('Doc 100');
     expect(collab.current().cards).toHaveLength(0); // and none of it counts as a card waiting
+  });
+
+  it("an invite from a stranger waits on the rail's Sharing button until it's joined or dismissed", async () => {
+    const app = await setup();
+    await until(() => relay.proven() === 1, 'connected');
+    const me = parseCode(collab.current().code) as { pub: Uint8Array };
+    const inbox = await inboxId(me.pub);
+    const invite = (n: number) => ({ room: n.toString(16).padStart(64, '0'), key: b64url(new Uint8Array(32).fill(n)), doc: `Doc ${n}` });
+    expect($('.fstrip [aria-label="Sharing"]')).not.toBeNull(); // always there, nothing waiting
+    await relay.post(inbox, await seal(await makeIdentity(), me.pub, { name: 'Quinn', at: Date.now(), content: [], mid: 'q-1', invite: invite(1) }));
+    await until(() => app.toast().startsWith("A code not in your recipients, who says they're Quinn, invited you to live-edit “Doc 1”"), `the toast (${app.toast()})`);
+    const btn = $('.fstrip [aria-label="Sharing, 1 invite waiting"]');
+    expect(btn?.querySelector('.share-n')?.textContent).toBe('1');
+    expect(btn?.getAttribute('title') ?? (btn as HTMLElement | null)?.dataset.tip).toBe('1 invite waiting for you. Show live editing');
+    // only invites wait: it opens Live editing, where the invite is
+    await app.click(btn);
+    expect($('.cf.co-live')).not.toBeNull();
+    expect($('.co-live section[aria-label="Invites"] .lv-inv')?.textContent).toContain("From a code not in your recipients, who says they're Quinn");
+    // still waiting after the toast has gone and after a restart, until it's dealt with
+    await unmountAll();
+    await mountApp();
+    await until(() => !!$('.fstrip [aria-label="Sharing, 1 invite waiting"]'), 'the count after a restart');
+    await app.press('Escape');
+    // Dismiss: the count goes
+    await relay.post(inbox, await seal(await makeIdentity(), me.pub, { name: 'Rae', at: Date.now(), content: [], mid: 'r-1', invite: invite(2) }));
+    await until(() => !!$('.fstrip [aria-label="Sharing, 2 invites waiting"]'), 'two waiting');
+    await app.click($('.fstrip [aria-label="Sharing, 2 invites waiting"]'));
+    await app.click([...document.querySelectorAll('.co-live .lv-inv')].find((r) => r.textContent?.includes('Doc 2'))!.querySelector('button:last-child'));
+    await until(() => !!$('.fstrip [aria-label="Sharing, 1 invite waiting"]'), 'one left after Dismiss');
+    // joined: it stays listed (to join again after leaving) and no longer waits
+    await collab.joinedInvite(collab.current().invites[0].id);
+    await until(() => !!$('.fstrip [aria-label="Sharing"]') && !$('.fstrip .share-n'), 'none waiting once joined');
+    expect(collab.current().invites).toHaveLength(1);
+    expect(collab.waiting()).toEqual({ cards: 0, invites: 0 });
   });
 
   it('a relay that is down or out of its daily requests says so plainly, and the editor keeps working', async () => {

@@ -153,7 +153,7 @@ export function useLiveSessions(h: LiveHost) {
   }, [publish]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const join = useCallback(async (inv: collab.Invited) => {
-    if (held.current?.s.room === inv.invite.room) { host.current.openPanel(); return; }
+    if (held.current?.s.room === inv.invite.room) { void collab.joinedInvite(inv.id).catch(() => {}); host.current.openPanel(); return; }
     // the room is on the host's relay, which the invite names; mine is for an invite that names none
     const relay = inv.invite.relay || collab.relayUrl();
     if (!relay) { host.current.flash('Live editing goes through a relay, and none is set. Add one in Settings > Sharing'); return; }
@@ -172,6 +172,7 @@ export function useLiveSessions(h: LiveHost) {
     if (!view) { stop(false); return; }
     r.docId = id;
     r.plugins = view.state.plugins;
+    void collab.joinedInvite(inv.id).catch(() => {}); // in it: no longer waiting on the rail
     follow(r, ld);
     view.updateState(ld.liveState(view.state, s.binding, s.me));
     publish();
@@ -189,8 +190,13 @@ export function useLiveSessions(h: LiveHost) {
     Object.assign(liveActions, { start: () => void start(), stop: () => stop(), invite, join: (i: collab.Invited) => void join(i), open: () => host.current.openPanel() });
   }, [start, stop, invite, join]);
   useEffect(() => collab.onInvited((i, who) => {
-    // the name an envelope gives is only what the sender typed: a stranger is said to be one, as a card from one is
-    host.current.flash(`${who ? who.name : 'A code not in your recipients'} invited you to live-edit “${i.invite.doc}”`, { label: 'Join', run: () => void join(i) });
+    // the name an envelope gives is only what the sender typed: a stranger is said to be one, as the panel says it
+    const from = collab.fromWho(who, i.claimed);
+    host.current.flash(`${from[0].toUpperCase()}${from.slice(1)}${!who && i.claimed.trim() ? ',' : ''} invited you to live-edit “${i.invite.doc}”`, {
+      label: 'Join',
+      // the toast draws over dialogs: while a question is up, it gets answered first (the invite still waits on the rail)
+      run: () => { if (!document.querySelector('.cf[role="alertdialog"]')) void join(i); },
+    });
   }), [join]);
   // a closed window leaves: the socket closes with the page, which the room tells the others
   useEffect(() => () => { const r = held.current; if (r) { r.s.binding.shown = undefined; r.away?.(); r.s.stop(); } held.current = null; setLiveInfo(null); }, []);

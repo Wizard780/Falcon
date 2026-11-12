@@ -633,7 +633,7 @@ export function Settings(props: Props) {
         wpm(P.wpm2Tags, 'Reader 2: tags and analytics', 'How fast Reader 2 reads tags, analytics and cites.', true),
       ]],
     ] },
-    { id: 'sharing', title: 'Sharing', icon: 'inbox', group: 'Debate', sections: [
+    { id: 'sharing', title: 'Sharing', icon: 'send', group: 'Debate', sections: [
       ['Card sharing', [
         { label: 'Relay', wide: true, help: <button className="st-help" aria-label="How to set up a relay" title="How to set up a relay, step by step" onClick={() => setGuide(true)}>?</button>, search: 'card sharing relay send card pairing code collaboration server url',
           hint: `Your relay: where cards sent to you wait until this Falcon picks them up, and where your live sessions run. It only ever sees them sealed. Your pairing code carries it, so people reach you from their own relays. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: click ? to set one up, step by step.'} Your code and recipients are below.`,

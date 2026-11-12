@@ -1276,8 +1276,10 @@ export function App() {
   }, []);
   // every window loads card sharing; one per launch holds the relay socket. A card coming in is a toast, never a focus change
   useEffect(() => collab.start(true), []);
+  // a card or an invite while Falcon is behind other apps: the Dock or taskbar says so (the rail's Sharing count stays)
+  useEffect(() => { const cue = () => bridge.attention?.(); const a = collab.onArrive(cue), b = collab.onInvited(cue); return () => { a(); b(); }; }, []);
   useEffect(() => collab.onArrive((c, who) => {
-    flash(`Card from ${who?.name ?? 'a code not in your recipients'}: “${c.label}”`, { label: 'Show', run: () => { if (!locked()) setCollabOpen(true); } });
+    flash(`Card from ${collab.fromWho(who, c.claimed)}: “${c.label}”`, { label: 'Show', run: () => { if (!locked()) setCollabOpen(true); } });
   }), [flash]); // eslint-disable-line react-hooks/exhaustive-deps
   // Nimbus and other debate apps send cards in over the bridge (electron/editor-bridge.cjs), the way they do
   // into CardMirror: they list the open docs, then insert into one (usually the speech doc) without taking focus
@@ -1739,7 +1741,7 @@ export function App() {
     return () => removeEventListener(SHOW_EVENT, openSd);
   }, [openSd]);
 
-  const cardsWaiting = useCollab().cards.length;
+  const sharing = collab.waiting(useCollab());
   const modal = settingsOpen || !!paletteOpen || ccOpen || !!ask || saveAsName !== null || speechAsk || newAsk;
   return (
     <div ref={appRef} className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
@@ -1747,7 +1749,8 @@ export function App() {
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc} onMove={moveDoc}
         group={group} onJoin={join} onUnjoin={unjoin} flash={flash}
         sd={sdTabs.map((x) => ({ key: x.key, on: sdLit === x.key, name: x.info.room?.name ?? 'SpeechDrop', fresh: x.info.fresh }))} onSd={showSd} onSdClose={closeSd}
-        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} cards={cardsWaiting} onCards={() => { if (!locked()) setCollabOpen(true); }} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
+        onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} cards={sharing.cards} invites={sharing.invites}
+        onSharing={() => { if (locked()) return; if (!sharing.cards && sharing.invites) setLiveOpen(true); else setCollabOpen(true); }} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
 
       <div className="covered" inert={homeOpen || sdOn || modal}>
@@ -1882,7 +1885,7 @@ type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech:
 /** A SpeechDrop tab's row: lit or not, the room's name, and how many files came that you haven't seen. */
 type SdRow = { key: number; on: boolean; name: string; fresh: number };
 function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void;
-  group: number[] | null; onJoin: (ids: number[]) => void; onUnjoin: () => void; flash: (m: string) => void; sd: SdRow[]; onSd: (key: number) => void; onSdClose: (key: number) => void; onHome: () => void; onSettings: () => void; cards: number; onCards: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
+  group: number[] | null; onJoin: (ids: number[]) => void; onUnjoin: () => void; flash: (m: string) => void; sd: SdRow[]; onSd: (key: number) => void; onSdClose: (key: number) => void; onHome: () => void; onSettings: () => void; cards: number; invites: number; onSharing: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -2117,8 +2120,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         </div>
       )}
       <div className="grow" />
-      {props.cards > 0 && <button className="fs-b co-wait" title={`${props.cards === 1 ? 'A card came' : `${props.cards} cards came`} for you. Show card sharing`} aria-label={`Cards waiting (${props.cards})`} onClick={props.onCards}>
-        <SvgIcon name="inbox" /><span className="lbl">{props.cards === 1 ? 'Card waiting' : `${props.cards} cards waiting`}</span><i className="dot new" aria-hidden="true" /></button>}
+      <SharingButton cards={props.cards} invites={props.invites} onClick={props.onSharing} />
       {props.update ? <UpdateButton u={props.update} onInstall={props.onUpdate} />
         : props.onCheck && <button className="fs-b chk" title={props.checking ? 'Checking for updates' : 'Check for updates'} aria-label="Check for updates"
             aria-busy={props.checking || undefined} data-busy={props.checking || undefined} onClick={() => { if (!props.checking) props.onCheck!(); }}>
@@ -2129,6 +2131,25 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         title="Rail width: drag to show file names, double-click to reset"
         onPointerDown={grab} onDoubleClick={() => resize(RAIL_MIN)} onKeyDown={step} />}
     </nav>
+  );
+}
+
+/** "2 cards and 1 invite": what waits for you on the Sharing button, in words. */
+export function waitingWords(cards: number, invites: number): string {
+  const n = (k: number, one: string) => `${k} ${one}${k === 1 ? '' : 's'}`;
+  return [cards && n(cards, 'card'), invites && n(invites, 'invite')].filter(Boolean).join(' and ');
+}
+/** Sharing, always on the rail above the update button: a count while cards or invites to you wait, until they're dealt with.
+ *  Opens Card sharing, or Live editing when only invites wait. */
+function SharingButton({ cards, invites, onClick }: { cards: number; invites: number; onClick: () => void }) {
+  const n = cards + invites, what = waitingWords(cards, invites);
+  const title = !n ? 'Sharing: send cards to recipients and edit live with them'
+    : `${what} waiting for you. Show ${cards ? 'card sharing' : 'live editing'}`;
+  return (
+    <button className="fs-b share-b" title={title} aria-label={n ? `Sharing, ${what} waiting` : 'Sharing'} data-waiting={n || undefined} onClick={onClick}>
+      <SvgIcon name="send" /><span className="lbl">{n ? `${what[0].toUpperCase()}${what.slice(1)} waiting` : 'Sharing'}</span>
+      {n > 0 && <i className="share-n" aria-hidden="true">{n > 99 ? '99+' : n}</i>}
+    </button>
   );
 }
 
