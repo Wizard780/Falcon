@@ -350,6 +350,9 @@ export class LiveSession {
     const updates: Uint8Array[] = [];
     let version: Uint8Array | null = null;
     for (const [tag, bytes] of list) {
+      // only from whoever said they started it. Everyone in a room holds its key and could rewrite the doc anyway, so
+      // this keeps an ordinary Falcon honest rather than proving anything
+      if ((tag === T_END || tag === T_REMOVE) && !this.names.get(from)?.host) continue;
       if (tag === T_END || (tag === T_REMOVE && td.decode(bytes) === this.binding.doc.peerIdStr)) {
         // what came with it goes in first: the doc is left as they had it
         if (updates.length) { try { this.binding.doc.importBatch(updates); } catch { /* skip */ } }
