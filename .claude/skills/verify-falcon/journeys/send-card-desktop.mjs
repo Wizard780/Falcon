@@ -81,7 +81,10 @@ await win.click('.cf.co .rcp-new');
 await win.fill('input[aria-label="Their pairing code"]', encodeCode(partner.pub));
 await win.fill('input[aria-label="Their name"]', 'Robin');
 await win.click('.rcp-add button[type="submit"]');
+// the add saves before its row shuts; an Esc while it's still open shuts only the add row, so wait for Add recipient
+await win.waitForSelector('.cf.co .rcp-new');
 await win.keyboard.press('Escape');
+await win.waitForSelector('.cf.co', { state: 'detached', timeout: 2000 });
 const card = [
   { type: 'paragraph', attrs: { style: 'tag', indent: 0 }, content: [{ type: 'text', text: 'Desktop gets cards' }] },
   { type: 'paragraph', attrs: { style: 'normal', indent: 0 }, content: [{ type: 'text', text: 'Lee 25', marks: [{ type: 'cite' }] }] },
