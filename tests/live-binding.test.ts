@@ -9,7 +9,7 @@ import { createState, createView, markMap, swapState } from '../src/editor/edito
 import { falconKeys as K } from '../src/editor/keymap';
 import { schema } from '../src/editor/schema';
 import { redo, undo } from '../src/editor/live-hooks';
-import { docOf, isLiveState, liveState, localState, narrowLoroReplace, newBinding, seed, type Binding } from '../src/collab/live-doc';
+import { applyRemote, docOf, isLiveState, liveState, localState, narrowLoroReplace, newBinding, seed, type Binding } from '../src/collab/live-doc';
 import { loroSyncPluginKey } from 'loro-prosemirror';
 
 const tick = (ms = 0) => new Promise<void>((r) => setTimeout(r, ms));
@@ -310,6 +310,88 @@ describe('a live doc going in and out of the editor', () => {
     expect(mm(B)).toBe(before);
     run(B, undo); // history began at leaving: the shared typing before it isn't undone
     expect(mm(B)).toContain('shared ');
+  });
+});
+
+describe('what a doc from someone else can and can\'t do', () => {
+  type LMap = { get(k: string): unknown; set(k: string, v: unknown): void; size: number };
+  type LList = { get(i: number): unknown; length: number };
+  const at = (b: Binding, ...path: number[]) => {
+    let n = (b.doc.getMap('doc') as unknown as LMap);
+    for (const i of path) n = ((n.get('children') as LList).get(i) as LMap);
+    return n;
+  };
+  it('an attr with CSS in it draws as nothing: no url(), no layout tricks, wherever it came from', async () => {
+    const { A, B } = await pair(card());
+    // a modified Falcon writes straight into Loro: a color with CSS after it, and a size with more
+    const text = ((at(A.b, 3).get('children') as LList).get(0)) as { mark(r: { start: number; end: number }, k: string, v: unknown): void };
+    text.mark({ start: 4, end: 9 }, 'color', { color: 'red;background:url(https://evil.example/x)' });
+    text.mark({ start: 10, end: 19 }, 'size', { pt: '12pt;position:fixed;inset:0' });
+    A.b.doc.commit();
+    await flush(A, B);
+    // the raw value may sit in an inert data- attribute; no inline style carries any of it
+    const styles = [...B.view.dom.querySelectorAll('[style]')].map((e) => e.getAttribute('style') ?? '');
+    expect(styles.filter((x) => /url\(|position|;\s*background/.test(x))).toEqual([]);
+    expect(B.view.dom.querySelector('.f-color')?.getAttribute('style')).toMatch(/^color:\s*inherit;?$/);
+    expect(B.view.dom.querySelector('.f-size')?.getAttribute('style')).toMatch(/^font-size:\s*11pt;?$/);
+  });
+  it('a table cell spanning a billion columns and a style that doesn\'t exist are repaired, on join and as they come in, for everyone', async () => {
+    const cell = (t: string) => schema.nodes.table_cell.create({ colwidth: [200] }, P('normal', t));
+    const table = schema.nodes.table.create(null, [schema.nodes.table_row.create(null, [cell('a1'), cell('b1')])]);
+    const { A, B } = await pair(schema.node('doc', null, [P('tag', 'Table card'), table, P('normal', 'after')]));
+    (at(A.b, 1, 0, 0).get('attributes') as LMap).set('colspan', 1_000_000_000);
+    (at(A.b, 2).get('attributes') as LMap).set('style', 'evil');
+    A.b.doc.commit();
+    await flush(A, B);
+    const t = B.view.state.doc.child(1);
+    expect(t.child(0).child(0).attrs.colspan).toBe(1);
+    expect(B.view.state.doc.child(2).attrs.style).toBe('normal');
+    expect(valid(B)).toBe(true);
+    // B's repair went back into Loro, so A's doc has it too
+    expect((at(A.b, 1, 0, 0).get('attributes') as LMap).get('colspan')).toBe(1);
+    // and someone joining now gets the repaired doc
+    const jb = newBinding(); jb.doc.setPeerId(3n);
+    jb.doc.import(A.b.doc.export({ mode: 'snapshot' }));
+    expect(docOf(jb)!.child(1).child(0).child(0).attrs.colspan).toBe(1);
+  });
+  it('a cell with no paragraph left (two people deleting its last lines at once) gets an empty one, not a broken table', async () => {
+    const cell = (t: string) => schema.nodes.table_cell.create(null, P('normal', t));
+    const table = schema.nodes.table.create(null, [schema.nodes.table_row.create(null, [cell('a1'), cell('b1')])]);
+    const { A, B } = await pair(schema.node('doc', null, [P('tag', 'Table card'), table]));
+    const kids = at(A.b, 1, 0, 0).get('children') as { delete(i: number, n: number): void };
+    kids.delete(0, 1);
+    A.b.doc.commit();
+    await flush(A, B);
+    expect(valid(B)).toBe(true);
+    expect(B.view.state.doc.child(1).child(0).child(0).childCount).toBe(1);
+  });
+});
+
+describe('a live doc whose tab is put away', () => {
+  it('is kept up to date with what comes in, and an edit to it (Send to speech) goes into Loro', async () => {
+    const { A, B } = await pair(card());
+    let stored: import('prosemirror-state').EditorState | null = null, off: (() => void) | null = null;
+    B.b.shown = (shown, last) => { // what the session does (ui/Live.tsx follow)
+      off?.(); off = null;
+      if (shown) return;
+      stored = last;
+      off = B.b.doc.subscribe((e) => { const next = stored && applyRemote(stored, B.b, e); if (next) stored = next; });
+    };
+    const live = B.view.state;
+    swapState(B.view, createState(schema.node('doc', null, [P('tag', 'Another file')])));
+    expect(stored).not.toBeNull();
+    A.view.dispatch(A.view.state.tr.insert(A.view.state.doc.content.size, P('normal', 'While B looks elsewhere')));
+    await flush(A, B);
+    expect(markMap(stored!.doc)).toContain('While B looks elsewhere');
+    expect(markMap(stored!.doc)).toBe(mm(A));
+    // an edit to the put-away state, as Send to speech makes one: it goes through and reaches A
+    const next = stored!.apply(stored!.tr.insert(stored!.doc.content.size, P('tag', 'Sent to speech')));
+    expect(markMap(next.doc)).toContain('Sent to speech');
+    stored = next;
+    await flush(A, B);
+    expect(mm(A)).toContain('Sent to speech');
+    expect(live).toBeTruthy();
+    (off as (() => void) | null)?.();
   });
 });
 

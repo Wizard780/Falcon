@@ -61,7 +61,7 @@ export type LiveHost = {
 };
 
 type Mods = [typeof import('../collab/live'), typeof import('../collab/live-doc')];
-type Held = { s: LiveSession; docId: number | null; plugins: readonly Plugin[] | null };
+type Held = { s: LiveSession; docId: number | null; plugins: readonly Plugin[] | null; away?: () => void };
 
 /** App's half: start, leave, invite and join, kept in step with the editor holding the doc. */
 export function useLiveSessions(h: LiveHost) {
@@ -76,11 +76,31 @@ export function useLiveSessions(h: LiveHost) {
   }, []);
   const myName = () => collab.current().name.trim() || 'Someone';
 
+  /**
+   * While the session's doc is out of the editor (another tab showing), its tab's stored state is kept up to date with
+   * what comes in: crash recovery, block search and the unsaved dot read it, and Send to speech can add to it.
+   */
+  const follow = (r: Held, ld: Mods[1]) => {
+    r.s.binding.shown = (shown, last) => {
+      r.away?.();
+      r.away = undefined;
+      if (shown || held.current !== r || r.docId === null) return;
+      const id = r.docId;
+      r.away = r.s.binding.doc.subscribe((event) => {
+        const st = host.current.stored(id) ?? last; // the tab gets its state once App has stashed it
+        const next = st && ld.applyRemote(st, r.s.binding, event);
+        if (next) { last = next; host.current.setStored(id, next); }
+      });
+    };
+  };
+
   /** Leave: the doc goes back to a plain one, as it is now (with what came in while its tab was put away). */
   const stop = useCallback((say = true) => {
     const r = held.current;
     if (!r) return;
     held.current = null;
+    r.s.binding.shown = undefined;
+    r.away?.();
     r.s.stop();
     const m = mods.current;
     if (m && r.docId !== null && r.plugins) {
@@ -112,7 +132,9 @@ export function useLiveSessions(h: LiveHost) {
     const view = host.current.viewOf(cur.id);
     if (!view || held.current) return;
     const s = live.host({ relay, doc: cur.name, name: myName(), onChange: publish }, view.state.doc);
-    held.current = { s, docId: cur.id, plugins: view.state.plugins };
+    const r: Held = { s, docId: cur.id, plugins: view.state.plugins };
+    held.current = r;
+    follow(r, ld);
     view.updateState(ld.liveState(view.state, s.binding, s.me));
     publish();
     host.current.openPanel();
@@ -138,6 +160,7 @@ export function useLiveSessions(h: LiveHost) {
     if (!view) { stop(false); return; }
     r.docId = id;
     r.plugins = view.state.plugins;
+    follow(r, ld);
     view.updateState(ld.liveState(view.state, s.binding, s.me));
     publish();
     host.current.flash(`You're in “${inv.invite.doc}” with ${whoLine(liveInfo()!)}`);

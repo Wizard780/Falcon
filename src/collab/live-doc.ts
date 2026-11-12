@@ -12,7 +12,7 @@
  * - the binding stops listening while its doc is out of the editor (another tab is showing): it would write that doc
  *   into whatever the editor holds now. Shown again, it rebuilds from Loro, so nothing that came in meanwhile is lost.
  */
-import { LoroDoc, UndoManager, type Container } from 'loro-crdt';
+import { LoroDoc, UndoManager, type Container, type LoroEventBatch } from 'loro-crdt';
 import {
   CursorEphemeralStore, LoroEphemeralCursorPlugin, LoroSyncPlugin, LoroUndoPlugin, createNodeFromLoroObj, loroSyncPluginKey,
   redo, undo, updateLoroToPmState, type LoroDocType, type LoroNodeMapping,
@@ -20,7 +20,7 @@ import {
 import { Fragment, Mark, Slice, type Node as PMNode } from 'prosemirror-model';
 import type { EditorView } from 'prosemirror-view';
 import { EditorState, Plugin, PluginKey, type Transaction } from 'prosemirror-state';
-import { schema } from '../editor/schema';
+import { PARA_STYLES, schema } from '../editor/schema';
 import { liveHooks } from '../editor/live-hooks';
 
 export type Peer = { name: string; color: string };
@@ -29,6 +29,11 @@ export type Binding = {
   doc: LoroDoc; undo: UndoManager; presence: CursorEphemeralStore;
   /** Whether this peer tidies up after remote changes (see guard). One peer does, so two never repair the same thing. */
   fixer: () => boolean;
+  /**
+   * Told when the doc goes into an editor (true) and out of one (false, with its state as it left). While it's out, whoever
+   * set this keeps the tab's stored state up to date with remote changes (applyRemote), so edits to it are let through.
+   */
+  shown?: (shown: boolean, last: EditorState | null) => void;
 };
 
 /** Remote carets that stopped moving stay shown this long; leaving the room removes them at once (live.ts). */
@@ -68,12 +73,60 @@ export function seed(b: Binding, doc: PMNode) {
   updateLoroToPmState(b.doc as LoroDocType, new Map(), EditorState.create({ schema, doc }));
 }
 
-/** The doc Loro holds now, or null when it holds none yet (nothing synced). */
+/** The doc Loro holds now (repaired: see repairDoc), or null when it holds none yet (nothing synced). */
 export function docOf(b: Binding): PMNode | null {
   const root = (b.doc as LoroDocType).getMap('doc');
   if (!root.size) return null;
   const node = createNodeFromLoroObj(schema, root, new Map());
-  return node?.type === schema.topNodeType ? node : null;
+  return node?.type === schema.topNodeType ? repairDoc(node) : null;
+}
+
+/**
+ * A doc built from Loro, made into one Falcon can lay out. Loro holds whatever the other people's Falcons put there, and a
+ * modified one could put anything: a table cell spanning a billion columns, content a node can't hold, a paragraph style
+ * that doesn't exist. Inline styles are safe whatever the attrs (the schema checks them as it draws). What's repaired
+ * goes back into Loro as an edit, so everyone ends up with the same repaired doc. Nodes in `known` (the editor's own,
+ * unchanged) are skipped, so a remote change costs a pass over what it touched.
+ */
+let repaired = false; // repairDoc changed something since the last remote change began (see wroteBack)
+export function repairDoc(doc: PMNode, known?: Map<PMNode, number>): PMNode {
+  const kids: PMNode[] = [];
+  let changed = false;
+  doc.forEach((c) => {
+    const r = known?.has(c) ? c : c.isInline ? schema.nodes.paragraph.create(null, c.isText ? c : null) : repair(c);
+    if (r !== c) changed = true;
+    kids.push(r);
+  });
+  if (!kids.length) { kids.push(schema.nodes.paragraph.create()); changed = true; }
+  if (changed) repaired = true;
+  return changed ? schema.topNodeType.create(doc.attrs, kids) : doc;
+}
+const MAX_SPAN = 63;
+const spanOf = (v: unknown) => (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= MAX_SPAN ? (v as number) : 1);
+function repair(n: PMNode): PMNode {
+  if (n.isLeaf) return n;
+  let kids: PMNode[] | null = null;
+  n.forEach((c, _o, i) => {
+    const r = repair(c);
+    if (r !== c && !kids) { kids = []; n.forEach((x, _p, j) => { if (j < i) kids!.push(x); }); }
+    kids?.push(r);
+  });
+  let attrs = n.attrs;
+  const role = n.type.spec.tableRole;
+  if (role === 'cell' || role === 'header_cell') {
+    const cw = n.attrs.colwidth, colspan = spanOf(n.attrs.colspan), rowspan = spanOf(n.attrs.rowspan);
+    const colwidth = Array.isArray(cw) && cw.length === colspan && cw.every((x) => typeof x === 'number' && x >= 0 && x < 1e5) ? cw : null;
+    if (colspan !== n.attrs.colspan || rowspan !== n.attrs.rowspan || colwidth !== cw) attrs = { ...attrs, colspan, rowspan, colwidth };
+  } else if (n.type === schema.nodes.paragraph) {
+    const style = (PARA_STYLES as readonly unknown[]).includes(n.attrs.style) ? n.attrs.style : 'normal';
+    const indent = Number.isInteger(n.attrs.indent) && n.attrs.indent >= 0 && n.attrs.indent <= 8 ? n.attrs.indent : 0;
+    if (style !== n.attrs.style || indent !== n.attrs.indent) attrs = { ...attrs, style, indent };
+  }
+  const content = kids ? Fragment.fromArray(kids) : n.content;
+  if (attrs === n.attrs && content === n.content && n.type.validContent(content)) return n;
+  if (n.type.validContent(content)) return n.type.create(attrs, content, n.marks);
+  // content this node can't hold: what's missing is filled in (a cell with no paragraph gets one), else it becomes its text
+  return n.type.createAndFill(attrs, content, n.marks) ?? n.type.createAndFill(attrs) ?? schema.nodes.paragraph.create(null, n.textContent ? schema.text(n.textContent) : null);
 }
 
 const isHistory = (p: Plugin) => (p as unknown as { key: string }).key.startsWith('history$');
@@ -86,7 +139,7 @@ function caret(b: Binding, peer: string) {
   const user = b.presence.getAll()[peer as `${number}`]?.user;
   const el = document.createElement('span');
   el.className = 'f-peer';
-  el.style.setProperty('--peer', user?.color ?? '#888');
+  el.style.setProperty('--peer', /^#[0-9a-f]{6}$/i.test(String(user?.color)) ? user!.color : '#888'); // their Falcon says it: only a plain color goes in
   el.title = user?.name ?? 'Someone';
   el.append('⁠');
   return el;
@@ -180,9 +233,10 @@ function touched(trs: readonly Transaction[], doc: PMNode): [number, number][] {
  * One pass over the doc points it back; the docs are equal, so nothing is written to Loro.
  */
 function attached(b: Binding) {
-  // Whether the binding has rebuilt the doc from Loro since it went into this editor. Until then the doc can be the one
-  // its tab held when it was put away, without what came in since: an edit to that would write the old doc into Loro
-  // (taking out paragraphs others added), so doc changes wait for it. It's a timeout of 0, so nothing a person types.
+  // Whether this doc is as Loro has it, so an edit to it is safe to write into Loro. In an editor, not until the binding
+  // has rebuilt it from Loro after the doc went in: until then it can be the one its tab held when it was put away,
+  // without what came in since, and writing that would take out paragraphs others added (a timeout of 0, so nothing a
+  // person types). Out of an editor, only while the session keeps the tab's state up to date (Binding.shown).
   let ready = false;
   return new Plugin({
     key: ATTACHED,
@@ -190,9 +244,10 @@ function attached(b: Binding) {
     view(view) {
       ready = false;
       // the binding's attach gives it a new node map: until then the state's map is the stale one it came in with
-      let mapped: unknown = loroSyncPluginKey.getState(view.state)?.mapping, sub: (() => void) | null = null;
+      let mapped: unknown = loroSyncPluginKey.getState(view.state)?.mapping, sub: (() => void) | null = null, last = view.state;
       return {
         update: () => {
+          last = view.state;
           const s = loroSyncPluginKey.getState(view.state);
           if (!s || s.doc !== b.doc || s.mapping === mapped) return;
           mapped = s.mapping;
@@ -202,17 +257,41 @@ function attached(b: Binding) {
           sub = listen(view, b);
           ready = true;
           updateLoroToPmState(b.doc as LoroDocType, s.mapping, view.state);
+          b.shown?.(true, null);
         },
         // view.state is the incoming doc by now: everything here comes from what update saw
         destroy: () => {
-          ready = false;
           sub?.();
           sub = null;
           b.presence.setLocal({}); // not in an editor: no caret to show the others
+          b.shown?.(false, last);
+          ready = !!b.shown;
         },
       };
     },
   });
+}
+
+/** The replace that brings `state` up to Loro after a change that came in (or an undo), or null for one that didn't. */
+function remoteTr(state: EditorState, b: Binding, event: LoroEventBatch): Transaction | null {
+  if (event.by === 'local' && event.origin !== 'undo') return null;
+  const s = loroSyncPluginKey.getState(state);
+  if (!s || s.doc !== b.doc) return null;
+  for (const e of event.events) {
+    for (let c: Container | undefined = b.doc.getContainerById(e.target); c; c = c.parent()) s.mapping.delete(c.id);
+  }
+  const node = createNodeFromLoroObj(state.schema, (b.doc as LoroDocType).getMap('doc'), s.mapping);
+  return state.tr.replace(0, state.doc.content.size, new Slice(Fragment.from(node), 0, 0)).setMeta(loroSyncPluginKey, { type: 'non-local-updates' });
+}
+
+/** A put-away tab's state brought up to Loro after a remote change (see Binding.shown), or null when nothing changed. */
+export function applyRemote(state: EditorState, b: Binding, event: LoroEventBatch): EditorState | null {
+  const tr = remoteTr(state, b, event);
+  if (!tr) return null;
+  repaired = false;
+  const next = state.apply(narrowLoroReplace(state, tr));
+  wroteBack(next, b);
+  return next;
 }
 
 /**
@@ -225,16 +304,25 @@ function attached(b: Binding) {
  */
 function listen(view: EditorView, b: Binding): () => void {
   return b.doc.subscribe((event) => {
-    if (view.isDestroyed || (event.by === 'local' && event.origin !== 'undo')) return;
-    const s = loroSyncPluginKey.getState(view.state);
-    if (!s || s.doc !== b.doc) return;
-    for (const e of event.events) {
-      for (let c: Container | undefined = b.doc.getContainerById(e.target); c; c = c.parent()) s.mapping.delete(c.id);
-    }
-    const node = createNodeFromLoroObj(view.state.schema, (b.doc as LoroDocType).getMap('doc'), s.mapping);
-    const tr = view.state.tr.replace(0, view.state.doc.content.size, new Slice(Fragment.from(node), 0, 0));
-    view.dispatch(tr.setMeta(loroSyncPluginKey, { type: 'non-local-updates' }));
+    if (view.isDestroyed) return;
+    const tr = remoteTr(view.state, b, event);
+    if (!tr) return;
+    repaired = false;
+    view.dispatch(tr);
+    wroteBack(view.state, b);
   });
+}
+
+/**
+ * A repair the editor made to what came in goes back into Loro, so everyone (and anyone joining) gets it. When the
+ * repaired doc differs from what the editor showed, the binding writes it anyway; when it's the same (a bad value set
+ * over a good one), nothing else would. Every peer writes the same values, so they agree.
+ */
+function wroteBack(state: EditorState, b: Binding) {
+  if (!repaired) return;
+  repaired = false;
+  const s = loroSyncPluginKey.getState(state);
+  if (s) updateLoroToPmState(b.doc as LoroDocType, s.mapping, state);
 }
 
 /**
@@ -245,10 +333,13 @@ function listen(view: EditorView, b: Binding): () => void {
 export function narrowLoroReplace(state: EditorState, tr: Transaction): Transaction {
   const meta = tr.getMeta(loroSyncPluginKey) as { type?: string } | undefined;
   if (!meta || (meta.type !== 'non-local-updates' && meta.type !== 'update-state') || tr.steps.length !== 1) return tr;
-  const a = state.doc, b = tr.doc;
+  const a = state.doc;
+  const known = new Map<PMNode, number>();
+  a.forEach((n, _o, i) => { if (!known.has(n)) known.set(n, i); });
+  const b = repairDoc(tr.doc, known); // what came from Loro, made layable: the editor's own nodes are skipped
   const out = state.tr.setMeta(loroSyncPluginKey, meta).setMeta('addToHistory', false);
   try {
-    for (const g of gaps(a, b).reverse()) { // from the end, so the positions of earlier ones still hold
+    for (const g of gaps(a, b, known).reverse()) { // from the end, so the positions of earlier ones still hold
       const fa = a.content.cut(g.a0, g.a1), fb = b.content.cut(g.b0, g.b1);
       const startA = fa.findDiffStart(fb, g.a0);
       if (startA === null) continue;
@@ -260,7 +351,7 @@ export function narrowLoroReplace(state: EditorState, tr: Transaction): Transact
     }
     if (out.doc.eq(b)) return out;
   } catch { /* fall through */ }
-  return tr;
+  return state.tr.replace(0, a.content.size, new Slice(b.content, 0, 0)).setMeta(loroSyncPluginKey, meta).setMeta('addToHistory', false);
 }
 
 /**
@@ -268,10 +359,10 @@ export function narrowLoroReplace(state: EditorState, tr: Transaction): Transact
  * objects in both, so they anchor the runs: the longest increasing chain found greedily, which is every node when the
  * change is edits in place (a moved card shows as a run deleted in one place and one inserted in another).
  */
-function gaps(a: PMNode, b: PMNode) {
-  const at = new Map<PMNode, number>(), offA: number[] = [], offB: number[] = [];
+function gaps(a: PMNode, b: PMNode, at: Map<PMNode, number>) {
+  const offA: number[] = [], offB: number[] = [];
   let pos = 0;
-  a.forEach((n, _o, i) => { if (!at.has(n)) at.set(n, i); offA.push(pos); pos += n.nodeSize; });
+  a.forEach((n) => { offA.push(pos); pos += n.nodeSize; });
   offA.push(pos);
   pos = 0;
   b.forEach((n) => { offB.push(pos); pos += n.nodeSize; });
