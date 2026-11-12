@@ -571,7 +571,8 @@ button.b:active { transform: scale(.97); }
 .st-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 66px; padding: 10px 0; }
 .st-row + .st-row { border-top: 1px solid var(--u-line); }
 .st-txt { display: flex; flex-direction: column; gap: 5px; min-width: 0; font-size: 14.5px; font-weight: 500; }
-.st-txt small { font-size: 13px; font-weight: 400; color: var(--u-mut); }
+.st-txt small, .st-relay small { font-size: 13px; font-weight: 400; color: var(--u-mut); }
+.st-relay { display: flex; flex-direction: column; gap: 5px; } /* the Relay box, and its note when no relay answers there */
 .st-none { color: var(--u-mut); font-size: 14px; }
 .st-step { display: inline-flex; align-items: center; height: 36px; border-radius: 8px; background: var(--u-ctl); }
 .st-step button { width: 34px; height: 36px; border-radius: 8px; color: var(--u-tx2); cursor: pointer; }
@@ -613,7 +614,7 @@ button.b:active { transform: scale(.97); }
 .st-keys[data-anim="bob"] kbd { animation: st-bob 260ms var(--u-ease) backwards; }
 .st-keyreset { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: var(--u-mut); cursor: pointer; }
 .st-keyreset:hover { background: var(--u-hover); color: var(--u-tx); }
-.st-txt small[data-bad] { color: #e5484d; }
+.st-txt small[data-bad], .st-relay small[data-bad] { color: #e5484d; }
 @keyframes st-breathe { 50% { opacity: .35; transform: scale(.8); } }
 @keyframes st-shake { 20% { transform: translateX(-5px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
 @keyframes st-refused { from { color: #ff5c5c; background: rgba(255, 92, 92, .18); } }
