@@ -40,7 +40,7 @@ import './theme'; // so does the saved theme (Settings and the command center, w
 import { aiService, formatCite, reformatCites, reformatCount, usePreset } from '../editor/ai-cite';
 import { Confirm, nameList, type Ask } from './Confirm';
 import { ComparePanel } from './ComparePanel';
-import { CollabPanel, SendCard, useCollab } from './Collab';
+import { CollabPanel, SendCard, linkLine, useCollab } from './Collab';
 import { LiveBit, LivePanel, useLiveSessions } from './Live';
 import * as collab from '../collab/service';
 import { copySlice } from '../editor/nav/clipboard';
@@ -1227,14 +1227,17 @@ export function App() {
   }, [flash]);
   const closeSendCard = useCallback(() => { setSendLabel(null); sendingRef.current = null; viewRef.current?.focus(); }, []);
   /** Send Card to starred recipient: the same card, straight to the one starred in Settings > Sharing (hidden or not). */
+  const starSending = useRef(false); // a second press while one is going would send the card twice
   const sendStarred = useCallback(async () => {
-    const v = viewRef.current, to = collab.starred();
-    if (!v) return;
+    const v = viewRef.current, to = collab.starred(), cs = collab.current();
+    if (!v || starSending.current) return;
+    if (cs.status !== 'ready') { flash(cs.status === 'unavailable' ? linkLine(cs) : 'Card sharing is still loading. Try again in a moment.'); return; }
     if (!to) { flash('No one is starred. Star a recipient in Settings > Sharing first.'); return; }
     const sent = sendContent(v.state);
     if (!sent) { flash('Nothing to send. Put the caret in a card or select some text.'); return; }
+    starSending.current = true;
     flash(`Sending to ${to.name}…`);
-    flash((await collab.send(to, sent.content)).message);
+    try { flash((await collab.send(to, sent.content)).message); } finally { starSending.current = false; }
   }, [flash]);
   const sendCardTo = useCallback(async (c: collab.Contact) => {
     const content = sendingRef.current;

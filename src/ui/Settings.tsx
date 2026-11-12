@@ -635,7 +635,7 @@ export function Settings(props: Props) {
             onChange={(e) => void collab.setName(e.target.value)} />) },
         { label: 'Recipients', wide: true, search: 'recipients contacts people partner teammate add remove hide star order send card pairing code',
           hint: 'People you can send cards to, in the order Send Card lists them. Add one with the pairing code they gave you and a name for them. The eye hides someone from Send Card without removing them. The star marks who Send Card to starred goes to.',
-          control: <Recipients flash={flash} draft={rcpDraft} /> },
+          control: <Recipients flash={flash} draft={rcpDraft} taken={() => setRcpDraft(null)} /> },
       ]],
       ['Live editing', [
         { label: 'This document', search: 'live editing co-edit coedit collaborate session start leave realtime real time together invite',
@@ -746,7 +746,7 @@ export function Settings(props: Props) {
         </div>
       </div>
       {guide && createPortal(<RelayGuide onClose={() => setGuide(false)}
-        onAddRecipient={() => { setGuide(false); setRcpDraft((d) => ({ code: '', name: '', n: (d?.n ?? 0) + 1 })); }} />, document.body)}
+        onAddRecipient={() => { setGuide(false); setQuery(''); setPageId('sharing'); setRcpDraft({ code: '', name: '' }); }} />, document.body)}
     </div>
   );
 }

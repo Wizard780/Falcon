@@ -42,6 +42,8 @@ function createRelaySetup({ worker, fetch = globalThis.fetch, api = API, relayUr
             method,
             headers: { Authorization: `Bearer ${token}`, ...(json ? { 'Content-Type': 'application/json' } : {}), ...headers },
             body: json ? JSON.stringify(json) : form,
+            // no cookies either way, nothing kept in the disk cache, and never followed elsewhere with the token on
+            credentials: 'omit', cache: 'no-store', redirect: 'error',
             signal: AbortSignal.timeout(60_000),
           });
         } catch { throw new Stop('offline'); } // no message passed on: it could quote the request

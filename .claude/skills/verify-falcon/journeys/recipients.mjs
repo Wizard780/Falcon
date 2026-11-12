@@ -83,6 +83,17 @@ async function journey(theme) {
   await page.hover(`${row('Dev Raman', '.cf.co')} .rcp-cd`);
   await wait(250);
   await f.shot('panel');
+  // a bad code in the panel's add row: said in the error color (not greyed by the dialog's own text color); Esc shuts the row, then the panel
+  await page.click('.cf.co .rcp-new');
+  await page.fill('.cf.co input[aria-label="Their pairing code"]', 'ABCD-EFGH-IJKL');
+  await page.keyboard.press('Enter');
+  await wait(150);
+  const errColor = await page.$eval('.cf.co .rcp-why', (e) => getComputedStyle(e).color);
+  want(errColor === (theme === 'dark' ? 'rgb(224, 112, 112)' : 'rgb(178, 58, 58)'), `the panel's add row says a bad code in the error color (${errColor})`);
+  await page.focus('.cf.co .rcp-add button[type="button"]');
+  await page.keyboard.press('Escape');
+  await wait(200);
+  want(!(await page.$('.cf.co .rcp-add')) && !!(await page.$('.cf.co')), 'Esc on the add row\'s Cancel shuts the row, not the panel');
   await page.keyboard.press('Escape');
   await wait(250);
   await page.click('.ProseMirror:not(.hm-doc) :text("Trade solves war")');

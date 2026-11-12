@@ -708,6 +708,7 @@ ipcMain.handle('falcon:relay-setup', async (e, look) => {
     if (!token) return { ok: false, error: 'cancelled' };
     // off the clipboard, so a paste into a card later can't put it in a document (and from there in a file or a shared card)
     if ((await clipboard.readText().catch(() => '')).trim() === token) clipboard.clear();
+    if (clipboard.selection && (await clipboard.selection.readText().catch(() => '')).trim() === token) clipboard.selection.clear(); // Linux's other clipboard
     // tests only: a stand-in for Cloudflare's API, and the address to report. A shipped app only ever sends the token to Cloudflare
     const test = HEADLESS && process.env.FALCON_CF_API ? { api: process.env.FALCON_CF_API, relayUrl: process.env.FALCON_CF_RELAY_URL || null } : {};
     // Chromium's network stack, as the updater uses: the system's proxy and certificates, which school networks need

@@ -363,7 +363,7 @@ describe('card sharing in the app', () => {
     expect(drop).toHaveBeenCalledTimes(2);
     expect([...document.querySelectorAll('.co-card b')].map((b) => b.textContent)).toEqual(['Card 1', 'Card 3']);
     // the same for a recipient
-    vi.spyOn(store, 'saveContacts').mockRejectedValueOnce(new Error('disk full'));
+    vi.spyOn(store, 'updateContacts').mockRejectedValueOnce(new Error('disk full'));
     await app.click($('[aria-label="Remove Pat"]'));
     expect(collab.current().contacts.map((c) => c.name)).toEqual(['Pat']);
     expect(document.querySelector('.rcp-row [role="alert"]')?.textContent).toBe("Couldn't save that. Try again");

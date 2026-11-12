@@ -100,7 +100,7 @@ function useRowSaves() {
   }, []);
   const state = (id: string, gone = false) => {
     const r = rows[id], busy = r?.st === 'wait' || r?.st === 'slow';
-    return { busy, off: gone || busy, slow: (r?.st === 'slow' && r.a) || '', failed: r?.st === 'failed' };
+    return { busy, off: gone || busy, doing: (busy && r.a) || '', slow: (r?.st === 'slow' && r.a) || '', failed: r?.st === 'failed' };
   };
   return { run, state, clear: useCallback(() => setRows({}), []) };
 }
@@ -147,7 +147,7 @@ export function CollabPanel(props: {
   useEffect(() => { if (!open) return; const t = setInterval(() => tick((n) => n + 1), 15_000); return () => clearInterval(t); }, [open]);
   if (!open) return null;
 
-  const fromUnknown = (c: Received) => setDraft((d) => ({ code: c.from, name: c.claimed, n: (d?.n ?? 0) + 1 }));
+  const fromUnknown = (c: Received) => setDraft({ code: c.from, name: c.claimed });
   const copyCode = () => copyMyCode(s.code, flash);
   const renew = async () => {
     if (!(await props.confirm({ title: 'Make a new pairing code?', body: 'Your old code stops working: cards sent to it never arrive. Give the new one to everyone who sends you cards.', ok: 'New code' }))) return;
@@ -228,7 +228,7 @@ export function CollabPanel(props: {
 
         <section className="co-sec" aria-label="Recipients">
           <h3 ref={heading} tabIndex={-1}>Recipients</h3>
-          <Recipients flash={flash} draft={draft} heading={() => heading.current} />
+          <Recipients flash={flash} draft={draft} taken={() => setDraft(null)} heading={() => heading.current} />
         </section>
 
         <div className="cf-btns"><button onClick={onClose}>Close</button></div>
@@ -241,8 +241,9 @@ export function CollabPanel(props: {
 export const copyMyCode = (code: string, flash: (m: string) => void) => void navigator.clipboard?.writeText(code)
   .then(() => { flash('Copied your pairing code'); void collab.gaveCode().catch(() => {}); }, () => flash("Couldn't copy. Select the code and copy it"));
 
-/** A recipient to add, from outside the list (a card from a stranger, the relay guide). `n` changes each time. */
-export type Draft = { code: string; name: string; n: number };
+/** A recipient to add, from outside the list (a card from a stranger, the relay guide). The list takes it once
+ *  (`taken`), so the one who passed it clears it and a list drawn again never sees an old one. */
+export type Draft = { code: string; name: string };
 
 /** A recipient's name: saved on Enter or leaving the box, Esc puts it back (data-draft keeps that Esc from closing what's behind). */
 function NameBox({ c, disabled, save }: { c: Contact; disabled: boolean; save: (name: string) => void }) {
@@ -274,7 +275,7 @@ function CodeText({ code }: { code: string }) {
  * The same list, on the same store, in the Card sharing panel and in Settings > Sharing. `heading` takes focus when
  * the last row leaves; without one, Add recipient does.
  */
-export function Recipients({ flash, draft, heading }: { flash: (m: string) => void; draft?: Draft | null; heading?: () => HTMLElement | null }) {
+export function Recipients({ flash, draft, taken, heading }: { flash: (m: string) => void; draft?: Draft | null; taken?: () => void; heading?: () => HTMLElement | null }) {
   const s = useCollab(), ready = s.status === 'ready';
   const list = useLeaving(s.contacts, (c) => c.code, true);
   const { run, state } = useRowSaves();
@@ -287,15 +288,14 @@ export function Recipients({ flash, draft, heading }: { flash: (m: string) => vo
     if (el) { want.current = null; el.focus(); }
   });
   const open = (code = '', name = '') => { setAdding({ code, name, bad: null }); want.current = () => (code ? nameBox : codeBox).current; };
-  // a new draft opens the add row; one the list had when it was drawn (a panel opened again) is old news
-  const drafted = useRef(draft?.n);
-  useEffect(() => { if (draft && draft.n !== drafted.current) { drafted.current = draft.n; open(draft.code, draft.name); } }, [draft]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (draft) { open(draft.code, draft.name); taken?.(); } }, [draft]); // eslint-disable-line react-hooks/exhaustive-deps
   const close = () => { setAdding(null); want.current = () => addBtn.current; };
   const add = async () => {
     if (!adding) return;
+    const had = collab.contactFor(adding.code);
     const why = await collab.addContact(adding.code, adding.name);
     if (why) { setAdding({ ...adding, bad: why }); (why === 'Give them a name' ? nameBox : codeBox).current?.focus(); return; }
-    flash(`Added ${adding.name.trim()}`);
+    flash(had ? `Updated ${adding.name.trim()}${had.hidden ? '. They stay hidden from Send Card' : ''}` : `Added ${adding.name.trim()}`);
     close();
   };
   const row = (code: string) => box.current?.querySelector(`.rcp-row[data-code="${code}"]`);
@@ -313,6 +313,7 @@ export function Recipients({ flash, draft, heading }: { flash: (m: string) => vo
   };
   const remove = async (e: React.MouseEvent<HTMLButtonElement>, c: Contact) => {
     const btn = e.currentTarget, at = btn.closest('.co-fold');
+    if (state(c.code).busy) return;
     if (!(await run(c.code, () => collab.removeContact(c.code), 'x'))) return;
     flash(`Removed ${c.name}`);
     focusAfter(at, btn, '[data-a="x"]', heading?.() ?? addBtn.current);
@@ -322,7 +323,9 @@ export function Recipients({ flash, draft, heading }: { flash: (m: string) => vo
     <div className="rcp" ref={box}>
       {!list.length && !adding && <p className="rcp-none">No one yet. Add the pairing code someone gave you.</p>}
       {list.map(({ item: c, gone }) => {
-        const st = state(c.code, gone), at = s.contacts.findIndex((x) => x.code === c.code), off = !ready || st.off;
+        // only a removal turns the row off: a button disabled under focus drops it, so a rename, move, hide or star
+        // runs with the row as it is (act() won't start a second one)
+        const st = state(c.code, gone), at = s.contacts.findIndex((x) => x.code === c.code), off = !ready || gone || st.doing === 'x';
         const btn = (a: string, label: string, title: string, icon: ReactNode, onClick: (e: React.MouseEvent<HTMLButtonElement>) => void, more: { disabled?: boolean; pressed?: boolean } = {}) => (
           <button className="rcp-i" data-a={a} aria-label={label} title={title} aria-pressed={more.pressed} disabled={off || more.disabled}
             data-slow={st.slow === a || undefined} onClick={onClick}><span className="co-spin" />{icon}</button>
@@ -330,7 +333,7 @@ export function Recipients({ flash, draft, heading }: { flash: (m: string) => vo
         return (
           <div key={c.code} className="co-fold" data-gone={gone || undefined} aria-hidden={gone || undefined}><div>
             <div className="rcp-row" data-code={c.code} data-hidden={c.hidden || undefined}>
-              <NameBox c={c} disabled={off} save={(name) => void run(c.code, () => collab.renameContact(c.code, name), 'name')} />
+              <NameBox c={c} disabled={off} save={(name) => { if (!state(c.code).busy) void run(c.code, () => collab.renameContact(c.code, name), 'name'); }} />
               {st.failed ? <span className="rcp-err" role="alert">Couldn't save that. Try again</span> : <CodeText code={c.code} />}
               <span className="rcp-acts">
                 {btn('up', `Move ${c.name} up`, 'Move up', <SvgIcon name="moveUp" />, () => void act(c, 'up', () => collab.moveContact(c.code, -1)), { disabled: at <= 0 })}
@@ -346,13 +349,14 @@ export function Recipients({ flash, draft, heading }: { flash: (m: string) => vo
         );
       })}
       {adding ? (
-        <form className="rcp-add" onSubmit={(e) => { e.preventDefault(); void add(); }}
+        // data-draft and data-own-esc: Esc anywhere in the add row (its boxes or buttons) shuts the row, not the panel or Settings
+        <form className="rcp-add" data-draft="" data-own-esc="" onSubmit={(e) => { e.preventDefault(); void add(); }}
           onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}>
           <input ref={codeBox} className="co-in co-mono" aria-label="Their pairing code" placeholder="Paste their pairing code" spellCheck={false} autoCapitalize="characters" autoCorrect="off"
-            value={adding.code} data-bad={adding.bad && adding.bad !== 'Give them a name' ? true : undefined} data-draft="" disabled={!ready}
+            value={adding.code} data-bad={adding.bad && adding.bad !== 'Give them a name' ? true : undefined} disabled={!ready}
             onChange={(e) => setAdding({ ...adding, code: e.target.value, bad: null })} />
           <input ref={nameBox} className="co-in" aria-label="Their name" placeholder="Name" spellCheck={false} maxLength={60} value={adding.name}
-            data-bad={adding.bad === 'Give them a name' || undefined} data-draft="" disabled={!ready} onChange={(e) => setAdding({ ...adding, name: e.target.value, bad: null })} />
+            data-bad={adding.bad === 'Give them a name' || undefined} disabled={!ready} onChange={(e) => setAdding({ ...adding, name: e.target.value, bad: null })} />
           <button type="submit" className="rcp-btn rcp-main" disabled={!ready || !adding.code.trim()}>Add</button>
           <button type="button" className="rcp-btn" onClick={close}>Cancel</button>
         </form>
