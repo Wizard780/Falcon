@@ -1,6 +1,6 @@
 # Settings
 
-Settings is an overlay with nine panes and a search box, opened from the gear at the bottom of the rail. Every choice applies right away, is stored in `localStorage` under a `falcon.*` key, and is still there after a reload. The highlighter pen is the most visible example: pick Green and F11 highlights in green.
+Settings is an overlay with ten panes and a search box, opened from the gear at the bottom of the rail. Every choice applies right away, is stored in `localStorage` under a `falcon.*` key, and is still there after a reload. The highlighter pen is the most visible example: pick Green and F11 highlights in green.
 
 ## Sub-features
 
@@ -22,7 +22,7 @@ Preconditions:
 - `falcon-verify doctor` is all `ok`, and the seed is open.
 
 - **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/settings.mjs`. It exits 0 with five `ok` lines.
-- **Open.** Click `.fstrip [aria-label="Settings"]`. `[aria-label="Settings sections"] button` lists the nine panes.
+- **Open.** Click `.fstrip [aria-label="Settings"]`. `[aria-label="Settings sections"] button` lists the ten panes (Sharing, added in #147, is last).
 - **Pick a pen.** Click the `Appearance` pane, then `[aria-label="Highlighter"] [role=radio][aria-label="Green"]`. Green has `aria-checked="true"`, and `localStorage['falcon.highlight']` is `green`.
 - **Effect.** Close settings, `f.select('Temperatures')`, then F11. The mark map shows `[Temperatures]{highlight:green}`.
 - **Persist.** Reload and reopen Settings > Appearance. Green is still checked.

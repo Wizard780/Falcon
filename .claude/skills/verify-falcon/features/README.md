@@ -53,7 +53,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Live editing](./live-editing.md) covers starting a session, inviting a recipient (across relays), joining, converging edits and carets, frames per the free plan, a relay restart, a late joiner, leaving, saving, and an older relay without rooms.
 - [Recipients](./recipients.md) covers the one list of people cards go to, in Settings > Sharing and the Card sharing panel: add (and a bad code), rename, move, hide from Send Card, star for Send Card to starred, remove with its fold, in dark and light.
 - [Relay setup](./relay-setup.md) covers Settings > Sharing's ? guide: on the desktop, Falcon putting the relay on a Cloudflare account itself from a token (against a fake of Cloudflare's API), its progress, failures and waiting for a new address; on the web, the terminal steps and Connect, through a local `wrangler dev` relay.
-- [Settings](./settings.md) covers the nine panes and the highlighter pen with its stored value and effect.
+- [Settings](./settings.md) covers the ten panes and the highlighter pen with its stored value and effect.
 - [Themes](./themes.md) covers the preset tiles, custom themes and their colors, Document paper, System, and the desktop window following the theme.
 - [Keybindings](./keybindings.md) covers changing a shortcut in Settings and the editor and app following it.
 - [Command center](./command-center.md) covers Mod-Shift-Space: commands, Toggle and Cycle settings, typed values, headings and cites, find, Shift-Enter, and Tab to Settings.
