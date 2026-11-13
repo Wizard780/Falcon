@@ -106,7 +106,7 @@ function useRowSaves() {
 }
 
 /** Esc closes, wherever focus is. */
-function useEsc(open: boolean, close: () => void) {
+export function useEsc(open: boolean, close: () => void) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -119,8 +119,10 @@ function useEsc(open: boolean, close: () => void) {
   }, [open, close]);
 }
 
-export function CollabPanel(props: {
-  open: boolean;
+/** The Sharing dialog's Cards tab (Sharing.tsx draws the dialog): cards waiting, your code, recipients. */
+export function CardsPane(props: {
+  /** opened onto this tab: its first button takes focus (switched to: focus stays on the switch) */
+  focus: boolean;
   onClose: () => void;
   flash: (m: string) => void;
   confirm: (a: Omit<Ask, 'done'>) => Promise<boolean>;
@@ -129,23 +131,13 @@ export function CollabPanel(props: {
   onCopy: (c: Received) => Promise<boolean>;
 }) {
   const s = useCollab();
-  const { open, onClose, flash } = props;
+  const { onClose, flash } = props;
   const first = useRef<HTMLButtonElement>(null), copyBtn = useRef<HTMLButtonElement>(null), heading = useRef<HTMLHeadingElement>(null);
-  const [, tick] = useState(0);
   /** Add recipient on a card from a code that isn't one: the recipients list opens its add row with the code and name */
   const [draft, setDraft] = useState<Draft | null>(null);
   const { run, state, clear } = useRowSaves();
-  const cards = useLeaving(s.cards, (c) => c.id, open);
-  useEsc(open, onClose);
-  useLayoutEffect(() => {
-    if (!open) return;
-    setDraft(null);
-    clear();
-    (first.current ?? copyBtn.current)?.focus();
-  }, [open, clear]);
-  // the retry countdown in the status line
-  useEffect(() => { if (!open) return; const t = setInterval(() => tick((n) => n + 1), 15_000); return () => clearInterval(t); }, [open]);
-  if (!open) return null;
+  const cards = useLeaving(s.cards, (c) => c.id, true);
+  useLayoutEffect(() => { if (props.focus) (first.current ?? copyBtn.current)?.focus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fromUnknown = (c: Received) => setDraft({ code: c.from, name: c.claimed });
   const copyCode = () => copyMyCode(s.code, flash);
@@ -170,15 +162,11 @@ export function CollabPanel(props: {
       if (!still()) await new Promise((r) => setTimeout(r, 90));
     }
     flash(done === all.length ? `Dismissed ${done} cards` : `Dismissed ${done} of ${all.length} cards`);
-    document.querySelector<HTMLElement>('#co-t')?.focus({ preventScroll: true });
+    document.querySelector<HTMLElement>('#sh-t')?.focus({ preventScroll: true });
   };
 
   return (
-    <div className="cf-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="cf co" role="dialog" aria-modal="true" aria-labelledby="co-t">
-        <h2 id="co-t" tabIndex={-1}>Card sharing</h2>
-        <p className="co-line" role="status">{linkLine(s)}</p>
-
+    <>
         {cards.length > 0 && (
           <div className="co-fold" data-gone={cards.every((r) => r.gone) || undefined}><div>
             <section className="co-sec" aria-label="Cards waiting">
@@ -230,10 +218,7 @@ export function CollabPanel(props: {
           <h3 ref={heading} tabIndex={-1}>Recipients</h3>
           <Recipients flash={flash} draft={draft} taken={() => setDraft(null)} heading={() => heading.current} />
         </section>
-
-        <div className="cf-btns"><button onClick={onClose}>Close</button></div>
-      </div>
-    </div>
+    </>
   );
 }
 

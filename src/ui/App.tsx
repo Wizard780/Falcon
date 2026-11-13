@@ -40,8 +40,9 @@ import './theme'; // so does the saved theme (Settings and the command center, w
 import { aiService, formatCite, reformatCites, reformatCount, usePreset } from '../editor/ai-cite';
 import { Confirm, nameList, type Ask } from './Confirm';
 import { ComparePanel } from './ComparePanel';
-import { CollabPanel, SendCard, linkLine, useCollab } from './Collab';
-import { LivePanel, WAITS, WhoHere, useLiveSessions } from './Live';
+import { SendCard, linkLine, useCollab } from './Collab';
+import { WAITS, WhoHere, useLiveSessions } from './Live';
+import { SharingPanel, type ShareTab } from './Sharing';
 import * as collab from '../collab/service';
 import { copySlice } from '../editor/nav/clipboard';
 import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
@@ -364,15 +365,14 @@ export function App() {
   const [settingsQuery, setSettingsQuery] = useState<string | undefined>();
   // the open warning dialog, if any: everything else waits for it
   const [ask, setAsk] = useState<Ask | null>(null);
-  // Card sharing: the panel, and Send Card to… with the label of what it sends (its content waits in sendingRef)
-  const [collabOpen, setCollabOpen] = useState(false);
+  // Sharing (src/ui/Sharing.tsx), open on its Cards or Live tab; Send Card to… with the label of what it sends (its content waits in sendingRef)
+  const [shareTab, setShareTab] = useState<ShareTab | null>(null);
   const [sendLabel, setSendLabel] = useState<string | null>(null);
   const sendingRef = useRef<Fragment | null>(null);
   const collabRef = useRef(false);
-  // Live editing's panel (src/ui/Live.tsx); a session's doc closing ends it (liveClosed, set once the sessions hook is up)
-  const [liveOpen, setLiveOpen] = useState(false);
+  // a live session's doc closing ends it (liveClosed, set once the sessions hook is up)
   const liveClosed = useRef((_id: number) => {});
-  collabRef.current = collabOpen || sendLabel !== null || liveOpen;
+  collabRef.current = shareTab !== null || sendLabel !== null;
   const [compareWith, setCompareWith] = useState<string | null>(null); // Compare Text is open, Text 1 from this selection
   const [speechAsk, setSpeechAsk] = useState(false); // the New speech doc dialog is up
   const [newAsk, setNewAsk] = useState(false); // the + button's New Document dialog is up
@@ -816,7 +816,7 @@ export function App() {
   const startTour = useCallback(() => {
     if (tourDoc.current !== null || !viewRef.current) return;
     setPref(P.tourSeen, true);
-    setSettingsOpen(false); setCcOpen(false); setPaletteOpen(false); setCollabOpen(false); setLiveOpen(false);
+    setSettingsOpen(false); setCcOpen(false); setPaletteOpen(false); setShareTab(null);
     tourFrom.current = { id: activeRef.current, home: homeRef.current, sd: sdLitRef.current };
     const doc = sampleDoc();
     tourDoc.current = nextDocId; // before addDoc, so the new tab is never unsaved or backed up
@@ -1248,8 +1248,7 @@ export function App() {
     flash(`Sending to ${c.name}…`);
     flash((await collab.send(c, content)).message);
   }, [flash, closeSendCard]);
-  const closeCollab = useCallback(() => { setCollabOpen(false); viewRef.current?.focus(); }, []);
-  const closeLive = useCallback(() => { setLiveOpen(false); viewRef.current?.focus(); }, []);
+  const closeSharing = useCallback(() => { setShareTab(null); viewRef.current?.focus(); }, []);
   const live = useLiveSessions({
     active: () => { const d = docsRef.current.find((x) => x.id === activeRef.current); return d ? { id: d.id, name: d.meta.name || 'Untitled' } : null; },
     viewOf: liveView,
@@ -1259,7 +1258,7 @@ export function App() {
     openDoc: (doc, docName) => { showEditor(); addDoc(doc, { name: docName }); const id = activeRef.current; savedDocs.current.delete(id); patch(id, { dirty: true }); return id; },
     flash,
     confirm: confirmAsk,
-    openPanel: () => setLiveOpen(true),
+    openPanel: () => setShareTab('live'),
     busy: () => !!locked(),
   });
   liveClosed.current = live.closed;
@@ -1282,7 +1281,7 @@ export function App() {
   // a card or an invite while Falcon is behind other apps: the Dock or taskbar says so (the rail's Sharing count stays)
   useEffect(() => { const cue = () => bridge.attention?.(); const a = collab.onArrive(cue), b = collab.onInvited(cue); return () => { a(); b(); }; }, []);
   useEffect(() => collab.onArrive((c, who) => {
-    flash(`Card from ${collab.fromWho(who, c.claimed)}: “${c.label}”`, { label: 'Show', run: () => { if (locked()) flash(WAITS); else setCollabOpen(true); } });
+    flash(`Card from ${collab.fromWho(who, c.claimed)}: “${c.label}”`, { label: 'Show', run: () => { if (locked()) flash(WAITS); else setShareTab('cards'); } });
   }), [flash]); // eslint-disable-line react-hooks/exhaustive-deps
   // Nimbus and other debate apps send cards in over the bridge (electron/editor-bridge.cjs), the way they do
   // into CardMirror: they list the open docs, then insert into one (usually the speech doc) without taking focus
@@ -1415,8 +1414,8 @@ export function App() {
     else if (id === 'sendToSpeech') sendToSpeech();
     else if (id === 'sendCard') openSendCard();
     else if (id === 'sendStarred') void sendStarred();
-    else if (id === 'collab') setCollabOpen(true);
-    else if (id === 'live') setLiveOpen(true);
+    else if (id === 'collab') setShareTab('cards');
+    else if (id === 'live') setShareTab('live');
     else if (id === 'liveStart') void live.start();
     else if (id === 'liveStop') live.stop();
     else if (id === 'tutorial') startTour();
@@ -1447,7 +1446,7 @@ export function App() {
       // Compare Text is up: text editing keys and its own (Mod-Enter), nothing else
       // (inside the panel its text boxes keep every editing key: word jumps, AltGr characters)
       if (compareRef.current !== null) { if ((e.ctrlKey || e.metaKey) && !(e.target as Element | null)?.closest?.('.cmp') && !/^([acvxz]|Enter)$/i.test(e.key)) e.preventDefault(); return; }
-      // Card sharing's panel and Send Card to…: their own fields and keys, nothing else
+      // Sharing and Send Card to…: their own fields and keys, nothing else
       if (collabRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
       // so are New speech doc and New Document (their own Esc and Enter included)
       if (speechAskRef.current || newAskRef.current) { if ((e.ctrlKey || e.metaKey) && !/^[acvxz]$/i.test(e.key)) e.preventDefault(); return; }
@@ -1753,7 +1752,7 @@ export function App() {
         group={group} onJoin={join} onUnjoin={unjoin} flash={flash}
         sd={sdTabs.map((x) => ({ key: x.key, on: sdLit === x.key, name: x.info.room?.name ?? 'SpeechDrop', fresh: x.info.fresh }))} onSd={showSd} onSdClose={closeSd}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} cards={sharing.cards} invites={sharing.invites}
-        onSharing={() => { if (locked()) return; if (!sharing.cards && sharing.invites) setLiveOpen(true); else setCollabOpen(true); }} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
+        onSharing={() => { if (locked()) return; setShareTab(!sharing.cards && sharing.invites ? 'live' : 'cards'); }} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
       </div>
 
       <div className="covered" inert={homeOpen || sdOn || modal}>
@@ -1845,9 +1844,8 @@ export function App() {
         showOutline={showOutline} onShowOutline={setShowOutline} depth={depth} onDepth={setDepth}
         highlight={activeColors.highlight} onHighlight={(c) => { setActiveColor('highlight', c); setTick((t) => t + 1); }} onReplay={startTour} />
       </div>
-      <CollabPanel open={collabOpen} onClose={closeCollab} flash={flash} confirm={confirmAsk} onInsert={insertReceived} onCopy={copyReceived} />
-      <LivePanel open={liveOpen} onClose={closeLive} docName={name} />
-      <SendCard label={sendLabel} onClose={closeSendCard} onSend={(c) => void sendCardTo(c)} onManage={() => { closeSendCard(); setCollabOpen(true); }} />
+      <SharingPanel tab={shareTab} onTab={setShareTab} onClose={closeSharing} flash={flash} confirm={confirmAsk} onInsert={insertReceived} onCopy={copyReceived} docName={name} />
+      <SendCard label={sendLabel} onClose={closeSendCard} onSend={(c) => void sendCardTo(c)} onManage={() => { closeSendCard(); setShareTab('cards'); }} />
       <Confirm ask={ask} />
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
       <ComparePanel open={compareWith} onClose={closeCompare} readSelection={readSelection} />

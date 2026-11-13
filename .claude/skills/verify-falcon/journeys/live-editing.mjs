@@ -64,6 +64,10 @@ async function setRelay(f, url) {
   await f.page.keyboard.press('Escape');
   await wait(f, 300);
 }
+/** The Sharing dialog doesn't scroll sideways: nothing in it is wider than it is. */
+const flat = async (f) => { const [sw, cw] = await f.page.$eval('.cf.co', (d) => [d.scrollWidth, d.clientWidth]); return { ok: sw <= cw, why: `scrollWidth ${sw}, clientWidth ${cw}` }; };
+/** The Sharing dialog's lit tab. */
+const tabOn = (f) => f.page.textContent('.sh-sw [aria-selected="true"]').catch(() => '');
 /** Name, and this Falcon's pairing code (Card sharing panel). */
 async function identity(f, name) {
   await command(f, 'card sharing');
@@ -132,8 +136,10 @@ await wait(A, 200);
 want(await A.page.isVisible('.st-row:has-text("This document") button:has-text("Start live editing")'), 'Settings > Sharing has Live editing: This document, Start live editing');
 await A.shot('settings-sharing-before');
 await A.page.click('.st-row:has-text("This document") button:has-text("Start live editing")');
-want(await until(A, () => document.querySelector('.co-live .co-line')?.textContent?.startsWith('Live.')), `A: the Live editing panel opens and says it's live (${await A.page.textContent('.co-live .co-line').catch(() => '')})`);
+want(await until(A, () => document.querySelector('.co-live .lv-line')?.textContent?.startsWith('Live.')), `A: the Live editing panel opens and says it's live (${await A.page.textContent('.co-live .lv-line').catch(() => '')})`);
 want((await A.page.$$eval('.lv-who .nm', (x) => x.map((n) => n.textContent))).join() === 'You (Avery)', 'A: in the session: just you');
+want((await A.page.textContent('.cf.co h2')) === 'Sharing' && (await tabOn(A)) === 'Live', `A: it is the Sharing dialog, on its Live tab (${await tabOn(A)})`);
+{ const s = await flat(A); want(s.ok, `A: in a session, the Live tab has no sideways scrollbar (${s.why})`); }
 await A.shot('a-panel-started');
 
 // ---------- A invites B; B joins from the toast ----------
@@ -215,7 +221,7 @@ await B.page.keyboard.type('down-B ');
 want((await map(A)).includes('down-A') && !(await map(A)).includes('down-B'), 'relay down: A edits on its own');
 await command(A, 'live editing');
 await A.shot('a-relay-down');
-want(/^Can't reach the relay\. Your edits stay here/.test(await A.page.textContent('.co-live .co-line')), `relay down: the panel says edits stay here (${await A.page.textContent('.co-live .co-line')})`);
+want(/^Can't reach the relay\. Your edits stay here/.test(await A.page.textContent('.co-live .lv-line')), `relay down: the panel says edits stay here (${await A.page.textContent('.co-live .lv-line')})`);
 await A.page.keyboard.press('Escape');
 relay = await startRelay(path.join(REPO, 'relay'), port, persist);
 stoppers.push(() => relay.stop());
@@ -401,8 +407,8 @@ stoppers.push(() => oldRelay.stop());
 const F = await openFalcon('live-editing/old-relay'); extra.push(F);
 await setRelay(F, oldRelay.url);
 await command(F, 'start live editing');
-want(await until(F, () => /from before live editing/.test(document.querySelector('.co-live .co-line')?.textContent ?? '')), `old relay: the panel says to redeploy (${await F.page.textContent('.co-live .co-line').catch(() => '')})`);
-want((await F.page.textContent('.co-live .co-line')).includes('npx wrangler deploy'), 'and names npx wrangler deploy');
+want(await until(F, () => /from before live editing/.test(document.querySelector('.co-live .lv-line')?.textContent ?? '')), `old relay: the panel says to redeploy (${await F.page.textContent('.co-live .lv-line').catch(() => '')})`);
+want((await F.page.textContent('.co-live .lv-line')).includes('npx wrangler deploy'), 'and names npx wrangler deploy');
 await F.shot('old-relay');
 await F.page.keyboard.press('Escape');
 await F.page.click('.ProseMirror:not(.hm-doc)');

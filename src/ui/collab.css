@@ -1,6 +1,19 @@
 /* Card sharing: Falcon's dialog (.cf) with Home's quiet rows. Space separates the parts, not lines. */
 .cf.co { width: min(520px, calc(100vw - 48px)); max-height: min(86vh, 760px); overflow: auto; user-select: text; }
 .cf.co h2 { margin-bottom: 4px; }
+/* Sharing (Sharing.tsx): pinned near the top, so a switch to a taller or shorter tab doesn't move the switch */
+.cf.co-sh { align-self: start; margin-top: max(24px, min(10vh, 96px)); }
+/* the Cards | Live switch: a glass pill, its highlight sliding to the lit tab */
+.sh-sw { position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; margin: 6px 0 12px; padding: 3px; border-radius: 999px;
+  background: var(--u-deep); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4); box-shadow: var(--u-top); }
+.sh-sw i { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px; background: var(--u-ctl-on); box-shadow: var(--u-top);
+  transition: transform 220ms var(--u-ease); }
+.sh-sw[data-tab="live"] i { transform: translateX(100%); }
+.cf.co .sh-sw button { position: relative; z-index: 1; display: block; height: 28px; padding: 0 16px; border-radius: 999px; background: transparent; box-shadow: none;
+  color: var(--u-mut); font-weight: 400; transition: color 150ms ease-out; }
+.cf.co .sh-sw button:hover:not(:disabled), .cf.co .sh-sw button[aria-selected="true"] { background: transparent; color: var(--u-tx); }
+.cf.co .sh-sw button:focus-visible { outline-offset: 1px; }
+.lv-now { margin-top: 18px; }
 .co-line { margin: 0 0 6px !important; }
 .co-sec { margin-top: 22px; }
 .co-sec h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; line-height: 18px; color: var(--u-tx); }
@@ -136,7 +149,7 @@
 .rcp-add .co-in:first-child { flex: 2; }
 
 @media (prefers-reduced-motion: reduce) { .rcp button.rcp-i, .rcp button.rcp-btn { transition: none; } }
-@media (prefers-reduced-motion: reduce) { .cf.co button { transition: none; } .co-fold { transition: opacity 200ms ease-out, grid-template-rows 0s 200ms; } .co-spin { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .cf.co button, .sh-sw i { transition: none; } .co-fold { transition: opacity 200ms ease-out, grid-template-rows 0s 200ms; } .co-spin { animation: none; } }
 
 /* Settings' relay setup guide: one step at a time, with lines to copy into a terminal */
 .cf.co.rg { width: min(460px, calc(100vw - 48px)); }

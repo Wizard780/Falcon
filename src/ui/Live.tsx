@@ -229,19 +229,6 @@ export function useLiveSessions(h: LiveHost) {
 /** Said when a toast's button can't act yet. */
 export const WAITS = "Close what's open first. It waits on the rail's Sharing button.";
 
-/** Esc closes, wherever focus is. */
-function useEsc(open: boolean, close: () => void) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || document.querySelector('.cf[role="alertdialog"]')) return;
-      e.preventDefault(); e.stopPropagation(); close();
-    };
-    addEventListener('keydown', onKey, true);
-    return () => removeEventListener('keydown', onKey, true);
-  }, [open, close]);
-}
-
 const when = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 /** Invites that came in: Join (again, for one you left) or Dismiss. */
@@ -267,23 +254,21 @@ function Invites() {
   );
 }
 
-/** Live editing: this doc's session (start, who's in it, invite, leave) and invites that came in. */
-export function LivePanel(props: { open: boolean; onClose: () => void; docName: string }) {
+/** The Sharing dialog's Live tab (Sharing.tsx draws the dialog): this doc's session (start, who's in it, invite,
+ *  leave) and invites that came in. `focus`: opened onto this tab, so its first button takes focus. */
+export function LivePane(props: { focus: boolean; docName: string }) {
   const i = useLive(), c = useCollab();
-  const { open, onClose } = props;
   const [, tick] = useState(0);
-  const first = useRef<HTMLButtonElement>(null);
-  useEsc(open, onClose);
-  useLayoutEffect(() => { if (open) (first.current ?? document.querySelector<HTMLElement>('.co-live button'))?.focus(); }, [open]);
-  useEffect(() => { if (!open) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [open]); // the retry countdown
-  if (!open) return null;
+  const first = useRef<HTMLButtonElement>(null), box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { if (props.focus) (first.current ?? box.current?.querySelector('button'))?.focus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, []); // the retry countdown
   const relay = collab.relayUrl();
   const on = !!i;
   return (
-    <div className="cf-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="cf co co-live" role="dialog" aria-modal="true" aria-labelledby="lv-t">
-        <h2 id="lv-t" tabIndex={-1}>Live editing</h2>
-        <p className="co-line" role="status">{liveLine(i, relay)}</p>
+    <div ref={box}>
+        <section className="co-sec lv-now">
+          <p className="co-line lv-line" role="status">{liveLine(i, relay)}</p>
+        </section>
 
         <section className="co-sec" aria-label="This document">
           {!on ? (
@@ -322,9 +307,6 @@ export function LivePanel(props: { open: boolean; onClose: () => void; docName: 
           <h3>Invites to you</h3>
           <Invites />
         </section>
-
-        <div className="cf-btns"><button onClick={onClose}>Close</button></div>
-      </div>
     </div>
   );
 }

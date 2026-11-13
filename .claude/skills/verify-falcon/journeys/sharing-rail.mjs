@@ -64,6 +64,10 @@ const toastOnTop = (f) => f.page.evaluate(() => {
   const r = t.getBoundingClientRect(), top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
   return { text: t.textContent, onTop: !!top && t.contains(top) };
 });
+/** The Sharing dialog doesn't scroll sideways: nothing in it is wider than it is. */
+const flat = async (f) => { const [sw, cw] = await f.page.$eval('.cf.co', (d) => [d.scrollWidth, d.clientWidth]); return { ok: sw <= cw, why: `scrollWidth ${sw}, clientWidth ${cw}` }; };
+/** The Sharing dialog's lit tab. */
+const tabOn = (f) => f.page.textContent('.sh-sw [aria-selected="true"]').catch(() => '');
 const rail = (f) => f.page.$$eval('.fstrip > .fs-b', (bs) => bs.map((b) => b.getAttribute('aria-label')));
 /** A crop of the rail's lower end, where Sharing sits. */
 const railShot = async (f, name) => {
@@ -106,6 +110,18 @@ try {
   await B.page.click('.toast button:has-text("Join")');
   want(await until(B, () => document.querySelector('.toast.show')?.textContent?.startsWith("Close what's open first")), `B: Join over an open dialog says to close it first (${(await toastOnTop(B)).text})`);
   want(await B.page.isVisible('.cf.co') && !(await B.page.$('.who')), 'B: Card sharing is still up, and nothing was joined under it');
+  // Live is one click away in the same dialog: the switch under the title
+  want((await tabOn(B)) === 'Cards', `B: the dialog is on Cards (${await tabOn(B)})`);
+  await B.page.click('.sh-sw [role="tab"]:has-text("Live")');
+  await wait(B, 300);
+  want((await tabOn(B)) === 'Live' && await B.page.isVisible('.cf.co-live section[aria-label="Invites"]'), `B: Live on the switch shows live editing in the same dialog (${await tabOn(B)})`);
+  want((await B.page.textContent('.co-live section[aria-label="Invites"] .lv-inv')).includes("From a code not in your recipients, who says they're Avery"), 'B: the invite is listed on Live');
+  want(await B.page.evaluate(() => document.activeElement?.getAttribute('role') === 'tab'), 'B: focus stays on the switch');
+  { const s = await flat(B); want(s.ok, `B: the Live tab has no sideways scrollbar (${s.why})`); }
+  await B.shot('sharing-live-tab');
+  await B.page.keyboard.press('ArrowLeft');
+  await wait(B, 300);
+  want((await tabOn(B)) === 'Cards' && await B.page.isVisible('.co-code'), `B: Left arrow on the switch goes back to Cards (${await tabOn(B)})`);
   await B.page.keyboard.press('Escape');
   await wait(B, 7000); // the toast is gone; the count stays
   want(!(await B.page.$('.toast.show')), `B: the toast has gone by now (${await B.page.textContent('.toast').catch(() => '')})`);
@@ -115,7 +131,7 @@ try {
 
   // only an invite waits: Sharing opens Live editing; Join there clears the count
   await B.page.click('.fstrip [aria-label="Sharing, 1 invite waiting"]');
-  want(await B.page.isVisible('.cf.co-live'), 'B: Sharing opens Live editing when only invites wait');
+  want(await B.page.isVisible('.cf.co-live') && (await tabOn(B)) === 'Live', `B: Sharing opens on Live when only invites wait (${await tabOn(B)})`);
   want((await B.page.textContent('.co-live section[aria-label="Invites"] .lv-inv')).includes("From a code not in your recipients, who says they're Avery"), 'B: the invite is listed there');
   await B.shot('live-panel-invite');
   await B.page.click('.co-live section[aria-label="Invites"] button:has-text("Join")');
@@ -144,6 +160,7 @@ try {
   await A.page.keyboard.press('Escape');
   want(await until(B, () => !!document.querySelector('.fstrip [aria-label="Sharing, 1 invite waiting"]')), 'B: a new invite counts again');
   await command(B, 'live editing');
+  want((await tabOn(B)) === 'Live', `B: the command center's Live editing opens Sharing on Live (${await tabOn(B)})`);
   const row = B.page.locator('.co-live .lv-inv', { hasText: 'Join' }).first();
   await row.locator('button:has-text("Dismiss")').click();
   want(await until(B, () => !document.querySelector('.fstrip .share-n')), 'B: Dismiss clears the count');
@@ -156,7 +173,7 @@ try {
   await A.page.keyboard.press('Enter');
   want(await until(B, () => !!document.querySelector('.fstrip [aria-label="Sharing, 1 card waiting"] .share-n')), 'B: a card waiting counts on Sharing');
   await B.page.click('.fstrip [aria-label="Sharing, 1 card waiting"]');
-  want(await B.page.isVisible('.cf.co:not(.co-live)'), 'B: with a card waiting, Sharing opens Card sharing');
+  want(await B.page.isVisible('.cf.co:not(.co-live)') && (await tabOn(B)) === 'Cards', `B: with a card waiting, Sharing opens on Cards (${await tabOn(B)})`);
   await B.page.keyboard.press('Escape');
   await wait(B, 300);
   await railShot(B, '03-rail-card-waiting-dark');
