@@ -2125,9 +2125,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
       <div className="grow" />
       <SharingButton cards={props.cards} invites={props.invites} onClick={props.onSharing} />
       {props.update ? <UpdateButton u={props.update} onInstall={props.onUpdate} />
-        : props.onCheck && <button className="fs-b chk" title={props.checking ? 'Checking for updates' : 'Check for updates'} aria-label="Check for updates"
-            aria-busy={props.checking || undefined} data-busy={props.checking || undefined} onClick={() => { if (!props.checking) props.onCheck!(); }}>
-            <SvgIcon name="refresh" /><span className="lbl">{props.checking ? 'Checking' : 'Check for updates'}</span></button>}
+        : props.onCheck && <CheckButton checking={!!props.checking} onCheck={props.onCheck} />}
       <button className="fs-b gear-b" title={titled('Settings', 'settings', 'highlight color, speech time, keys and more')} aria-label="Settings" data-on={props.settings || undefined} onClick={props.onSettings}><SvgIcon name="gear" /><span className="lbl">Settings</span></button>
       {resizable && <div className="rail-grip" role="separator" aria-orientation="vertical" aria-label="Rail width" tabIndex={0}
         aria-valuemin={RAIL_MIN} aria-valuemax={RAIL_MAX} aria-valuenow={width}
@@ -2143,16 +2141,31 @@ export function waitingWords(cards: number, invites: number): string {
   return [cards && n(cards, 'card'), invites && n(invites, 'invite')].filter(Boolean).join(' and ');
 }
 /** Sharing, always on the rail above the update button: a count while cards or invites to you wait, until they're dealt with.
- *  Opens Card sharing, or Live editing when only invites wait. */
+ *  Opens Sharing on Cards, or on Live when only invites wait. */
 function SharingButton({ cards, invites, onClick }: { cards: number; invites: number; onClick: () => void }) {
   const n = cards + invites, what = waitingWords(cards, invites);
+  // a click launches the plane (collab.css: share-fly); a click mid-flight starts it over on a fresh svg (its key)
+  const [fly, setFly] = useState({ n: 0, on: false });
   const title = !n ? 'Sharing: send cards to recipients and edit live with them'
     : `${what} waiting for you. Show ${cards ? 'card sharing' : 'live editing'}`;
   return (
-    <button className="fs-b share-b" title={title} aria-label={n ? `Sharing, ${what} waiting` : 'Sharing'} data-waiting={n || undefined} onClick={onClick}>
-      <SvgIcon name="send" /><span className="lbl">{n ? `${what[0].toUpperCase()}${what.slice(1)} waiting` : 'Sharing'}</span>
+    <button className="fs-b share-b" title={title} aria-label={n ? `Sharing, ${what} waiting` : 'Sharing'} data-waiting={n || undefined} data-fly={fly.on || undefined}
+      onClick={() => { setFly((f) => ({ n: f.n + 1, on: true })); onClick(); }} onAnimationEnd={() => setFly((f) => ({ ...f, on: false }))}>
+      <SvgIcon key={fly.n} name="send" /><span className="lbl">{n ? `${what[0].toUpperCase()}${what.slice(1)} waiting` : 'Sharing'}</span>
       {n > 0 && <i className="share-n" aria-hidden="true">{n > 99 ? '99+' : n}</i>}
     </button>
+  );
+}
+
+/** Check for updates: the arrows turn once on hover, and keep turning while it looks (styles.css: .chk). */
+function CheckButton({ checking, onCheck }: { checking: boolean; onCheck: () => void }) {
+  const [turn, setTurn] = useState(false);
+  useEffect(() => { if (checking) setTurn(false); }, [checking]); // the spin takes over, and no turn is left to replay after it
+  return (
+    <button className="fs-b chk" title={checking ? 'Checking for updates' : 'Check for updates'} aria-label="Check for updates"
+      aria-busy={checking || undefined} data-busy={checking || undefined} data-turn={(turn && !checking) || undefined}
+      onMouseEnter={() => { if (!checking) setTurn(true); }} onAnimationEnd={() => setTurn(false)} onClick={() => { if (!checking) onCheck(); }}>
+      <SvgIcon name="refresh" /><span className="lbl">{checking ? 'Checking' : 'Check for updates'}</span></button>
   );
 }
 
