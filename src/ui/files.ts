@@ -16,10 +16,22 @@ export async function openDocument(): Promise<{ doc: PMNode; meta: DocMeta } | n
   return { doc, meta: { name: file.name.replace(/\.docx$/i, ''), path: file.path } };
 }
 
+/**
+ * A failed file call's reason, for a toast: the desktop app's own words without Electron's "Error invoking remote
+ * method" wrapper, and a missing or locked file said plainly instead of as ENOENT and a full path.
+ */
+export function fileError(e: unknown, writing = false): Error {
+  const m = String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '');
+  if (/\bENOENT\b/.test(m)) return new Error(writing ? "its folder isn't there anymore" : "it isn't there anymore (moved, renamed or deleted)");
+  if (/\b(EACCES|EPERM|EROFS)\b/.test(m)) return new Error(writing ? "Falcon isn't allowed to write there" : "Falcon isn't allowed to read it");
+  if (/\bEBUSY\b/.test(m)) return new Error('another program has it open and locked');
+  return new Error(m);
+}
+
 /** Reopen a recent file by path (desktop only; the main process only allows files picked before). */
 export async function openPath(path: string): Promise<{ doc: PMNode; meta: DocMeta }> {
   if (!bridge.openPath) throw new Error('Use Open to pick this file');
-  const file = await bridge.openPath(path);
+  const file = await bridge.openPath(path).catch((e: unknown) => { throw fileError(e); });
   const doc = await (await import('../docx/import')).docxToDoc(file.data);
   trimSoon(); // the import's leftovers: the zip, the XML text, the parse
   return { doc, meta: { name: file.name.replace(/\.docx$/i, ''), path: file.path } };
@@ -62,9 +74,7 @@ export async function saveDocument(doc: PMNode, meta: DocMeta, saveAs: boolean):
   const untitled = !meta.path && (meta.name || 'Untitled') === 'Untitled';
   const name = `${untitled ? newFileName() : meta.name}.docx`;
   if (bridge.saveFile) {
-    // the desktop app's own reason, without Electron's "Error invoking remote method" wrapper
-    const r = await bridge.saveFile({ path: saveAs ? undefined : meta.path, name, data })
-      .catch((e: Error) => { throw new Error(String(e?.message ?? e).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '')); });
+    const r = await bridge.saveFile({ path: saveAs ? undefined : meta.path, name, data }).catch((e: unknown) => { throw fileError(e, true); });
     return r ? { name: r.name.replace(/\.docx$/i, ''), path: r.path } : null;
   }
   const blob = new Blob([data as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
