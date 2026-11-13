@@ -198,6 +198,35 @@ describe('card edges', () => {
   });
 });
 
+describe('F12 clears to normal, like CardMirror', () => {
+  it('a tag, analytic or heading with the cursor in it goes back to a normal line, highlight kept', () => {
+    for (const style of ['tag', 'analytic', 'undertag', 'pocket'] as ParaStyle[]) {
+      let s = make([[style, 'Warming is real']]);
+      s = run(select(s, 'Warming is real'), K.F11);
+      s = run(caret(s, 'real'), K.F12);
+      expect(map(s)).toBe('normal: [Warming is real]{highlight:yellow}');
+    }
+  });
+  it('lines a selection covers whole go normal; a line it only touches keeps its style', () => {
+    const s = make([['tag', 'Tag one'], ['analytic', 'An analytic'], ['tag', 'Tag two']]);
+    expect(map(run(select(s, 'Tag one', 'Tag two'), K.F12))).toBe('normal: Tag one\nnormal: An analytic\nnormal: Tag two');
+    expect(map(run(select(s, 'one', 'An'), K.F12))).toBe('tag: Tag one\nanalytic: An analytic\ntag: Tag two');
+  });
+});
+
+describe('F9 and F10 with the cursor next to punctuation', () => {
+  it('take the word the punctuation hangs on, instead of doing nothing', () => {
+    expect(map(run(caret(make([['normal', 'it grows growth.']]), 'growth.', 7), K.F9))).toBe('normal: it grows [growth.]{underline}');
+    expect(map(run(caret(make([['normal', 'see (aside)']]), '(aside)', 7), K.F10))).toBe('normal: see [(aside)]{emphasis}');
+    expect(map(run(caret(make([['normal', 'a. b']]), 'a.', 2), K.F9))).toBe('normal: [a.]{underline} b');
+  });
+  it('still do nothing between spaces, or on a line of only punctuation', () => {
+    const s = make([['normal', 'one  two'], ['normal', '...']]);
+    expect(K.F9(caret(s, 'one ', 4))).toBe(false);
+    expect(K.F9(caret(s, '...', 3))).toBe(false);
+  });
+});
+
 describe('structure keys', () => {
   it('F6 in a body line converts it to a block', () => {
     expect(map(run(caret(card(), 'rapid'), K.F6)).split('\n')[2]).toBe(`block: ${BODY}`);

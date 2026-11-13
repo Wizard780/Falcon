@@ -26,12 +26,27 @@ export function wordAt(state: EditorState, pos: number): Range | null {
   return { from: start + a, to: start + b };
 }
 
+/**
+ * With the cursor on punctuation next to a word (right after "growth." at the end of a line), the stretch
+ * of non-space text around it, so F9 or F10 there still takes the word instead of doing nothing.
+ */
+function tokenAt(state: EditorState, pos: number): Range | null {
+  const $pos = state.doc.resolve(pos);
+  if (!$pos.parent.isTextblock) return null;
+  const text = $pos.parent.textBetween(0, $pos.parent.content.size, '￼', '￼');
+  let a = $pos.parentOffset, b = a;
+  while (a > 0 && !/\s/.test(text[a - 1])) a--;
+  while (b < text.length && !/\s/.test(text[b])) b++;
+  if (a === b || !WORD.test(text.slice(a, b).replace(/[^\p{L}\p{N}]/gu, '') || ' ')) return null;
+  return { from: $pos.start() + a, to: $pos.start() + b };
+}
+
 /** The ranges a formatting command acts on: the selection, else (optionally) the word at the cursor. */
 function targetRanges(state: EditorState, fallback: 'word' | 'none'): Range[] {
   const { selection } = state;
   if (!selection.empty) return selection.ranges.map((r) => ({ from: r.$from.pos, to: r.$to.pos }));
   if (fallback === 'word') {
-    const w = wordAt(state, selection.from);
+    const w = wordAt(state, selection.from) ?? tokenAt(state, selection.from);
     return w ? [w] : [];
   }
   return [];
@@ -210,7 +225,11 @@ export const NO_BRIDGE = 'falcon-no-bridge';
 
 const CLEAR_KEEPS = new Set(['highlight', 'shading']);
 
-/** F12: strip direct formatting, keep highlighting. With nothing selected, clears the current paragraph. Never bridges gaps, as in CardMirror. */
+/**
+ * F12, CardMirror's Clear to Normal: strip direct formatting, keep highlighting. A line the cursor is in, or one
+ * the selection covers whole, also goes back to a normal line, so a tag, analytic or heading clears too. Part of
+ * a line only loses its formatting. Never bridges gaps, as in CardMirror.
+ */
 export const clearFormatting: Command = (state, dispatch) => {
   let ranges = targetRanges(state, 'none');
   if (!ranges.length) {
@@ -220,6 +239,12 @@ export const clearFormatting: Command = (state, dispatch) => {
   const tr = state.tr;
   for (const r of ranges) {
     for (const name of Object.keys(schema.marks)) if (!CLEAR_KEEPS.has(name)) tr.removeMark(r.from, r.to, schema.marks[name]);
+    state.doc.nodesBetween(r.from, r.to, (node, pos) => {
+      if (!node.isTextblock) return true;
+      const whole = r.from <= pos + 1 && r.to >= pos + 1 + node.content.size;
+      if (whole && (node.attrs.style !== 'normal' || node.attrs.indent)) tr.setNodeMarkup(pos, undefined, { ...node.attrs, style: 'normal', indent: 0 });
+      return false;
+    });
   }
   if (state.selection.empty) tr.setStoredMarks([]);
   return finish(state, tr.setMeta(NO_BRIDGE, true), dispatch);
