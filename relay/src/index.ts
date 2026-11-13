@@ -396,8 +396,15 @@ export class Room extends DurableObject<Env> {
 
   async webSocketClose(ws: WebSocket, code: number) {
     const seat = this.seat(ws);
-    // a typing burst ends long before a batch fills: what's left goes when the socket does
-    if (seat?.n) { this.meter(seat.n); try { ws.serializeAttachment({ ...seat, n: 0 } satisfies Seat); } catch { /* closed */ } }
+    // a typing burst ends long before a batch fills: what's left goes when the socket does. While someone else is still
+    // in the room it rides with them, so a socket that keeps reconnecting doesn't cost a Meter call each time
+    if (seat?.n) {
+      const heir = this.ctx.getWebSockets().find((w) => w !== ws && this.seat(w));
+      try { ws.serializeAttachment({ ...seat, n: 0 } satisfies Seat); } catch { /* closed */ }
+      let kept = false;
+      if (heir) try { const h = this.seat(heir)!; heir.serializeAttachment({ ...h, n: (h.n ?? 0) + seat.n } satisfies Seat); kept = true; } catch { /* closing too */ }
+      if (!kept && seat.n >= 20) this.meter(seat.n); // under one billed request (20 messages), telling the Meter costs more than it counts
+    }
     if (seat?.joined) for (const w of this.others(ws)) this.send(w, JSON.stringify({ t: 'left', slot: seat.slot }));
     try { ws.close(code === 1005 ? 1000 : code); } catch { /* already closed */ }
   }

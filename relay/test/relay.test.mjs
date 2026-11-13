@@ -434,16 +434,17 @@ describe('usage', () => {
     const room = `${ROOM}6`;
     const u0 = (await usage(metered.url)).body; // the last test's answer, kept
     const a = await seat(metered.url, room), b = await seat(metered.url, room);
-    for (let i = 0; i < 5; i++) a.frame(1, `before ${i}`);
-    await b.until(() => b.got.frames.length === 5);
-    await wait(20_000); // idle: the room hibernates and is evicted (wrangler dev does it after about 10 s)
-    for (let i = 0; i < 5; i++) a.frame(1, `after ${i}`);
+    for (let i = 0; i < 10; i++) a.frame(1, `before ${i}`);
     await b.until(() => b.got.frames.length === 10);
+    await wait(20_000); // idle: the room hibernates and is evicted (wrangler dev does it after about 10 s)
+    for (let i = 0; i < 10; i++) a.frame(1, `after ${i}`);
+    await b.until(() => b.got.frames.length === 20);
     a.ws.close(); b.ws.close();
     await wait(1000);
     const u1 = (await usage(metered.url)).body;
-    // the kept GET, two connects and this GET; their rooms, a flush per closed socket and this GET's; 2 joins and 10 frames
-    assert.deepEqual(delta(u0, u1), { requests: 4, objects: 5, rows: 3, msgs: 12 });
+    // the kept GET, two connects and this GET; their rooms, one flush and this GET's: the first to leave hands its count to
+    // the one still there, and only the last tells the Meter; 2 joins and 20 frames
+    assert.deepEqual(delta(u0, u1), { requests: 4, objects: 4, rows: 2, msgs: 22 });
   });
 
   test('a busy room hands over a batch every 400 messages, without waiting for a close', async () => {

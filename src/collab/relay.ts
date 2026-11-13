@@ -207,7 +207,8 @@ export function percentLeft(r: UsageReading, now = Date.now()): number | null {
   if (r.day !== utcDay(now)) return null;
   const used = { requests: r.requests, objects: r.objects + r.msgs / MSGS_PER_REQUEST, rows: r.rows };
   const left = Math.min(...(Object.keys(FREE_DAY) as (keyof typeof FREE_DAY)[]).map((k) => ((FREE_DAY[k] - used[k]) * 100) / FREE_DAY[k]));
-  return Math.max(0, Math.min(100, Math.floor(left)));
+  if (left <= 0) return 0;
+  return Math.max(1, Math.min(100, Math.floor(left))); // under 1% is still something left: 0 means spent, and shows as paused
 }
 
 export type UsageView =
