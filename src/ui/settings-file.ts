@@ -204,7 +204,8 @@ const CM_MAP: [string, string, (get: Get) => string | undefined][] = [
   ['outline.searchLevel', 'navSearchLevel', (g) => (g('navSearchLevel') === 0 ? 'all' : oneOf(String(g('navSearchLevel')), ['1', '2', '3', '4']))],
   ['highlight', 'lastHighlightColor', (g) => oneOf(g('lastHighlightColor'), Object.keys(HIGHLIGHTS))],
   ['autoBridge', 'autoBridgeFormattingGaps', (g) => bool(g('autoBridgeFormattingGaps'))],
-  ['bridgeGaps', 'formattingGapClass', (g) => oneOf(g('formattingGapClass'), ['both', 'space'])],
+  // CardMirror calls spaces-only 'whitespace'
+  ['bridgeGaps', 'formattingGapClass', (g) => (g('formattingGapClass') === 'whitespace' ? 'space' : oneOf(g('formattingGapClass'), ['both', 'space']))],
   ['extractUndertag.quotes', 'extractUndertagInQuotes', (g) => bool(g('extractUndertagInQuotes'))],
   ['standardizeHighlightException', 'standardizeHighlightException', (g) => oneOf(g('standardizeHighlightException'), Object.keys(HIGHLIGHTS))],
   ['standardizeShadingException', 'standardizeShadingException', (g) => oneOf(hex(g('standardizeShadingException')), ['#FFFF00', '#00FF00', '#00FFFF', ...SHADES.map(([c]) => c)])],
