@@ -1,6 +1,6 @@
 # Live editing
 
-Two or more people edit the same doc at once and see each other's edits and carets as they type. Whoever starts a session (Settings > Sharing, the command center, or the Live editing panel) makes a room on their own relay. Each contact they invite gets the room's id, key and relay sealed in a card envelope through the contact's own relay; the invite arrives as a toast with Join, counts on the rail's Sharing button until it's joined or dismissed, and stays listed in the panel. Joining opens the doc in a new tab once a peer in the room has sent it. Leaving keeps the doc as it is, with normal undo again. The relay only passes sealed frames along and stores nothing; the doc lives with the people in the room.
+Two or more people edit the same doc at once and see each other's edits and carets as they type. Whoever starts a session (Settings > Sharing, the command center, or the Live editing panel: the Sharing dialog's Live tab) makes a room on their own relay. Each contact they invite gets the room's id, key and relay sealed in a card envelope through the contact's own relay; the invite arrives as a toast with Join, counts on the rail's Sharing button until it's joined or dismissed, and stays listed in the panel. Joining opens the doc in a new tab once a peer in the room has sent it. Leaving keeps the doc as it is, with normal undo again. The relay only passes sealed frames along and stores nothing; the doc lives with the people in the room.
 
 ## Sub-features
 
@@ -36,7 +36,7 @@ Preconditions:
 - Each person needs a relay set, a name, and the others as recipients (Card sharing or Settings > Sharing).
 
 - **Journey.** `$V run .claude/skills/verify-falcon/journeys/live-editing.mjs` exits 0 with 50 `ok` lines in about 4 minutes. A and C are on relay 1 (the room's), B on relay 2: the invite crosses relays.
-- **Start.** Settings > Sharing: `.st-row:has-text("This document") button:has-text("Start live editing")`. The panel is `.cf.co.co-live`; its status is `.co-live .co-line`; who's in it, `.lv-who .nm`.
+- **Start.** Settings > Sharing: `.st-row:has-text("This document") button:has-text("Start live editing")`. The panel is the Sharing dialog (`src/ui/Sharing.tsx`) on its Live tab: `.cf.co.co-live`, the lit tab `.sh-sw [aria-selected="true"]` reads `Live`. Its live status is `.co-live .lv-line` (`.co-line` above the switch is the relay's line, on both tabs); who's in it, `.lv-who .nm`. No sideways scroll: `.cf.co` scrollWidth <= clientWidth.
 - **Invite.** `.co-live section[aria-label="Invite"] .co-ct:has-text("<name>") button`.
 - **Join.** `.toast button:has-text("Join")`, or `.co-live section[aria-label="Invites"] button:has-text("Join")`.
 - **Who's here.** `.who` reads `Just you`, `N here`, `Reconnecting…`, `Paused`; its `aria-label` is `Live editing with <names>` (the shared tooltip moves `title` away on hover, so read the label). The popover is `.lv-pop`, rows `.lv-pop .pr` (match a row by its name, `.pr:has(b:text-is("Blake"))`: the line under a name can hold another name).

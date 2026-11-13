@@ -61,7 +61,8 @@ Set up a relay by hand before live editing came out? In the desktop app, run Set
 updates it in place. By hand, download it again (the old folder deleted first, then
 `npx --yes degit Wizard780/Falcon/relay falcon-relay`, `npm ci`) and run `npx wrangler deploy`. Running
 it in the old folder puts the same old relay back. The address stays the same, and card sharing keeps
-working. Falcon tells a relay without rooms apart (`GET /v1/rooms` answers 404) and says to do this.
+working. Falcon tells a relay without rooms apart (`GET /v1/rooms` answers 404) and says to do this. The same
+update gives an older relay its usage count (`GET /v1/usage` answers 404 until then).
 
 The migrations in `wrangler.jsonc` use `new_sqlite_classes`, the Durable Object storage the Free plan
 allows. Keep it that way. The app's copy reads them from there, so a new migration only needs adding
@@ -76,12 +77,50 @@ paused until then (shown in the user's local time). Nothing is charged.
 | --- | --- | --- |
 | Worker requests | 100,000 | each card sent, and each socket connect |
 | Durable Object requests | 100,000 | the same, plus incoming socket messages at 20 to 1 |
-| Rows written | 100,000 | each card sent (one row, plus one alarm when the inbox had none), each card acked (one delete) |
+| Rows written | 100,000 | each card sent (one row and its index, plus one alarm when the inbox had none), each card acked or expired (one delete and its index), and the usage count (one row each time it is handed over) |
 | Rows read | 5,000,000 | queue checks and deliveries |
 | Storage | 5 GB total | envelopes waiting (at most 50 cards or 10 MB per inbox, 3 hours) |
 
 Falcon never polls. It keeps one socket per app launch, idle sockets hibernate (no duration charged),
 and it reconnects with backoff capped at 5 minutes.
+
+### What's left today
+
+Cloudflare gives a Worker no way to read its account's remaining free allowance, so the relay counts its own
+day, and Falcon shows what's left as a bar (Sharing, and Settings > Sharing). `GET /v1/usage` answers the raw
+tallies for the current UTC day:
+
+```json
+{ "usage": 1, "day": "2026-11-13", "requests": 1234, "objects": 1180, "rows": 3020, "msgs": 9400 }
+```
+
+`requests` are Worker requests, `objects` Durable Object requests (not counting socket messages), `rows` rows
+written, and `msgs` incoming socket messages, which Cloudflare bills as Durable Object requests 20 to 1. The
+limits and the maths are the app's (`src/collab/relay.ts`, `percentLeft`), so a change there needs an app
+update, not every relay redeployed. A relay from before this answers 404, and Falcon says to update it.
+
+How it counts, roughly:
+
+- The Worker counts every request it runs for, and a Durable Object request for each one that reaches an inbox
+  or a room. A card stored counts 5 rows over its life (its insert and its delete are two each, the row and its
+  primary-key index, and at most one alarm), one more Durable Object request (that alarm running) and one incoming
+  message (its ack); an inbox connect counts three (hello, proof, an ack). The Worker keeps this in memory and hands it
+  to the Meter, one SQLite Durable Object with one row for the day, in one call once it reaches 25 Durable Object
+  requests or 100 Worker requests, and whenever `/v1/usage` is answered.
+- A room counts each incoming message in the socket's attachment, so the count outlasts hibernation. It hands
+  them over every 400 messages and the rest when the socket closes.
+- Each hand-over is one Durable Object request and one row written, and is counted too: about 4% on cards and
+  5% on live editing. A new UTC day replaces the row. Rows read (5,000,000 a day) aren't counted: a relay runs
+  out of the others long before.
+- `/v1/usage` needs no key, so the Worker keeps its answer for 30 seconds, unless it counted something since
+  (then the answer would be out of date, and the hand-over it makes was due anyway). A room's hand-over goes to the
+  Meter directly, so the answer can trail a live session by up to that long.
+- Counting never costs a send: every hand-over runs after the answer and is let go if it fails, including when
+  the Meter itself is over the day's limit (then `/v1/usage` answers 429 `daily_limit`).
+
+It only sees this relay. Other Workers on the same Cloudflare account share the same free allowance and aren't
+counted, and a Worker isolate that is evicted loses what it hadn't handed over yet (under 25 Durable Object requests
+and 100 Worker requests). So the bar is a close lower bound on what's used, not Cloudflare's own number.
 
 ### What a stranger can do
 
@@ -105,7 +144,8 @@ npm test           # the Worker under wrangler dev, driven by Falcon's own clien
 npm run typecheck
 ```
 
-`EXPIRY_MS` (a Worker var) changes the 3-hour expiry. Only the tests set it.
+`EXPIRY_MS` (a Worker var) changes the 3-hour expiry. `METER_TEST` set to `on` lets a `PUT /v1/usage` set
+the day's row as given, and `over` makes the Meter fail as if over the day's limit. Only the tests set them.
 
 When a free-plan daily cap runs out, Cloudflare fails the Durable Object call with an error. Its
 text isn't documented; it is reported as `Exceeded allowed rows written in Durable Objects free tier`

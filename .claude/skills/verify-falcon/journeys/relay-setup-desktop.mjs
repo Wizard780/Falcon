@@ -118,7 +118,7 @@ await win.waitForFunction(() => /still trying/.test(document.querySelector('.rg-
 want(JSON.stringify(await rows()) === JSON.stringify(['done Getting the token', 'done Finding your Cloudflare account', 'done Uploading the relay', 'done Turning on its address', 'now Checking it works']), `the relay is up and Falcon waits for its address (${await rows()})`);
 want(/^A new address can take a few minutes to come online\. Falcon is still trying/.test(await note()), `it says a new address takes a few minutes (${await note()})`);
 const relay = cf.state.scripts.get('falcon-relay');
-want(relay?.tag === 'v2' && [...(relay?.classes ?? [])].join() === 'Inbox,Room' && relay?.workersDev === true, `the relay went up with both migrations and its workers.dev address on (${relay?.tag}, ${[...(relay?.classes ?? [])]})`);
+want(relay?.tag === 'v3' && [...(relay?.classes ?? [])].join() === 'Inbox,Room,Meter' && relay?.workersDev === true, `the relay went up with all three migrations (Inbox, Room, Meter) and its workers.dev address on (${relay?.tag}, ${[...(relay?.classes ?? [])]})`);
 want(/^falcon-[a-z]{6}$/.test(cf.state.subdomain ?? '') && !cf.state.renamed, `a workers.dev subdomain was picked with no question (${cf.state.subdomain})`);
 want(relay?.code === JSON.parse(fs.readFileSync(path.join(REPO, 'dist/relay-worker.json'), 'utf8')).code, 'the code uploaded is the relay the app ships');
 want((await win.evaluate(() => localStorage.getItem('falcon.relayUrl'))) === null, 'nothing is saved before the relay answers');

@@ -18,7 +18,7 @@ Each Falcon has a pairing code, which carries the relay it listens on (code v2; 
 
 ## How to get to it (user POV)
 
-- Command center (Mod-Shift-Space): `Card sharing` opens the panel; `Send Card to…` opens the picker. Neither has a key until one is set in Settings > Keybindings (Card sharing group).
+- Command center (Mod-Shift-Space): `Card sharing` opens the panel (the Sharing dialog, `src/ui/Sharing.tsx`, on its Cards tab: `.sh-sw [aria-selected="true"]` reads `Cards`; the switch's Live tab is live editing); `Send Card to…` opens the picker. Neither has a key until one is set in Settings > Keybindings (Card sharing group).
 - The rail's Sharing button (paper plane), above the update button.
 - The toast's Show button when a card arrives.
 - Settings > Sharing > Relay (search "relay"), the relay's address.
@@ -31,7 +31,7 @@ Preconditions:
 
 - **Journey.** Run `$V run .claude/skills/verify-falcon/journeys/send-card.mjs`. It exits 0 with 52 `ok` lines. A is on relay 1 and B on relay 2 (two `wrangler dev`s). It opens three browser contexts (A, B, and C with no relay), so three identities, plus a second window in B that waits for the socket and takes it over when the first closes.
 - **Desktop.** After `npm run build`, run `$V run .claude/skills/verify-falcon/journeys/send-card-desktop.mjs`. It exits 0 with 17 `ok` lines. The hidden Electron window (file://) connects and proves its key, takes a card from the script (the partner, using `src/collab` itself) and counts it on the rail's Sharing button directly above Check for updates, raises the attention cue once (counted as `global.falconAttention` in the headless main process, which never bounces), inserts it with its marks, sends one back that the partner opens and verifies, and keeps the same code and contacts after a relaunch, where a fake release feed (`FALCON_UPDATE_FEED`) puts the update button up and Sharing sits directly above it.
-- **Relay.** In Settings, fill `input[aria-label="Relay address"]` and press Enter (it is saved on Enter or on leaving the box, not as it is typed; an address without `https://` gets it; then it's checked, and a line under the box says when no Falcon relay answers there). `localStorage['falcon.relayUrl']` holds it, and the panel's `.co-line` reads `Connected. Cards sent to your code arrive here`.
+- **Relay.** In Settings, fill `input[aria-label="Relay address"]` and press Enter (it is saved on Enter or on leaving the box, not as it is typed; an address without `https://` gets it; then it's checked, and a line under the box says when no Falcon relay answers there). `localStorage['falcon.relayUrl']` holds it, and the panel's `.co-line` (the relay's line, above both tabs) reads `Connected. Cards sent to your code arrive here`.
 - **Code.** `.co-code` is the code. `.co-me button` copies it and the toast reads `Copied your pairing code`.
 - **Recipient.** Click `.rcp-new` (Add recipient), fill `input[aria-label="Their pairing code"]` and `input[aria-label="Their name"]`, then click `.rcp-add button[type="submit"]`. A bad code shows in `.rcp-why`. Saved recipients are `.rcp-row`, each name an input: read `.rcp-nm` values, not text.
 - **Send.** Put the caret in a card, run `Send Card to…`. `#co-st` reads `Send “<tag>” to…`. Enter sends to the lit `.co-pk`, and the toast reads `Sent “<tag>” to <name>`. The page makes one POST and no OPTIONS preflight.

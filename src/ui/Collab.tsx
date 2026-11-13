@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import * as collab from '../collab/service';
 import { keyOf, shortCode } from '../collab/code';
-import { nextUtcMidnight } from '../collab/relay';
+import { nextUtcMidnight, usageView } from '../collab/relay';
 import type { Contact, Received } from '../collab/service';
 import type { Ask } from './Confirm';
 import { SvgIcon } from './icons';
@@ -35,6 +35,38 @@ export function linkLine(s: collab.CollabState): string {
     return `Can't reach the relay: no connection, or it's over its daily limit until ${collab.resetTime(nextUtcMidnight())}. Trying again in ${l.at - Date.now() < 60_000 ? 'under a minute' : `${m} min`}`; }
   if (l.kind === 'connecting') return 'Connecting to the relay…';
   return 'Cards sent to your code arrive in another Falcon window';
+}
+
+/**
+ * What's left of my relay's free day, as it counts it: a big number and a bar whose filled part is what's left, the used
+ * part hatched, and when it resets inside the bar's end. In the Sharing dialog and Settings > Sharing. It reads the relay
+ * when it opens (collab.watchUsage), never on a timer. `onUpdate`: open the relay guide (an older relay can't say).
+ */
+export function RelayUsage({ onUpdate }: { onUpdate: () => void }) {
+  const s = useCollab();
+  useEffect(() => collab.watchUsage(), []);
+  const v = usageView(s);
+  if (v.kind === 'none') return null;
+  if (v.kind === 'old') return (
+    <div className="use" data-s="old">
+      <div className="u-note"><span>This relay is from before usage reporting. Update it to see what's left</span><button className="u-up" onClick={onUpdate}>Update relay</button></div>
+    </div>
+  );
+  if (v.kind === 'loading') return <div className="use" data-s="loading" aria-hidden="true"><div className="u-wrap" /></div>; // its height kept: nothing jumps
+  const left = v.kind === 'left' ? v.left : 0;
+  const reset = collab.resetTime(v.kind === 'paused' ? v.until : nextUtcMidnight());
+  const label = <span className="u-in">Resets {reset}</span>;
+  return (
+    <div className="use" data-s={v.kind === 'paused' ? 'paused' : v.low ? 'low' : 'ok'} style={{ '--p': left } as React.CSSProperties}>
+      <div className="u-wrap" role="progressbar" aria-label="Today's relay allowance" aria-valuemin={0} aria-valuemax={100} aria-valuenow={left}
+        aria-valuetext={`${left}% of today's free allowance left. It resets at ${reset}`}>
+        <div className="u-big" aria-hidden="true"><strong>{left}%</strong><span>left</span></div>
+        {/* the label twice: grey over the hatch, dark over the fill, which clips its copy to what's left */}
+        <div className="u-bar" aria-hidden="true">{label}<b>{label}</b></div>
+      </div>
+      {v.kind === 'paused' && <div className="u-note"><span>Paused until {reset}, when the free daily limit resets</span></div>}
+    </div>
+  );
 }
 
 /** Under your code: what it carries, and when it changed with your relay. */
@@ -106,7 +138,7 @@ function useRowSaves() {
 }
 
 /** Esc closes, wherever focus is. */
-function useEsc(open: boolean, close: () => void) {
+export function useEsc(open: boolean, close: () => void) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -119,8 +151,10 @@ function useEsc(open: boolean, close: () => void) {
   }, [open, close]);
 }
 
-export function CollabPanel(props: {
-  open: boolean;
+/** The Sharing dialog's Cards tab (Sharing.tsx draws the dialog): cards waiting, your code, recipients. */
+export function CardsPane(props: {
+  /** opened onto this tab: its first button takes focus (switched to: focus stays on the switch) */
+  focus: boolean;
   onClose: () => void;
   flash: (m: string) => void;
   confirm: (a: Omit<Ask, 'done'>) => Promise<boolean>;
@@ -129,23 +163,13 @@ export function CollabPanel(props: {
   onCopy: (c: Received) => Promise<boolean>;
 }) {
   const s = useCollab();
-  const { open, onClose, flash } = props;
+  const { onClose, flash } = props;
   const first = useRef<HTMLButtonElement>(null), copyBtn = useRef<HTMLButtonElement>(null), heading = useRef<HTMLHeadingElement>(null);
-  const [, tick] = useState(0);
   /** Add recipient on a card from a code that isn't one: the recipients list opens its add row with the code and name */
   const [draft, setDraft] = useState<Draft | null>(null);
   const { run, state, clear } = useRowSaves();
-  const cards = useLeaving(s.cards, (c) => c.id, open);
-  useEsc(open, onClose);
-  useLayoutEffect(() => {
-    if (!open) return;
-    setDraft(null);
-    clear();
-    (first.current ?? copyBtn.current)?.focus();
-  }, [open, clear]);
-  // the retry countdown in the status line
-  useEffect(() => { if (!open) return; const t = setInterval(() => tick((n) => n + 1), 15_000); return () => clearInterval(t); }, [open]);
-  if (!open) return null;
+  const cards = useLeaving(s.cards, (c) => c.id, true);
+  useLayoutEffect(() => { if (props.focus) (first.current ?? copyBtn.current)?.focus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fromUnknown = (c: Received) => setDraft({ code: c.from, name: c.claimed });
   const copyCode = () => copyMyCode(s.code, flash);
@@ -170,15 +194,11 @@ export function CollabPanel(props: {
       if (!still()) await new Promise((r) => setTimeout(r, 90));
     }
     flash(done === all.length ? `Dismissed ${done} cards` : `Dismissed ${done} of ${all.length} cards`);
-    document.querySelector<HTMLElement>('#co-t')?.focus({ preventScroll: true });
+    document.querySelector<HTMLElement>('#sh-t')?.focus({ preventScroll: true });
   };
 
   return (
-    <div className="cf-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="cf co" role="dialog" aria-modal="true" aria-labelledby="co-t">
-        <h2 id="co-t" tabIndex={-1}>Card sharing</h2>
-        <p className="co-line" role="status">{linkLine(s)}</p>
-
+    <>
         {cards.length > 0 && (
           <div className="co-fold" data-gone={cards.every((r) => r.gone) || undefined}><div>
             <section className="co-sec" aria-label="Cards waiting">
@@ -230,10 +250,7 @@ export function CollabPanel(props: {
           <h3 ref={heading} tabIndex={-1}>Recipients</h3>
           <Recipients flash={flash} draft={draft} taken={() => setDraft(null)} heading={() => heading.current} />
         </section>
-
-        <div className="cf-btns"><button onClick={onClose}>Close</button></div>
-      </div>
-    </div>
+    </>
   );
 }
 

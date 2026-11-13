@@ -1,6 +1,19 @@
 /* Card sharing: Falcon's dialog (.cf) with Home's quiet rows. Space separates the parts, not lines. */
 .cf.co { width: min(520px, calc(100vw - 48px)); max-height: min(86vh, 760px); overflow: auto; user-select: text; }
 .cf.co h2 { margin-bottom: 4px; }
+/* Sharing (Sharing.tsx): pinned near the top, so a switch to a taller or shorter tab doesn't move the switch */
+.cf.co-sh { align-self: start; margin-top: max(24px, min(10vh, 96px)); }
+/* the Cards | Live switch: a glass pill, its highlight sliding to the lit tab */
+.sh-sw { position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; margin: 6px 0 12px; padding: 3px; border-radius: 999px;
+  background: var(--u-deep); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4); box-shadow: var(--u-top); }
+.sh-sw i { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px; background: var(--u-ctl-on); box-shadow: var(--u-top);
+  transition: transform 220ms var(--u-ease); }
+.sh-sw[data-tab="live"] i { transform: translateX(100%); }
+.cf.co .sh-sw button { position: relative; z-index: 1; display: block; height: 28px; padding: 0 16px; border-radius: 999px; background: transparent; box-shadow: none;
+  color: var(--u-mut); font-weight: 400; transition: color 150ms ease-out; }
+.cf.co .sh-sw button:hover:not(:disabled), .cf.co .sh-sw button[aria-selected="true"] { background: transparent; color: var(--u-tx); }
+.cf.co .sh-sw button:focus-visible { outline-offset: 1px; }
+.co-sec.lv-now { margin-top: 18px; }
 .co-line { margin: 0 0 6px !important; }
 .co-sec { margin-top: 22px; }
 .co-sec h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; line-height: 18px; color: var(--u-tx); }
@@ -66,6 +79,20 @@
 
 /* the rail's Sharing button: how many cards and invites wait, in the highlighter's color, until they're dealt with */
 .fs-b.share-b[data-waiting] { color: var(--u-tx); }
+/* the paper plane, not the button, moves (the count stays put): a nudge along its heading on hover; a click launches
+   it out, fading, and it glides back in from the lower left (App.tsx sets data-fly until it lands) */
+.fs-b.share-b:active { transform: none; }
+.share-b svg { transition: transform 180ms var(--u-ease); }
+.share-b:hover svg { transform: translate(2px, -2px); }
+.share-b[data-fly] svg { animation: share-fly 760ms both; }
+@keyframes share-fly {
+  0% { transform: translate(2px, -2px); opacity: 1; animation-timing-function: cubic-bezier(.55, 0, .9, .4); }
+  30% { transform: translate(11px, -11px); opacity: 0; }
+  60% { transform: translate(-7px, 7px); opacity: 0; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
+  100% { transform: translate(0, 0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .share-b svg, .share-b:hover svg, .share-b[data-fly] svg { transition: none; transform: none; animation: none; } }
+.reduce-motion .share-b:hover svg { transform: none; } /* Settings > Reduce motion: no nudge either */
 .share-n { position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--ink); color: #000;
   box-shadow: 0 0 0 2px var(--u-deep); font: 600 10px/15px var(--ui-font); font-style: normal; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
 .fstrip[data-wide] .share-n { position: static; flex: none; box-shadow: none; }
@@ -74,6 +101,9 @@
    icon actions that show on hover or keyboard focus (and stay shown while on: hidden, starred, or saving past 150 ms).
    The selectors match .cf.co button's weight and come after it, so the panel's own button look doesn't reach them. */
 .rcp { margin: 0 -12px; }
+/* .rcp already reaches past the text; a row's fold reaching 12px further would poke out of the panel's padding (a sideways scrollbar) */
+.rcp > .co-fold { margin: 0; }
+.rcp > .co-fold > div { padding: 0; }
 .rcp-row { display: flex; align-items: center; gap: 12px; min-height: 36px; padding: 0 4px 0 12px; border-radius: 8px; }
 .rcp-row:hover { background: var(--u-hover); }
 .rcp-nm { flex: 1; min-width: 0; height: 28px; margin-left: -6px; padding: 0 6px; border: 0; border-radius: 6px; outline: none; background: transparent; color: var(--u-tx);
@@ -120,7 +150,7 @@
 .rcp-add .co-in:first-child { flex: 2; }
 
 @media (prefers-reduced-motion: reduce) { .rcp button.rcp-i, .rcp button.rcp-btn { transition: none; } }
-@media (prefers-reduced-motion: reduce) { .cf.co button { transition: none; } .co-fold { transition: opacity 200ms ease-out, grid-template-rows 0s 200ms; } .co-spin { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .cf.co button, .sh-sw i { transition: none; } .co-fold { transition: opacity 200ms ease-out, grid-template-rows 0s 200ms; } .co-spin { animation: none; } }
 
 /* Settings' relay setup guide: one step at a time, with lines to copy into a terminal */
 .cf.co.rg { width: min(460px, calc(100vw - 48px)); }
@@ -193,3 +223,27 @@
 .lv-inv { flex-direction: row; align-items: center; }
 /* your code changed with your relay: said in the text color, not the quiet one */
 .cf.co .co-sub[data-changed] { color: var(--u-tx); }
+/* the relay usage bar (Collab.tsx RelayUsage): a big number, and a bar whose fill is what's left, the used part hatched */
+@property --p { syntax: '<number>'; inherits: true; initial-value: 0; }
+.use { --p: 0; --fill: var(--u-tx2); --warn: #e07070; transition: --p 400ms var(--u-ease); font-variant-numeric: tabular-nums; }
+:root[data-chrome="light"] .use { --warn: #b23a3a; }
+.use[data-s="low"] { --fill: var(--warn); }
+.cf .use { margin: 14px 0 0; }
+.u-wrap { display: flex; align-items: center; gap: 20px; min-height: 32px; }
+.u-big { flex: none; display: flex; align-items: baseline; gap: 6px; min-width: 104px; }
+.u-big strong { font-size: 28px; line-height: 32px; font-weight: 600; color: var(--u-tx); }
+.use[data-s="low"] .u-big strong { color: var(--warn); }
+.u-big span { font-size: 13px; color: var(--u-mut); }
+.u-bar { position: relative; flex: 1; min-width: 0; height: 20px; border-radius: 10px; overflow: hidden;
+  background: repeating-linear-gradient(135deg, var(--u-ctl2) 0 2px, transparent 2px 6px), var(--u-well); }
+.cf .u-bar { background-color: var(--u-deep); }
+.u-bar b { position: absolute; inset: 0; border-radius: 10px; background: var(--fill); clip-path: inset(0 calc(100% - var(--p) * 1%) 0 0 round 10px); }
+.u-in { position: absolute; top: 0; right: 10px; font-size: 11.5px; line-height: 20px; color: var(--u-mut); white-space: nowrap; pointer-events: none; }
+.u-bar b .u-in { color: var(--u-deep); }
+.u-note { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 10px; font-size: 12.5px; line-height: 18px; color: var(--u-mut); }
+.use[data-s="old"] .u-note { margin-top: 0; }
+.u-note span { min-width: 0; text-wrap: balance; }
+.cf.co .use button.u-up, .st-row .use button.u-up { flex: none; height: 22px; padding: 0 8px; margin: -2px -8px -2px 0; background: transparent; box-shadow: none; color: var(--u-tx2); border-radius: 6px; font-size: 12.5px; cursor: pointer; }
+.cf.co .use button.u-up:hover, .st-row .use button.u-up:hover { background: var(--u-hover); color: var(--u-tx); }
+@media (prefers-reduced-motion: reduce) { .use { transition: none; } }
+.reduce-motion .use { transition: none; } /* Settings > Reduce motion */

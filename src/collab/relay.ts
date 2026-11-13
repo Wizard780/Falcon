@@ -171,3 +171,63 @@ export async function checkRooms(base: string): Promise<'ok' | 'no_rooms' | 'dai
   if (!r.ok) return 'unreachable';
   try { return (await r.json()).rooms >= 1 ? 'ok' : 'no_rooms'; } catch { return 'unreachable'; }
 }
+
+/** What the relay counted today (UTC), raw: GET /v1/usage (relay/README.md). The limits and the maths are the app's. */
+export type UsageReading = { day: string; requests: number; objects: number; rows: number; msgs: number };
+export type UsageGot = UsageReading | 'none' | 'daily_limit' | 'unreachable';
+
+/**
+ * The relay's own count of its day. 'none': a relay from before usage reporting (404). 'daily_limit': the count itself
+ * is over the day's limit, so the relay is too. The relay keeps its answer for about 30 s, so asking often costs little.
+ */
+export async function usage(base: string): Promise<UsageGot> {
+  let r: Response;
+  try { r = await fetch(`${base.replace(/\/+$/, '')}/v1/usage`, { signal: AbortSignal.timeout(10_000) }); } catch { return 'unreachable'; }
+  if (r.status === 404) return 'none';
+  if (r.status === 429) return 'daily_limit';
+  if (!r.ok) return 'unreachable';
+  try {
+    const b = await r.json();
+    const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : NaN);
+    const got = { day: String(b.day), requests: n(b.requests), objects: n(b.objects), rows: n(b.rows), msgs: n(b.msgs) };
+    return b.usage >= 1 && /^\d{4}-\d\d-\d\d$/.test(got.day) && [got.requests, got.objects, got.rows, got.msgs].every((x) => !Number.isNaN(x)) ? got : 'unreachable';
+  } catch { return 'unreachable'; }
+}
+
+/** The Workers free plan's daily limits the relay can run into (rows read, at 5,000,000, is far out of reach). */
+export const FREE_DAY = { requests: 100_000, objects: 100_000, rows: 100_000 };
+/** Incoming socket messages are billed as Durable Object requests, 20 to 1. */
+export const MSGS_PER_REQUEST = 20;
+/** At or under this much left, the bar turns to the warning colour. */
+export const LOW_LEFT = 15;
+export const utcDay = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
+
+/** Percent of today's free allowance left: the lowest across the limits, 0 to 100, rounded down. Null for a reading of another day. */
+export function percentLeft(r: UsageReading, now = Date.now()): number | null {
+  if (r.day !== utcDay(now)) return null;
+  const used = { requests: r.requests, objects: r.objects + r.msgs / MSGS_PER_REQUEST, rows: r.rows };
+  const left = Math.min(...(Object.keys(FREE_DAY) as (keyof typeof FREE_DAY)[]).map((k) => ((FREE_DAY[k] - used[k]) * 100) / FREE_DAY[k]));
+  if (left <= 0) return 0;
+  return Math.max(1, Math.min(100, Math.floor(left))); // under 1% is still something left: 0 means spent, and shows as paused
+}
+
+export type UsageView =
+  | { kind: 'none' } // no relay set, unreachable, or a reading that isn't today's: nothing to show
+  | { kind: 'loading' }
+  | { kind: 'left'; left: number; low: boolean }
+  | { kind: 'paused'; until: number }
+  | { kind: 'old' }; // a relay from before usage reporting
+
+/** What the usage bar shows. A send that hit the daily limit (pausedUntil) beats the counts, and so does a spent count. */
+export function usageView(s: { relay: string; pausedUntil: number; usage: { relay: string; got: UsageGot } | null }, now = Date.now()): UsageView {
+  if (!s.relay) return { kind: 'none' };
+  if (s.pausedUntil > now) return { kind: 'paused', until: s.pausedUntil };
+  const got = s.usage?.relay === s.relay ? s.usage.got : null;
+  if (got === null) return { kind: 'loading' };
+  if (got === 'daily_limit') return { kind: 'paused', until: nextUtcMidnight(now) };
+  if (got === 'none') return { kind: 'old' };
+  if (got === 'unreachable') return { kind: 'none' };
+  const left = percentLeft(got, now);
+  if (left === null) return { kind: 'none' };
+  return left === 0 ? { kind: 'paused', until: nextUtcMidnight(now) } : { kind: 'left', left, low: left <= LOW_LEFT };
+}

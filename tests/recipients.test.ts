@@ -55,7 +55,7 @@ describe('Recipients', () => {
     const app = await setup();
     const st = await sharing(app);
     const labels = [...st.querySelectorAll('.st-row .st-txt > span')].map((s) => s.textContent);
-    expect(labels.slice(0, 4)).toEqual(['Relay?', 'Your pairing code', 'Your name', 'Recipients']);
+    expect(labels.slice(0, 5)).toEqual(['Relay?', "Today's allowance", 'Your pairing code', 'Your name', 'Recipients']);
     expect($('.co-code', st)?.textContent).toBe(collab.current().code);
     await app.fill($('input[aria-label="Your name"]', st), 'Jordan');
     await until(() => collab.current().name === 'Jordan', 'the name saved');

@@ -16,6 +16,11 @@
  *
  *   GET /v1/rooms        → 200 {rooms:1,...}: this relay has rooms (an older one answers 404)
  *   GET /v1/room/:id     WebSocket, :id 64 hex. Text {"t":"join"} first; binary frames after.
+ *
+ * Usage: Cloudflare has no way for a Worker to read what's left of its account's free day, so the relay counts its own
+ * (one Meter object, one row for the current UTC day) and says the raw tallies. The app owns the limits and the maths.
+ *
+ *   GET /v1/usage        → 200 {usage:1, day, requests, objects, rows, msgs} | 429 daily_limit | 503
  */
 import { DurableObject } from 'cloudflare:workers';
 
@@ -34,7 +39,25 @@ const ROOM_PEERS = 8;
 const MAX_FRAME = 1_048_576 + 5;
 const FRAME_UPDATE = 1, FRAME_ASK = 2, FRAME_TO = 3;
 
-interface Env { INBOX: DurableObjectNamespace<Inbox>; ROOM: DurableObjectNamespace<Room>; EXPIRY_MS?: string }
+/** Usage counting. The Worker flushes its tally to the Meter once it has this many Durable Object requests (the flush is
+ *  one more: 4%), or this many Worker requests that reached none; a room socket flushes every this many incoming messages
+ *  (20 to 1, so 20 requests: the flush is 5%). */
+const FLUSH_AT = 25, FLUSH_REQUESTS = 100, ROOM_FLUSH = 400;
+/** Rows a card writes over its life, counted when it is stored: its insert and its delete (acked or expired) are two
+ *  each (the row and its primary-key index), and at most one alarm (each setAlarm is a row). */
+const CARD_ROWS = 5;
+/** Durable Object requests a card stored costs later: its alarm running (alarms bill as requests; one per card at most). */
+const CARD_ALARM = 1;
+/** Socket messages an inbox connect sends in (hello, proof, an ack); each card stored is one more (its ack). */
+const CONNECT_MSGS = 3;
+/** How long the Worker keeps an answer to GET /v1/usage: it is unauthenticated and costs a Durable Object request. */
+const USAGE_CACHE_MS = 30_000;
+
+interface Env { INBOX: DurableObjectNamespace<Inbox>; ROOM: DurableObjectNamespace<Room>; METER: DurableObjectNamespace<Meter>; EXPIRY_MS?: string; METER_TEST?: string }
+/** What the day has cost, as Cloudflare counts it: Worker requests, Durable Object requests (not counting socket
+ *  messages), rows written, and incoming socket messages (billed 20 to 1 as Durable Object requests: the app applies it). */
+type Tally = { requests: number; objects: number; rows: number; msgs: number };
+type Usage = Tally & { day: string };
 type Att = { inbox: string; expect?: string; proven?: boolean };
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Max-Age': '86400' };
@@ -86,9 +109,56 @@ function refuse(code: string) {
   return new Response(null, { status: 101, webSocket: client });
 }
 
-async function room(req: Request, env: Env, id: string): Promise<Response> {
+const utcDay = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
+const meter = (env: Env) => env.METER.get(env.METER.idFromName('meter'));
+
+// This isolate's tally since its last flush, and its last answer to GET /v1/usage. Both are lost if the isolate is
+// evicted: at most a flush's worth of counts, which is nothing beside a 100,000 limit.
+const zero = (): Tally => ({ requests: 0, objects: 0, rows: 0, msgs: 0 });
+let tally = zero(), counted = false, said: { at: number; day: string; body: Usage } | null = null;
+function count(t: Partial<Tally>) {
+  for (const k of ['requests', 'objects', 'rows', 'msgs'] as const) tally[k] += t[k] ?? 0;
+  if (t.objects || t.rows || t.msgs) counted = true; // a usage answer from before this is out of date
+}
+/** Hand the tally to the Meter: one call, itself a Durable Object request and a row, so it is counted too. Async, so even a
+ *  Meter that isn't there (a binding missing) is a rejection the caller lets go, never a throw in the middle of a send. */
+async function flush(env: Env): Promise<Usage> {
+  const t = tally;
+  tally = zero();
+  return meter(env).add({ ...t, objects: t.objects + 1, rows: t.rows + 1 });
+}
+/** Counting never costs a send: a flush runs after the answer, and a Meter that fails (over the day's limit too) is let go. */
+function counting(env: Env, ctx: ExecutionContext, t: Partial<Tally>) {
+  count(t);
+  if (tally.objects >= FLUSH_AT || tally.requests >= FLUSH_REQUESTS) ctx.waitUntil(flush(env).catch(() => {}));
+}
+
+async function usage(req: Request, env: Env): Promise<Response> {
+  // tests only: set the day's row as given (METER_TEST "on"); see README.md
+  if (req.method === 'PUT' && env.METER_TEST === 'on') {
+    await meter(env).seed(await req.json());
+    said = null;
+    return reply(200, { ok: 1 });
+  }
+  if (req.method !== 'GET') return reply(405, { error: 'method' });
+  count({ requests: 1 });
+  const day = utcDay();
+  // the same answer for a while, unless this isolate counted something since (a send, a connect): then it's out of date
+  if (said && !counted && said.day === day && Date.now() - said.at < USAGE_CACHE_MS) return reply(200, { usage: 1, ...said.body });
+  try {
+    counted = false;
+    const body = await flush(env);
+    said = { at: Date.now(), day: body.day, body };
+    return reply(200, { usage: 1, ...body });
+  } catch (e) {
+    return overLimit(e) ? reply(429, { error: 'daily_limit' }) : reply(503, { error: 'relay_error' });
+  }
+}
+
+async function room(req: Request, env: Env, ctx: ExecutionContext, id: string): Promise<Response> {
   if (req.method !== 'GET') return reply(405, { error: 'method' });
   if (req.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return reply(426, { error: 'websocket_only' });
+  counting(env, ctx, { objects: 1 });
   try {
     return await env.ROOM.get(env.ROOM.idFromName(id)).fetch(req);
   } catch (e) {
@@ -97,13 +167,15 @@ async function room(req: Request, env: Env, id: string): Promise<Response> {
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const path = new URL(req.url).pathname;
+    if (path === '/v1/usage') return usage(req, env);
+    counting(env, ctx, { requests: 1 }); // every request the Worker runs for is one of its 100,000
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     // the Worker answers this itself: telling an up-to-date relay from an older one costs no Durable Object request
     if (path === '/v1/rooms') return reply(200, { rooms: 1, peers: ROOM_PEERS, frame: MAX_FRAME });
     const r = /^\/v1\/room\/([0-9a-f]{64})$/.exec(path);
-    if (r) return room(req, env, r[1]);
+    if (r) return room(req, env, ctx, r[1]);
     const m = /^\/v1\/inbox\/([0-9a-f]{64})$/.exec(path);
     if (!m) return reply(404, { error: 'not_found' });
     const inbox = m[1];
@@ -111,6 +183,7 @@ export default {
     try {
       if (req.method === 'GET') {
         if (req.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return reply(426, { error: 'websocket_only' });
+        counting(env, ctx, { objects: 1, msgs: CONNECT_MSGS });
         return await stub.fetch(req);
       }
       if (req.method !== 'POST') return reply(405, { error: 'method' });
@@ -118,7 +191,9 @@ export default {
       const body = await readCapped(req, MAX_ENVELOPE);
       if (!body) return reply(413, { error: 'too_large', max: MAX_ENVELOPE });
       if (body.length < MIN_ENVELOPE || body[0] !== 1) return reply(400, { error: 'bad_envelope' });
+      count({ objects: 1 });
       const r = await stub.put(inbox, body);
+      counting(env, ctx, r.status === 201 ? { objects: CARD_ALARM, rows: CARD_ROWS, msgs: 1 } : {});
       return reply(r.status, r.body);
     } catch (e) {
       return overLimit(e) ? reply(429, { error: 'daily_limit' }) : reply(503, { error: 'relay_error' });
@@ -231,7 +306,8 @@ export class Inbox extends DurableObject<Env> {
   }
 }
 
-type Seat = { slot: number; at: number; joined?: boolean };
+/** `n`: incoming messages not yet handed to the Meter. It lives in the attachment, so it outlasts hibernation. */
+type Seat = { slot: number; at: number; joined?: boolean; n?: number };
 
 /**
  * A live-editing room. It passes binary frames between the sockets in it, never reads them (they are sealed with a key
@@ -264,9 +340,24 @@ export class Room extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  /** Count an incoming message (billed 20 to 1), handing a full batch to the Meter. */
+  private counted(ws: WebSocket, seat: Seat): Seat {
+    const n = (seat.n ?? 0) + 1;
+    const next = { ...seat, n: n >= ROOM_FLUSH ? 0 : n };
+    if (n >= ROOM_FLUSH) this.meter(n);
+    ws.serializeAttachment(next satisfies Seat);
+    return next;
+  }
+  /** Fire and forget: a Meter that fails (over the day's limit too) changes nothing in the room. */
+  private meter(msgs: number) {
+    // inside a promise: a Meter that isn't there (a binding missing) is let go like one that fails
+    this.ctx.waitUntil(Promise.resolve().then(() => meter(this.env).add({ requests: 0, objects: 1, rows: 1, msgs })).then(() => {}, () => {}));
+  }
+
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
-    const seat = this.seat(ws);
-    if (!seat) return this.fail(ws, 'bad_request', 4000);
+    const was = this.seat(ws);
+    if (!was) return this.fail(ws, 'bad_request', 4000);
+    const seat = this.counted(ws, was);
     if (typeof raw === 'string') {
       let m: { t?: unknown };
       try { m = raw.length <= 64 ? JSON.parse(raw) : {}; } catch { m = {}; }
@@ -305,9 +396,48 @@ export class Room extends DurableObject<Env> {
 
   async webSocketClose(ws: WebSocket, code: number) {
     const seat = this.seat(ws);
+    // a typing burst ends long before a batch fills: what's left goes when the socket does. While someone else is still
+    // in the room it rides with them, so a socket that keeps reconnecting doesn't cost a Meter call each time
+    if (seat?.n) {
+      const heir = this.ctx.getWebSockets().find((w) => w !== ws && this.seat(w));
+      try { ws.serializeAttachment({ ...seat, n: 0 } satisfies Seat); } catch { /* closed */ }
+      let kept = false;
+      if (heir) try { const h = this.seat(heir)!; heir.serializeAttachment({ ...h, n: (h.n ?? 0) + seat.n } satisfies Seat); kept = true; } catch { /* closing too */ }
+      if (!kept && seat.n >= 20) this.meter(seat.n); // under one billed request (20 messages), telling the Meter costs more than it counts
+    }
     if (seat?.joined) for (const w of this.others(ws)) this.send(w, JSON.stringify({ t: 'left', slot: seat.slot }));
     try { ws.close(code === 1005 ? 1000 : code); } catch { /* already closed */ }
   }
 
   async webSocketError(ws: WebSocket) { await this.webSocketClose(ws, 1011); }
+}
+
+/**
+ * What this relay has cost today (UTC), as it counts it: one object, one row, replaced when the day changes. Each add is
+ * one upsert (one row written, no index: the key is the rowid). It only sees this relay, not other Workers on the account.
+ */
+export class Meter extends DurableObject<Env> {
+  private sql: SqlStorage;
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+    this.sql.exec('CREATE TABLE IF NOT EXISTS day (id INTEGER PRIMARY KEY, day TEXT NOT NULL, requests INTEGER NOT NULL, objects INTEGER NOT NULL, rows INTEGER NOT NULL, msgs INTEGER NOT NULL)');
+  }
+
+  /** Add to today's tallies (a new day starts from these) and answer the day's totals. */
+  add(t: Tally): Usage {
+    if (this.env.METER_TEST === 'over') throw new Error('Exceeded allowed rows written in Durable Objects free tier'); // tests only
+    const n = (x: unknown) => (Number.isSafeInteger(x) && (x as number) > 0 ? (x as number) : 0);
+    return this.sql.exec<Usage>(
+      `INSERT INTO day (id, day, requests, objects, rows, msgs) VALUES (1, ?1, ?2, ?3, ?4, ?5) ON CONFLICT (id) DO UPDATE SET
+         requests = IIF(day = ?1, requests + ?2, ?2), objects = IIF(day = ?1, objects + ?3, ?3),
+         rows = IIF(day = ?1, rows + ?4, ?4), msgs = IIF(day = ?1, msgs + ?5, ?5), day = ?1
+       RETURNING day, requests, objects, rows, msgs`,
+      utcDay(), n(t.requests), n(t.objects), n(t.rows), n(t.msgs)).one();
+  }
+
+  /** Tests only (the Worker allows it under METER_TEST "on"): the day's row, as given. */
+  seed(u: Usage) {
+    this.sql.exec('INSERT OR REPLACE INTO day (id, day, requests, objects, rows, msgs) VALUES (1, ?, ?, ?, ?, ?)', String(u.day), u.requests, u.objects, u.rows, u.msgs);
+  }
 }

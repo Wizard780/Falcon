@@ -94,8 +94,8 @@ await win.keyboard.type('Body from the desktop.');
 
 const beforeStart = loaded.filter((u) => /live-doc-[^/]*\.js$/.test(u)).length;
 await command(win, 'start live editing');
-want(await win.waitForFunction(() => document.querySelector('.co-live .co-line')?.textContent?.startsWith('Live.'), null, { timeout: 20000 }).then(() => true, () => false),
-  `desktop: the session starts, so the CRDT chunk loaded from file:// and the room socket is open (${await win.textContent('.co-live .co-line').catch(() => '')})`);
+want(await win.waitForFunction(() => document.querySelector('.co-live .lv-line')?.textContent?.startsWith('Live.'), null, { timeout: 20000 }).then(() => true, () => false),
+  `desktop: the session starts, so the CRDT chunk loaded from file:// and the room socket is open (${await win.textContent('.co-live .lv-line').catch(() => '')})`);
 const chunk = loaded.filter((u) => /live-doc-[^/]*\.js$/.test(u));
 want(beforeStart === 0 && chunk.length === 1 && chunk[0].startsWith('file://'), `the CRDT came in its own chunk, from file://, only once a session started (${beforeStart} before; ${chunk.map((u) => path.basename(u)).join()})`);
 await win.click('.co-live section[aria-label="Invite"] .co-ct:has-text("Blake") button');

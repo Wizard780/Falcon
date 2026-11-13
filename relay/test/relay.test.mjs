@@ -3,7 +3,7 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -13,12 +13,12 @@ import { inboxId } from '../../src/collab/code.ts';
 const here = new URL('..', import.meta.url).pathname;
 const servers = [];
 
-async function startRelay(vars = {}) {
+async function startRelay(vars = {}, cwd = here) {
   const persist = mkdtempSync(join(tmpdir(), 'falcon-relay-'));
   const port = 18000 + Math.floor(Math.random() * 2000);
   const args = ['wrangler', 'dev', '--ip', '127.0.0.1', '--port', String(port), '--persist-to', persist, '--log-level', 'warn', '--show-interactive-dev-session=false',
     ...Object.entries(vars).flatMap(([k, v]) => ['--var', `${k}:${v}`])];
-  const proc = spawn('npx', args, { cwd: here, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  const proc = spawn('npx', args, { cwd, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let log = '';
   proc.stdout.on('data', (d) => { log += d; });
   proc.stderr.on('data', (d) => { log += d; });
@@ -33,9 +33,16 @@ async function startRelay(vars = {}) {
   servers.push(s);
   return s;
 }
-after(() => { for (const s of servers) { try { process.kill(-s.proc.pid, 'SIGTERM'); } catch { /* gone */ } rmSync(s.persist, { recursive: true, force: true }); } });
+/** Folders a test made for a relay to run from: removed only once that relay is stopped (wrangler run from a folder that's gone doesn't stop). */
+const dirs = [];
+after(() => {
+  for (const s of servers) { try { process.kill(-s.proc.pid, 'SIGTERM'); } catch { /* gone */ } rmSync(s.persist, { recursive: true, force: true }); }
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A socket's open, or a failure after 10 s: an upgrade that never answers fails the test instead of hanging the run. */
+const opening = (ws) => new Promise((r, j) => { const t = setTimeout(() => j(new Error('socket never opened')), 10_000); ws.onopen = () => { clearTimeout(t); r(); }; ws.onerror = (e) => { clearTimeout(t); j(e); }; });
 const card = (text) => ({ name: 'Alex', at: Date.now(), content: [{ type: 'paragraph', attrs: { style: 'tag' }, content: [{ type: 'text', text }] }] });
 const post = (url, inbox, body) => fetch(`${url}/v1/inbox/${inbox}`, { method: 'POST', body });
 
@@ -57,7 +64,7 @@ function connect(url, inbox) {
     const t = setTimeout(() => rej(new Error(`timed out; got ${JSON.stringify({ text: got.text, cards: got.cards.length, closed: got.closed })}`)), ms);
     waiters.push({ ok, done: () => { clearTimeout(t); res(); } });
   });
-  const opened = new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  const opened = opening(ws);
   return { ws, got, until, opened, send: (m) => ws.send(JSON.stringify(m)) };
 }
 
@@ -265,7 +272,7 @@ async function seat(url, room, join = true) {
     const t = setTimeout(() => rej(new Error(`timed out; got ${JSON.stringify(got)}`)), ms);
     waiters.push({ ok, done: () => { clearTimeout(t); res(); } });
   });
-  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  await opening(ws);
   const s = { ws, got, until, frame: (kind, body, extra = []) => ws.send(new Uint8Array([kind, ...extra, ...new TextEncoder().encode(body)])) };
   if (join) { ws.send(JSON.stringify({ t: 'join' })); await until(() => got.text.some((m) => m.t === 'welcome')); s.slot = got.text.find((m) => m.t === 'welcome').slot; }
   return s;
@@ -370,5 +377,143 @@ describe('rooms', () => {
   test('a room id that is not 64 hex is 404, and a plain GET is told to use a WebSocket', async () => {
     assert.equal((await fetch(`${relay.url}/v1/room/xyz`)).status, 404);
     assert.equal((await fetch(`${relay.url}/v1/room/${ROOM}5`)).status, 426);
+  });
+});
+
+// ---------- usage: the relay counting its own day ----------
+
+const usage = async (url) => { const r = await fetch(`${url}/v1/usage`); return { status: r.status, body: await r.json(), cors: r.headers.get('access-control-allow-origin') }; };
+/** What changed between two readings. */
+const delta = (a, b) => Object.fromEntries(['requests', 'objects', 'rows', 'msgs'].map((k) => [k, b[k] - a[k]]));
+
+describe('usage', () => {
+  let metered;
+  before(async () => { metered = await startRelay({ METER_TEST: 'on' }); });
+
+  test('GET /v1/usage answers the raw tallies for today (UTC), and nothing else', async () => {
+    const u = await usage(metered.url);
+    assert.equal(u.status, 200);
+    assert.equal(u.cors, '*');
+    assert.deepEqual(Object.keys(u.body).sort(), ['day', 'msgs', 'objects', 'requests', 'rows', 'usage']);
+    assert.equal(u.body.usage, 1);
+    assert.equal(u.body.day, new Date().toISOString().slice(0, 10));
+  });
+
+  test('a card sent, and an inbox connect, are counted with what they cost', async () => {
+    const a = await makeIdentity(), b = await makeIdentity(), inbox = await inboxId(b.pub);
+    const u0 = (await usage(metered.url)).body; // nothing counted since the last test's answer: that one again
+    assert.equal((await post(metered.url, inbox, await seal(a, b.pub, card('Counted')))).status, 201);
+    const u1 = (await usage(metered.url)).body;
+    // the GET above, the POST and this GET; the inbox, the card's alarm to come and the Meter call; the card's 5 rows and
+    // the Meter's upsert; its ack
+    assert.deepEqual(delta(u0, u1), { requests: 3, objects: 3, rows: 6, msgs: 1 });
+    // a card turned away before any Durable Object is a Worker request only
+    assert.equal((await post(metered.url, inbox, new Uint8Array(20))).status, 400);
+    const o = await owner(metered.url, b);
+    await o.until(() => o.got.cards.length === 1);
+    o.ws.close();
+    const u2 = (await usage(metered.url)).body;
+    // the 400, the connect and this GET; the inbox and the Meter; the upsert; hello, proof and an ack
+    assert.deepEqual(delta(u1, u2), { requests: 3, objects: 2, rows: 1, msgs: 3 });
+  });
+
+  test('the answer is kept for a while: asking again costs no Durable Object request, until something is counted', async () => {
+    const u1 = (await usage(metered.url)).body; // the last test's answer, kept
+    const u2 = (await usage(metered.url)).body;
+    assert.deepEqual(u2, u1); // the same answer: the Meter wasn't asked
+    await fetch(`${metered.url}/v1/rooms`); // a Worker request only: still the same answer
+    assert.deepEqual((await usage(metered.url)).body, u1);
+    const b = await makeIdentity();
+    assert.equal((await post(metered.url, await inboxId(b.pub), await seal(await makeIdentity(), b.pub, card('x')))).status, 201);
+    const u3 = (await usage(metered.url)).body;
+    // the three kept answers and the rooms check reach it now, with the POST and this GET: they were counted all along
+    assert.deepEqual(delta(u1, u3), { requests: 6, objects: 3, rows: 6, msgs: 1 });
+  });
+
+  test('a room counts incoming messages through hibernation, and hands the rest over when the socket closes', { timeout: 60_000 }, async () => {
+    const room = `${ROOM}6`;
+    const u0 = (await usage(metered.url)).body; // the last test's answer, kept
+    const a = await seat(metered.url, room), b = await seat(metered.url, room);
+    for (let i = 0; i < 10; i++) a.frame(1, `before ${i}`);
+    await b.until(() => b.got.frames.length === 10);
+    await wait(20_000); // idle: the room hibernates and is evicted (wrangler dev does it after about 10 s)
+    for (let i = 0; i < 10; i++) a.frame(1, `after ${i}`);
+    await b.until(() => b.got.frames.length === 20);
+    a.ws.close(); b.ws.close();
+    await wait(1000);
+    const u1 = (await usage(metered.url)).body;
+    // the kept GET, two connects and this GET; their rooms, one flush and this GET's: the first to leave hands its count to
+    // the one still there, and only the last tells the Meter; 2 joins and 20 frames
+    assert.deepEqual(delta(u0, u1), { requests: 4, objects: 4, rows: 2, msgs: 22 });
+  });
+
+  test('a busy room hands over a batch every 400 messages, without waiting for a close', async () => {
+    const room = `${ROOM}7`;
+    const a = await seat(metered.url, room), b = await seat(metered.url, room);
+    await wait(300);
+    const u0 = (await usage(metered.url)).body;
+    for (let i = 0; i < 399; i++) a.frame(1, 'x'); // with a's join, 400
+    await b.until(() => b.got.frames.length === 399);
+    await wait(500);
+    // the room hands its batch to the Meter itself, so the Worker's kept answer doesn't know: a connect (counted here) makes
+    // the next answer fresh. That socket never joins, so it adds no message
+    const c = await seat(metered.url, `${ROOM}9`, false);
+    const u1 = (await usage(metered.url)).body;
+    assert.equal(u1.msgs - u0.msgs, 400);
+    c.ws.close();
+    a.ws.close(); b.ws.close();
+  });
+
+  test('a new UTC day starts from nothing: yesterday\'s row is replaced', async () => {
+    const r = await fetch(`${metered.url}/v1/usage`, { method: 'PUT', body: JSON.stringify({ day: '2000-01-01', requests: 99_000, objects: 99_000, rows: 99_000, msgs: 99_000 }) });
+    assert.equal(r.status, 200);
+    const u = (await usage(metered.url)).body;
+    assert.equal(u.day, new Date().toISOString().slice(0, 10));
+    assert.ok(u.requests < 10 && u.objects < 10 && u.rows < 10 && u.msgs < 10, JSON.stringify(u));
+  });
+
+  test('only tests can set the row: on a relay without METER_TEST a PUT is refused', async () => {
+    assert.equal((await fetch(`${relay.url}/v1/usage`, { method: 'PUT', body: '{}' })).status, 405);
+  });
+
+  test('a relay deployed without the Meter\'s binding still sends, connects and passes room frames', { timeout: 60_000 }, async () => {
+    // the same code with METER left out of the config: every hand-over finds no Meter
+    const dir = mkdtempSync(join(tmpdir(), 'falcon-relay-nometer-'));
+    dirs.push(dir);
+    cpSync(join(here, 'src'), join(dir, 'src'), { recursive: true });
+    symlinkSync(join(here, 'node_modules'), join(dir, 'node_modules'));
+    writeFileSync(join(dir, 'wrangler.jsonc'), readFileSync(join(here, 'wrangler.jsonc'), 'utf8').replace(/, \{ "name": "METER", "class_name": "Meter" \}/, ''));
+    assert.doesNotMatch(readFileSync(join(dir, 'wrangler.jsonc'), 'utf8'), /"METER"/);
+    const bare = await startRelay({}, dir);
+    const a = await makeIdentity(), b = await makeIdentity(), inbox = await inboxId(b.pub);
+    for (let i = 0; i < 30; i++) assert.equal((await post(bare.url, inbox, await seal(a, b.pub, card(`Card ${i}`)))).status, 201);
+    for (let i = 0; i < 110; i++) assert.equal((await fetch(`${bare.url}/v1/rooms`)).status, 200); // past the request flush too
+    const o = await owner(bare.url, b);
+    await o.until(() => o.got.cards.length === 30);
+    o.ws.close();
+    const x = await seat(bare.url, `${ROOM}a`), y = await seat(bare.url, `${ROOM}a`);
+    for (let i = 0; i < 450; i++) x.frame(1, 'x'); // past a room's 400
+    await y.until(() => y.got.frames.length === 450);
+    x.ws.close();
+    await y.until(() => y.got.text.some((m) => m.t === 'left'));
+    y.ws.close();
+    assert.equal((await usage(bare.url)).status, 503);
+  });
+
+  test('a Meter that fails (over the day\'s limit) costs no send and breaks no room; /v1/usage says daily_limit', async () => {
+    const over = await startRelay({ METER_TEST: 'over' });
+    const a = await makeIdentity(), b = await makeIdentity(), inbox = await inboxId(b.pub);
+    // past the 25 a flush waits for, so flushes run (and fail) along the way
+    for (let i = 0; i < 30; i++) assert.equal((await post(over.url, inbox, await seal(a, b.pub, card(`Card ${i}`)))).status, 201);
+    const o = await owner(over.url, b);
+    await o.until(() => o.got.cards.length === 30);
+    o.ws.close();
+    const x = await seat(over.url, `${ROOM}8`), y = await seat(over.url, `${ROOM}8`);
+    x.frame(1, 'still passes');
+    await y.until(() => y.got.frames.length === 1);
+    x.ws.close(); y.ws.close();
+    const u = await usage(over.url);
+    assert.equal(u.status, 429);
+    assert.deepEqual(u.body, { error: 'daily_limit' });
   });
 });

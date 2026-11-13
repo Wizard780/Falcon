@@ -1,4 +1,5 @@
 import 'fake-indexeddb/auto';
+import { act } from 'preact/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { freshStorage, mountApp, tick, unmountAll } from './app-harness';
 import { RELAY, fakeRelay } from './collab-relay-fake';
@@ -253,6 +254,47 @@ describe('card sharing in the app', () => {
     expect(docs).not.toContain('Doc 99'); // the oldest strangers' went
     expect(docs).not.toContain('Doc 100');
     expect(collab.current().cards).toHaveLength(0); // and none of it counts as a card waiting
+  });
+
+  it('Sharing is one dialog: a Cards | Live switch, each command and key landing on its tab', async () => {
+    const app = await setup({ 'falcon.relayUrl': RELAY, 'falcon.key.live': 'Mod-Shift-F3' });
+    const tabs = () => [...document.querySelectorAll<HTMLButtonElement>('.sh-sw [role="tab"]')];
+    const lit = () => tabs().find((t) => t.getAttribute('aria-selected') === 'true')?.textContent;
+    const key = async (el: Element, k: string) => { await act(async () => { el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); await tick(50); }); };
+    // Card sharing's key opens it on Cards, focus on the panel's first button
+    await openPanel(app);
+    const dlg = $('.cf.co[role="dialog"]');
+    expect(document.getElementById(dlg?.getAttribute('aria-labelledby') ?? '')?.textContent).toBe('Sharing');
+    expect(lit()).toBe('Cards');
+    expect($('.co-code')).not.toBeNull();
+    expect(document.activeElement?.textContent).toBe('Copy');
+    // the switch: a click goes to Live and leaves focus on the switch, the arrows come back
+    await app.click(tabs()[1]);
+    expect(lit()).toBe('Live');
+    expect($('.cf.co-live section[aria-label="Invites"]')).not.toBeNull();
+    expect($('.co-code')).toBeNull();
+    expect($('.cf.co')).toBe(dlg); // the same dialog, not another
+    expect($('#sh-pane')?.getAttribute('aria-labelledby')).toBe('sh-live');
+    await key(tabs()[1], 'ArrowLeft');
+    expect(lit()).toBe('Cards');
+    expect(document.activeElement).toBe(tabs()[0]);
+    expect(tabs().map((t) => t.tabIndex)).toEqual([0, -1]);
+    await key(tabs()[0], 'ArrowRight');
+    expect(lit()).toBe('Live');
+    expect(document.activeElement).toBe(tabs()[1]);
+    // Esc closes it from either tab
+    await app.press('Escape');
+    expect($('.cf.co')).toBeNull();
+    // Live editing's key opens it on Live
+    await app.press('F3', { ctrlKey: true, shiftKey: true }, 100);
+    expect(lit()).toBe('Live');
+    expect(document.activeElement?.textContent).toBe('Start live editing');
+    await app.press('Escape');
+    // the rail's Sharing button, nothing waiting: Cards
+    await app.click($('.fstrip [aria-label="Sharing"]'));
+    expect(lit()).toBe('Cards');
+    await app.click(button('Close'));
+    expect($('.cf.co')).toBeNull();
   });
 
   it("an invite from a stranger waits on the rail's Sharing button until it's joined or dismissed", async () => {

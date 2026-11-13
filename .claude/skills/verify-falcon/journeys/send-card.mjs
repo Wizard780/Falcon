@@ -75,6 +75,10 @@ async function setRelay(f, url) {
   await f.page.keyboard.press('Escape'); // closes Settings
   await wait(f, 300);
 }
+/** The Sharing dialog doesn't scroll sideways: nothing in it is wider than it is. */
+const flat = async (f) => { const [sw, cw] = await f.page.$eval('.cf.co', (d) => [d.scrollWidth, d.clientWidth]); return { ok: sw <= cw, why: `scrollWidth ${sw}, clientWidth ${cw}` }; };
+/** The Sharing dialog's lit tab. */
+const tabOn = (f) => f.page.textContent('.sh-sw [aria-selected="true"]').catch(() => '');
 const status = (f) => f.page.textContent('.co-line');
 const linked = (f) => f.page.waitForFunction(() => document.querySelector('.co-line')?.textContent?.startsWith('Connected'), null, { timeout: 15000 }).then(() => true, () => false);
 
@@ -82,6 +86,7 @@ const linked = (f) => f.page.waitForFunction(() => document.querySelector('.co-l
 await setRelay(B, RELAY2);
 want((await B.page.evaluate(() => localStorage.getItem('falcon.relayUrl'))) === RELAY2, 'B: the relay typed in Settings is stored (falcon.relayUrl)');
 want((await command(B, 'card sharing')) === 'Card sharing', 'B: the command center finds "Card sharing" and Enter opens it');
+want((await B.page.textContent('.cf.co h2')) === 'Sharing' && (await tabOn(B)) === 'Cards', `B: it opens Sharing on its Cards tab (${await tabOn(B)})`);
 want(await linked(B), `B: the panel says it is connected to the relay (${await status(B)})`);
 const codeB = (await B.page.textContent('.co-code')).trim();
 const pb = parseCode(codeB);
@@ -112,6 +117,9 @@ await A.page.click('.rcp-add button[type="submit"]');
 await wait(A, 200);
 want((await A.page.$$eval('.rcp-row .rcp-nm', (x) => x.map((n) => n.value))).join() === 'Blake', 'A: Blake is in recipients');
 await A.shot('a-recipient-added');
+{ const s = await flat(A); want(s.ok, `A: with a recipient, the dialog has no sideways scrollbar (${s.why})`); }
+await A.page.hover('.cf.co .rcp-row');
+{ const s = await flat(A); want(s.ok, `A: and with the recipient's actions showing on hover (${s.why})`); }
 await A.page.keyboard.press('Escape');
 await A.open(SEED);
 await A.select('next year');
@@ -159,6 +167,7 @@ want(rowsWaiting(R2.persist) === 0, "B's relay deleted the card once B acked it 
 await B.page.click('.fstrip [aria-label="Sharing, 1 card waiting"]');
 await wait(B, 200);
 want((await B.page.textContent('.co-card .co-what span')).includes("From a code not in your recipients, who says they're Avery"), 'B: the card shows as from an unknown code, with the name it gave');
+{ const s = await flat(B); want(s.ok, `B: with a card waiting, the dialog has no sideways scrollbar (${s.why})`); }
 await B.shot('b-card-waiting');
 await B.page.click('.co-card button:has-text("Add recipient")');
 want((await B.page.inputValue('input[aria-label="Their name"]')) === 'Avery', 'B: Add recipient fills in their name');
@@ -167,6 +176,7 @@ want(filled.ok && filled.relay === RELAY && keyOf(filled.code) === keyOf(codeA),
 await B.page.click('.rcp-add button[type="submit"]');
 await wait(B, 200);
 want((await B.page.textContent('.co-card .co-what span')).startsWith('From Avery'), 'B: now it is from Avery');
+{ const s = await flat(B); want(s.ok, `B: with a card waiting and a recipient, the dialog has no sideways scrollbar (${s.why})`); }
 await B.page.click('.co-card button:has-text("Insert")');
 await wait(B, 300);
 const mapB = await B.markMap();

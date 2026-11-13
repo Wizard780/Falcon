@@ -4,10 +4,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { createPortal } from 'react-dom';
 import { version } from '../../package.json';
 import { HIGHLIGHTS, HIGHLIGHT_NAMES } from '../editor/schema';
-import { DEFAULT_RELAY, checkRelay } from '../collab/relay';
+import { DEFAULT_RELAY, checkRelay, nextUtcMidnight } from '../collab/relay';
 import { RelayGuide, relayAddress } from './RelayGuide';
 import { LiveDocControl, LiveInvitesControl } from './Live';
-import { Recipients, codeNote, copyMyCode, useCollab, type Draft } from './Collab';
+import { Recipients, RelayUsage, codeNote, copyMyCode, useCollab, type Draft } from './Collab';
 import * as collab from '../collab/service';
 import { SvgIcon } from './icons';
 import { docToolSettings } from '../editor/doc-tools';
@@ -636,6 +636,9 @@ export function Settings(props: Props) {
         { label: 'Relay', wide: true, help: <button className="st-help" aria-label="How to set up a relay" title="How to set up a relay, step by step" onClick={() => setGuide(true)}>?</button>, search: 'card sharing relay send card pairing code collaboration server url',
           hint: `Your relay: where cards sent to you wait until this Falcon picks them up, and where your live sessions run. It only ever sees them sealed. Your pairing code carries it, so people reach you from their own relays. ${DEFAULT_RELAY ? `Leave blank for Falcon's own (${DEFAULT_RELAY}).` : 'Falcon has no relay of its own yet: click ? to set one up, step by step.'} Your code and recipients are below.`,
           control: <RelayField key={guide ? 'guide' : 'box'} /> }, // the guide may save it again, checked: start over
+        ...(cs.relay ? [{ label: 'Today\'s allowance', wide: true, search: 'usage allowance quota limit free plan daily left remaining reset cloudflare',
+          hint: `What's left of your relay's free daily allowance, as the relay counts it. Other Workers on the same Cloudflare account aren't counted. It resets at midnight UTC, ${collab.resetTime(nextUtcMidnight())} here.`,
+          control: <RelayUsage onUpdate={() => setGuide(true)} /> }] : []),
         { label: 'Your pairing code', wide: true, search: 'pairing code copy share give partner', hint: codeNote(cs).text, bad: codeNote(cs).changed, control: (
           <div className="co-me">
             <code className="co-code" aria-label="Your pairing code">{csReady ? cs.code : '…'}</code>
