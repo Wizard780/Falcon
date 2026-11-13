@@ -74,6 +74,9 @@
    icon actions that show on hover or keyboard focus (and stay shown while on: hidden, starred, or saving past 150 ms).
    The selectors match .cf.co button's weight and come after it, so the panel's own button look doesn't reach them. */
 .rcp { margin: 0 -12px; }
+/* .rcp already reaches past the text; a row's fold reaching 12px further would poke out of the panel's padding (a sideways scrollbar) */
+.rcp > .co-fold { margin: 0; }
+.rcp > .co-fold > div { padding: 0; }
 .rcp-row { display: flex; align-items: center; gap: 12px; min-height: 36px; padding: 0 4px 0 12px; border-radius: 8px; }
 .rcp-row:hover { background: var(--u-hover); }
 .rcp-nm { flex: 1; min-width: 0; height: 28px; margin-left: -6px; padding: 0 6px; border: 0; border-radius: 6px; outline: none; background: transparent; color: var(--u-tx);
