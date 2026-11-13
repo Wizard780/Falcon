@@ -27,6 +27,8 @@ import { FONT_COLORS } from './swatches';
 import type { Arg, Entry, Option } from './command-center';
 import type { FileHit } from './file-search';
 import type { Recent } from './recents';
+import { current as collabState } from '../collab/service';
+import { usageView } from '../collab/relay';
 import { TEMPLATES_KEY, fileCount, loadTemplates, pathName, templateName, type Template } from './templates';
 
 /** What the command center needs from the app to act. */
@@ -214,6 +216,8 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: P.aiMaxTokens.key, label: 'AI max output tokens', page: 'ai', query: 'AI max output tokens', hint: 'Type it in Settings.', link: true, get: () => pref(P.aiMaxTokens), set: () => {} },
     { id: TEMPLATES_KEY, label: 'Templates', page: 'templates', query: 'Templates', hint: 'Set them in Settings.', link: true, get: () => String(loadTemplates().length), set: () => {} },
     { id: P.relayUrl.key, label: 'Card sharing relay', page: 'general', query: 'Relay', hint: 'Type it in Settings.', link: true, get: () => pref(P.relayUrl) || 'None', set: () => {} },
+    { id: 'relayUsage', label: "Relay's allowance today", page: 'sharing', query: "Today's allowance", hint: "What's left of your relay's free day.", link: true, set: () => {},
+      get: () => { const v = usageView(collabState()); return v.kind === 'left' ? `${v.left}% left` : v.kind === 'paused' ? 'Paused' : v.kind === 'old' ? 'Update the relay' : ''; } },
     { id: P.speechName.key, label: 'Speech doc name', page: 'general', query: 'Speech doc name filename', hint: 'Type it in Settings.', link: true, get: () => pref(P.speechName), set: () => {} },
     tog(P.savePrefix, 'Prefix Save As copies', 'general', 'Send, Read and Marked Doc copies start with a prefix.'),
     { id: P.tourSeen.key, label: 'Replay tutorial', page: 'general', query: 'Replay tutorial', hint: 'Start the tour of Falcon again.', link: true, get: () => '', set: () => {} },

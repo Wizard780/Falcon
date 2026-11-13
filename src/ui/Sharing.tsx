@@ -1,13 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Received } from '../collab/service';
-import { CardsPane, linkLine, useCollab, useEsc } from './Collab';
+import { CardsPane, RelayUsage, linkLine, useCollab, useEsc } from './Collab';
 import type { Ask } from './Confirm';
 import { LivePane } from './Live';
+import { RelayGuide } from './RelayGuide';
 import './collab.css';
 
 /**
  * Sharing: card sharing and live editing in one dialog, a Cards | Live switch under the title. The relay's line sits
- * above both tabs; each tab is the panel it was. Esc or a click outside closes it.
+ * and what's left of its free day sit above both tabs; each tab is the panel it was. Esc or a click outside closes it.
  */
 export type ShareTab = 'cards' | 'live';
 const TABS: { id: ShareTab; label: string }[] = [{ id: 'cards', label: 'Cards' }, { id: 'live', label: 'Live' }];
@@ -25,10 +27,11 @@ export function SharingPanel(props: {
   const s = useCollab();
   const { tab, onTab, onClose } = props;
   const [, tick] = useState(0);
+  const [guide, setGuide] = useState(false); // the relay guide, from Update relay: it updates the relay in place
   // a tab picked on the switch leaves focus on the switch; opened onto a tab (or sent to one), its first button takes it
   const picked = useRef(false);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
-  useEsc(tab !== null, onClose);
+  useEsc(tab !== null && !guide, onClose); // the guide answers its own Esc
   useLayoutEffect(() => { picked.current = false; }, [tab]);
   // the retry countdown in the relay's line
   useEffect(() => { if (tab === null) return; const t = setInterval(() => tick((n) => n + 1), 15_000); return () => clearInterval(t); }, [tab === null]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -57,6 +60,7 @@ export function SharingPanel(props: {
           ))}
         </div>
         <p className="co-line" role="status">{linkLine(s)}</p>
+        <RelayUsage onUpdate={() => setGuide(true)} />
         <div id="sh-pane" role="tabpanel" aria-labelledby={`sh-${tab}`}>
           {tab === 'cards'
             ? <CardsPane focus={focus} onClose={onClose} flash={props.flash} confirm={props.confirm} onInsert={props.onInsert} onCopy={props.onCopy} />
@@ -64,6 +68,7 @@ export function SharingPanel(props: {
         </div>
         <div className="cf-btns"><button onClick={onClose}>Close</button></div>
       </div>
+      {guide && createPortal(<RelayGuide onClose={() => setGuide(false)} />, document.body)}
     </div>
   );
 }

@@ -78,8 +78,13 @@ export function useLiveSessions(h: LiveHost) {
   const held = useRef<Held | null>(null);
   const mods = useRef<Mods | null>(null);
   const load = async () => (mods.current ??= await Promise.all([import('../collab/live'), import('../collab/live-doc')]));
+  const wasLive = useRef(false);
   const publish = useCallback(() => {
     const r = held.current;
+    // in, through my relay: its count of the day moved (a usage bar showing reads it again)
+    const now = r?.s.status.kind === 'live';
+    if (now && !wasLive.current && r!.s.invite().relay === collab.relayUrl()) collab.usageChanged();
+    wasLive.current = now;
     setLiveInfo(r ? { docId: r.docId, room: r.s.room, doc: r.s.invite().doc, status: r.s.status, me: r.s.me, members: r.s.members, hosting: r.s.hosting } : null);
     // the session is over from the other side (a Falcon whose documents differ, ended for everyone, or taken out of it):
     // the doc goes back to a plain one
@@ -120,6 +125,8 @@ export function useLiveSessions(h: LiveHost) {
     r.s.binding.shown = undefined;
     r.away?.();
     r.s.stop();
+    // the room hands the rest of its count over as the socket closes: read it a moment after (once, not a poll)
+    if (r.s.invite().relay === collab.relayUrl()) setTimeout(collab.usageChanged, 1500);
     const m = mods.current;
     if (m && r.docId !== null && r.plugins) {
       const [, ld] = m, view = host.current.viewOf(r.docId);
@@ -266,9 +273,10 @@ export function LivePane(props: { focus: boolean; docName: string }) {
   const on = !!i;
   return (
     <div ref={box}>
-        <section className="co-sec lv-now">
+        {/* with no relay, the dialog's own line above already says to add one */}
+        {(relay || on) && <section className="co-sec lv-now">
           <p className="co-line lv-line" role="status">{liveLine(i, relay)}</p>
-        </section>
+        </section>}
 
         <section className="co-sec" aria-label="This document">
           {!on ? (

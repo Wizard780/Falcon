@@ -12,6 +12,8 @@ const SLOW = 'https://slow.test';
 let checks: string[] = [], slow: ((r: Response | Error) => void)[] = [];
 const fetch = vi.fn(async (url: string, init?: RequestInit) => {
   const u = String(url);
+  // Settings > Sharing's usage bar reads the relay's day too: an older relay here, and not one of the checks this counts
+  if (u.endsWith('/v1/usage')) return new Response('{"error":"not_found"}', { status: 404 });
   if (u.endsWith(`/v1/inbox/${'0'.repeat(64)}`) && init?.method === 'POST') checks.push(u.replace(/\/v1\/.*$/, ''));
   if (u.startsWith(`${RELAY}/`)) return new Response(JSON.stringify({ error: 'bad_envelope' }), { status: 400 });
   if (u.startsWith(`${PAGE}/`)) return new Response('<!doctype html><title>Hi</title>', { status: 200 });

@@ -223,3 +223,27 @@
 .lv-inv { flex-direction: row; align-items: center; }
 /* your code changed with your relay: said in the text color, not the quiet one */
 .cf.co .co-sub[data-changed] { color: var(--u-tx); }
+/* the relay usage bar (Collab.tsx RelayUsage): a big number, and a bar whose fill is what's left, the used part hatched */
+@property --p { syntax: '<number>'; inherits: true; initial-value: 0; }
+.use { --p: 0; --fill: var(--u-tx2); --warn: #e07070; transition: --p 400ms var(--u-ease); font-variant-numeric: tabular-nums; }
+:root[data-chrome="light"] .use { --warn: #b23a3a; }
+.use[data-s="low"] { --fill: var(--warn); }
+.cf .use { margin: 14px 0 0; }
+.u-wrap { display: flex; align-items: center; gap: 20px; min-height: 32px; }
+.u-big { flex: none; display: flex; align-items: baseline; gap: 6px; min-width: 104px; }
+.u-big strong { font-size: 28px; line-height: 32px; font-weight: 600; color: var(--u-tx); }
+.use[data-s="low"] .u-big strong { color: var(--warn); }
+.u-big span { font-size: 13px; color: var(--u-mut); }
+.u-bar { position: relative; flex: 1; min-width: 0; height: 20px; border-radius: 10px; overflow: hidden;
+  background: repeating-linear-gradient(135deg, var(--u-ctl2) 0 2px, transparent 2px 6px), var(--u-well); }
+.cf .u-bar { background-color: var(--u-deep); }
+.u-bar b { position: absolute; inset: 0; border-radius: 10px; background: var(--fill); clip-path: inset(0 calc(100% - var(--p) * 1%) 0 0 round 10px); }
+.u-in { position: absolute; top: 0; right: 10px; font-size: 11.5px; line-height: 20px; color: var(--u-mut); white-space: nowrap; pointer-events: none; }
+.u-bar b .u-in { color: var(--u-deep); }
+.u-note { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 10px; font-size: 12.5px; line-height: 18px; color: var(--u-mut); }
+.use[data-s="old"] .u-note { margin-top: 0; }
+.u-note span { min-width: 0; text-wrap: balance; }
+.cf.co .use button.u-up, .st-row .use button.u-up { flex: none; height: 22px; padding: 0 8px; margin: -2px -8px -2px 0; background: transparent; box-shadow: none; color: var(--u-tx2); border-radius: 6px; font-size: 12.5px; cursor: pointer; }
+.cf.co .use button.u-up:hover, .st-row .use button.u-up:hover { background: var(--u-hover); color: var(--u-tx); }
+@media (prefers-reduced-motion: reduce) { .use { transition: none; } }
+.reduce-motion .use { transition: none; } /* Settings > Reduce motion */
