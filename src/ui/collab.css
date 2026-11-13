@@ -13,7 +13,7 @@
   color: var(--u-mut); font-weight: 400; transition: color 150ms ease-out; }
 .cf.co .sh-sw button:hover:not(:disabled), .cf.co .sh-sw button[aria-selected="true"] { background: transparent; color: var(--u-tx); }
 .cf.co .sh-sw button:focus-visible { outline-offset: 1px; }
-.lv-now { margin-top: 18px; }
+.co-sec.lv-now { margin-top: 18px; }
 .co-line { margin: 0 0 6px !important; }
 .co-sec { margin-top: 22px; }
 .co-sec h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; line-height: 18px; color: var(--u-tx); }
@@ -92,6 +92,7 @@
   100% { transform: translate(0, 0); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) { .share-b svg, .share-b:hover svg, .share-b[data-fly] svg { transition: none; transform: none; animation: none; } }
+.reduce-motion .share-b:hover svg { transform: none; } /* Settings > Reduce motion: no nudge either */
 .share-n { position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--ink); color: #000;
   box-shadow: 0 0 0 2px var(--u-deep); font: 600 10px/15px var(--ui-font); font-style: normal; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
 .fstrip[data-wide] .share-n { position: static; flex: none; box-shadow: none; }

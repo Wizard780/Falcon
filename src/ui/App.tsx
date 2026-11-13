@@ -2148,7 +2148,7 @@ function SharingButton({ cards, invites, onClick }: { cards: number; invites: nu
     : `${what} waiting for you. Show ${cards ? 'card sharing' : 'live editing'}`;
   return (
     <button className="fs-b share-b" title={title} aria-label={n ? `Sharing, ${what} waiting` : 'Sharing'} data-waiting={n || undefined} data-fly={fly.on || undefined}
-      onClick={() => { setFly((f) => ({ n: f.n + 1, on: true })); onClick(); }} onAnimationEnd={() => setFly((f) => ({ ...f, on: false }))}>
+      onClick={() => { if (!reducedMotion()) setFly((f) => ({ n: f.n + 1, on: true })); onClick(); }} onAnimationEnd={() => setFly((f) => ({ ...f, on: false }))}>
       <SvgIcon key={fly.n} name="send" /><span className="lbl">{n ? `${what[0].toUpperCase()}${what.slice(1)} waiting` : 'Sharing'}</span>
       {n > 0 && <i className="share-n" aria-hidden="true">{n > 99 ? '99+' : n}</i>}
     </button>
@@ -2162,7 +2162,7 @@ function CheckButton({ checking, onCheck }: { checking: boolean; onCheck: () => 
   return (
     <button className="fs-b chk" title={checking ? 'Checking for updates' : 'Check for updates'} aria-label="Check for updates"
       aria-busy={checking || undefined} data-busy={checking || undefined} data-turn={(turn && !checking) || undefined}
-      onMouseEnter={() => { if (!checking) setTurn(true); }} onAnimationEnd={() => setTurn(false)} onClick={() => { if (!checking) onCheck(); }}>
+      onMouseEnter={() => { if (!checking && !reducedMotion()) setTurn(true); }} onAnimationEnd={() => setTurn(false)} onClick={() => { if (!checking) onCheck(); }}>
       <SvgIcon name="refresh" /><span className="lbl">{checking ? 'Checking' : 'Check for updates'}</span></button>
   );
 }

@@ -160,10 +160,12 @@ svg { flex: none; }
 .gear-b:hover svg { transform: rotate(120deg); }
 @media (prefers-reduced-motion: reduce) { .gear-b svg { transition: none; } .gear-b:hover svg { transform: none; } }
 /* check for updates: the arrows turn once on hover (App.tsx sets data-turn until it ends), and keep turning while it looks */
-.chk[data-turn] svg { animation: chk-spin 600ms var(--u-ease); }
+/* its own keyframes, so the spin starting mid-turn restarts from the icon's rest instead of retiming the turn */
+.chk[data-turn] svg { animation: chk-turn 600ms var(--u-ease); }
 .chk[data-busy] { cursor: progress; }
 .chk[data-busy] svg { animation: chk-spin 900ms linear infinite; }
 @keyframes chk-spin { to { transform: rotate(360deg); } }
+@keyframes chk-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .chk[data-turn] svg, .chk[data-busy] svg { animation: none; } }
 .fs-b[data-on] { color: var(--u-tx); background: var(--u-raised); box-shadow: var(--u-top); }
 .fs-b[data-on]::before { content: ''; position: absolute; left: -10px; top: 10px; bottom: 10px; width: 2px; border-radius: 1px; background: var(--ink-ui); }
