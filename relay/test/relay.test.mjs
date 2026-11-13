@@ -372,3 +372,115 @@ describe('rooms', () => {
     assert.equal((await fetch(`${relay.url}/v1/room/${ROOM}5`)).status, 426);
   });
 });
+
+// ---------- usage: the relay counting its own day ----------
+
+const usage = async (url) => { const r = await fetch(`${url}/v1/usage`); return { status: r.status, body: await r.json(), cors: r.headers.get('access-control-allow-origin') }; };
+/** What changed between two readings. */
+const delta = (a, b) => Object.fromEntries(['requests', 'objects', 'rows', 'msgs'].map((k) => [k, b[k] - a[k]]));
+
+describe('usage', () => {
+  let metered;
+  before(async () => { metered = await startRelay({ METER_TEST: 'on' }); });
+
+  test('GET /v1/usage answers the raw tallies for today (UTC), and nothing else', async () => {
+    const u = await usage(metered.url);
+    assert.equal(u.status, 200);
+    assert.equal(u.cors, '*');
+    assert.deepEqual(Object.keys(u.body).sort(), ['day', 'msgs', 'objects', 'requests', 'rows', 'usage']);
+    assert.equal(u.body.usage, 1);
+    assert.equal(u.body.day, new Date().toISOString().slice(0, 10));
+  });
+
+  test('a card sent, and an inbox connect, are counted with what they cost', async () => {
+    const a = await makeIdentity(), b = await makeIdentity(), inbox = await inboxId(b.pub);
+    const u0 = (await usage(metered.url)).body; // nothing counted since the last test's answer: that one again
+    assert.equal((await post(metered.url, inbox, await seal(a, b.pub, card('Counted')))).status, 201);
+    const u1 = (await usage(metered.url)).body;
+    // the GET above, the POST and this GET; the inbox and the Meter call; the card's 5 rows and the Meter's upsert; its ack
+    assert.deepEqual(delta(u0, u1), { requests: 3, objects: 2, rows: 6, msgs: 1 });
+    // a card turned away before any Durable Object is a Worker request only
+    assert.equal((await post(metered.url, inbox, new Uint8Array(20))).status, 400);
+    const o = await owner(metered.url, b);
+    await o.until(() => o.got.cards.length === 1);
+    o.ws.close();
+    const u2 = (await usage(metered.url)).body;
+    // the 400, the connect and this GET; the inbox and the Meter; the upsert; hello, proof and an ack
+    assert.deepEqual(delta(u1, u2), { requests: 3, objects: 2, rows: 1, msgs: 3 });
+  });
+
+  test('the answer is kept for a while: asking again costs no Durable Object request, until something is counted', async () => {
+    const u1 = (await usage(metered.url)).body; // the last test's answer, kept
+    const u2 = (await usage(metered.url)).body;
+    assert.deepEqual(u2, u1); // the same answer: the Meter wasn't asked
+    await fetch(`${metered.url}/v1/rooms`); // a Worker request only: still the same answer
+    assert.deepEqual((await usage(metered.url)).body, u1);
+    const b = await makeIdentity();
+    assert.equal((await post(metered.url, await inboxId(b.pub), await seal(await makeIdentity(), b.pub, card('x')))).status, 201);
+    const u3 = (await usage(metered.url)).body;
+    // the three kept answers and the rooms check reach it now, with the POST and this GET: they were counted all along
+    assert.deepEqual(delta(u1, u3), { requests: 6, objects: 2, rows: 6, msgs: 1 });
+  });
+
+  test('a room counts incoming messages through hibernation, and hands the rest over when the socket closes', { timeout: 60_000 }, async () => {
+    const room = `${ROOM}6`;
+    const u0 = (await usage(metered.url)).body; // the last test's answer, kept
+    const a = await seat(metered.url, room), b = await seat(metered.url, room);
+    for (let i = 0; i < 5; i++) a.frame(1, `before ${i}`);
+    await b.until(() => b.got.frames.length === 5);
+    await wait(20_000); // idle: the room hibernates and is evicted (wrangler dev does it after about 10 s)
+    for (let i = 0; i < 5; i++) a.frame(1, `after ${i}`);
+    await b.until(() => b.got.frames.length === 10);
+    a.ws.close(); b.ws.close();
+    await wait(1000);
+    const u1 = (await usage(metered.url)).body;
+    // the kept GET, two connects and this GET; their rooms, a flush per closed socket and this GET's; 2 joins and 10 frames
+    assert.deepEqual(delta(u0, u1), { requests: 4, objects: 5, rows: 3, msgs: 12 });
+  });
+
+  test('a busy room hands over a batch every 400 messages, without waiting for a close', async () => {
+    const room = `${ROOM}7`;
+    const a = await seat(metered.url, room), b = await seat(metered.url, room);
+    await wait(300);
+    const u0 = (await usage(metered.url)).body;
+    for (let i = 0; i < 399; i++) a.frame(1, 'x'); // with a's join, 400
+    await b.until(() => b.got.frames.length === 399);
+    await wait(500);
+    // the room hands its batch to the Meter itself, so the Worker's kept answer doesn't know: a connect (counted here) makes
+    // the next answer fresh. That socket never joins, so it adds no message
+    const c = await seat(metered.url, `${ROOM}9`, false);
+    const u1 = (await usage(metered.url)).body;
+    assert.equal(u1.msgs - u0.msgs, 400);
+    c.ws.close();
+    a.ws.close(); b.ws.close();
+  });
+
+  test('a new UTC day starts from nothing: yesterday\'s row is replaced', async () => {
+    const r = await fetch(`${metered.url}/v1/usage`, { method: 'PUT', body: JSON.stringify({ day: '2000-01-01', requests: 99_000, objects: 99_000, rows: 99_000, msgs: 99_000 }) });
+    assert.equal(r.status, 200);
+    const u = (await usage(metered.url)).body;
+    assert.equal(u.day, new Date().toISOString().slice(0, 10));
+    assert.ok(u.requests < 10 && u.objects < 10 && u.rows < 10 && u.msgs < 10, JSON.stringify(u));
+  });
+
+  test('only tests can set the row: on a relay without METER_TEST a PUT is refused', async () => {
+    assert.equal((await fetch(`${relay.url}/v1/usage`, { method: 'PUT', body: '{}' })).status, 405);
+  });
+
+  test('a Meter that fails (over the day\'s limit) costs no send and breaks no room; /v1/usage says daily_limit', async () => {
+    const over = await startRelay({ METER_TEST: 'over' });
+    const a = await makeIdentity(), b = await makeIdentity(), inbox = await inboxId(b.pub);
+    // past the 25 a flush waits for, so flushes run (and fail) along the way
+    for (let i = 0; i < 30; i++) assert.equal((await post(over.url, inbox, await seal(a, b.pub, card(`Card ${i}`)))).status, 201);
+    const o = await owner(over.url, b);
+    await o.until(() => o.got.cards.length === 30);
+    o.ws.close();
+    const x = await seat(over.url, `${ROOM}8`), y = await seat(over.url, `${ROOM}8`);
+    x.frame(1, 'still passes');
+    await y.until(() => y.got.frames.length === 1);
+    x.ws.close(); y.ws.close();
+    const u = await usage(over.url);
+    assert.equal(u.status, 429);
+    assert.deepEqual(u.body, { error: 'daily_limit' });
+  });
+});

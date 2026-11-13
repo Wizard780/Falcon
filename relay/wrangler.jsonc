@@ -4,9 +4,9 @@
   "name": "falcon-relay",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  "durable_objects": { "bindings": [{ "name": "INBOX", "class_name": "Inbox" }, { "name": "ROOM", "class_name": "Room" }] },
+  "durable_objects": { "bindings": [{ "name": "INBOX", "class_name": "Inbox" }, { "name": "ROOM", "class_name": "Room" }, { "name": "METER", "class_name": "Meter" }] },
   // v2 adds live-editing rooms. A Room never writes to its storage; it is SQLite-backed only because that is the
-  // kind of Durable Object the free plan has
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Inbox"] }, { "tag": "v2", "new_sqlite_classes": ["Room"] }],
+  // kind of Durable Object the free plan has. v3 adds the Meter, the relay counting its own day (one row)
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Inbox"] }, { "tag": "v2", "new_sqlite_classes": ["Room"] }, { "tag": "v3", "new_sqlite_classes": ["Meter"] }],
   "observability": { "enabled": false }
 }
