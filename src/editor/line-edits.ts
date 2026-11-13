@@ -8,7 +8,7 @@ import { Plugin, Selection, TextSelection, type Command, type EditorState, type 
  */
 
 /** Where the last line a selection covers ends, when the selection stops at the very start of a later line. */
-function endBeforeLineStart(state: EditorState): number | null {
+export function endBeforeLineStart(state: EditorState): number | null {
   const sel = state.selection;
   if (!(sel instanceof TextSelection) || sel.empty) return null;
   const { $from, $to } = sel;

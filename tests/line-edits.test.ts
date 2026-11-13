@@ -110,6 +110,15 @@ describe('Redo repeats the last action', () => {
     redo(v);
     expect(v.state.doc.textContent).toBe('Pone xy two Pthree xy');
   });
+  it('repeating onto a triple-clicked tag stops at the end of that line, like typing there', () => {
+    setPref(P.repeatRedo, true);
+    const v = view([['tag', 'Tag'], ['normal', 'Smith 24'], ['tag', 'Two'], ['normal', 'Jones 20']]);
+    select(v, at(v.state, 'Tag'), at(v.state, 'Smith'));
+    type(v, 'New');
+    select(v, at(v.state, 'Two'), at(v.state, 'Jones'));
+    redo(v);
+    expect(map(v.state)).toBe('tag: New\nnormal: Smith 24\ntag: New\nnormal: Jones 20');
+  });
   it('real redo still wins when there is something to redo', () => {
     setPref(P.repeatRedo, true);
     const v = view([['normal', 'abc']]);

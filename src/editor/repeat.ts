@@ -1,9 +1,10 @@
-import { Plugin, type Command } from 'prosemirror-state';
+import { Plugin, TextSelection, type Command } from 'prosemirror-state';
 import type { Slice } from 'prosemirror-model';
 import type { EditorView } from 'prosemirror-view';
 import { redo } from './live-hooks'; // a live doc's redo is Loro's
 import { P, pref } from './prefs';
 import { isReading } from './read';
+import { endBeforeLineStart } from './line-edits';
 
 /**
  * Word's Repeat, as CardMirror does it behind a setting: with nothing left to redo, Redo does your last edit
@@ -30,7 +31,12 @@ export const redoOrRepeat: Command = (state, dispatch, view) => {
   const l = last.get(view);
   if (!l) return false;
   if (l.kind === 'command') return l.run(state, dispatch, view);
-  if (dispatch) dispatch((l.kind === 'typing' ? state.tr.insertText(l.text) : state.tr.replaceSelection(l.slice)).scrollIntoView());
+  if (dispatch) {
+    // over a triple-clicked line, the same range typing or a paste there would take (line-edits.ts)
+    const tr = state.tr, end = endBeforeLineStart(state);
+    if (end !== null) tr.setSelection(TextSelection.create(tr.doc, state.selection.from, end));
+    dispatch((l.kind === 'typing' ? tr.insertText(l.text) : tr.replaceSelection(l.slice)).scrollIntoView());
+  }
   return true;
 };
 
