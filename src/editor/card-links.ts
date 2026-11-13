@@ -78,7 +78,8 @@ export function cardIndex(doc: PMNode): Index {
     names.add(c.name);
   });
   const alt = [...names].sort((a, b) => b.length - a.length).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+').replace(/['’]/g, "['’]")).join('|');
-  if (alt !== lastAlt) { lastAlt = alt; lastRe = alt ? new RegExp(`(?<![\\p{L}\\p{N}])(${alt})[\\s,]+['’]?(\\d{4}|\\d{2})(?![\\p{L}\\p{N}])`, 'giu') : null; }
+  // the year can't run on into a bigger number ("Smith 24,000", "23.5") or a percentage ("prices rose 23%")
+  if (alt !== lastAlt) { lastAlt = alt; lastRe = alt ? new RegExp(`(?<![\\p{L}\\p{N}])(${alt})[\\s,]+['’]?(\\d{4}|\\d{2})(?![\\p{L}\\p{N}%]|[.,]\\d)`, 'giu') : null; }
   const idx: Index = { cards, re: lastRe };
   built.set(doc, idx);
   return idx;
