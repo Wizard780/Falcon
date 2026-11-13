@@ -35,8 +35,10 @@ function tokenAt(state: EditorState, pos: number): Range | null {
   if (!$pos.parent.isTextblock) return null;
   const text = $pos.parent.textBetween(0, $pos.parent.content.size, '￼', '￼');
   let a = $pos.parentOffset, b = a;
-  while (a > 0 && !/\s/.test(text[a - 1])) a--;
-  while (b < text.length && !/\s/.test(text[b])) b++;
+  // a line break (or a picture or footnote mark, all ￼ here) ends the stretch like a space: it's the next line's text
+  const edge = /[\s￼]/;
+  while (a > 0 && !edge.test(text[a - 1])) a--;
+  while (b < text.length && !edge.test(text[b])) b++;
   if (a === b || !WORD.test(text.slice(a, b).replace(/[^\p{L}\p{N}]/gu, '') || ' ')) return null;
   return { from: $pos.start() + a, to: $pos.start() + b };
 }
