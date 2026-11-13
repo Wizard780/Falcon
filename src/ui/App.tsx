@@ -1565,6 +1565,8 @@ export function App() {
   const jump = useCallback((stale: OutlineItem, index: number) => {
     const v = viewRef.current!;
     const item = buildOutline(v.state.doc)[index] ?? stale;
+    // lit now, in this click's render: otherwise that render still lights the old row, and the outline scrolls off to it
+    setCurItem(index);
     v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, item.pos + 1)));
     (v.dom as HTMLElement).focus({ preventScroll: true });
     scrollToPos(v, item.pos);

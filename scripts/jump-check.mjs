@@ -68,6 +68,13 @@ for (const run of [1, 2]) {
   want(blankFrames.length === 0, `no frame painted with half or more of the screen blank (${blankFrames.length} of ${moving.length})`);
   want(lits.every((l) => l === label), `the outline goes straight from "${start}" to the clicked heading (${lits.length} rows lit after the start: ${lits.slice(0, 4).join(' | ')})`);
   want(frames.at(-1).lit === label, `and ends on it: ${frames.at(-1).lit}`);
+  // the outline pane itself stays on the row you clicked (it used to slide off toward the row lit before the click)
+  await win.waitForTimeout(1200);
+  const seen = await win.evaluate(() => {
+    const s = document.querySelector('.sb-scroll').getBoundingClientRect(), r = document.querySelector('.sb-row.ol[data-on]')?.getBoundingClientRect();
+    return !!r && r.top >= s.top && r.bottom <= s.bottom;
+  });
+  want(seen, 'the clicked row is still in view in the outline a second later');
   if (process.env.FALCON_SHOTS) await win.screenshot({ path: path.join(process.env.FALCON_SHOTS, `jump-${run}.png`) });
 }
 await app.evaluate(() => { globalThis.falconSkipUnloadGuard = true; });
