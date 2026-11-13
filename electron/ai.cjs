@@ -64,7 +64,7 @@ async function askRouter(post, apiKey, { system, text, model, maxTokens }) {
 }
 
 /** `key(id)` reads a key from the secrets store (electron/secrets.cjs); it never comes from the page. */
-function createAi({ key, Client = Anthropic, post = fetch }) {
+function createAi({ key, Client = Anthropic, post = fetch, timeout = ROUTER_TIMEOUT }) {
   return {
     /** `system` is the prompt, `text` what the user picked. Answers { text } or { error, stop }. */
     async ask({ provider, system, text, model, maxTokens }) {
@@ -80,14 +80,21 @@ function createAi({ key, Client = Anthropic, post = fetch }) {
         messages: [{ role: 'user', content: text }],
       };
       if (hasFallbacks(m)) Object.assign(body, { betas: [FALLBACK_BETA], fallbacks: 'default' });
+      let late = false;
       try {
         const client = new Client({ apiKey, maxRetries: 2 });
-        // streamed, so a big max output tokens works: the SDK refuses those without streaming before it even sends
-        const res = await client.beta.messages.stream(body).finalMessage();
+        // streamed, so a big max output tokens works: the SDK refuses those without streaming before it even sends.
+        // The SDK's own timeout ends once the answer starts, so a stream that stalls after that is cut off here, as
+        // OpenRouter's is: the picked text stays locked until the AI answers
+        const stream = client.beta.messages.stream(body);
+        const timer = setTimeout(() => { late = true; stream.abort?.(); }, timeout);
+        let res;
+        try { res = await stream.finalMessage(); } finally { clearTimeout(timer); }
         if (res.stop_reason === 'refusal') return { error: 'The AI declined to format this one.' };
         if (res.stop_reason === 'max_tokens') return { error: 'The AI ran out of room on this one.' };
         return { text: res.content.filter((b) => b.type === 'text').map((b) => b.text).join('') };
       } catch (e) {
+        if (late) return { error: 'Anthropic took too long on this one.' };
         return failure(e, m);
       }
     },
