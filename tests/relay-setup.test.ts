@@ -32,18 +32,19 @@ async function run(cf: Fake, token: string = cf.token, random = picks('qwerty'))
 const relay = (cf: Fake) => cf.state.scripts.get('falcon-relay');
 
 describe('Falcon sets up the relay on a Cloudflare account', () => {
-  it('a brand-new account: uploads the relay with both migrations, picks a workers.dev subdomain without asking, and turns its address on', async () => {
+  it('a brand-new account: uploads the relay with all its migrations, picks a workers.dev subdomain without asking, and turns its address on', async () => {
     const cf = fakeCloudflare();
     const { r, steps, calls } = await run(cf);
     expect(r).toEqual({ ok: true, url: 'https://falcon-relay.falcon-qwerty.workers.dev', created: true });
     expect(steps).toEqual(['account', 'upload', 'address']);
     expect(cf.state.subdomain).toBe('falcon-qwerty');
-    expect(relay(cf).tag).toBe('v2');
-    expect([...relay(cf).classes]).toEqual(['Inbox', 'Room']);
+    expect(relay(cf).tag).toBe('v3');
+    expect([...relay(cf).classes]).toEqual(['Inbox', 'Room', 'Meter']);
     expect(relay(cf).workersDev).toBe(true);
     expect(relay(cf).code).toBe(worker.code);
     expect(relay(cf).meta).toMatchObject({ main_module: 'index.js', compatibility_date: worker.compatibility_date, observability: { enabled: false },
-      bindings: [{ type: 'durable_object_namespace', name: 'INBOX', class_name: 'Inbox' }, { type: 'durable_object_namespace', name: 'ROOM', class_name: 'Room' }] });
+      bindings: [{ type: 'durable_object_namespace', name: 'INBOX', class_name: 'Inbox' }, { type: 'durable_object_namespace', name: 'ROOM', class_name: 'Room' },
+        { type: 'durable_object_namespace', name: 'METER', class_name: 'Meter' }] });
     // the relay goes up before an address is picked, as wrangler does it
     expect(calls.indexOf('PUT /accounts/0123456789abcdef0123456789abcdef/workers/scripts/falcon-relay'))
       .toBeLessThan(calls.indexOf('PUT /accounts/0123456789abcdef0123456789abcdef/workers/subdomain'));
@@ -88,18 +89,45 @@ describe('Falcon sets up the relay on a Cloudflare account', () => {
   });
 
   it('redeploys over an existing relay safely: a current one gets no migration, an older one only the steps it lacks', async () => {
-    const now = fakeCloudflare({ subdomain: 'coach', scripts: { 'falcon-relay': { tag: 'v2', classes: ['Inbox', 'Room'], workersDev: true } } });
+    const now = fakeCloudflare({ subdomain: 'coach', scripts: { 'falcon-relay': { tag: 'v3', classes: ['Inbox', 'Room', 'Meter'], workersDev: true } } });
     expect((await run(now)).r.ok).toBe(true);
     expect(relay(now).meta.migrations).toBeUndefined();
 
     const old = fakeCloudflare({ subdomain: 'coach', scripts: { 'falcon-relay': { tag: 'v1', classes: ['Inbox'], workersDev: true } } });
     expect((await run(old)).r).toEqual({ ok: true, url: 'https://falcon-relay.coach.workers.dev', created: false });
-    expect(relay(old).meta.migrations).toEqual({ old_tag: 'v1', new_tag: 'v2', steps: [{ new_sqlite_classes: ['Room'] }] });
-    expect([...relay(old).classes]).toEqual(['Inbox', 'Room']);
+    expect(relay(old).meta.migrations).toEqual({ old_tag: 'v1', new_tag: 'v3', steps: [{ new_sqlite_classes: ['Room'] }, { new_sqlite_classes: ['Meter'] }] });
+    expect([...relay(old).classes]).toEqual(['Inbox', 'Room', 'Meter']);
+  });
+
+  it('updates a relay from before usage reporting in place: only the Meter is added, and its binding goes up with it', async () => {
+    // a v2 relay (rooms, no Meter) with its address on, as Set up my relay left it before this
+    const cf = fakeCloudflare({ subdomain: 'coach', scripts: { 'falcon-relay': { tag: 'v2', classes: ['Inbox', 'Room'], workersDev: true } } });
+    const { r, calls } = await run(cf);
+    expect(r).toEqual({ ok: true, url: 'https://falcon-relay.coach.workers.dev', created: false });
+    expect(relay(cf).meta.migrations).toEqual({ old_tag: 'v2', new_tag: 'v3', steps: [{ new_sqlite_classes: ['Meter'] }] });
+    expect(relay(cf).tag).toBe('v3');
+    expect([...relay(cf).classes]).toEqual(['Inbox', 'Room', 'Meter']);
+    expect(relay(cf).meta.bindings.map((b: { name: string }) => b.name)).toEqual(['INBOX', 'ROOM', 'METER']);
+    expect(relay(cf).code).toBe(worker.code);
+    expect(relay(cf).code).toContain('class Meter');
+    expect(relay(cf).workersDev).toBe(true);
+    // the same address, and the subdomain untouched
+    expect(calls.some((c: string) => c.startsWith('PUT') && c.endsWith('/subdomain'))).toBe(false);
+    // and again over it: nothing more to migrate
+    expect((await run(cf)).r.ok).toBe(true);
+    expect(relay(cf).meta.migrations).toBeUndefined();
+  });
+
+  it('the new code without its migration is turned down, as Cloudflare does: the Meter binding needs its class', async () => {
+    const cf = fakeCloudflare({ subdomain: 'coach', scripts: { 'falcon-relay': { tag: 'v2', classes: ['Inbox', 'Room'], workersDev: true } } });
+    const noMigration = { ...worker, migrations: worker.migrations.slice(0, 2) };
+    const r: Result = await createRelaySetup({ worker: noMigration, fetch: cf.fetch, random: picks('qwerty') }).deploy(cf.token);
+    expect(r).toMatchObject({ ok: false, error: 'cloudflare' });
+    expect(relay(cf).tag).toBe('v2');
   });
 
   it('a relay from a newer Falcon is left alone', async () => {
-    const cf = fakeCloudflare({ subdomain: 'coach', scripts: { 'falcon-relay': { tag: 'v3', classes: ['Inbox', 'Room', 'Later'] } } });
+    const cf = fakeCloudflare({ subdomain: 'coach', scripts: { 'falcon-relay': { tag: 'v4', classes: ['Inbox', 'Room', 'Meter', 'Later'] } } });
     const { r, calls } = await run(cf);
     expect(r).toEqual({ ok: false, error: 'newer_relay' });
     expect(calls.some((c: string) => c.startsWith('PUT'))).toBe(false);
