@@ -13,7 +13,12 @@ export type LiveInfo = {
   status: LiveStatus;
   me: { name: string; color: string };
   members: Member[];
+  /** this Falcon started the session */
+  hosting: boolean;
 } | null;
+
+/** Someone whose last edit came in this long ago is typing now. */
+export const TYPING_MS = 3_000;
 
 let info: LiveInfo = null;
 const subs = new Set<() => void>();
@@ -26,6 +31,10 @@ export const liveActions: {
   start?: () => void;
   /** leave the session (the doc stays open as it is) */
   stop?: () => void;
+  /** end it for everyone (each keeps the doc as it is) */
+  end?: () => Promise<void>;
+  /** ask one person (Loro peer id) to leave */
+  remove?: (peer: string) => void;
   invite?: (c: Contact) => Promise<void>;
   join?: (i: Invited) => void;
   /** open the Live editing panel */

@@ -4,9 +4,9 @@ import type { EditorView } from 'prosemirror-view';
 import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
 import { Fragment, Node as PMNode, Slice } from 'prosemirror-model';
-import { undo } from 'prosemirror-history';
 import { createState, createView, brushKey, emptyDoc, swapState } from '../editor/editor';
 import { topChildAt } from '../editor/window';
+import { leftSince, markOf, undo, untouched, type Mark } from '../editor/live-hooks';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
 import { IS_MAC, bindingOf, isRecording, keyLabel, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
@@ -41,7 +41,7 @@ import { aiService, formatCite, reformatCites, reformatCount, usePreset } from '
 import { Confirm, nameList, type Ask } from './Confirm';
 import { ComparePanel } from './ComparePanel';
 import { CollabPanel, SendCard, linkLine, useCollab } from './Collab';
-import { LiveBit, LivePanel, WAITS, useLiveSessions } from './Live';
+import { LivePanel, WAITS, WhoHere, useLiveSessions } from './Live';
 import * as collab from '../collab/service';
 import { copySlice } from '../editor/nav/clipboard';
 import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
@@ -1166,11 +1166,12 @@ export function App() {
   const { zoomTo, zoomBy, zoomWheel } = useSmoothZoom(zoom, setZoom, getScroller);
 
   /** Undo a send, only while the doc is still exactly as the send left it, so it can't undo later typing. Says so when it can't. */
-  const takeBack = useCallback((id: number, sent: EditorState, name: string): string | undefined => {
+  const takeBack = useCallback((id: number, sent: Mark, name: string): string | undefined => {
     const on = liveView(id);
     const now = on?.state ?? docsRef.current.find((d) => d.id === id)?.state;
     if (!now) return undefined;
-    if (now.doc !== sent.doc) return `${name} has changed since. Undo it there with ${keyText('Mod-z')}.`;
+    if (leftSince(now, sent)) return `The live session on ${name} has ended, so the card stays. Delete it there if you don't want it.`;
+    if (!untouched(now, sent)) return `${name} has changed since. Undo it there with ${keyText('Mod-z')}.`;
     undo(now, (t) => { if (on) on.dispatch(t); else patch(id, { state: now.apply(t), dirty: true }); });
     return undefined;
   }, [patch]);
@@ -1214,7 +1215,8 @@ export function App() {
     let next: EditorState;
     if (shown) { shown.dispatch(tr.scrollIntoView()); next = shown.state; } // joined: you see the card land
     else { next = base.apply(tr); patch(id, { state: next, dirty: true }); }
-    flash(`Sent “${sent.label}” to ${speechName}`, { label: 'Undo', run: () => { const note = takeBack(id, next, speechName); if (note) flash(note); } });
+    const mark = markOf(next);
+    flash(`Sent “${sent.label}” to ${speechName}`, { label: 'Undo', run: () => { const note = takeBack(id, mark, speechName); if (note) flash(note); } });
   }, [flash, sendAway, takeBack, patch]);
   /** Send Card to…: what Send to speech would send (the card at the caret, or the selection), to a contact. */
   const openSendCard = useCallback(() => {
@@ -1331,13 +1333,13 @@ export function App() {
     const tr = insertIntoSpeech(base, content);
     let next = base.apply(tr);
     if (shown) { shown.dispatch(fromWindow ? tr.scrollIntoView() : tr); next = shown.state; } else patch(doc.id, { state: next, dirty: true });
-    const docName = doc.meta.name || 'Untitled';
+    const docName = doc.meta.name || 'Untitled', mark = markOf(next);
     if (fromWindow) {
       const undoId = String(nextSent.current++);
-      sentAway.current.set(undoId, () => takeBack(doc.id, next, docName));
+      sentAway.current.set(undoId, () => takeBack(doc.id, mark, docName));
       return { ok: true, docTitle: docName, undo: undoId };
     }
-    flash(`${name} sent “${insertLabel(content)}” to ${docName}`, { label: 'Undo', run: () => { const note = takeBack(doc.id, next, docName); if (note) flash(note); } });
+    flash(`${name} sent “${insertLabel(content)}” to ${docName}`, { label: 'Undo', run: () => { const note = takeBack(doc.id, mark, docName); if (note) flash(note); } });
     return { ok: true, docTitle: docName };
   }), [flash, patch, takeBack, switchTo, gotoCard, start.slot]);
   const toggleSpeech = useCallback(() => {
@@ -1756,6 +1758,7 @@ export function App() {
 
       <div className="covered" inert={homeOpen || sdOn || modal}>
       <Toolbar
+        who={<WhoHere docId={activeId} />}
         sel={sel}
         run={run}
         brush={brush}
@@ -1805,7 +1808,6 @@ export function App() {
         {reading && <span className="lit">Read mode · keyboard locked · Space drops a marker</span>}
         {linkedFrom && <button className="back" title={titled('Back', 'linkBack', 'to where you clicked the card link')}
           onClick={() => { const v = viewRef.current; if (v) linkBack(v.state, v.dispatch, v); }}>← Back{keyLabel('linkBack') && <kbd>{keyLabel('linkBack')}</kbd>}</button>}
-        <LiveBit docId={activeId} onOpen={() => setLiveOpen(true)} />
         <span className="grow" />
         <button title={titled('Zoom out', 'zoomOut', 'make the page smaller')} onClick={() => zoomBy(-0.1)}>−</button>
         <button className="zoom" title={titled('Actual size', 'zoomReset', 'back to 100%')} onClick={() => zoomTo(1)}>{Math.round(zoom * 100)}%</button>
@@ -2218,7 +2220,7 @@ type SelState = ReturnType<typeof selectionState>;
 type PopKind = 'highlight' | 'shading' | 'font' | 'size' | 'doc' | 'card';
 const SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48];
 
-function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; onSend: () => void; speechSeconds: number }) {
+function Toolbar(props: { who: React.ReactNode; sel: SelState | null; run: (c: Command) => void; brush: string | null; onColor: (k: 'highlight' | 'shading') => void; onPick: (k: 'highlight' | 'shading', c: string | null) => void; flash: (m: string) => void; onSend: () => void; speechSeconds: number }) {
   const { sel, run } = props;
   const SPEECH_SECONDS = props.speechSeconds;
   const [pop, setPop] = useState<{ kind: PopKind; x: number; y: number; origin: number } | null>(null);
@@ -2362,6 +2364,7 @@ function Toolbar(props: { sel: SelState | null; run: (c: Command) => void; brush
             <Stopwatch left={clocks.speech / rc.speeches[clocks.idx].sec} />{clock(clocks.speech)}
           </button>
           <TimerWindow req={timerReq} onOpen={setTimerOpen} rc={rc} low={lowSec} />
+          {props.who}
           {pref(P.showSend) && (
             <button className="b" title={titled('Send to speech', 'sendToSpeech', 'copy the selection, or the card or section at the caret, into the speech doc. The file isn\'t changed. Change the key in Settings > Keybindings')} onMouseDown={(e) => { e.preventDefault(); props.onSend(); }}>Send</button>
           )}

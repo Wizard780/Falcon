@@ -77,7 +77,7 @@ async function addContact(page, code, name) {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);
 }
-const bit = (page) => page.textContent('.status .lv-bit').catch(() => '');
+const bit = (page) => page.getAttribute('.who', 'aria-label').catch(() => '');
 const map = (page) => page.evaluate(() => window.__falconMarkMap());
 
 want(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every((w) => !w.isVisible())), 'the window is never shown');
@@ -103,7 +103,7 @@ await win.waitForTimeout(500);
 await win.keyboard.press('Escape');
 want(await B.page.waitForFunction(() => document.querySelector('.toast')?.textContent?.includes('invited you to live-edit'), null, { timeout: 15000 }).then(() => true, () => false), 'web: the invite from the desktop arrives');
 await B.page.click('.toast button:has-text("Join")');
-want(await B.page.waitForFunction(() => document.querySelector('.status .lv-bit')?.textContent === 'Live · Dana', null, { timeout: 20000 }).then(() => true, () => false), `web: joined, with Dana (${await bit(B.page)})`);
+want(await B.page.waitForFunction(() => document.querySelector('.who')?.getAttribute('aria-label') === 'Live editing with Dana', null, { timeout: 20000 }).then(() => true, () => false), `web: joined, with Dana (${await bit(B.page)})`);
 want((await map(B.page)) === (await map(win)), `web: the doc is the desktop's:\n${await map(win)}`);
 await B.page.evaluate(() => { const v = window.__falconView; let at = -1; v.state.doc.descendants((n, p) => { if (at < 0 && n.isTextblock && n.textContent.startsWith('Body')) at = p + 1; return at < 0; }); const S = v.state.selection.constructor; v.dispatch(v.state.tr.setSelection(S.near(v.state.doc.resolve(at)))); v.focus(); });
 await B.page.keyboard.type('Web says hi. ');
@@ -113,7 +113,7 @@ await win.keyboard.type(' And back.');
 want(await B.page.waitForFunction(() => window.__falconMarkMap().includes('And back.'), null, { timeout: 10000 }).then(() => true, () => false), 'web: the desktop\'s typing arrives');
 // the web Falcon typed ahead of the desktop's caret in the same paragraph: the desktop's next keys still land where it left off
 want((await map(win)).includes('normal: Web says hi. Body from the desktop. And back.'), `desktop: its caret moved along with the text typed ahead of it:\n${await map(win)}`);
-want(await win.waitForFunction(() => document.querySelector('.status .lv-bit')?.textContent === 'Live · Blake', null, { timeout: 10000 }).then(() => true, () => false), `desktop: Live · Blake (${await bit(win)})`);
+want(await win.waitForFunction(() => document.querySelector('.who')?.getAttribute('aria-label') === 'Live editing with Blake', null, { timeout: 10000 }).then(() => true, () => false), `desktop: Live · Blake (${await bit(win)})`);
 want(await win.waitForFunction(() => !!document.querySelector('.ProseMirror .f-peer'), null, { timeout: 10000 }).then(() => true, () => false), "desktop: Blake's caret shows");
 await win.screenshot({ path: path.join(out, '01-desktop-live.png') });
 await B.shot('web-live');

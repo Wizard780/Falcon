@@ -4,11 +4,12 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { TextSelection, type Command } from 'prosemirror-state';
 import { addColumnAfter, addRowAfter, TableMap } from 'prosemirror-tables';
 import type { EditorView } from 'prosemirror-view';
-import type { Node as PMNode } from 'prosemirror-model';
+import { Fragment, type Node as PMNode } from 'prosemirror-model';
+import { insertIntoSpeech } from '../src/editor/speech';
 import { createState, createView, markMap, swapState } from '../src/editor/editor';
 import { falconKeys as K } from '../src/editor/keymap';
 import { schema } from '../src/editor/schema';
-import { redo, undo } from '../src/editor/live-hooks';
+import { leftSince, markOf, redo, undo, untouched } from '../src/editor/live-hooks';
 import { applyRemote, docOf, isLiveState, liveState, localState, narrowLoroReplace, newBinding, seed, type Binding } from '../src/collab/live-doc';
 import { loroSyncPluginKey } from 'loro-prosemirror';
 
@@ -222,6 +223,75 @@ describe('two editors through Loro', () => {
     await tick(10);
     expect(mm(B)).not.toContain('very ');
     expect(mm(B)).toContain('mine ');
+  });
+});
+
+describe('undo steps in a live doc', () => {
+  const block = () => Fragment.from([P('tag', 'INSERTED TAG'), P('normal', 'inserted body')]);
+  it('a card inserted right after typing is its own step: one Mod-Z takes the card, the next the typing', async () => {
+    const { A } = await pair(card());
+    caret(A, 'Temperatures'); type(A, 'mine ');
+    A.view.dispatch(insertIntoSpeech(A.view.state, block())); // within the 500 ms the typing merges over
+    await tick(10);
+    run(A, undo);
+    await tick(10);
+    expect(mm(A)).not.toContain('INSERTED TAG');
+    expect(mm(A)).toContain('mine ');
+    run(A, undo);
+    await tick(10);
+    expect(mm(A)).not.toContain('mine ');
+    // and typing after it merges again as before
+    caret(A, 'Temperatures'); type(A, 'ab');
+    run(A, undo);
+    await tick(10);
+    expect(mm(A)).not.toContain('abTemperatures');
+    expect(mm(A)).not.toContain('aTemperatures');
+  });
+  it("a send's toast Undo still works after someone else edits, and not after you do (markOf / untouched)", async () => {
+    const { A, B } = await pair(card());
+    A.view.dispatch(insertIntoSpeech(A.view.state, block()));
+    const m = markOf(A.view.state);
+    caret(B, 'Smith 24'); type(B, 'theirs ');
+    await flush(A, B);
+    expect(mm(A)).toContain('theirs ');
+    expect(untouched(A.view.state, m)).toBe(true);
+    caret(A, 'Temperatures'); type(A, 'x');
+    expect(untouched(A.view.state, m)).toBe(false);
+  });
+  it('a mark made while live, once the doc is plain again, is not untouched (its undo went with the session)', async () => {
+    const { A } = await pair(card());
+    const plugins = createState(card()).plugins;
+    A.view.dispatch(insertIntoSpeech(A.view.state, block()));
+    const m = markOf(A.view.state);
+    A.view.updateState(localState(A.view.state, plugins));
+    expect(untouched(A.view.state, m)).toBe(false);
+    expect(leftSince(A.view.state, m)).toBe(true);
+  });
+  it("someone else's edits arriving several to a frame leave my undo alone", async () => {
+    const { A, B } = await pair(card());
+    caret(A, 'Temperatures'); type(A, 'mine ');
+    await flush(A, B);
+    caret(B, 'Smith 24'); type(B, 'ab'); // two updates, as one frame carries them
+    const frame = B.out.splice(0);
+    expect(frame.length).toBeGreaterThan(1);
+    // what LiveSession.take does with a frame
+    for (const u of frame) A.b.doc.import(u);
+    await tick(10);
+    expect(A.b.undo.canUndo()).toBe(true);
+    run(A, undo);
+    await tick(10);
+    expect(mm(A)).not.toContain('mine ');
+    expect(mm(A)).toContain('ab');
+  });
+  it('a paste right after typing is its own step too', async () => {
+    const { A } = await pair(card());
+    caret(A, 'Temperatures'); type(A, 'mine ');
+    A.view.dispatch(A.view.state.tr.insert(A.view.state.doc.content.size, block()).setMeta('uiEvent', 'paste'));
+    await tick(10);
+    run(A, undo);
+    await tick(10);
+    expect(mm(A)).not.toContain('INSERTED TAG');
+    expect(mm(A)).toContain('mine ');
   });
 });
 

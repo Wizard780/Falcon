@@ -42,7 +42,8 @@ export type Binding = {
  * only runs between Falcons that agree (live.ts checks it in each person's name frame).
  */
 export const SCHEMA_ID = (() => {
-  const text = [...Object.entries(schema.nodes), ...Object.entries(schema.marks)]
+  // and the room's own parts: a Falcon from before End and Remove (live.ts T_END, T_REMOVE) would skip them and stay
+  const text = 'proto2;' + [...Object.entries(schema.nodes), ...Object.entries(schema.marks)]
     .map(([name, t]) => `${name}(${Object.keys(t.spec.attrs ?? {}).sort().join(',')})`).sort().join(';');
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
@@ -78,9 +79,11 @@ class Cursors extends CursorEphemeralStore {
   }
 }
 
+/** Edits this close together (typing a word) undo together, as prosemirror-history's 500 ms did. */
+const MERGE_MS = 500;
+
 export function newBinding(doc = new LoroDoc()): Binding {
-  // edits close together (typing a word) undo together, as prosemirror-history's 500 ms did
-  const undoManager = new UndoManager(doc, { mergeInterval: 500, maxUndoSteps: 200 });
+  const undoManager = new UndoManager(doc, { mergeInterval: MERGE_MS, maxUndoSteps: 200 });
   undoManager.addExcludeOriginPrefix('sys:');
   styleMarks(doc);
   return { doc, undo: undoManager, presence: new Cursors(doc.peerIdStr, PRESENCE_TIMEOUT), fixer: () => true };
@@ -192,10 +195,32 @@ function repair(n: PMNode): PMNode | null {
   return n.type.createAndFill(attrs, content, n.marks) ?? n.type.createAndFill(attrs) ?? schema.nodes.paragraph.create(null, n.textContent ? schema.text(n.textContent) : null);
 }
 
+/**
+ * An edit that starts its own undo step in a plain doc (closeHistory: a card inserted, a send to speech; or a paste or a
+ * drop) starts one in a live doc too. Loro's UndoManager merges by time alone, so a card inserted within 500 ms of
+ * typing went into the typing's step, and one Mod-Z took both. Placed after LoroSyncPlugin: in the transaction the
+ * binding appends, its commit is made by the time this runs, and the merge window comes back.
+ */
+function newStep(b: Binding) {
+  let open = false;
+  return new Plugin({
+    key: NEW_STEP,
+    state: {
+      init: () => null,
+      apply(tr) {
+        const ui = tr.getMeta('uiEvent');
+        if (tr.docChanged && (tr.getMeta('closeHistory$') || ui === 'paste' || ui === 'drop')) { b.undo.setMergeInterval(0); open = true; }
+        else if (open && tr.getMeta(loroSyncPluginKey)) { b.undo.setMergeInterval(MERGE_MS); open = false; }
+        return null;
+      },
+    },
+  });
+}
+
 const isHistory = (p: Plugin) => (p as unknown as { key: string }).key.startsWith('history$');
 const isLive = (p: Plugin) => LIVE_KEYS.some((k) => (p as unknown as { key: string }).key.startsWith(k));
-const LIVE_KEYS = ['loro-sync$', 'loro-undo$', 'loro-ephemeral-cursor$', 'falcon-live$', 'falcon-live-settle$'];
-const SETTLE = new PluginKey('falcon-live-settle'), ATTACHED = new PluginKey('falcon-live');
+const LIVE_KEYS = ['loro-sync$', 'loro-undo$', 'loro-ephemeral-cursor$', 'falcon-live$', 'falcon-live-settle$', 'falcon-live-step$'];
+const SETTLE = new PluginKey('falcon-live-settle'), ATTACHED = new PluginKey('falcon-live'), NEW_STEP = new PluginKey('falcon-live-step');
 
 /** A remote caret: a thin bar in their color, their name on hover. No label riding along the text. */
 function caret(b: Binding, peer: string) {
@@ -204,6 +229,8 @@ function caret(b: Binding, peer: string) {
   el.className = 'f-peer';
   el.style.setProperty('--peer', /^#[0-9a-f]{6}$/i.test(String(user?.color)) ? user!.color : '#888'); // their Falcon says it: only a plain color goes in
   el.title = user?.name ?? 'Someone';
+  el.dataset.peer = peer; // Who's here lights this caret's name while their row is hovered (ui/Live.tsx)
+  el.dataset.n = user?.name ?? 'Someone';
   el.append('⁠');
   return el;
 }
@@ -222,6 +249,7 @@ export function liveState(state: EditorState, b: Binding, me: Peer): EditorState
       ...keep,
       LoroSyncPlugin({ doc: b.doc as LoroDocType, mapping }),
       LoroUndoPlugin({ doc: b.doc, undoManager: b.undo }),
+      newStep(b),
       contained(LoroEphemeralCursorPlugin(b.presence, { user: me, createCursor: (peer) => caret(b, peer), createSelection: () => ({ class: 'f-peer-sel' }) })),
       settle,
       attached(b),
@@ -459,4 +487,10 @@ function gaps(a: PMNode, b: PMNode, at: Map<PMNode, number>) {
   return out;
 }
 
-Object.assign(liveHooks, { undo, redo, narrow: narrowLoroReplace });
+/** This peer's own change count in the live doc `state` is bound to (see liveHooks.mine). */
+function mine(state: EditorState): number | undefined {
+  const d = loroSyncPluginKey.getState(state)?.doc as LoroDoc | undefined;
+  return d ? d.oplogVersion().get(d.peerId) ?? 0 : undefined;
+}
+
+Object.assign(liveHooks, { undo, redo, narrow: narrowLoroReplace, mine });

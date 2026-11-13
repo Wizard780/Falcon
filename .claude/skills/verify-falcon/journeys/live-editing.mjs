@@ -144,18 +144,18 @@ await A.page.keyboard.press('Escape');
 await wait(A, 200);
 await A.page.keyboard.press('Escape'); // Settings
 await wait(A, 200);
-want(/^Live · just you$/.test((await A.page.textContent('.status .lv-bit').catch(() => '')) ?? ''), `A: the status bar says Live · just you (${await A.page.textContent('.status .lv-bit').catch(() => '')})`);
+want((await A.page.textContent('.who').catch(() => '')) === 'Just you' && (await A.page.getAttribute('.who', 'aria-label').catch(() => '')) === 'Live editing with just you', `A: the toolbar's Who's here says Just you (${await A.page.textContent('.who').catch(() => '')})`);
 
 want(await until(B, () => document.querySelector('.toast')?.textContent?.includes('invited you to live-edit')), `B: a toast says Avery invited B (${await toast(B)})`);
 want((await toast(B)).startsWith('Avery invited you to live-edit “seed”'), 'B: it names who and which doc');
 want(!!(await B.page.$('.fstrip [aria-label="Sharing, 1 invite waiting"] .share-n')), "B: the rail's Sharing button counts the invite waiting");
 await B.shot('b-invite-toast');
 await B.page.click('.toast button:has-text("Join")');
-want(await until(B, () => document.querySelector('.doc-row .doc-nm[aria-label="seed"]') && document.querySelector('.status .lv-bit')?.textContent?.startsWith('Live')), 'B: joining opens "seed" in a tab, live');
+want(await until(B, () => document.querySelector('.doc-row .doc-nm[aria-label="seed"]') && !!document.querySelector('.who')), 'B: joining opens "seed" in a tab, live');
 want((await map(B)) === seedMap, 'B: the doc that came in is A\'s, every style and mark');
 want(bRoomSockets.length >= 1 && bRoomSockets.every((u) => u.startsWith(RELAY.replace('http', 'ws'))), `B: the room is on A's relay, which the invite named, not B's own (${bRoomSockets.join()})`);
-want(await until(A, () => document.querySelector('.status .lv-bit')?.textContent === 'Live · Blake'), `A: the status bar says Live · Blake (${await A.page.textContent('.status .lv-bit').catch(() => '')})`);
-want(await until(B, () => document.querySelector('.status .lv-bit')?.textContent === 'Live · Avery'), 'B: the status bar says Live · Avery');
+want(await until(A, () => document.querySelector('.who')?.getAttribute('aria-label') === 'Live editing with Blake' && document.querySelector('.who').textContent === '2 here'), `A: Who's here says 2 here, with Blake (${await A.page.getAttribute('.who', 'aria-label').catch(() => '')})`);
+want(await until(B, () => document.querySelector('.who')?.getAttribute('aria-label') === 'Live editing with Avery'), "B: Who's here: with Avery");
 want(await until(B, () => !!document.querySelector('.fstrip [aria-label="Sharing"]') && !document.querySelector('.fstrip .share-n')), "B: joined, the invite no longer waits on the rail");
 
 // ---------- both type and format at once ----------
@@ -183,14 +183,31 @@ await typeSlowly(A, 'steady typing here ', 100);
 const secs = (Date.now() - t0) / 1000;
 await wait(A, 800);
 const aFrames = fa.sent - a0, bFrames = fb.sent - b0;
-want(aFrames <= Math.ceil(secs / 0.4) + 2 && aFrames >= 2, `A typed for ${secs.toFixed(1)} s and sent ${aFrames} frames (at most one per 400 ms)`);
+want(aFrames <= Math.ceil(secs / 0.1) + 2 && aFrames >= 2, `A typed for ${secs.toFixed(1)} s and sent ${aFrames} frames (at most one per 100 ms)`);
 want(bFrames === 0, `B, idle, sent ${bFrames} frames meanwhile`);
 want(await converge([A, B]), 'B has the steady typing');
+
+// ---------- latency: how soon each key A types shows on B (local relay, so this is Falcon's own delay) ----------
+await B.page.evaluate(() => { window.__seen = []; let last = ''; const ed = document.querySelector('.ProseMirror');
+  new MutationObserver(() => { const t = ed.textContent; if (t !== last) { last = t; window.__seen.push([Date.now(), (t.match(/Q/g) || []).length]); } }).observe(ed, { subtree: true, childList: true, characterData: true }); });
+await A.page.evaluate(() => { window.__typed = []; addEventListener('keydown', (e) => { if (e.key === 'Q') window.__typed.push(Date.now()); }, true); });
+await caret(A, 'Global'); // a caret move, then a key at once: the key doesn't wait out the caret's frame
+await A.page.keyboard.type('Q');
+await wait(A, 1000);
+for (let i = 0; i < 24; i++) { await A.page.keyboard.type('Q'); await wait(A, 125); }
+await wait(A, 1000);
+{
+  const typed = await A.page.evaluate(() => window.__typed), seen = await B.page.evaluate(() => window.__seen);
+  const lag = typed.map((t, i) => (seen.find(([, n]) => n >= i + 1)?.[0] ?? Infinity) - t), steady = lag.slice(1);
+  const avg = Math.round(steady.reduce((a, b) => a + b, 0) / steady.length);
+  want(lag[0] < 150, `the first key after a caret move shows on B in ${lag[0]} ms`);
+  want(avg < 120 && Math.max(...steady) < 250, `steady typing (8 keys a second) shows on B in ${avg} ms on average, ${Math.max(...steady)} ms at most`);
+}
 
 // ---------- the relay restarts: both keep editing, then catch up ----------
 relay.stop();
 await wait(A, 1500);
-want(await until(A, () => /reconnecting/.test(document.querySelector('.status .lv-bit')?.textContent ?? ''), null, 10000), `relay down: A's status bar says reconnecting (${await A.page.textContent('.status .lv-bit').catch(() => '')})`);
+want(await until(A, () => /Reconnecting/.test(document.querySelector('.who')?.textContent ?? ''), null, 10000), `relay down: A's Who's here says Reconnecting (${await A.page.textContent('.who').catch(() => '')})`);
 await caret(A, "Temperatures");
 await A.page.keyboard.type('down-A ');
 await caret(B, "Smith 24");
@@ -216,12 +233,56 @@ await command(C, 'live editing');
 await C.shot('c-invites-in-panel');
 await C.page.click('.co-live section[aria-label="Invites"] button:has-text("Join")');
 await C.page.keyboard.press('Escape').catch(() => {});
-want(await until(C, () => document.querySelector('.status .lv-bit')?.textContent?.startsWith('Live')), 'C: joins from the panel');
+want(await until(C, () => !!document.querySelector('.who')), 'C: joins from the panel');
 want(await converge([A, B, C]), 'C, joining late, has everything: all three mark maps match');
-want(await until(A, () => document.querySelector('.status .lv-bit')?.textContent === 'Live · Blake and Casey'), `A: Live · Blake and Casey (${await A.page.textContent('.status .lv-bit').catch(() => '')})`);
+want(await until(A, () => document.querySelector('.who')?.getAttribute('aria-label') === 'Live editing with Blake and Casey'), `A: Who's here: with Blake and Casey (${await A.page.getAttribute('.who', 'aria-label').catch(() => '')})`);
 await caret(C, "Global");
 await C.page.keyboard.type('from C ');
 want(await converge([A, B, C]), "C's typing reaches A and B");
+
+// ---------- Who's here: A, the host ----------
+const popRows = (f) => f.page.$$eval('.lv-pop .pr', (rs) => rs.map((r) => ({ name: r.querySelector('b').textContent, sub: r.querySelector('.t span').textContent, remove: !!r.querySelector('button') })));
+want((await A.page.textContent('.who')) === '3 here' && (await A.page.$$('.who .dots i')).length === 3, `A: Who's here says 3 here, with three dots (${await A.page.textContent('.who')})`);
+await A.page.click('.who');
+await A.page.waitForSelector('.lv-pop');
+await wait(A, 250); // its fade-in
+const aRows = await popRows(A);
+want(aRows.map((r) => r.name).join() === 'You,Casey,Blake', `A: you first, then whoever typed last (${aRows.map((r) => r.name).join()})`);
+want(aRows[0].sub === 'This Falcon · hosting' && !aRows[0].remove, `A: your row says This Falcon · hosting (${aRows[0].sub})`);
+want(/typing now/.test(aRows[1].sub) && /^Growth is slowing/.test(aRows[1].sub), `A: Casey's row says where Casey is and typing now (${aRows[1].sub})`);
+want(aRows.slice(1).every((r) => r.remove), 'A: the host can remove each of the others');
+want((await A.page.textContent('.lv-pop .line')) === 'People editing seed with you.' && await A.page.isVisible('.lv-pop button:has-text("End session for everyone…")'), 'A: People editing seed with you, and End session for everyone…');
+const nameOpacity = (f, who) => f.page.evaluate((who) => { const c = [...document.querySelectorAll('.ProseMirror .f-peer')].find((e) => e.dataset.n === who); return c ? getComputedStyle(c, '::after').opacity : 'none'; }, who);
+want((await nameOpacity(A, 'Casey')) === '0', `A: Casey's caret shows no name until asked (${await nameOpacity(A, 'Casey')})`);
+await A.page.hover('.lv-pop .pr:has(b:text-is("Casey"))');
+await wait(A, 250);
+want((await nameOpacity(A, 'Casey')) === '1' && (await nameOpacity(A, 'Blake')) === '0', `A: hovering Casey's row puts Casey's name over Casey's caret, only Casey's (${await nameOpacity(A, 'Casey')}, ${await nameOpacity(A, 'Blake')})`);
+await A.shot('a-whos-here');
+await A.page.click('.lv-pop button:has-text("End session for everyone…")');
+want((await A.page.textContent('.lv-pop .end span')) === 'Everyone keeps their own copy.' && await A.page.evaluate(() => document.activeElement?.textContent === 'End session'), 'A: End session asks first, inline, with End session focused');
+await A.shot('a-end-asks');
+await A.page.keyboard.press('Escape');
+await wait(A, 150);
+want(await A.page.isVisible('.lv-pop button:has-text("End session for everyone…")'), 'A: Esc backs out of the question, and the popover stays');
+await A.page.keyboard.press('Escape');
+await wait(A, 150);
+want(!(await A.page.$('.lv-pop')), 'A: Esc again closes it');
+await command(A, 'theme light');
+await A.page.click('.who');
+await A.page.waitForSelector('.lv-pop');
+await wait(A, 250); // its fade-in
+await A.shot('a-whos-here-light');
+await A.page.keyboard.press('Escape');
+await command(A, 'theme dark');
+// ---------- Who's here: B, who joined ----------
+await B.page.click('.who');
+await B.page.waitForSelector('.lv-pop');
+await wait(B, 250); // its fade-in
+const bRows = await popRows(B);
+want(bRows[0].name === 'You' && bRows[0].sub === 'This Falcon' && bRows.some((r) => r.name === 'Avery' && /hosting/.test(r.sub)), `B: you, then Avery marked hosting (${JSON.stringify(bRows)})`);
+want(bRows.every((r) => !r.remove) && !(await B.page.$('.lv-pop button:has-text("End session")')) && await B.page.isVisible('.lv-pop button:has-text("Leave")'), 'B: no Remove and no End session: B can leave');
+await B.shot('b-whos-here');
+await B.page.keyboard.press('Escape');
 await command(A, 'live editing');
 want((await A.page.$$eval('.lv-who .nm', (x) => x.map((n) => n.textContent))).join() === 'You (Avery),Blake,Casey', 'A: the panel lists everyone in it');
 await A.shot('a-panel-three');
@@ -260,11 +321,26 @@ want(backB.includes('while B looks away') && backB.includes('tag: Sent from Blak
 want(await converge([A, B, C]), 'and all three agree');
 await B.shot('b-back-from-another-tab');
 
+// ---------- B sends to speech into the live doc again and takes it back with the toast's Undo ----------
+await B.page.click('.doc-row .doc-nm[aria-label="Untitled"]');
+await wait(B, 400);
+await B.page.click('.ProseMirror:not(.hm-doc)');
+await B.page.keyboard.press(`${MOD}+a`);
+await B.page.keyboard.type('Take me back');
+await B.page.keyboard.press('F7');
+await B.page.keyboard.press('`');
+want(await until(A, () => window.__falconMarkMap().includes('Take me back')), 'A: the second card B sent arrives');
+await B.page.click('.toast button:has-text("Undo")');
+want(await until(A, () => !window.__falconMarkMap().includes('Take me back')), `B: the send toast's Undo takes the card back out of the live doc, for A too (B says: ${await toast(B)})`);
+await B.page.click('.doc-row .doc-nm[aria-label="seed (speech doc)"], .doc-row .doc-nm[aria-label="seed"]');
+await wait(B, 500);
+want(!(await map(B)).includes('Take me back') && await converge([A, B, C]), 'B: gone on B too, and all three agree');
+
 // ---------- B leaves ----------
 want((await command(B, 'leave live editing')) === 'Leave live editing', 'B: the command center has Leave live editing');
-want(await until(B, () => !document.querySelector('.status .lv-bit')), "B: the status bar's live line is gone");
+want(await until(B, () => !document.querySelector('.who')), "B: Who's here is gone from B's toolbar");
 want((await toast(B)).startsWith('Left the live session. “seed” stays open as it is'), `B: says it left and the doc stays (${await toast(B)})`);
-want(await until(A, () => document.querySelector('.status .lv-bit')?.textContent === 'Live · Casey'), 'A: Blake is out of the session');
+want(await until(A, () => document.querySelector('.who')?.getAttribute('aria-label') === 'Live editing with Casey'), 'A: Blake is out of the session');
 const kept = await map(B);
 await caret(A, "Temperatures");
 await A.page.keyboard.type('after B left ');
@@ -285,6 +361,37 @@ const E = await openFalcon('live-editing/e'); extra.push(E);
 await E.open(savedB);
 want((await map(E)) === finalB, "B's .docx saved after leaving reopens with the same mark map");
 await B.shot('b-after-leaving');
+
+// ---------- B comes back; A, the host, removes B, then ends the session for everyone ----------
+await command(B, 'live editing');
+await B.page.click('.co-live section[aria-label="Invites"] button:has-text("Join")');
+want(await until(B, () => !!document.querySelector('.who')), 'B: joins again from the panel');
+await B.page.keyboard.press('Escape');
+want(await until(A, () => document.querySelector('.who')?.getAttribute('aria-label') === 'Live editing with Casey and Blake'), `A: Blake is back (${await A.page.getAttribute('.who', 'aria-label').catch(() => '')})`);
+await A.page.click('.who');
+await A.page.waitForSelector('.lv-pop');
+await wait(A, 250); // its fade-in
+await A.page.hover('.lv-pop .pr:has(b:text-is("Blake"))');
+await A.page.click('.lv-pop .pr:has(b:text-is("Blake")) button:has-text("Remove")');
+want((await toast(A)).startsWith('Removed Blake. They keep their copy'), `A: says Blake was removed (${await toast(A)})`);
+want(await until(B, () => !document.querySelector('.who')), "B: taken out: Who's here is gone from B's toolbar");
+want((await toast(B)).startsWith('Avery took you out of the session. “seed” stays open here as it is'), `B: says who took B out, and the doc stays (${await toast(B)})`);
+const invitesLeft = () => B.page.evaluate(() => new Promise((r) => { const q = indexedDB.open('falcon-collab'); q.onsuccess = () => { const g = q.result.transaction('meta').objectStore('meta').get('invites'); g.onsuccess = () => r((g.result ?? []).length); g.onerror = () => r(-1); }; q.onerror = () => r(-1); }));
+await wait(B, 300);
+want((await invitesLeft()) === 0, `B: the invite to that room is gone, so B is not one click from coming back (${await invitesLeft()} left)`);
+want(await until(A, () => document.querySelectorAll('.lv-pop .lv-fold:not([data-gone])').length === 2), "A: Blake's row folds away");
+await A.page.click('.lv-pop button:has-text("End session for everyone…")');
+await A.page.click('.lv-pop button:has-text("End session")');
+want(await until(A, () => document.querySelector('.lv-pop .line')?.textContent === 'The session is over. This file is yours alone again.'), `A: the popover says the session is over (${await A.page.textContent('.lv-pop .line').catch(() => '')})`);
+await A.shot('a-session-over');
+want(await until(C, () => !document.querySelector('.who')) && (await toast(C)).startsWith('Avery ended the session. “seed” stays open here as it is'), `C: the session ended for C too, and C keeps the doc (${await toast(C)})`);
+const keptC = await map(C);
+await A.page.keyboard.press('Escape');
+want(await until(A, () => !document.querySelector('.who')), "A: closed, Who's here is gone");
+await caret(A, 'Temperatures');
+await A.page.keyboard.type('after the end ');
+await wait(C, 1200);
+want((await map(C)) === keptC, 'C: nothing A types now arrives');
 
 // ---------- a relay from before rooms ----------
 // the stand-in answers 404 to everything, as a relay deployed before rooms does for /v1/rooms and /v1/room/:id
