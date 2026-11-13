@@ -8,7 +8,7 @@ import { noteNodes, schema } from '../editor/schema';
 import { P, onPrefs, pref } from '../editor/prefs';
 import { encodeCode, inboxId, keyOf, parseCode, relayKey } from './code';
 import { BadEnvelope, MAX_ENVELOPE, TooBig, open, proveKey, seal, type Identity } from './crypto';
-import { DEFAULT_RELAY, nextUtcMidnight, relayTransport, type Link, type Transport } from './relay';
+import { DEFAULT_RELAY, nextUtcMidnight, relayTransport, usage, utcDay, type Link, type Transport, type UsageGot } from './relay';
 import * as store from './store';
 import type { Contact, Invited, Received } from './store';
 import type { Invite } from './crypto';
@@ -26,10 +26,12 @@ export type CollabState = {
   link: Link;
   /** a send through my relay hit its daily limit: nothing goes through it until then */
   pausedUntil: number;
+  /** the last reading of my relay's own count of its day (GET /v1/usage), and which relay it was; null before one */
+  usage: { relay: string; got: UsageGot } | null;
 };
 
 const LABEL_MAX = 40;
-let state: CollabState = { status: 'loading', code: '', name: '', contacts: [], cards: [], invites: [], gave: '', relay: '', link: { kind: 'off' }, pausedUntil: 0 };
+let state: CollabState = { status: 'loading', code: '', name: '', contacts: [], cards: [], invites: [], gave: '', relay: '', link: { kind: 'off' }, pausedUntil: 0, usage: null };
 const subs = new Set<() => void>();
 const arrivals = new Set<(c: Received, contact: Contact | undefined) => void>();
 const invitedArrivals = new Set<(i: Invited, contact: Contact | undefined) => void>();
@@ -202,7 +204,7 @@ export function start(listen: boolean): () => void {
     if (i) for (const f of invitedArrivals) f(i, contactFor(i.from));
   };
   channel?.addEventListener('message', onMsg);
-  const offPrefs = onPrefs(() => { if (relayUrl() !== state.relay) { set({ pausedUntil: 0 }); relisten(); } });
+  const offPrefs = onPrefs(() => { if (relayUrl() !== state.relay) { set({ pausedUntil: 0, usage: null }); relisten(); usageChanged(); } });
   void reload().then(() => {
     if (!live || !listen) return;
     const lead = () => { leading = true; relisten(); };
@@ -323,6 +325,37 @@ export async function drop(id: string) {
   roomAgain();
 }
 
+// ---------- what's left of my relay's day ----------
+
+/** The usage bars showing now (the Sharing dialog, Settings > Sharing). Falcon never polls: it asks when one opens, and
+ *  after something of its own went through the relay while one shows. */
+let viewers = 0;
+let asking: Promise<void> | null = null, again = false;
+/** Ask my relay what it has counted today. One at a time: asked again meanwhile, it asks once more after. */
+export function refreshUsage(): Promise<void> {
+  if (asking) { again = true; return asking; }
+  asking = (async () => {
+    do {
+      again = false;
+      const url = relayUrl();
+      if (!url) { set({ usage: null }); return; }
+      let got = await usage(url);
+      // another day than this computer's (the relay's kept answer from just before midnight): ask once more
+      if (typeof got === 'object' && got.day !== utcDay()) got = await usage(url);
+      if (url === relayUrl()) set({ usage: { relay: url, got } });
+    } while (again);
+  })().finally(() => { asking = null; });
+  return asking;
+}
+/** A usage bar opened: read it now. The returned function is for when it closes. */
+export function watchUsage(): () => void {
+  viewers++;
+  void refreshUsage();
+  return () => { viewers--; };
+}
+/** Something went through my relay (a send, a live session starting or ending): read it again if a bar shows. */
+export function usageChanged() { if (viewers > 0) void refreshUsage(); }
+
 /** The local time the daily limits reset (00:00 UTC): "7:00 PM". */
 export const resetTime = (until: number) => new Date(until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
@@ -361,6 +394,7 @@ export async function send(contact: Contact, content: Fragment): Promise<{ ok: b
   try { env = await seal(me, p.pub, { name: state.name.trim(), at: Date.now(), content: json, mid, code: state.code }); } catch (e) { return e instanceof TooBig ? tooBig : { ok: false, message: "Couldn't seal the card. It wasn't sent" }; }
   if (env.length > MAX_ENVELOPE) return tooBig;
   const r = await transportFor(url).send(await inboxId(p.pub), env);
+  if (url === relayUrl()) usageChanged();
   unsure = !r.ok && (r.error === 'unreachable' || r.error === 'relay_error') ? { what, mid } : null;
   if (r.ok) return { ok: true, message: `Sent “${label}” to ${contact.name}` };
   if (r.error === 'daily_limit') {
@@ -392,6 +426,7 @@ export async function sendInvite(contact: Contact, invite: Invite): Promise<{ ok
   let env: Uint8Array;
   try { env = await seal(me, p.pub, { name: state.name.trim(), at: Date.now(), content: [], mid: crypto.randomUUID(), invite, code: state.code }); } catch { return { ok: false, message: "Couldn't seal the invite. It wasn't sent" }; }
   const r = await transportFor(url).send(await inboxId(p.pub), env);
+  if (url === relayUrl()) usageChanged();
   if (r.ok) return { ok: true, message: `Invited ${contact.name} to “${invite.doc}”` };
   if (r.error === 'daily_limit') { const until = pause(url); return { ok: false, message: `Sharing is paused until ${resetTime(until)}, when the relay's daily limit resets. The invite wasn't sent` }; }
   const why: Record<string, string> = {

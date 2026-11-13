@@ -69,10 +69,19 @@ export function fakeRelay(others: string[] = []) {
     close() { if (this.readyState === 3) return; this.readyState = 3; sockets.delete(this); setTimeout(() => this.onclose?.(), 1); }
   }
   const acks: string[] = [];
+  /** what GET /v1/usage answers: fields over the default count (each POST one request), or a status */
+  let usage: Record<string, unknown> | number = {};
+  const usageAsks: string[] = [];
 
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (![RELAY, ...others].some((b) => String(url).startsWith(`${b}/`))) throw new TypeError('offline');
     if (!up || answer === 'down') throw new TypeError('Failed to fetch');
+    // GET /v1/usage: the relay's count of its day, or a status (404: a relay from before it)
+    if (String(url).endsWith('/v1/usage')) {
+      usageAsks.push(String(url));
+      return typeof usage === 'number' ? new Response('{"error":"x"}', { status: usage })
+        : new Response(JSON.stringify({ usage: 1, day: new Date().toISOString().slice(0, 10), requests: posted.length, objects: posted.length, rows: 0, msgs: 0, ...usage }), { status: 200 });
+    }
     const inbox = /\/v1\/inbox\/([0-9a-f]{64})$/.exec(String(url))![1];
     const data = new Uint8Array(init!.body as Uint8Array);
     posted.push({ inbox, data, headers: new Headers(init?.headers), url: String(url) });
@@ -85,7 +94,8 @@ export function fakeRelay(others: string[] = []) {
 
   return {
     install() { vi.stubGlobal('fetch', fetch); vi.stubGlobal('WebSocket', FakeSocket); },
-    inboxes, posted, acks,
+    inboxes, posted, acks, usageAsks,
+    usage: (u: Record<string, unknown> | number) => { usage = u; },
     /** POST from outside the app (another person's Falcon) */
     post: (inbox: string, data: Uint8Array) => fetch(`${RELAY}/v1/inbox/${inbox}`, { method: 'POST', body: data as Uint8Array<ArrayBuffer> }),
     answer: (a: number | 'down' | null) => { answer = a; },
