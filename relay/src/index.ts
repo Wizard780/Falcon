@@ -40,11 +40,14 @@ const MAX_FRAME = 1_048_576 + 5;
 const FRAME_UPDATE = 1, FRAME_ASK = 2, FRAME_TO = 3;
 
 /** Usage counting. The Worker flushes its tally to the Meter once it has this many Durable Object requests (the flush is
- *  one more: 4%); a room socket flushes every this many incoming messages (20 to 1, so 20 requests: the flush is 5%). */
-const FLUSH_AT = 25, ROOM_FLUSH = 400;
+ *  one more: 4%), or this many Worker requests that reached none; a room socket flushes every this many incoming messages
+ *  (20 to 1, so 20 requests: the flush is 5%). */
+const FLUSH_AT = 25, FLUSH_REQUESTS = 100, ROOM_FLUSH = 400;
 /** Rows a card writes over its life, counted when it is stored: its insert and its delete (acked or expired) are two
  *  each (the row and its primary-key index), and at most one alarm (each setAlarm is a row). */
 const CARD_ROWS = 5;
+/** Durable Object requests a card stored costs later: its alarm running (alarms bill as requests; one per card at most). */
+const CARD_ALARM = 1;
 /** Socket messages an inbox connect sends in (hello, proof, an ack); each card stored is one more (its ack). */
 const CONNECT_MSGS = 3;
 /** How long the Worker keeps an answer to GET /v1/usage: it is unauthenticated and costs a Durable Object request. */
@@ -117,8 +120,9 @@ function count(t: Partial<Tally>) {
   for (const k of ['requests', 'objects', 'rows', 'msgs'] as const) tally[k] += t[k] ?? 0;
   if (t.objects || t.rows || t.msgs) counted = true; // a usage answer from before this is out of date
 }
-/** Hand the tally to the Meter: one call, itself a Durable Object request and a row, so it is counted too. */
-function flush(env: Env): Promise<Usage> {
+/** Hand the tally to the Meter: one call, itself a Durable Object request and a row, so it is counted too. Async, so even a
+ *  Meter that isn't there (a binding missing) is a rejection the caller lets go, never a throw in the middle of a send. */
+async function flush(env: Env): Promise<Usage> {
   const t = tally;
   tally = zero();
   return meter(env).add({ ...t, objects: t.objects + 1, rows: t.rows + 1 });
@@ -126,7 +130,7 @@ function flush(env: Env): Promise<Usage> {
 /** Counting never costs a send: a flush runs after the answer, and a Meter that fails (over the day's limit too) is let go. */
 function counting(env: Env, ctx: ExecutionContext, t: Partial<Tally>) {
   count(t);
-  if (tally.objects >= FLUSH_AT) ctx.waitUntil(flush(env).catch(() => {}));
+  if (tally.objects >= FLUSH_AT || tally.requests >= FLUSH_REQUESTS) ctx.waitUntil(flush(env).catch(() => {}));
 }
 
 async function usage(req: Request, env: Env): Promise<Response> {
@@ -189,7 +193,7 @@ export default {
       if (body.length < MIN_ENVELOPE || body[0] !== 1) return reply(400, { error: 'bad_envelope' });
       count({ objects: 1 });
       const r = await stub.put(inbox, body);
-      counting(env, ctx, r.status === 201 ? { rows: CARD_ROWS, msgs: 1 } : {});
+      counting(env, ctx, r.status === 201 ? { objects: CARD_ALARM, rows: CARD_ROWS, msgs: 1 } : {});
       return reply(r.status, r.body);
     } catch (e) {
       return overLimit(e) ? reply(429, { error: 'daily_limit' }) : reply(503, { error: 'relay_error' });
@@ -346,7 +350,8 @@ export class Room extends DurableObject<Env> {
   }
   /** Fire and forget: a Meter that fails (over the day's limit too) changes nothing in the room. */
   private meter(msgs: number) {
-    this.ctx.waitUntil(meter(this.env).add({ requests: 0, objects: 1, rows: 1, msgs }).then(() => {}, () => {}));
+    // inside a promise: a Meter that isn't there (a binding missing) is let go like one that fails
+    this.ctx.waitUntil(Promise.resolve().then(() => meter(this.env).add({ requests: 0, objects: 1, rows: 1, msgs })).then(() => {}, () => {}));
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {

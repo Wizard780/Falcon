@@ -103,22 +103,24 @@ How it counts, roughly:
 
 - The Worker counts every request it runs for, and a Durable Object request for each one that reaches an inbox
   or a room. A card stored counts 5 rows over its life (its insert and its delete are two each, the row and its
-  primary-key index, and at most one alarm) and one incoming message (its ack); an inbox connect counts three
-  (hello, proof, an ack). The Worker keeps this in memory and hands it to the Meter, one SQLite Durable Object with one
-  row for the day, in one call once it reaches 25 Durable Object requests, and whenever `/v1/usage` is answered.
+  primary-key index, and at most one alarm), one more Durable Object request (that alarm running) and one incoming
+  message (its ack); an inbox connect counts three (hello, proof, an ack). The Worker keeps this in memory and hands it
+  to the Meter, one SQLite Durable Object with one row for the day, in one call once it reaches 25 Durable Object
+  requests or 100 Worker requests, and whenever `/v1/usage` is answered.
 - A room counts each incoming message in the socket's attachment, so the count outlasts hibernation. It hands
   them over every 400 messages and the rest when the socket closes.
 - Each hand-over is one Durable Object request and one row written, and is counted too: about 4% on cards and
   5% on live editing. A new UTC day replaces the row. Rows read (5,000,000 a day) aren't counted: a relay runs
   out of the others long before.
-- `/v1/usage` needs no key, so the Worker keeps its answer for 30 seconds, unless it counted something since.
-  A room's hand-over goes to the Meter directly, so the answer can trail a live session by up to that long.
+- `/v1/usage` needs no key, so the Worker keeps its answer for 30 seconds, unless it counted something since
+  (then the answer would be out of date, and the hand-over it makes was due anyway). A room's hand-over goes to the
+  Meter directly, so the answer can trail a live session by up to that long.
 - Counting never costs a send: every hand-over runs after the answer and is let go if it fails, including when
   the Meter itself is over the day's limit (then `/v1/usage` answers 429 `daily_limit`).
 
 It only sees this relay. Other Workers on the same Cloudflare account share the same free allowance and aren't
-counted, and a Worker isolate that is evicted loses the few counts it hadn't handed over yet. So the bar is a
-close lower bound on what's used, not Cloudflare's own number.
+counted, and a Worker isolate that is evicted loses what it hadn't handed over yet (under 25 Durable Object requests
+and 100 Worker requests). So the bar is a close lower bound on what's used, not Cloudflare's own number.
 
 ### What a stranger can do
 

@@ -3,7 +3,7 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -13,12 +13,12 @@ import { inboxId } from '../../src/collab/code.ts';
 const here = new URL('..', import.meta.url).pathname;
 const servers = [];
 
-async function startRelay(vars = {}) {
+async function startRelay(vars = {}, cwd = here) {
   const persist = mkdtempSync(join(tmpdir(), 'falcon-relay-'));
   const port = 18000 + Math.floor(Math.random() * 2000);
   const args = ['wrangler', 'dev', '--ip', '127.0.0.1', '--port', String(port), '--persist-to', persist, '--log-level', 'warn', '--show-interactive-dev-session=false',
     ...Object.entries(vars).flatMap(([k, v]) => ['--var', `${k}:${v}`])];
-  const proc = spawn('npx', args, { cwd: here, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  const proc = spawn('npx', args, { cwd, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let log = '';
   proc.stdout.on('data', (d) => { log += d; });
   proc.stderr.on('data', (d) => { log += d; });
@@ -33,9 +33,16 @@ async function startRelay(vars = {}) {
   servers.push(s);
   return s;
 }
-after(() => { for (const s of servers) { try { process.kill(-s.proc.pid, 'SIGTERM'); } catch { /* gone */ } rmSync(s.persist, { recursive: true, force: true }); } });
+/** Folders a test made for a relay to run from: removed only once that relay is stopped (wrangler run from a folder that's gone doesn't stop). */
+const dirs = [];
+after(() => {
+  for (const s of servers) { try { process.kill(-s.proc.pid, 'SIGTERM'); } catch { /* gone */ } rmSync(s.persist, { recursive: true, force: true }); }
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A socket's open, or a failure after 10 s: an upgrade that never answers fails the test instead of hanging the run. */
+const opening = (ws) => new Promise((r, j) => { const t = setTimeout(() => j(new Error('socket never opened')), 10_000); ws.onopen = () => { clearTimeout(t); r(); }; ws.onerror = (e) => { clearTimeout(t); j(e); }; });
 const card = (text) => ({ name: 'Alex', at: Date.now(), content: [{ type: 'paragraph', attrs: { style: 'tag' }, content: [{ type: 'text', text }] }] });
 const post = (url, inbox, body) => fetch(`${url}/v1/inbox/${inbox}`, { method: 'POST', body });
 
@@ -57,7 +64,7 @@ function connect(url, inbox) {
     const t = setTimeout(() => rej(new Error(`timed out; got ${JSON.stringify({ text: got.text, cards: got.cards.length, closed: got.closed })}`)), ms);
     waiters.push({ ok, done: () => { clearTimeout(t); res(); } });
   });
-  const opened = new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  const opened = opening(ws);
   return { ws, got, until, opened, send: (m) => ws.send(JSON.stringify(m)) };
 }
 
@@ -265,7 +272,7 @@ async function seat(url, room, join = true) {
     const t = setTimeout(() => rej(new Error(`timed out; got ${JSON.stringify(got)}`)), ms);
     waiters.push({ ok, done: () => { clearTimeout(t); res(); } });
   });
-  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  await opening(ws);
   const s = { ws, got, until, frame: (kind, body, extra = []) => ws.send(new Uint8Array([kind, ...extra, ...new TextEncoder().encode(body)])) };
   if (join) { ws.send(JSON.stringify({ t: 'join' })); await until(() => got.text.some((m) => m.t === 'welcome')); s.slot = got.text.find((m) => m.t === 'welcome').slot; }
   return s;
@@ -397,8 +404,9 @@ describe('usage', () => {
     const u0 = (await usage(metered.url)).body; // nothing counted since the last test's answer: that one again
     assert.equal((await post(metered.url, inbox, await seal(a, b.pub, card('Counted')))).status, 201);
     const u1 = (await usage(metered.url)).body;
-    // the GET above, the POST and this GET; the inbox and the Meter call; the card's 5 rows and the Meter's upsert; its ack
-    assert.deepEqual(delta(u0, u1), { requests: 3, objects: 2, rows: 6, msgs: 1 });
+    // the GET above, the POST and this GET; the inbox, the card's alarm to come and the Meter call; the card's 5 rows and
+    // the Meter's upsert; its ack
+    assert.deepEqual(delta(u0, u1), { requests: 3, objects: 3, rows: 6, msgs: 1 });
     // a card turned away before any Durable Object is a Worker request only
     assert.equal((await post(metered.url, inbox, new Uint8Array(20))).status, 400);
     const o = await owner(metered.url, b);
@@ -419,7 +427,7 @@ describe('usage', () => {
     assert.equal((await post(metered.url, await inboxId(b.pub), await seal(await makeIdentity(), b.pub, card('x')))).status, 201);
     const u3 = (await usage(metered.url)).body;
     // the three kept answers and the rooms check reach it now, with the POST and this GET: they were counted all along
-    assert.deepEqual(delta(u1, u3), { requests: 6, objects: 2, rows: 6, msgs: 1 });
+    assert.deepEqual(delta(u1, u3), { requests: 6, objects: 3, rows: 6, msgs: 1 });
   });
 
   test('a room counts incoming messages through hibernation, and hands the rest over when the socket closes', { timeout: 60_000 }, async () => {
@@ -465,6 +473,30 @@ describe('usage', () => {
 
   test('only tests can set the row: on a relay without METER_TEST a PUT is refused', async () => {
     assert.equal((await fetch(`${relay.url}/v1/usage`, { method: 'PUT', body: '{}' })).status, 405);
+  });
+
+  test('a relay deployed without the Meter\'s binding still sends, connects and passes room frames', { timeout: 60_000 }, async () => {
+    // the same code with METER left out of the config: every hand-over finds no Meter
+    const dir = mkdtempSync(join(tmpdir(), 'falcon-relay-nometer-'));
+    dirs.push(dir);
+    cpSync(join(here, 'src'), join(dir, 'src'), { recursive: true });
+    symlinkSync(join(here, 'node_modules'), join(dir, 'node_modules'));
+    writeFileSync(join(dir, 'wrangler.jsonc'), readFileSync(join(here, 'wrangler.jsonc'), 'utf8').replace(/, \{ "name": "METER", "class_name": "Meter" \}/, ''));
+    assert.doesNotMatch(readFileSync(join(dir, 'wrangler.jsonc'), 'utf8'), /"METER"/);
+    const bare = await startRelay({}, dir);
+    const a = await makeIdentity(), b = await makeIdentity(), inbox = await inboxId(b.pub);
+    for (let i = 0; i < 30; i++) assert.equal((await post(bare.url, inbox, await seal(a, b.pub, card(`Card ${i}`)))).status, 201);
+    for (let i = 0; i < 110; i++) assert.equal((await fetch(`${bare.url}/v1/rooms`)).status, 200); // past the request flush too
+    const o = await owner(bare.url, b);
+    await o.until(() => o.got.cards.length === 30);
+    o.ws.close();
+    const x = await seat(bare.url, `${ROOM}a`), y = await seat(bare.url, `${ROOM}a`);
+    for (let i = 0; i < 450; i++) x.frame(1, 'x'); // past a room's 400
+    await y.until(() => y.got.frames.length === 450);
+    x.ws.close();
+    await y.until(() => y.got.text.some((m) => m.t === 'left'));
+    y.ws.close();
+    assert.equal((await usage(bare.url)).status, 503);
   });
 
   test('a Meter that fails (over the day\'s limit) costs no send and breaks no room; /v1/usage says daily_limit', async () => {
