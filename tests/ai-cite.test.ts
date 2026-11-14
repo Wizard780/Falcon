@@ -244,3 +244,30 @@ describe('Reformat every cite', () => {
     expect(await reformatCites(docWith(), { stopped: () => stop, progress: () => {} })).toMatchObject({ done: 1, stopped: true });
   });
 });
+
+describe('cites with several authors', () => {
+  const four = `[[CITE]]\nAndrew S. Bowen ’26. Analyst at CRS.\nSarah E. Garding. Analyst at CRS.\nDerek E. Mix. Specialist at CRS.\n“Title.” CRS. August 11, 2026. https://x.gov/a.pdf.\n[[TOKENS]]\nBowen ’26\nGarding\nMix\n[[END]]`;
+  it('keeps each line of a [[CITE]] block', () => {
+    expect(parseCite(four)!.cite.split('\n')).toHaveLength(4);
+  });
+  it('puts the lines in as hard breaks in one paragraph, cite mark on the lead, bold on co-authors', () => {
+    const { nodes, marked: ok } = citeNodes(parseCite(four)!);
+    expect(ok).toBe(true);
+    expect(nodes.filter((n) => n.type.name === 'hard_break')).toHaveLength(3);
+    const withMark = (m: string) => nodes.filter((n) => n.marks.some((k) => k.type.name === m)).map((n) => n.text);
+    expect(withMark('cite')).toEqual(['Bowen ’26']);
+    expect(withMark('bold')).toEqual(['Garding', 'Mix']);
+  });
+  it('still gives a CardMirror-style second token with the date the cite mark', () => {
+    const { nodes } = citeNodes({ cite: 'Laura Weiss & John Bresnahan 3/26 [x]', tokens: ['Weiss & ', 'Bresnahan 3/26'] });
+    expect(nodes.filter((n) => n.marks.some((k) => k.type.name === 'cite')).map((n) => n.text)).toEqual(['Weiss & ', 'Bresnahan 3/26']);
+  });
+  it('formats a four-author cite into one paragraph with line breaks', async () => {
+    bridge.aiAsk = vi.fn(async () => ({ text: four }));
+    const v = viewOf([para('Bowen ’8-11 [stuff]')], 1, 20);
+    await formatCite(v, () => {});
+    expect(v.state.doc.childCount).toBe(1);
+    expect(v.state.doc.textBetween(0, v.state.doc.content.size, '\n', '\n').split('\n')).toHaveLength(4);
+    expect(marked(v)).toBe('Bowen ’26');
+  });
+});

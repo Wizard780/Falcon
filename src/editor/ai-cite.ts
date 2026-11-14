@@ -80,11 +80,13 @@ const part = (text: string, name: string) => text.search(new RegExp(`\\[\\[\\s*$
 const noTag = (s: string) => s.replace(/^\[\[\s*\w+\s*\]\]/, '');
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
 
-/** The cite and the stretches of it to mark. The [[CITE]] / [[TOKENS]] / [[END]] block is optional: a prompt of your own can just answer with the cite. Null when there's nothing in it. */
+/** The cite and the stretches of it to mark. The [[CITE]] / [[TOKENS]] / [[END]] block is optional: a prompt of your own can just answer with the cite.
+ *  Inside a [[CITE]] block each line stays its own line (a cite with four or more authors puts each on one); a bare answer is joined into one. Null when there's nothing in it. */
 export function parseCite(reply: string): { cite: string; tokens: string[] } | null {
   const c = part(reply, 'CITE'), t = part(reply, 'TOKENS'), e = part(reply, 'END');
   const stop = t > c ? t : e > c ? e : reply.length;
-  const cite = oneLine(noTag(reply.slice(Math.max(c, 0), stop)).replace(/```\w*/g, ''));
+  const body = noTag(reply.slice(Math.max(c, 0), stop)).replace(/```\w*/g, '');
+  const cite = c >= 0 ? body.split('\n').map(oneLine).filter(Boolean).join('\n') : oneLine(body);
   if (!cite) return null;
   const tokens = t > c ? noTag(reply.slice(t, e > t ? e : undefined)).split('\n').map(oneLine).filter(Boolean) : [];
   return { cite, tokens };
@@ -92,22 +94,25 @@ export function parseCite(reply: string): { cite: string; tokens: string[] } | n
 
 const flat = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
 
-/** The cite as text nodes with the tokens cite-marked. `marked` is false when no token was found in it. */
+/** The cite as nodes: the first token, and any later one holding the date, get the cite mark; the rest (co-authors' last names) are just bold.
+ *  Line breaks in the cite become hard breaks, so the whole cite stays one paragraph. `marked` is false when no token was found in it. */
 export function citeNodes({ cite, tokens }: { cite: string; tokens: string[] }) {
-  const on = new Array<boolean>(cite.length).fill(false);
+  const on = new Array<'cite' | 'bold' | null>(cite.length).fill(null);
   const hay = flat(cite);
   let marked = false;
-  for (const t of tokens) {
+  tokens.forEach((t, i) => {
     const at = hay.indexOf(flat(t)); // same length: flat() swaps one character for one
-    if (at < 0) continue;
-    on.fill(true, at, at + t.length);
+    if (at < 0) return;
+    on.fill(i === 0 || /\d/.test(t) ? 'cite' : 'bold', at, at + t.length);
     marked = true;
-  }
+  });
   const nodes: PMNode[] = [];
   for (let i = 0; i < cite.length;) {
+    if (cite[i] === '\n') { nodes.push(schema.nodes.hard_break.create()); i++; continue; }
     let j = i;
-    while (j < cite.length && on[j] === on[i]) j++;
-    nodes.push(schema.text(cite.slice(i, j), on[i] ? [schema.marks.cite.create()] : []));
+    while (j < cite.length && on[j] === on[i] && cite[j] !== '\n') j++;
+    const m = on[i];
+    nodes.push(schema.text(cite.slice(i, j), m ? [schema.marks[m].create()] : []));
     i = j;
   }
   return { nodes, marked };
