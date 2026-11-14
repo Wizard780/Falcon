@@ -27,8 +27,9 @@ export function PromptEditor({ edit, onSave, onClose }: { edit: PromptEdit; onSa
         <p className="pe-note">
           This is what the AI is told before the citation you selected, so it sets your cite style. <code>{'{DATE}'}</code> becomes
           today&apos;s date (M-D-YYYY). End it with the <code>[[CITE]]</code> … <code>[[TOKENS]]</code> … <code>[[END]]</code> block
-          like the built-in prompt does: the lines under <code>[[TOKENS]]</code> are what gets the cite mark. A prompt without the
-          block still works, but nothing gets marked.
+          like the built-in prompt does. The first line under <code>[[TOKENS]]</code> gets the cite mark, and so does any later line
+          with a date in it; the other lines (co-authors' last names) are just bolded. Line breaks in the cite are kept. A prompt
+          without the block still works, but nothing gets marked.
         </p>
         <label className="pe-lab">Preset name
           <input className="st-text" aria-label="Preset name" spellCheck={false} maxLength={40} placeholder={edit.placeholder} value={name} onChange={(e) => setName(e.target.value)} />

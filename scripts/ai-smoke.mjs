@@ -20,7 +20,8 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ id: `gen-${n}`, model: body.model, choices: [{ finish_reason: 'stop', message: { role: 'assistant', content } }] }));
       return;
     }
-    const text = body.system[0].text.startsWith('PLAIN') ? 'Doe, Jane. "A Title." Journal, 2020.' : `[[CITE]]\nSmith ${n} [John Smith, professor; May 1, 2024; "Title," Journal, https://example.com/a]\n[[TOKENS]]\nSmith ${n}\n[[END]]`;
+    const MULTI = '[[CITE]]\nAndrew S. Bowen ’26. Analyst at CRS.\nSarah E. Garding. Analyst at CRS.\nDerek E. Mix. Specialist at CRS.\n“Title.” CRS. August 11, 2026. https://example.gov/a.pdf.\n[[TOKENS]]\nBowen ’26\nGarding\nMix\n[[END]]';
+    const text = body.system[0].text.startsWith('MULTI') ? MULTI : body.system[0].text.startsWith('PLAIN') ? 'Doe, Jane. "A Title." Journal, 2020.' : `[[CITE]]\nSmith ${n} [John Smith, professor; May 1, 2024; "Title," Journal, https://example.com/a]\n[[TOKENS]]\nSmith ${n}\n[[END]]`;
     // the app streams (big max output tokens need it), so answer the way the API streams
     const events = [
       ['message_start', { type: 'message_start', message: { id: `msg_${n}`, type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 0 } } }],
@@ -187,6 +188,43 @@ want(seen.at(-1).body.fallbacks === undefined, 'no fallbacks on a model that may
 want(!(await win.textContent(editor)).includes('jane doe 2020'), 'a plain answer replaces the selection');
 await win.waitForFunction(() => document.querySelector('.toast')?.textContent.includes('F8'), null, { timeout: 3000 });
 want(true, 'it says the name and date still need marking');
+
+// four or more authors: one line each, in one paragraph; cite mark on the lead, plain bold on the co-authors
+await win.click('.fstrip [aria-label="Settings"]');
+await win.click('.st-nav >> text=AI');
+await win.waitForTimeout(200);
+await win.click('.st-row:has-text("AI cite-creator prompt") button:text-is("Edit")');
+await win.fill('textarea[aria-label="Preset prompt"]', 'MULTI cme style');
+await win.keyboard.press(`${MOD}+Enter`);
+await win.waitForTimeout(100);
+await win.click('[aria-label="Close settings"]');
+await win.waitForTimeout(200);
+await win.click(editor);
+await win.keyboard.press(`${MOD}+ArrowDown`);
+await win.keyboard.press('Enter');
+await win.keyboard.type('bowen 8-11 four authors');
+await win.keyboard.press('Shift+Home');
+await win.keyboard.press(`${MOD}+Shift+x`);
+await win.waitForFunction(() => document.querySelector('.ProseMirror').textContent.includes('Garding'), null, { timeout: 8000 });
+const multi = await win.$eval(editor, (ed) => {
+  const p = [...ed.querySelectorAll('p')].find((x) => x.textContent.includes('Garding'));
+  return { brs: p.querySelectorAll('br:not(.ProseMirror-trailingBreak)').length, cite: [...p.querySelectorAll('.f-cite')].map((e) => e.textContent), bold: [...p.querySelectorAll('strong')].map((e) => e.textContent),
+    sizes: [...p.querySelectorAll('.f-cite, strong')].map((e) => getComputedStyle(e).fontSize) };
+});
+want(multi.brs === 3, `a four-author cite keeps its lines, in one paragraph: ${multi.brs} breaks`);
+want(multi.cite.join('|') === 'Bowen ’26', `the lead's name and date get the cite mark: ${multi.cite.join('|')}`);
+want(multi.bold.join('|') === 'Garding|Mix', `co-authors' last names are just bold: ${multi.bold.join('|')}`);
+want(multi.sizes[0] !== multi.sizes[1] && multi.sizes[1] === multi.sizes[2], `and stay text size, not cite size: ${multi.sizes.join(' ')}`);
+await (await win.$(`${editor} p:has-text("Garding")`)).screenshot({ path: 'shots/ai-cite-four-authors.png' });
+await win.click('.fstrip [aria-label="Settings"]');
+await win.click('.st-nav >> text=AI');
+await win.waitForTimeout(200);
+await win.click('.st-row:has-text("AI cite-creator prompt") button:text-is("Edit")');
+await win.fill('textarea[aria-label="Preset prompt"]', 'PLAIN mla style please');
+await win.keyboard.press(`${MOD}+Enter`);
+await win.waitForTimeout(100);
+await win.click('[aria-label="Close settings"]');
+await win.waitForTimeout(200);
 
 // OpenRouter: its own key and model, and nothing goes out until both are there
 await win.click('.fstrip [aria-label="Settings"]');
