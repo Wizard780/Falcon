@@ -4,7 +4,7 @@ import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { createState, createView, swapState } from '../src/editor/editor';
-import { topChildAt } from '../src/editor/window';
+import { drawNear, topChildAt } from '../src/editor/window';
 import { schema } from '../src/editor/schema';
 
 // jsdom lays nothing out, so the window stays at the first 80 paragraphs: everything past them is far
@@ -100,6 +100,33 @@ describe('far paragraphs are empty placeholders', () => {
     expect(topChildAt(v, 25)).toBe(start(1));
     expect(topChildAt(v, 31)).toBe(start(1));
     expect(topChildAt(v, 110)).toBe(v.state.doc.content.size);
+  });
+
+  it('drawNear draws where a scroll just moved the page, in the same frame (no blank frames on a long jump)', () => {
+    const sc = document.createElement('div');
+    sc.className = 'f-scroll';
+    document.body.append(sc);
+    const mount = document.createElement('div');
+    sc.append(mount);
+    const v = createView(mount, () => {}, paras(400));
+    views.push(v);
+    // laid out by hand: 30 px a paragraph in a 300 px scroller, `off` px scrolled
+    let off = 0;
+    const own = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (this === sc) return { top: 0, bottom: 300, height: 300, left: 0, right: 800, width: 800 } as DOMRect;
+      if (this.parentElement !== v.dom) return own.call(this);
+      const i = [...v.dom.children].indexOf(this);
+      return { top: i * 30 - off, bottom: i * 30 + 20 - off, height: 20 } as DOMRect;
+    };
+    try {
+      expect(isFar(v, 300)).toBe(true);
+      off = 300 * 30; // a smooth scroll's frame lands on paragraph 300
+      drawNear(v);
+      expect(isFar(v, 300)).toBe(false);
+      expect(kid(v, 300).textContent).toBe('para 300');
+      expect(isFar(v, 10)).toBe(true); // and the top it left is skipped again
+    } finally { HTMLElement.prototype.getBoundingClientRect = own; sc.remove(); }
   });
 
   it('swapState puts another doc in, with the DOM selection let go of first', () => {

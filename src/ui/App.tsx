@@ -5,7 +5,7 @@ import type { Command } from 'prosemirror-state';
 import { TextSelection, type EditorState } from 'prosemirror-state';
 import { Fragment, Node as PMNode, Slice } from 'prosemirror-model';
 import { createState, createView, brushKey, emptyDoc, swapState } from '../editor/editor';
-import { topChildAt } from '../editor/window';
+import { drawNear, topChildAt } from '../editor/window';
 import { leftSince, markOf, undo, untouched, type Mark } from '../editor/live-hooks';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
@@ -227,6 +227,8 @@ const whenIdle = (f: () => void) => ('requestIdleCallback' in window ? requestId
 /** Smooth-scroll the page so `pos` sits just below the top. Paragraphs off screen have estimated
  *  heights (content-visibility), so the target moves as they render: the animation re-reads it every frame. */
 let stopScroll = () => {};
+/** Where a scrollToPos is headed while it runs: the outline marks that heading the whole way, not each one passed. */
+let scrollGoal: { view: EditorView; pos: number } | null = null;
 function scrollToPos(view: EditorView, pos: number) {
   const sc = view.dom.closest('.f-scroll') as HTMLElement | null;
   // looked up each frame: a far paragraph's placeholder is replaced by the real one as the page nears it (window.ts).
@@ -236,7 +238,7 @@ function scrollToPos(view: EditorView, pos: number) {
   if (!sc || !node()) return;
   stopScroll();
   const target = () => Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, (node()?.getBoundingClientRect().top ?? 0) - sc.getBoundingClientRect().top + sc.scrollTop - 16));
-  if (reducedMotion()) { for (let i = 0; i < 4; i++) sc.scrollTop = target(); return; }
+  if (reducedMotion()) { for (let i = 0; i < 4; i++) { sc.scrollTop = target(); drawNear(view); } return; }
   const from = sc.scrollTop, t0 = performance.now();
   const dur = Math.min(700, 300 + Math.abs(target() - from) / 20);
   let raf = 0, still = 0;
@@ -245,13 +247,16 @@ function scrollToPos(view: EditorView, pos: number) {
     const t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 3);
     const goal = target();
     sc.scrollTop = from + (goal - from) * e;
+    // drawn in this frame, before it's painted (the scroll event only comes next frame): a long jump stays drawn the whole way
+    drawNear(view);
     // keep going after the curve ends until the target stops moving
     if (t === 1) still = Math.abs(sc.scrollTop - goal) < 1 ? still + 1 : 0;
     if (still < 3) raf = requestAnimationFrame(step); else stopScroll();
   };
   // the user's own scrolling wins
   const cancel = () => stopScroll();
-  stopScroll = () => { cancelAnimationFrame(raf); sc.removeEventListener('wheel', cancel); sc.removeEventListener('pointerdown', cancel); stopScroll = () => {}; };
+  stopScroll = () => { cancelAnimationFrame(raf); sc.removeEventListener('wheel', cancel); sc.removeEventListener('pointerdown', cancel); scrollGoal = null; stopScroll = () => {}; };
+  scrollGoal = { view, pos };
   sc.addEventListener('wheel', cancel, { passive: true });
   sc.addEventListener('pointerdown', cancel);
   raf = requestAnimationFrame(step);
@@ -1537,6 +1542,8 @@ export function App() {
     const caret = v.coordsAtPos(head);
     // stores the row index, not the position, so typing within a block doesn't re-render the app
     const mark = (pos: number) => setCurItem(currentItem(outlineRef.current, pos));
+    // on the way to a heading (an outline click, a card link): that heading, not each one the page passes
+    if (scrollGoal?.view === v) { mark(scrollGoal.pos); return; }
     if (caret.bottom > box.top && caret.top < box.bottom) { mark(head); return; }
     const pm = v.dom.getBoundingClientRect(), top = box.top + 90;
     if (pm.top > top) { mark(0); return; }
@@ -1557,6 +1564,8 @@ export function App() {
   const jump = useCallback((stale: OutlineItem, index: number) => {
     const v = viewRef.current!;
     const item = buildOutline(v.state.doc)[index] ?? stale;
+    // lit now, in this click's render: otherwise that render still lights the old row, and the outline scrolls off to it
+    setCurItem(index);
     v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, item.pos + 1)));
     (v.dom as HTMLElement).focus({ preventScroll: true });
     scrollToPos(v, item.pos);

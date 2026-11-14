@@ -220,6 +220,15 @@ export function topChildAt(view: EditorView, y: number): number | null {
 
 export const WINDOW_META = 'falcon-window';
 
+/** Each view's measure (the plugin's view below), for code that moves the page itself. */
+const measures = new WeakMap<EditorView, () => void>();
+/**
+ * Draw the paragraphs near the screen now, in this frame. For code that sets the page's scrollTop in an animation
+ * frame (a smooth scroll to a heading): the scroll event that would draw them comes only on the next frame, so
+ * without this each frame of a long, fast scroll is painted over paragraphs still skipped, and the page shows blank.
+ */
+export function drawNear(view: EditorView) { measures.get(view)?.(); }
+
 export const windowPlugin = new Plugin<Win>({
   key: windowKey,
   state: {
@@ -261,6 +270,7 @@ export const windowPlugin = new Plugin<Win>({
         if (Math.abs(d) >= 1) sc.scrollTop += d;
       }
     };
+    measures.set(view, measure);
     const soon = () => { if (!raf) raf = requestAnimationFrame(measure); };
     // scroll events come before the frame is drawn: measuring here draws the new paragraphs in that same frame
     const onScroll = (e: Event) => { if (e.target instanceof Node && e.target.contains(view.dom)) measure(); };
@@ -271,7 +281,7 @@ export const windowPlugin = new Plugin<Win>({
     soon();
     return {
       update(v, prev) { if (v.state.doc !== prev.doc) soon(); },
-      destroy() { cancelAnimationFrame(raf); ro?.disconnect(); document.removeEventListener('scroll', onScroll, { capture: true }); },
+      destroy() { cancelAnimationFrame(raf); ro?.disconnect(); measures.delete(view); document.removeEventListener('scroll', onScroll, { capture: true }); },
     };
   },
 });
