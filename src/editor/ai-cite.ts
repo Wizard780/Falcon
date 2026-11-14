@@ -76,8 +76,9 @@ export function usePreset(n: number): string | null {
   return p.name;
 }
 
-const part = (text: string, name: string) => text.search(new RegExp(`\\[\\[\\s*${name}\\s*\\]\\]`, 'i'));
-const noTag = (s: string) => s.replace(/^\[\[\s*\w+\s*\]\]/, '');
+// a marker is [[NAME]], or NAME: starting a line (models sometimes write "TOKENS: Smith ’24 | Jones")
+const part = (text: string, name: string) => text.search(new RegExp(`\\[\\[\\s*${name}\\s*\\]\\]|^[ \\t]*${name}[ \\t]*:`, 'im'));
+const noTag = (s: string) => s.replace(/^\s*(\[\[\s*\w+\s*\]\]|(CITE|TOKENS|END)[ \t]*:)/i, '');
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 /** The cite and the stretches of it to mark. The [[CITE]] / [[TOKENS]] / [[END]] block is optional: a prompt of your own can just answer with the cite.
@@ -88,7 +89,7 @@ export function parseCite(reply: string): { cite: string; tokens: string[] } | n
   const body = noTag(reply.slice(Math.max(c, 0), stop)).replace(/```\w*/g, '');
   const cite = c >= 0 ? body.split('\n').map(oneLine).filter(Boolean).join('\n') : oneLine(body);
   if (!cite) return null;
-  const tokens = t > c ? noTag(reply.slice(t, e > t ? e : undefined)).split('\n').map(oneLine).filter(Boolean) : [];
+  const tokens = t > c ? noTag(reply.slice(t, e > t ? e : undefined)).split(/\n|\|/).map(oneLine).filter(Boolean) : [];
   return { cite, tokens };
 }
 
