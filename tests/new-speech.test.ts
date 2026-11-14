@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { freshStorage, mountApp, unmountAll } from './app-harness';
-import { formatDate, speechFileName } from '../src/ui/files';
+import { fileError, formatDate, speechFileName } from '../src/ui/files';
 
 afterEach(async () => { await unmountAll(); });
 
@@ -83,5 +83,15 @@ describe('New speech doc dialog is modal', () => {
     await app.press('Escape');
     expect(document.querySelector('input[aria-label="Speech name"]')).toBeNull();
     expect(document.querySelector('.hm-act')).not.toBeNull();
+  });
+});
+
+describe('file errors in a toast', () => {
+  it("say what's wrong in words, not as Electron's wrapper and an ENOENT path", () => {
+    const ipc = (m: string) => new Error(`Error invoking remote method 'falcon:open-path': Error: ${m}`);
+    expect(fileError(ipc("ENOENT: no such file or directory, open '/Users/x/Gone.docx'")).message).toBe("it isn't there anymore (moved, renamed or deleted)");
+    expect(fileError(ipc("EACCES: permission denied, open '/x.docx'")).message).toBe("Falcon isn't allowed to read it");
+    expect(fileError(ipc("EACCES: permission denied, open '/x.docx'"), true).message).toBe("Falcon isn't allowed to write there");
+    expect(fileError(ipc('Falcon only saves .docx files')).message).toBe('Falcon only saves .docx files');
   });
 });

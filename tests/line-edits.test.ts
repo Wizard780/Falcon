@@ -35,6 +35,17 @@ describe('typing over whole lines', () => {
     type(v, 'N'); type(v, 'ew');
     expect(map(v.state)).toBe('tag: New\nnormal: Smith 24');
   });
+  it('a paste over a triple-clicked tag stops at the end of the line too', () => {
+    // jsdom has no ClipboardEvent; ProseMirror's pasteText and pasteHTML only make one to pass to the handlers
+    const g = globalThis as unknown as { ClipboardEvent?: unknown };
+    g.ClipboardEvent ??= class extends Event { clipboardData = null; };
+    for (const paste of [(v: EditorView) => v.pasteText('New'), (v: EditorView) => v.pasteHTML('<p>New</p>')]) {
+      const v = view([['tag', 'Tag'], ['normal', 'Smith 24'], ['normal', 'body']]);
+      select(v, at(v.state, 'Tag'), at(v.state, 'Smith'));
+      paste(v);
+      expect(map(v.state)).toBe('tag: New\nnormal: Smith 24\nnormal: body');
+    }
+  });
   it('leaves an ordinary selection to the editor', () => {
     const v = view([['tag', 'Tag'], ['normal', 'Smith 24']]);
     select(v, at(v.state, 'Tag'), at(v.state, 'Smith', 2));
@@ -98,6 +109,15 @@ describe('Redo repeats the last action', () => {
     select(v, 1);
     redo(v);
     expect(v.state.doc.textContent).toBe('Pone xy two Pthree xy');
+  });
+  it('repeating onto a triple-clicked tag stops at the end of that line, like typing there', () => {
+    setPref(P.repeatRedo, true);
+    const v = view([['tag', 'Tag'], ['normal', 'Smith 24'], ['tag', 'Two'], ['normal', 'Jones 20']]);
+    select(v, at(v.state, 'Tag'), at(v.state, 'Smith'));
+    type(v, 'New');
+    select(v, at(v.state, 'Two'), at(v.state, 'Jones'));
+    redo(v);
+    expect(map(v.state)).toBe('tag: New\nnormal: Smith 24\ntag: New\nnormal: Jones 20');
   });
   it('real redo still wins when there is something to redo', () => {
     setPref(P.repeatRedo, true);

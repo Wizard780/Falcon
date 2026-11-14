@@ -16,7 +16,7 @@ export const autoBridgeSetting: SettingSpec = {
   hint: 'Formatting a word next to a formatted word also formats the space between them. Fix Formatting Gaps in the Doc menu works either way.',
 };
 export const gapClassSetting: SettingSpec = {
-  section: 'Formatting gaps', key: 'falcon.bridgeGaps', kind: 'choice', default: 'both',
+  section: 'Formatting gaps', key: 'falcon.bridgeGaps', kind: 'choice', default: 'space', // a comma between two underlined words stays plain
   options: [['both', 'Spaces and punctuation'], ['space', 'Spaces only']],
   label: 'Bridge formatting across',
   hint: 'Which gaps between two formatted words get filled, by the automatic bridging and by Fix Formatting Gaps.',

@@ -1,6 +1,7 @@
 import type { EditorView } from 'prosemirror-view';
 import { cardPreview, slideIn } from '../editor/card-links';
 import { P, pref } from '../editor/prefs';
+import { levelOf } from '../editor/schema';
 import { reducedMotion } from './motion';
 
 /**
@@ -35,7 +36,10 @@ export function outlinePreview(list: HTMLElement, getView: () => EditorView | nu
     if (shown) { shown = false; pos = null; pv.classList.remove('cl-on'); }
   };
   const draw = (p: number, view: EditorView) => {
-    if (!view.state.doc.nodeAt(p)) return hide(); // the outline is a beat behind an edit
+    // the outline is a beat behind an edit (it refreshes 150 ms later): a row past the doc's new end, or one that isn't
+    // a tag's start any more, shows nothing (nodeAt throws past the end, it doesn't answer null)
+    const n = p >= 0 && p < view.state.doc.content.size ? view.state.doc.nodeAt(p) : null;
+    if (!n || n.type.name !== 'paragraph' || levelOf(n) !== 4) return hide();
     const { box, page } = cardPreview(view.state.doc, p);
     pv.className = `cl-pv ol-pv ${page ? 'cl-page' : 'cl-quiet'}${shown ? ' cl-on' : ''}`;
     pv.style.left = `${(list.closest('.olp') ?? list).getBoundingClientRect().right + 8}px`;

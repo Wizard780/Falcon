@@ -2,13 +2,13 @@ import { Plugin, Selection, TextSelection, type Command, type EditorState, type 
 
 /**
  * Two fixes for selections that cover whole lines, as CardMirror has them:
- * - typing over a selection that runs to the very start of the next line (what a triple click picks on a Mac)
- *   replaces only up to the end of the line before, so the next line doesn't get pulled up into a tag
+ * - typing or pasting over a selection that runs to the very start of the next line (what a triple click picks on a
+ *   Mac) replaces only up to the end of the line before, so the next line doesn't get pulled up into a tag
  * - Backspace, Delete or cut on whole lines takes the lines too, instead of leaving an empty one behind
  */
 
 /** Where the last line a selection covers ends, when the selection stops at the very start of a later line. */
-function endBeforeLineStart(state: EditorState): number | null {
+export function endBeforeLineStart(state: EditorState): number | null {
   const sel = state.selection;
   if (!(sel instanceof TextSelection) || sel.empty) return null;
   const { $from, $to } = sel;
@@ -49,6 +49,13 @@ export const deleteWholeLines: Command = (state, dispatch) => {
 
 export const lineEditsPlugin = new Plugin({
   props: {
+    // a paste over the same selection: narrowed first, then the editor's own paste (and the other paste handlers)
+    // replace just those lines, so the cite under a triple-clicked tag stays its own line
+    handlePaste(view) {
+      const end = endBeforeLineStart(view.state);
+      if (end !== null) view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from, end)));
+      return false;
+    },
     handleTextInput(view, from, _to, text) {
       const end = endBeforeLineStart(view.state);
       if (end === null || from !== view.state.selection.from) return false;

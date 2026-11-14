@@ -41,14 +41,20 @@ describe('automatic gap bridging', () => {
     s = run(select(s, 'beta'), K.F9);
     expect(map(run(s, undo))).toBe(before);
   });
-  it('bridges punctuation too, unless set to spaces only', () => {
+  it('bridges spaces only by default, so punctuation between two words stays plain; punctuation too when set', () => {
     let s = run(select(body(), 'gamma'), K.F11);
     s = run(select(s, 'delta'), K.F11);
-    expect(line(s, 1)).toBe('normal: alpha beta [gamma. delta]{highlight:yellow}');
-    localStorage.setItem('falcon.bridgeGaps', 'space');
+    expect(line(s, 1)).toBe('normal: alpha beta [gamma]{highlight:yellow}. [delta]{highlight:yellow}');
+    localStorage.setItem('falcon.bridgeGaps', 'both');
     s = run(select(body(), 'gamma'), K.F11);
     s = run(select(s, 'delta'), K.F11);
-    expect(line(s, 1)).toBe('normal: alpha beta [gamma]{highlight:yellow}. [delta]{highlight:yellow}');
+    expect(line(s, 1)).toBe('normal: alpha beta [gamma. delta]{highlight:yellow}');
+  });
+  it('underlining "introduce" then "something" leaves the comma and space between them plain', () => {
+    let s = make([['normal', 'we introduce, something new']]);
+    s = run(select(s, 'introduce'), K.F9);
+    s = run(select(s, 'something'), K.F9);
+    expect(map(s)).toBe('normal: we [introduce]{underline}, [something]{underline} new');
   });
   it('can be turned off', () => {
     localStorage.setItem('falcon.autoBridge', 'off');
@@ -57,6 +63,7 @@ describe('automatic gap bridging', () => {
     expect(line(s, 1)).toBe('normal: [alpha]{underline} [beta]{underline} gamma. delta');
   });
   it('a period highlighted on its own survives highlighting the next word', () => {
+    localStorage.setItem('falcon.bridgeGaps', 'both'); // punctuation bridging, which is what this is about
     let s = run(select(body(), 'gamma.'), K.F11);
     s = run(select(s, 'delta'), K.F11);
     expect(line(s, 1)).toBe('normal: alpha beta [gamma. delta]{highlight:yellow}');

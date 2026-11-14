@@ -36,6 +36,14 @@ const FILE: [ParaStyle, string][] = [
 const posOf = (s: EditorState, t: string) => { let p = -1; s.doc.forEach((n, o) => { if (p < 0 && n.textContent === t) p = o; }); return p; };
 
 describe('card links', () => {
+  it('a name before a percentage or a longer number is not a cite ("prices rose 23%", "Smith 24,000")', () => {
+    const s = doc([['tag', 'Tag'], ['normal', '[[Rose 23]] (Ann Rose)'], ['tag', 'Two'], ['normal', '[[Smith 24]] (Jo Smith)'],
+      ['analytic', 'Prices rose 23% last year, Smith 24,000 jobs, Rose 23.5 points, but Extend rose 23 and Smith 24.']]);
+    const para = s.doc.child(4);
+    let start = 0;
+    s.doc.forEach((n, o) => { if (n === para) start = o + 1; });
+    expect(refsIn(s.doc, para, start).map((r) => s.doc.textBetween(r.from, r.to))).toEqual(['rose 23', 'Smith 24']);
+  });
   it('reads a cite name and year in the usual shapes', () => {
     expect(parseCite('Clare 23')).toEqual({ name: 'Clare', year: '23' });
     expect(parseCite("Altman '26")).toEqual({ name: 'Altman', year: '26' });

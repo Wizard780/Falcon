@@ -41,4 +41,14 @@ f.want((await lines())[3] === 'normal: see [(aside)]{emphasis}', `F10 right afte
 await f.shot('punctuation');
 await press('Meta+z');
 f.want((await lines())[3] === 'normal: see (aside)', 'one undo takes it back');
+
+// underlining two words with a comma between them leaves the comma and space plain (gap bridging is spaces only)
+await caret('see (aside)', 'end');
+await press('Enter');
+await page.keyboard.type('we introduce, something new');
+await f.select('introduce'); await press('F9');
+await f.select('something'); await press('F9');
+f.want((await lines())[4] === 'normal: we [introduce]{underline}, [something]{underline} new', `the comma between stays plain: ${(await lines())[4]}`);
+await f.select('we'); await press('F9');
+f.want((await lines())[4].startsWith('normal: [we introduce]{underline},'), `a space between still bridges: ${(await lines())[4]}`);
 await f.done();

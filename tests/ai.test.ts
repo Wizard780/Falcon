@@ -23,6 +23,17 @@ function clientWith(...answers: unknown[]) {
 const done = (text: string) => ({ stop_reason: 'end_turn', content: [{ type: 'text', text }] });
 const req = { system: 's', text: 't', model: '', maxTokens: 8192 };
 
+describe('a stalled Anthropic stream', () => {
+  it('is cut off after the deadline, so the picked text does not stay locked', async () => {
+    let aborted = false;
+    // answers nothing until it's aborted: the headers came, then the stream went quiet
+    const Client = class { beta = { messages: { stream: () => { let fail = (_e: Error) => {}; return { finalMessage: () => new Promise((_ok, no) => { fail = no; }), abort: () => { aborted = true; fail(new Error('Request was aborted.')); } }; } } }; };
+    const out = await createAi({ key: () => 'k', Client, timeout: 30 }).ask(req);
+    expect(aborted).toBe(true);
+    expect(out).toEqual({ error: 'Anthropic took too long on this one.' });
+  });
+});
+
 describe('secrets', () => {
   it('are kept encrypted, listed by name only, and can be removed', () => {
     const d = dir();

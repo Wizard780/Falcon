@@ -220,6 +220,15 @@ describe('F9 and F10 with the cursor next to punctuation', () => {
     expect(map(run(caret(make([['normal', 'see (aside)']]), '(aside)', 7), K.F10))).toBe('normal: see [(aside)]{emphasis}');
     expect(map(run(caret(make([['normal', 'a. b']]), 'a.', 2), K.F9))).toBe('normal: [a.]{underline} b');
   });
+  it("stop at a line break: the next line's words aren't part of it", () => {
+    const br = () => schema.nodes.hard_break.create();
+    const s = createState(schema.node('doc', null, [schema.node('paragraph', null, [schema.text('economic growth.'), br(), schema.text('Next words')])]));
+    expect(map(run(caret(s, 'growth.', 7), K.F9))).toContain('[growth.]{underline}');
+    expect(map(run(caret(s, 'growth.', 7), K.F9))).not.toMatch(/\[[^\]]*Next[^\]]*\]\{underline/);
+    const s2 = createState(schema.node('doc', null, [schema.node('paragraph', null, [schema.text('the plan'), br(), schema.text('(aside) here')])]));
+    expect(map(run(caret(s2, '(aside)'), K.F10))).toContain('[(aside)]{emphasis}');
+    expect(map(run(caret(s2, '(aside)'), K.F10))).not.toMatch(/\[[^\]]*plan[^\]]*\]\{emphasis/);
+  });
   it('still do nothing between spaces, or on a line of only punctuation', () => {
     const s = make([['normal', 'one  two'], ['normal', '...']]);
     expect(K.F9(caret(s, 'one ', 4))).toBe(false);
