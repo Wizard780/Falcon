@@ -271,3 +271,30 @@ describe('cites with several authors', () => {
     expect(marked(v)).toBe('Bowen ’26');
   });
 });
+
+describe('a reply that writes the markers loosely', () => {
+  it('takes "TOKENS:" on one line, split on bars, and keeps it out of the cite', () => {
+    const r = parseCite('[[CITE]]\nYoshua Bengio ’26. Q. Stephen Clare. Q. Carina Prunkl. Q. “T.” P. February 3, 2026. https://x.org/a.pdf. ryan\nTOKENS: Bengio ’26 | Clare | Prunkl');
+    expect(r).toEqual({ cite: 'Yoshua Bengio ’26. Q. Stephen Clare. Q. Carina Prunkl. Q. “T.” P. February 3, 2026. https://x.org/a.pdf. ryan', tokens: ['Bengio ’26', 'Clare', 'Prunkl'] });
+  });
+  it('takes "CITE:" and "TOKENS:" without brackets', () => {
+    expect(parseCite('CITE: Smith ’24. Prof. “T.” P. 2024.\nTOKENS:\nSmith ’24\nEND:')).toEqual({ cite: 'Smith ’24. Prof. “T.” P. 2024.', tokens: ['Smith ’24'] });
+  });
+  it('still reads a colon inside the cite as text', () => {
+    expect(parseCite('[[CITE]]\nA ’24. Q. “Nature Positive: halting loss.” P. 2024.\n[[TOKENS]]\nA ’24\n[[END]]')!.cite).toBe('A ’24. Q. “Nature Positive: halting loss.” P. 2024.');
+  });
+});
+it('leaves a plain answer that starts with a word and a colon alone', () => {
+  expect(parseCite('Report: Doe 20 [x]')).toEqual({ cite: 'Report: Doe 20 [x]', tokens: [] });
+});
+it('formats the Bengio reply that wrote "TOKENS:" — marks the names, and the tokens line never shows', async () => {
+  bridge.aiAsk = vi.fn(async () => ({ text: '[[CITE]]\nYoshua Bengio ’26. AI researcher at the University of Montreal. Stephen Clare. Expert in AI risk. Carina Prunkl. AI ethics and policy researcher. “International AI Safety Report 2026.” International AI Safety Report. February 3, 2026. https://x.org/a.pdf. ryan\nTOKENS: Bengio ’26 | Clare | Prunkl' }));
+  const v = viewOf([para('Bengio ’26 [Yoshua, Stephen Clare]')], 1, 30);
+  await formatCite(v, () => {});
+  const text = v.state.doc.textContent;
+  expect(text).not.toContain('TOKENS');
+  expect(marked(v)).toBe('Bengio ’26');
+  const bold: string[] = [];
+  v.state.doc.child(0).forEach((n) => { if (schema.marks.bold.isInSet(n.marks)) bold.push(n.text!); });
+  expect(bold).toEqual(['Clare', 'Prunkl']);
+});
