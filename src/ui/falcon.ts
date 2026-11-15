@@ -39,7 +39,9 @@ export function falconSvg(): string {
 
 /** The logo on its perch: the icon's head, flat, as the rail draws it. The bird's marks fade off it as it lands. */
 export function logoSvg(): string {
-  return `<svg class="falcon-logo" viewBox="10 9 48 50" xmlns="${NS}" aria-hidden="true" focusable="false"><path d="${HEAD}" fill="currentColor" fill-rule="evenodd"/></svg>`;
+  // the eye is a mask hole, not an evenodd cut, so CSS can blink it on hover like the rail's (icons.tsx Logo)
+  const neck = HEAD.slice(0, HEAD.indexOf('ZM') + 1);
+  return `<svg class="falcon-logo" viewBox="10 9 48 50" xmlns="${NS}" aria-hidden="true" focusable="false"><mask id="hm-logo-eye" maskUnits="userSpaceOnUse" x="10" y="9" width="48" height="50"><rect x="10" y="9" width="48" height="50" fill="#fff"/><circle class="logo-eye" cx="39" cy="21" r="3.5" fill="#000"/></mask><path d="${neck}" fill="currentColor" mask="url(#hm-logo-eye)"/></svg>`;
 }
 
 type Pt = { x: number; y: number; s: number };

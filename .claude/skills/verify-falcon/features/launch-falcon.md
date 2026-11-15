@@ -8,7 +8,7 @@ Right of the header, above the clock, Home greets you (Good morning until noon, 
 
 - `flight` the falcon flies over Home on a page load that starts on Home, about 2.7 s, wingbeats slowing into a glide past the top, then a flare to land, with a pen-colored trail behind it.
 - `letters` the title's letters are `span.hm-ch` inside `.hm-title` (inline, `position: relative`, so the word keeps its kerning). Hidden (`opacity: 0`) while it flies; each drops from the bird (`top` from the bird's belly to 0, a bouncy ease) as the bird clears its middle flying left, so they land n, o, c, l, a, F. Landed, no inline styles remain on them.
-- `perch` it ends as `svg.falcon-logo` in `.hm-perch` (62x65, left of `.hm-title`, centered on it): the bird's head is the logo itself, so the hand-off is the body and wings fading as it settles, and the logo stays with no animation running.
+- `perch` it ends as `svg.falcon-logo` in `.hm-perch` (62x65, left of `.hm-title`, centered on it): the bird's head is the logo itself, so the hand-off is the body and wings fading as it settles, and the logo stays with no animation running. Hovering it turns the head up 9° and blinks the eye, like the rail logo (off under Reduce motion).
 - `greeting` `.hm-clock` holds `.hm-greet`, then `.hm-date`, then the digits and `Local time`. (Hidden with the clock under 640px wide.)
 - `skip` any key or click mid-flight lands it straight away and shows every letter.
 - `setting` Settings > Appearance > Falcon on launch (`falcon.launchFalcon`, on by default, also in the command center) turns the flight off; the falcon is then perched from the start and the title is just there.
