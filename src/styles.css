@@ -152,6 +152,14 @@ svg { flex: none; }
 .sb-logo { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; color: var(--u-tx); cursor: pointer; transition: background 150ms ease-out; }
 .sb-logo:hover { background: var(--u-hover); }
 .sb-logo svg { width: 20px !important; height: 20px !important; }
+/* the Head turns up from its neck on hover, with a small overshoot, and blinks once */
+.sb-logo svg { transform-origin: 25% 100%; transition: transform 500ms cubic-bezier(.34, 1.45, .5, 1); }
+.sb-logo:hover svg { transform: rotate(-9deg); }
+.sb-logo .logo-eye { transform-box: fill-box; transform-origin: center; }
+.sb-logo:hover .logo-eye { animation: logo-blink 500ms 150ms; }
+@keyframes logo-blink { 0%, 100% { transform: scaleY(1); } 45%, 60% { transform: scaleY(.1); } }
+.reduce-motion .sb-logo svg { transition: none; } .reduce-motion .sb-logo:hover svg { transform: none; } .reduce-motion .sb-logo:hover .logo-eye { animation: none; }
+@media (prefers-reduced-motion: reduce) { .sb-logo svg { transition: none; } .sb-logo:hover svg { transform: none; } .sb-logo:hover .logo-eye { animation: none; } }
 .fs-b { position: relative; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; color: var(--u-mut); cursor: pointer; transition: background 150ms ease-out, color 150ms ease-out; }
 .fs-b:hover { background: var(--u-hover); color: var(--u-tx); }
 .fs-b:active, .sb-logo:active { transform: scale(.97); }
