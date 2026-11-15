@@ -1,3 +1,4 @@
+import { history, undo } from 'prosemirror-history';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
@@ -47,9 +48,9 @@ describe('reading the reply', () => {
     expect(parseCite('[[CITE]]\n\n[[TOKENS]]\nx\n[[END]]')).toBeNull();
   });
   it('marks a token even when the quotes differ', () => {
-    const { nodes, marked: ok } = citeNodes({ cite: 'Smith ’24 [Jo]', tokens: ["Smith '24"] });
+    const { lines, marked: ok } = citeNodes({ cite: 'Smith ’24 [Jo]', tokens: ["Smith '24"] });
     expect(ok).toBe(true);
-    expect(nodes.map((n) => n.text)).toEqual(['Smith ’24', ' [Jo]']);
+    expect(lines[0].map((n) => n.text)).toEqual(['Smith ’24', ' [Jo]']);
   });
   it('says so when no token is there', () => {
     expect(citeNodes({ cite: 'Smith 24', tokens: ['Jones'] }).marked).toBe(false);
@@ -250,25 +251,51 @@ describe('cites with several authors', () => {
   it('keeps each line of a [[CITE]] block', () => {
     expect(parseCite(four)!.cite.split('\n')).toHaveLength(4);
   });
-  it('puts the lines in as hard breaks in one paragraph, cite mark on the lead, bold on co-authors', () => {
-    const { nodes, marked: ok } = citeNodes(parseCite(four)!);
+  it('splits the cite into lines, cite mark on the lead, bold on co-authors', () => {
+    const { lines, marked: ok } = citeNodes(parseCite(four)!);
     expect(ok).toBe(true);
-    expect(nodes.filter((n) => n.type.name === 'hard_break')).toHaveLength(3);
+    expect(lines).toHaveLength(4);
+    const nodes = lines.flat();
     const withMark = (m: string) => nodes.filter((n) => n.marks.some((k) => k.type.name === m)).map((n) => n.text);
     expect(withMark('cite')).toEqual(['Bowen ’26']);
     expect(withMark('bold')).toEqual(['Garding', 'Mix']);
   });
   it('still gives a CardMirror-style second token with the date the cite mark', () => {
-    const { nodes } = citeNodes({ cite: 'Laura Weiss & John Bresnahan 3/26 [x]', tokens: ['Weiss & ', 'Bresnahan 3/26'] });
-    expect(nodes.filter((n) => n.marks.some((k) => k.type.name === 'cite')).map((n) => n.text)).toEqual(['Weiss & ', 'Bresnahan 3/26']);
+    const { lines } = citeNodes({ cite: 'Laura Weiss & John Bresnahan 3/26 [x]', tokens: ['Weiss & ', 'Bresnahan 3/26'] });
+    expect(lines[0].filter((n) => n.marks.some((k) => k.type.name === 'cite')).map((n) => n.text)).toEqual(['Weiss & ', 'Bresnahan 3/26']);
   });
-  it('formats a four-author cite into one paragraph with line breaks', async () => {
+  const texts = (v: EditorView) => { const out: string[] = []; v.state.doc.forEach((n) => out.push(n.textContent)); return out; };
+  it('formats a four-author cite into a paragraph per line, in one undo step', async () => {
     bridge.aiAsk = vi.fn(async () => ({ text: four }));
-    const v = viewOf([para('Bowen ’8-11 [stuff]')], 1, 20);
+    const doc = schema.node('doc', null, [para('Bowen ’8-11 [stuff]'), para('card body')]);
+    let st = EditorState.create({ doc, plugins: [aiCitePlugin, history()] });
+    st = st.apply(st.tr.setSelection(TextSelection.create(doc, 1, 20)));
+    const v = new EditorView(document.createElement('div'), { state: st });
     await formatCite(v, () => {});
-    expect(v.state.doc.childCount).toBe(1);
-    expect(v.state.doc.textBetween(0, v.state.doc.content.size, '\n', '\n').split('\n')).toHaveLength(4);
+    expect(texts(v)).toEqual(['Andrew S. Bowen ’26. Analyst at CRS.', 'Sarah E. Garding. Analyst at CRS.', 'Derek E. Mix. Specialist at CRS.', '“Title.” CRS. August 11, 2026. https://x.gov/a.pdf.', 'card body']);
     expect(marked(v)).toBe('Bowen ’26');
+    undo(v.state, v.dispatch);
+    expect(texts(v)).toEqual(['Bowen ’8-11 [stuff]', 'card body']);
+  });
+  it('Reformat All takes a multi-paragraph cite as one cite, and leaves the card after it alone', async () => {
+    bridge.aiAsk = vi.fn(async () => ({ text: four }));
+    const v = viewOf([para('Bowen ’8-11 [stuff]'), para('card body')], 1, 20);
+    await formatCite(v, () => {});
+    expect(citeLines(v.state.doc)).toHaveLength(1);
+    const asked: string[] = [];
+    bridge.aiAsk = vi.fn(async (q: { text: string }) => { asked.push(q.text); return { text: four }; });
+    const rep = await reformatCites(v, { stopped: () => false, progress: () => {} });
+    expect(rep.done).toBe(1);
+    expect(asked[0].split('\n')).toHaveLength(4);
+    expect(texts(v)).toHaveLength(5);
+    expect(texts(v).at(-1)).toBe('card body');
+  });
+  it('Reformat All turns an older one-paragraph cite with line breaks into paragraphs', async () => {
+    const old = schema.node('paragraph', null, [schema.text('Bowen ’26', [schema.marks.cite.create()]), schema.text('. Analyst.'), schema.nodes.hard_break.create(), schema.text('Sarah Garding. Analyst.')]);
+    const v = viewOf([old, para('card body')]);
+    bridge.aiAsk = vi.fn(async () => ({ text: four }));
+    await reformatCites(v, { stopped: () => false, progress: () => {} });
+    expect(texts(v)).toHaveLength(5);
   });
 });
 

@@ -95,8 +95,8 @@ export function parseCite(reply: string): { cite: string; tokens: string[] } | n
 
 const flat = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
 
-/** The cite as nodes: the first token, and any later one holding the date, get the cite mark; the rest (co-authors' last names) are just bold.
- *  Line breaks in the cite become hard breaks, so the whole cite stays one paragraph. `marked` is false when no token was found in it. */
+/** The cite as one run of nodes per line: the first token, and any later one holding the date, get the cite mark; the rest (co-authors' last names) are just bold.
+ *  Each line goes in as its own paragraph. `marked` is false when no token was found in it. */
 export function citeNodes({ cite, tokens }: { cite: string; tokens: string[] }) {
   const on = new Array<'cite' | 'bold' | null>(cite.length).fill(null);
   const hay = flat(cite);
@@ -107,16 +107,16 @@ export function citeNodes({ cite, tokens }: { cite: string; tokens: string[] }) 
     on.fill(i === 0 || /\d/.test(t) ? 'cite' : 'bold', at, at + t.length);
     marked = true;
   });
-  const nodes: PMNode[] = [];
+  const lines: PMNode[][] = [[]];
   for (let i = 0; i < cite.length;) {
-    if (cite[i] === '\n') { nodes.push(schema.nodes.hard_break.create()); i++; continue; }
+    if (cite[i] === '\n') { lines.push([]); i++; continue; }
     let j = i;
     while (j < cite.length && on[j] === on[i] && cite[j] !== '\n') j++;
     const m = on[i];
-    nodes.push(schema.text(cite.slice(i, j), m ? [schema.marks[m].create()] : []));
+    lines.at(-1)!.push(schema.text(cite.slice(i, j), m ? [schema.marks[m].create()] : []));
     i = j;
   }
-  return { nodes, marked };
+  return { lines, marked };
 }
 
 type Span = { from: number; to: number };
@@ -194,10 +194,14 @@ async function rewrite(view: EditorView, range: Span): Promise<CiteResult> {
   if (!parsed) return { ok: false, error: 'The AI sent back nothing to put in.', end: now.to };
   if (isReading(view.state)) return { ok: false, error: 'Read mode is on, so the cite wasn\'t put in.', stop: true, end: now.to };
   if (read(now) !== original) return { ok: false, error: 'That text changed, so the cite wasn\'t put in.', end: now.to };
-  const { nodes, marked } = citeNodes(parsed);
-  const tr = closeHistory(view.state.tr).replaceWith(now.from, now.to, nodes).setMeta(key, { own: true }).scrollIntoView();
-  view.dispatch(tr);
-  return { ok: true, marked, end: tr.mapping.map(now.to) };
+  const { lines, marked } = citeNodes(parsed);
+  const size = (line: PMNode[]) => line.reduce((n, c) => n + c.nodeSize, 0);
+  const tr = closeHistory(view.state.tr).replaceWith(now.from, now.to, lines[0]);
+  let end = now.from + size(lines[0]);
+  // every further line is a paragraph of its own, so a click or triple click takes one author, not the whole cite
+  for (const line of lines.slice(1)) { tr.split(end).insert(end + 2, line); end += 2 + size(line); }
+  view.dispatch(tr.setMeta(key, { own: true }).scrollIntoView());
+  return { ok: true, marked, end };
 }
 
 /** The selection without a paragraph break it ends on (triple click runs to the start of the next line). */
@@ -237,12 +241,29 @@ const isCiteLine = (n: PMNode) => {
   return found;
 };
 
-/** Paragraphs already holding a cite, as document positions. Tags can't be cites and long lines are card text. */
+const hasBold = (n: PMNode) => {
+  let found = false;
+  n.descendants((c) => { if (c.isText && schema.marks.bold.isInSet(c.marks)) found = true; return !found; });
+  return found;
+};
+
+/** Cites already in the doc, as document positions. Tags can't be cites and long lines are card text.
+ *  A cite with four or more authors spans paragraphs: the lead's line, then a line per co-author (their bold last name), then the title line. */
 export function citeLines(doc: PMNode): Span[] {
+  const paras: { n: PMNode; pos: number }[] = [];
+  doc.forEach((n, pos) => paras.push({ n, pos }));
+  const plain = (n: PMNode) => n.attrs.style === 'normal' && n.textContent.length <= 2000;
   const out: Span[] = [];
-  doc.forEach((n, pos) => {
-    if (n.attrs.style === 'normal' && n.textContent.length <= 2000 && isCiteLine(n)) out.push({ from: pos + 1, to: pos + 1 + n.content.size });
-  });
+  for (let i = 0; i < paras.length; i++) {
+    const { n, pos } = paras[i];
+    if (!plain(n) || !isCiteLine(n)) continue;
+    let last = i;
+    while (last + 1 < paras.length && plain(paras[last + 1].n) && !isCiteLine(paras[last + 1].n) && hasBold(paras[last + 1].n)) last++;
+    if (last > i && last + 1 < paras.length && plain(paras[last + 1].n) && /^["“]/.test(paras[last + 1].n.textContent)) last++;
+    const end = paras[last];
+    out.push({ from: pos + 1, to: end.pos + 1 + end.n.content.size });
+    i = last;
+  }
   return out;
 }
 

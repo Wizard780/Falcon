@@ -207,15 +207,22 @@ await win.keyboard.press('Shift+Home');
 await win.keyboard.press(`${MOD}+Shift+x`);
 await win.waitForFunction(() => document.querySelector('.ProseMirror').textContent.includes('Garding'), null, { timeout: 8000 });
 const multi = await win.$eval(editor, (ed) => {
-  const p = [...ed.querySelectorAll('p')].find((x) => x.textContent.includes('Garding'));
-  return { brs: p.querySelectorAll('br:not(.ProseMirror-trailingBreak)').length, cite: [...p.querySelectorAll('.f-cite')].map((e) => e.textContent), bold: [...p.querySelectorAll('strong')].map((e) => e.textContent),
-    sizes: [...p.querySelectorAll('.f-cite, strong')].map((e) => getComputedStyle(e).fontSize) };
+  const ps = [...ed.querySelectorAll('p')];
+  const i = ps.findIndex((x) => x.textContent.startsWith('Andrew S. Bowen'));
+  const block = ps.slice(i, i + 4);
+  return { lines: block.map((p) => p.textContent), cite: block.flatMap((p) => [...p.querySelectorAll('.f-cite')].map((e) => e.textContent)), bold: block.flatMap((p) => [...p.querySelectorAll('strong')].map((e) => e.textContent)),
+    sizes: block.flatMap((p) => [...p.querySelectorAll('.f-cite, strong')].map((e) => getComputedStyle(e).fontSize)) };
 });
-want(multi.brs === 3, `a four-author cite keeps its lines, in one paragraph: ${multi.brs} breaks`);
+want(multi.lines[1].startsWith('Sarah E. Garding') && multi.lines[3].startsWith('“Title.”'), `a four-author cite comes in as a paragraph per line: ${JSON.stringify(multi.lines)}`);
 want(multi.cite.join('|') === 'Bowen ’26', `the lead's name and date get the cite mark: ${multi.cite.join('|')}`);
 want(multi.bold.join('|') === 'Garding|Mix', `co-authors' last names are just bold: ${multi.bold.join('|')}`);
 want(multi.sizes[0] !== multi.sizes[1] && multi.sizes[1] === multi.sizes[2], `and stay text size, not cite size: ${multi.sizes.join(' ')}`);
-await (await win.$(`${editor} p:has-text("Garding")`)).screenshot({ path: 'shots/ai-cite-four-authors.png' });
+await win.click(`${editor} p:has-text("Sarah E. Garding")`, { clickCount: 3 });
+const picked = await win.evaluate(() => getSelection().toString().trim());
+want(picked === 'Sarah E. Garding. Analyst at CRS.', `a triple click on one author's line selects just that line: ${JSON.stringify(picked)}`);
+await win.click(`${editor} p:has-text("Sarah E. Garding")`);
+await (await win.$(`${editor} p:has-text("Andrew S. Bowen")`)).evaluate((p) => p.parentElement.scrollIntoView());
+await win.screenshot({ path: 'shots/ai-cite-four-authors.png' });
 await win.click('.fstrip [aria-label="Settings"]');
 await win.click('.st-nav >> text=AI');
 await win.waitForTimeout(200);
