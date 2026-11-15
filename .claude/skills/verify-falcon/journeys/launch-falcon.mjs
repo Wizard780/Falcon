@@ -58,6 +58,26 @@ want(await page.evaluate(() => {
 want(await page.evaluate(() => !!document.querySelector('.hm-perch svg.falcon-logo') && !document.querySelector('.hm-perch .falcon-bird')), 'what lands is the logo, not the flying bird');
 await page.screenshot({ path: `${out}/perched.png`, clip: { x: 0, y: 0, width: 900, height: 330 } });
 
+// hovering the perched logo turns its head up and blinks it, like the rail's logo
+const pose = (page) => page.evaluate(() => {
+  const svg = document.querySelector('.hm-perch svg.falcon-logo'), eye = svg.querySelector('.logo-eye');
+  const m = new DOMMatrix(getComputedStyle(svg).transform), e = new DOMMatrix(getComputedStyle(eye).transform);
+  return { deg: Math.round(Math.atan2(m.b, m.a) * 180 / Math.PI), eye: +e.d.toFixed(2) };
+});
+want(JSON.stringify(await pose(page)) === '{"deg":0,"eye":1}', 'the Home logo rests upright with its eye open');
+await page.hover('.hm-perch svg.falcon-logo');
+await page.waitForTimeout(380);
+const blink = await pose(page);
+await page.screenshot({ path: `${out}/logo-hover-blink.png`, clip: { x: 0, y: 0, width: 900, height: 330 } });
+want(blink.eye < 0.5, `mid-hover the Home logo's eye closes (scaleY ${blink.eye})`);
+await page.waitForTimeout(600);
+const held = await pose(page);
+await page.screenshot({ path: `${out}/logo-hover-held.png`, clip: { x: 0, y: 0, width: 900, height: 330 } });
+want(held.deg === -9 && held.eye === 1, `hovered, the Home logo's head is turned up and the eye open again: ${JSON.stringify(held)}`);
+await page.mouse.move(1300, 800);
+await page.waitForTimeout(700);
+want((await pose(page)).deg === 0, 'off the logo, the head turns back');
+
 // 2. the same Home with the setting off: no flight, the falcon already perched, Home identical
 page = await start({ 'falcon.launchFalcon': 'off' });
 want(!(await flying(page)) && await perched(page), 'setting off: no flight, the falcon is perched from the start');
@@ -66,6 +86,9 @@ want(await layout(page) === after, 'Home is laid out exactly as with the setting
 // 3. Reduce motion: no flight
 page = await start({ 'falcon.reduceMotion': 'on' });
 want(!(await flying(page)) && await perched(page), 'Reduce motion: no flight');
+await page.hover('.hm-perch svg.falcon-logo');
+await page.waitForTimeout(380);
+want(JSON.stringify(await pose(page)) === '{"deg":0,"eye":1}', 'Reduce motion: hovering the Home logo neither turns nor blinks it');
 
 // 4. a key mid-flight lands it at once, with the whole title in place
 page = await start();

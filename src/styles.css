@@ -364,6 +364,13 @@ button.b:active { transform: scale(.97); }
 .hm-brand { display: flex; align-items: center; gap: 18px; }
 .hm-perch { flex: none; width: 62px; height: 65px; pointer-events: none; color: var(--u-tx); } /* the falcon logo, left of the name, in the text color like the rail's */
 .hm-perch svg { display: block; width: 100%; height: 100%; overflow: visible; }
+/* the Home logo turns its head and blinks on hover, like the rail's .sb-logo (the turn pivots on the same point of the neck) */
+.hm-perch .falcon-logo { pointer-events: auto; transform-origin: 27% 96%; transition: transform 500ms cubic-bezier(.34, 1.45, .5, 1); }
+.hm-perch .falcon-logo:hover { transform: rotate(-9deg); }
+.hm-perch .logo-eye { transform-box: fill-box; transform-origin: center; }
+.hm-perch .falcon-logo:hover .logo-eye { animation: logo-blink 500ms 150ms; }
+.reduce-motion .hm-perch .falcon-logo { transition: none; } .reduce-motion .hm-perch .falcon-logo:hover { transform: none; } .reduce-motion .hm-perch .falcon-logo:hover .logo-eye { animation: none; }
+@media (prefers-reduced-motion: reduce) { .hm-perch .falcon-logo { transition: none; } .hm-perch .falcon-logo:hover { transform: none; } .hm-perch .falcon-logo:hover .logo-eye { animation: none; } }
 .falcon-flight { position: absolute; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; color: var(--u-tx); }
 .falcon-flight canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .falcon-flight svg { overflow: visible; }
