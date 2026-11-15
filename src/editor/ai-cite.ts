@@ -199,7 +199,8 @@ async function rewrite(view: EditorView, range: Span): Promise<CiteResult> {
   const tr = closeHistory(view.state.tr).replaceWith(now.from, now.to, lines[0]);
   let end = now.from + size(lines[0]);
   // every further line is a paragraph of its own, so a click or triple click takes one author, not the whole cite
-  for (const line of lines.slice(1)) { tr.split(end).insert(end + 2, line); end += 2 + size(line); }
+  const normal = [{ type: schema.nodes.paragraph, attrs: { style: 'normal' } }];
+  for (const line of lines.slice(1)) { tr.split(end, 1, normal).insert(end + 2, line); end += 2 + size(line); }
   view.dispatch(tr.setMeta(key, { own: true }).scrollIntoView());
   return { ok: true, marked, end };
 }
@@ -241,10 +242,16 @@ const isCiteLine = (n: PMNode) => {
   return found;
 };
 
-const hasBold = (n: PMNode) => {
-  let found = false;
-  n.descendants((c) => { if (c.isText && schema.marks.bold.isInSet(c.marks)) found = true; return !found; });
-  return found;
+/** A co-author's line, "First Last. Qualifications.": short, with a bold last name near the start, right before a period. */
+const coAuthorLine = (n: PMNode) => {
+  if (n.textContent.length > 400) return false;
+  let at = 0, ok = false;
+  n.forEach((c) => {
+    if (ok || at > 40) return;
+    if (c.isText && schema.marks.bold.isInSet(c.marks)) { ok = n.textContent.charAt(at + c.text!.length) === '.'; at = 99; return; }
+    at += c.textContent.length;
+  });
+  return ok;
 };
 
 /** Cites already in the doc, as document positions. Tags can't be cites and long lines are card text.
@@ -258,8 +265,10 @@ export function citeLines(doc: PMNode): Span[] {
     const { n, pos } = paras[i];
     if (!plain(n) || !isCiteLine(n)) continue;
     let last = i;
-    while (last + 1 < paras.length && plain(paras[last + 1].n) && !isCiteLine(paras[last + 1].n) && hasBold(paras[last + 1].n)) last++;
-    if (last > i && last + 1 < paras.length && plain(paras[last + 1].n) && /^["“]/.test(paras[last + 1].n.textContent)) last++;
+    while (last + 1 < paras.length && plain(paras[last + 1].n) && !isCiteLine(paras[last + 1].n) && coAuthorLine(paras[last + 1].n)) last++;
+    // only four or more authors go one per line, then the title line closes the cite
+    if (last - i < 3) last = i;
+    else if (last + 1 < paras.length && plain(paras[last + 1].n) && paras[last + 1].n.textContent.length <= 600 && /^["“]/.test(paras[last + 1].n.textContent)) last++;
     const end = paras[last];
     out.push({ from: pos + 1, to: end.pos + 1 + end.n.content.size });
     i = last;

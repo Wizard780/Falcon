@@ -247,18 +247,18 @@ describe('Reformat every cite', () => {
 });
 
 describe('cites with several authors', () => {
-  const four = `[[CITE]]\nAndrew S. Bowen ’26. Analyst at CRS.\nSarah E. Garding. Analyst at CRS.\nDerek E. Mix. Specialist at CRS.\n“Title.” CRS. August 11, 2026. https://x.gov/a.pdf.\n[[TOKENS]]\nBowen ’26\nGarding\nMix\n[[END]]`;
+  const four = `[[CITE]]\nAndrew S. Bowen ’26. Analyst at CRS.\nSarah E. Garding. Analyst at CRS.\nDerek E. Mix. Specialist at CRS.\nCatherine A. Theohary. Specialist at CRS.\n“Title.” CRS. August 11, 2026. https://x.gov/a.pdf.\n[[TOKENS]]\nBowen ’26\nGarding\nMix\nTheohary\n[[END]]`;
   it('keeps each line of a [[CITE]] block', () => {
-    expect(parseCite(four)!.cite.split('\n')).toHaveLength(4);
+    expect(parseCite(four)!.cite.split('\n')).toHaveLength(5);
   });
   it('splits the cite into lines, cite mark on the lead, bold on co-authors', () => {
     const { lines, marked: ok } = citeNodes(parseCite(four)!);
     expect(ok).toBe(true);
-    expect(lines).toHaveLength(4);
+    expect(lines).toHaveLength(5);
     const nodes = lines.flat();
     const withMark = (m: string) => nodes.filter((n) => n.marks.some((k) => k.type.name === m)).map((n) => n.text);
     expect(withMark('cite')).toEqual(['Bowen ’26']);
-    expect(withMark('bold')).toEqual(['Garding', 'Mix']);
+    expect(withMark('bold')).toEqual(['Garding', 'Mix', 'Theohary']);
   });
   it('still gives a CardMirror-style second token with the date the cite mark', () => {
     const { lines } = citeNodes({ cite: 'Laura Weiss & John Bresnahan 3/26 [x]', tokens: ['Weiss & ', 'Bresnahan 3/26'] });
@@ -272,7 +272,7 @@ describe('cites with several authors', () => {
     st = st.apply(st.tr.setSelection(TextSelection.create(doc, 1, 20)));
     const v = new EditorView(document.createElement('div'), { state: st });
     await formatCite(v, () => {});
-    expect(texts(v)).toEqual(['Andrew S. Bowen ’26. Analyst at CRS.', 'Sarah E. Garding. Analyst at CRS.', 'Derek E. Mix. Specialist at CRS.', '“Title.” CRS. August 11, 2026. https://x.gov/a.pdf.', 'card body']);
+    expect(texts(v)).toEqual(['Andrew S. Bowen ’26. Analyst at CRS.', 'Sarah E. Garding. Analyst at CRS.', 'Derek E. Mix. Specialist at CRS.', 'Catherine A. Theohary. Specialist at CRS.', '“Title.” CRS. August 11, 2026. https://x.gov/a.pdf.', 'card body']);
     expect(marked(v)).toBe('Bowen ’26');
     undo(v.state, v.dispatch);
     expect(texts(v)).toEqual(['Bowen ’8-11 [stuff]', 'card body']);
@@ -286,8 +286,8 @@ describe('cites with several authors', () => {
     bridge.aiAsk = vi.fn(async (q: { text: string }) => { asked.push(q.text); return { text: four }; });
     const rep = await reformatCites(v, { stopped: () => false, progress: () => {} });
     expect(rep.done).toBe(1);
-    expect(asked[0].split('\n')).toHaveLength(4);
-    expect(texts(v)).toHaveLength(5);
+    expect(asked[0].split('\n')).toHaveLength(5);
+    expect(texts(v)).toHaveLength(6);
     expect(texts(v).at(-1)).toBe('card body');
   });
   it('Reformat All turns an older one-paragraph cite with line breaks into paragraphs', async () => {
@@ -295,7 +295,24 @@ describe('cites with several authors', () => {
     const v = viewOf([old, para('card body')]);
     bridge.aiAsk = vi.fn(async () => ({ text: four }));
     await reformatCites(v, { stopped: () => false, progress: () => {} });
-    expect(texts(v)).toHaveLength(5);
+    expect(texts(v)).toHaveLength(6);
+  });
+  it('never takes card text with a bolded word, or a short cite\'s next line, into the cite', () => {
+    const bodyBold = schema.node('paragraph', null, [schema.text('Novel pathogens are '), schema.text('everywhere', [schema.marks.bold.create()]), schema.text('. More text.')]);
+    expect(citeLines(schema.node('doc', null, [para('. Prof.', 'Smith ’24'), bodyBold]))).toEqual([{ from: 1, to: 17 }]);
+    const coAuthor = schema.node('paragraph', null, [schema.text('Jo '), schema.text('Lee', [schema.marks.bold.create()]), schema.text('. Prof.')]);
+    // two co-author-looking lines is not a four-author cite
+    expect(citeLines(schema.node('doc', null, [para('. Prof.', 'Smith ’24'), coAuthor, coAuthor]))).toHaveLength(1);
+    expect(citeLines(schema.node('doc', null, [para('. Prof.', 'Smith ’24'), coAuthor, coAuthor]))[0].to).toBe(17);
+  });
+  it('makes the extra lines plain paragraphs even when the cite was typed in a tag', async () => {
+    bridge.aiAsk = vi.fn(async () => ({ text: four }));
+    const tag = schema.node('paragraph', { style: 'tag' }, [schema.text('Bowen ’8-11 [stuff]')]);
+    const v = viewOf([tag], 1, 20);
+    await formatCite(v, () => {});
+    const styles: string[] = [];
+    v.state.doc.forEach((n) => styles.push(n.attrs.style));
+    expect(styles.slice(1)).toEqual(['normal', 'normal', 'normal', 'normal']);
   });
 });
 
