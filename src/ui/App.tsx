@@ -7,6 +7,7 @@ import { Fragment, Node as PMNode, Slice } from 'prosemirror-model';
 import { createState, createView, brushKey, emptyDoc, swapState } from '../editor/editor';
 import { drawNear, topChildAt } from '../editor/window';
 import { leftSince, markOf, undo, untouched, type Mark } from '../editor/live-hooks';
+import { closeHistory } from 'prosemirror-history';
 import { commandOf } from '../editor/keymap';
 import { useSmoothZoom } from './smooth-zoom';
 import { IS_MAC, bindingOf, isRecording, keyLabel, keyOf, keyText, norm, pressed, pressedId, recordKey, titled } from '../editor/keybinds';
@@ -39,6 +40,7 @@ import './display'; // the display settings (fonts, sizes, root classes) apply a
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
 import { aiService, formatCite, reformatCites, reformatCount, usePreset } from '../editor/ai-cite';
 import { Confirm, nameList, type Ask } from './Confirm';
+import { DiskPill, useDisk } from './DiskPill';
 import { ComparePanel } from './ComparePanel';
 import { SendCard, linkLine, useCollab } from './Collab';
 import { WAITS, WhoHere, useLiveSessions } from './Live';
@@ -312,6 +314,9 @@ export function App() {
   docsRef.current = docs;
   const active = docs.find((d) => d.id === activeId) ?? docs[0];
   const meta = active.meta, dirty = active.dirty;
+  // the open file on disk: the pill at the bottom right, like CardMirror's
+  const { disk, settle, busy: diskBusy } = useDisk(active.id, meta.path);
+  const [diskAsk, setDiskAsk] = useState(0); // Save on a file that changed on disk asks first
   // the one open doc that Send to speech sends to; null until the first send or the Speech doc button
   const [speechId, setSpeechId] = useState<number | null>(null);
   const speechRef = useRef(speechId);
@@ -1120,13 +1125,18 @@ export function App() {
    * Write the active doc. As-Is is the document itself, so the open file takes its new name and path;
    * Send, Read and Marked docs are copies and the open file stays as it was.
    */
-  const writeDoc = useCallback(async (meta: DocMeta, mode: SaveMode, as: boolean, id = activeRef.current) => {
+  const writeDoc = useCallback(async (meta: DocMeta, mode: SaveMode, as: boolean, id = activeRef.current, overwrite = false) => {
     const saved = liveState(id)?.doc;
     if (!saved) { flash('That file closed, so nothing was saved.'); return; }
     const out = docForMode(saved, mode);
     if (!out) { flash(mode === 'marked' ? 'No marked cards: mark one with red text first' : 'Nothing to save'); return; }
+    // someone else changed the file since: ask whose changes to keep instead of saving over theirs
+    const inPlace = mode === 'asis' && !as && !!meta.path;
+    if (inPlace && !overwrite && diskRef.current?.changedAt && diskRef.current.path === meta.path) { setDiskAsk((n) => n + 1); return; }
+    if (inPlace) diskBusy.current++;
     try {
       const m = await saveDocument(out, meta, as);
+      if (inPlace && m?.path) await settle(id, m.path);
       if (!m) return;
       track('doc_saved', { mode, save_as: as });
       // another tab on this file would overwrite it on Save: close it if clean, else keep its edits but unbind it.
@@ -1143,7 +1153,42 @@ export function App() {
       setRecents((list) => noteRecent(list, saved, m));
       flash(`Saved ${m.name}`);
     } catch (e) { flash(`Couldn't save: ${(e as Error).message}`); }
-  }, [patch, flash, dropDoc]);
+    finally { if (inPlace) diskBusy.current--; }
+  }, [patch, flash, dropDoc, settle, diskBusy]);
+  const diskRef = useRef(disk);
+  diskRef.current = disk;
+  /** Keep their changes: the file as it is on disk replaces what's open, as one step Undo can take back. */
+  const diskTheirs = useCallback(async () => {
+    const id = activeRef.current, d = docsRef.current.find((x) => x.id === id), v = liveView(id);
+    if (!d?.meta.path || !v) return;
+    diskBusy.current++;
+    try {
+      const r = await openPath(d.meta.path);
+      v.dispatch(closeHistory(v.state.tr).replaceWith(0, v.state.doc.content.size, r.doc.content).scrollIntoView()); // its own undo step
+      savedDocs.current.set(id, v.state.doc);
+      patch(id, { dirty: false });
+      await settle(id, d.meta.path);
+      v.focus(); // so Undo brings yours straight back
+      flash(`Loaded ${d.meta.name} as it is on disk`);
+    } catch (e) { flash(`Couldn't load it from disk: ${(e as Error).message}`); }
+    finally { diskBusy.current--; }
+  }, [patch, flash, settle, diskBusy]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Keep both: your version goes beside the original as a conflicted copy, and this tab carries on in it. */
+  const diskBoth = useCallback(async () => {
+    const id = activeRef.current, d = docsRef.current.find((x) => x.id === id), doc = liveState(id)?.doc;
+    if (!d?.meta.path || !doc || !bridge.saveCopyBeside) return;
+    try {
+      const data = await (await import('../docx/export')).docToDocx(doc);
+      const r = await bridge.saveCopyBeside({ path: d.meta.path, data });
+      const m = { name: r.name.replace(/\.docx$/i, ''), path: r.path };
+      savedDocs.current.set(id, doc);
+      patch(id, { meta: m, dirty: !!liveState(id) && isDirty(id, liveState(id)!.doc) });
+      setRecents((list) => noteRecent(list, doc, m));
+      await settle(id, r.path, d.meta.path);
+      liveView(id)?.focus();
+      flash(`Saved your version as ${m.name}. ${d.meta.name} keeps their changes.`);
+    } catch (e) { flash(`Couldn't save a copy: ${(e as Error).message}`); }
+  }, [patch, flash, settle]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Save writes the open file; Save As opens the dialog, which calls `saveCopy`. A file opening meanwhile can change the active doc, so the dialog keeps the one it was opened on. */
   const saveAsDoc = useRef(0);
   const fileSave = useCallback(async (as = false) => {
@@ -1817,6 +1862,9 @@ export function App() {
         {linkedFrom && <button className="back" title={titled('Back', 'linkBack', 'to where you clicked the card link')}
           onClick={() => { const v = viewRef.current; if (v) linkBack(v.state, v.dispatch, v); }}>← Back{keyLabel('linkBack') && <kbd>{keyLabel('linkBack')}</kbd>}</button>}
         <span className="grow" />
+        <DiskPill disk={disk} name={meta.name || 'Untitled'} dirty={dirty} ask={diskAsk}
+          onTheirs={() => void diskTheirs()} onMine={() => { void writeDoc(meta, 'asis', false, activeRef.current, true); viewRef.current?.focus(); }} onBoth={() => void diskBoth()}
+          onOriginal={(p) => void openPath(p).then((r) => opened(r, 'recent'), (e) => openFailed(p.split(/[\\/]/).pop()!, p, e))} />
         <button title={titled('Zoom out', 'zoomOut', 'make the page smaller')} onClick={() => zoomBy(-0.1)}>−</button>
         <button className="zoom" title={titled('Actual size', 'zoomReset', 'back to 100%')} onClick={() => zoomTo(1)}>{Math.round(zoom * 100)}%</button>
         <button title={titled('Zoom in', 'zoomIn', 'make the page bigger')} onClick={() => zoomBy(0.1)}>+</button>

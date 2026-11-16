@@ -710,3 +710,15 @@ button.b:active { transform: scale(.97); }
 .cmp-pick button { height: 28px; padding: 0 12px; border-radius: 8px; background: var(--u-ctl2); color: var(--u-tx); font-size: 12px; box-shadow: var(--u-top); cursor: pointer; }
 .ns-file { margin: 10px 2px 0; font-size: 12px; color: var(--u-tx2); overflow-wrap: anywhere; }
 .ns-file b { color: var(--u-tx); font-weight: 500; }
+
+/* the open file on disk, bottom right, like CardMirror's pill: its cloud, or that someone changed it */
+.status .disk { display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; margin-left: 0; color: var(--u-tx2); background: var(--u-raised); box-shadow: var(--u-top); }
+.status .disk svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.status .disk[data-state="changed"] { color: #f0b429; }
+.status .disk[data-state="copy"] { color: var(--u-tx); }
+.cf.dk { width: min(440px, calc(100vw - 48px)); }
+.dk-list { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.dk-list button { display: flex; flex-direction: column; gap: 2px; padding: 9px 12px; border-radius: 9px; background: var(--u-ctl2); color: var(--u-tx); text-align: left; box-shadow: var(--u-top); cursor: pointer; transition: background 150ms ease-out; }
+.dk-list button:hover, .dk-list button:focus-visible { background: var(--u-ctl-on); outline: none; }
+.dk-list b { font-size: 13px; font-weight: 600; }
+.dk-list span { font-size: 12px; line-height: 17px; color: var(--u-tx2); }

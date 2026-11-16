@@ -31,6 +31,12 @@ type FalconBridge = {
   /** Pick .docx files in the native dialog for a template, which lets openPath read them from then on. Returns their paths. */
   pickTemplateFiles?: () => Promise<string[]>;
   saveFile?: (opts: { path?: string; name: string; data: Uint8Array }) => Promise<{ path: string; name: string } | null>;
+  /** An open file's modified time and size on disk (null if it's gone or not one Falcon may open). */
+  fileStat?: (path: string) => Promise<{ mtime: number; size: number } | null>;
+  /** Show the file in Finder or Explorer. */
+  revealFile?: (path: string) => Promise<void>;
+  /** Writes `data` next to `path` as "<name> (conflicted copy <date>).docx". */
+  saveCopyBeside?: (opts: { path: string; data: Uint8Array }) => Promise<{ path: string; name: string }>;
   /** File search (Cmd-K): the folders allowed in Settings, with file counts (null while the first scan runs). */
   indexFolders?: () => Promise<IndexFolder[]>;
   /** Pick folders in the native dialog and allow them. Returns the new list. */
