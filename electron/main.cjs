@@ -323,6 +323,37 @@ ipcMain.handle('falcon:open-path', async (_e, p) => {
   await rememberPath(abs);
   return { name: path.basename(abs), path: abs, data };
 });
+// The open file's place on disk, so the page notices when another program or device rewrites it (CardMirror's
+// pill at the bottom right). Only for files Falcon may open anyway.
+const mayTouch = async (p) => {
+  if (typeof p !== 'string') return null;
+  const abs = path.resolve(p);
+  if (!abs.toLowerCase().endsWith('.docx')) return null;
+  return (await loadRecent()).includes(abs) || (await templatePaths()).has(abs) || (await index().allows(abs)) ? abs : null;
+};
+ipcMain.handle('falcon:file-stat', async (_e, p) => {
+  const abs = await mayTouch(p);
+  if (!abs) return null;
+  return fs.stat(abs).then((s) => ({ mtime: s.mtimeMs, size: s.size }), () => null);
+});
+ipcMain.handle('falcon:reveal-file', async (_e, p) => { const abs = await mayTouch(p); if (abs) shell.showItemInFolder(abs); });
+// Keep both: your version goes next to the original as a conflicted copy, the way Dropbox names them
+ipcMain.handle('falcon:save-copy-beside', (_e, opts) => {
+  const turn = saving.then(async () => {
+    const abs = await mayTouch(opts?.path);
+    if (!abs || !(opts.data instanceof Uint8Array)) throw new Error('bad copy request');
+    const d = new Date(), pad = (n) => String(n).padStart(2, '0');
+    const stem = `${path.basename(abs, path.extname(abs))} (conflicted copy ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}${pad(d.getMinutes())})`;
+    let p = path.join(path.dirname(abs), `${stem}.docx`);
+    for (let n = 2; await fs.stat(p).then(() => true, () => false); n++) p = path.join(path.dirname(abs), `${stem} ${n}.docx`);
+    const tmp = `${p}.falcon-tmp`;
+    try { await fs.writeFile(tmp, Buffer.from(opts.data)); await fs.rename(tmp, p); } catch (err) { await fs.rm(tmp, { force: true }); throw err; }
+    await rememberPath(p);
+    return { path: p, name: path.basename(p) };
+  });
+  saving = turn.catch(() => {});
+  return turn;
+});
 ipcMain.handle('falcon:pick-template-files', async (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const r = await dialog.showOpenDialog(win, { title: 'Add files to template', buttonLabel: 'Add', properties: ['openFile', 'multiSelections'], filters: DOCX });
