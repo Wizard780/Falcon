@@ -203,6 +203,7 @@ svg { flex: none; }
 .ol-grip:hover::after { background: var(--u-ctl-on); transition-delay: 150ms; }
 .ol-grip:focus-visible::after, :root[data-ol-drag] .ol-grip::after { background: var(--ink-ui); transition-delay: 0s; }
 :root[data-ol-drag], :root[data-ol-drag] * { cursor: col-resize !important; user-select: none !important; }
+.ol-top { position: sticky; top: 0; z-index: 3; margin: 0 -12px; padding: 0 12px; background: var(--u-deep); }
 .ol-head { display: flex; align-items: center; gap: 6px; padding: 4px 0 8px; }
 .ol-head .sb-label { flex: 1; padding: 0 0 0 10px; }
 .ol-head .sb-ico { width: 26px; height: 26px; }

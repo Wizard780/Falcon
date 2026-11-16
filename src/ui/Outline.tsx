@@ -47,6 +47,7 @@ export function OutlinePane(props: Props) {
   const [hide, setHide] = useState(() => readSetting(outlineHideSetting) as boolean);
   const [content, setContent] = useState(() => readSetting(outlineContentSetting) as boolean);
   const [step, setStep] = useState(-1); // which match Up/Down is on
+  const [relevel, setRelevel] = useState(0); // counts 1-4 clicks: the same number again still re-folds, like CardMirror
   // Import settings or Restore defaults changed them underneath
   useEffect(() => onPrefs(() => {
     setLevel(readSetting(outlineLevelSetting) as string); setHide(readSetting(outlineHideSetting) as boolean); setContent(readSetting(outlineContentSetting) as boolean);
@@ -91,11 +92,13 @@ export function OutlinePane(props: Props) {
     <aside className={`olp${shown ? ' shown' : ''}`} aria-hidden={!shown}>
       <OutlineGrip />
       <div className="sb-scroll">
+        {/* the 1-4 buttons and the search box stay put while the list scrolls under them */}
+        <div className="ol-top">
         <div className="ol-head">
           <span className="sb-label">Outline</span>
           <div ref={lvRef} className="lv" role="group" aria-label="Outline depth">
             <span ref={hlRef} className="lv-hl" />
-            {[1, 2, 3, 4].map((l) => { const t = `Show ${['pockets', 'down to hats', 'down to blocks', 'down to tags'][l - 1]}`; return <button key={l} data-lv={l} data-on={props.depth === l || undefined} aria-label={t} title={t} onClick={() => props.onDepth(l)}>{l}</button>; })}
+            {[1, 2, 3, 4].map((l) => { const t = `Show ${['pockets', 'down to hats', 'down to blocks', 'down to tags'][l - 1]}`; return <button key={l} data-lv={l} data-on={props.depth === l || undefined} aria-label={t} title={`${t} (heading levels 1${l > 1 ? `–${l}` : ''})`} onClick={() => { props.onDepth(l); setRelevel((n) => n + 1); }}>{l}</button>; })}
           </div>
           <button className="sb-ico" title="Search the outline" aria-label="Search the outline" onClick={() => (query === null ? setQuery('') : close())}><SvgIcon name="search" /></button>
         </div>
@@ -115,7 +118,8 @@ export function OutlinePane(props: Props) {
           </div>
           {hits && <div className="ol-count">{hits.length ? `${step >= 0 ? `${step + 1} of ` : ''}${hits.length} ${hits.length === 1 ? 'match' : 'matches'} · ↑↓ to step, Enter to go` : 'No matches'}</div>}
         </>}
-        <OutlineRows key={props.active} items={items} depth={props.depth} cur={cur} hits={hits} hide={hide} step={hits && step >= 0 ? hits[step] : -1}
+        </div>
+        <OutlineRows key={props.active} items={items} depth={props.depth} relevel={relevel} cur={cur} hits={hits} hide={hide} step={hits && step >= 0 ? hits[step] : -1}
           numbers={props.numbers} getView={props.getView} onJump={props.onJump} flash={props.flash} visible={shown} />
       </div>
     </aside>
@@ -123,12 +127,12 @@ export function OutlinePane(props: Props) {
 }
 
 type RowsProps = {
-  items: OutlineItem[]; depth: number; cur: number; hits: number[] | null; hide: boolean; step: number; numbers: string[];
+  items: OutlineItem[]; depth: number; relevel: number; cur: number; hits: number[] | null; hide: boolean; step: number; numbers: string[];
   getView: () => EditorView | null; onJump: (item: OutlineItem, index: number) => void; flash: (msg: string) => void; visible: boolean;
 };
 type Drag = { heads: number[]; x: number; y: number; on: boolean; gap: number | null; raf: number; end?: (ok: boolean) => void };
 
-const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, step, numbers, getView, onJump, flash, visible }: RowsProps) {
+const OutlineRows = memo(function OutlineRows({ items, depth, relevel, cur, hits, hide, step, numbers, getView, onJump, flash, visible }: RowsProps) {
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const [sel, setSel] = useState<Set<number>>(new Set());
@@ -141,7 +145,8 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
   const [ready, setReady] = useState(false);
   // folds follow the heading's key (its text under its parents), so typing above it doesn't move them
   const keyOf = (item: OutlineItem) => item.key;
-  useEffect(() => { setFolded(new Set()); setOpened(new Set()); }, [depth]);
+  useEffect(() => { setFolded(new Set()); setOpened(new Set()); }, [depth, relevel]);
+  const seenRelevel = useRef(relevel); // a new 1-4 click brings the heading you're in to the top of the list, like CardMirror
   // the doc changed: row numbers point elsewhere now
   useEffect(() => { setSel(new Set()); setMenu(null); }, [items]);
 
@@ -227,8 +232,14 @@ const OutlineRows = memo(function OutlineRows({ items, depth, cur, hits, hide, s
     if (!visible || dragRef.current?.on) return;
     const s = list.closest('.sb-scroll') as HTMLElement | null;
     if (!s) return;
+    const head = (s.querySelector('.ol-top') as HTMLElement | null)?.offsetHeight ?? 0; // the header that stays put covers the top
+    if (seenRelevel.current !== relevel) {
+      seenRelevel.current = relevel;
+      s.scrollTop = Math.max(0, row.getBoundingClientRect().top - s.getBoundingClientRect().top + s.scrollTop - head - 12); // clear of the "keep it in view" margin below
+      return;
+    }
     const rt = row.getBoundingClientRect(), st = s.getBoundingClientRect();
-    if (rt.top < st.top + 40 || rt.bottom > st.bottom - 40) s.scrollTo({ top: s.scrollTop + rt.top - st.top - st.height / 3, behavior: reducedMotion() ? 'auto' : 'smooth' });
+    if (rt.top < st.top + head + 8 || rt.bottom > st.bottom - 40) s.scrollTo({ top: s.scrollTop + rt.top - st.top - st.height / 3, behavior: reducedMotion() ? 'auto' : 'smooth' });
   });
   // the pill only animates after the first placement
   useEffect(() => { const r = requestAnimationFrame(() => requestAnimationFrame(() => setReady(true))); return () => cancelAnimationFrame(r); }, []);
