@@ -774,7 +774,7 @@ ipcMain.on('falcon:track', (_e, event, props) => {
 if (primary) app.whenReady().then(() => {
   if (BENCH) app.dock?.hide();
   buildMenu();
-  createWindow();
+  createWindow(updater.justUpdated() ? { restore: true } : null); // after an update, the first window reopens last session's files
   updater.start();
   startEditorBridge();
   app.on('activate', () => { if (!windows.size) createWindow(); });

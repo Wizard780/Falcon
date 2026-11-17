@@ -180,6 +180,9 @@ async function install(version) {
   if (update.manual) { await shell.openPath(file); return; } // the user drags it in from the disk image
   publish({ ...update, state: 'installing', error: undefined });
   try {
+    // the next launch reopens every open file, Restore open files or not. Written now and in a file, not
+    // browser storage (it reaches disk late) or argv (on Windows the installer opens Falcon, not us)
+    fs.writeFileSync(marker(), '');
     if (process.platform === 'darwin') {
       await swapMac();
       app.relaunch();
@@ -192,8 +195,15 @@ async function install(version) {
     globalThis.falconSkipUnloadGuard = true; // the page already asked about unsaved documents
     app.quit();
   } catch (e) {
+    fs.rmSync(marker(), { force: true }); // still open: a later launch is an ordinary one
     publish({ ...update, state: 'error', error: e.message });
   }
+}
+
+const marker = () => path.join(app.getPath('userData'), 'just-updated');
+/** This launch follows an update's restart. Asked once: the marker goes as it's read. */
+function justUpdated() {
+  try { fs.rmSync(marker()); return true; } catch { return false; }
 }
 
 function start() {
@@ -211,4 +221,4 @@ function start() {
   setInterval(check, EVERY).unref?.();
 }
 
-module.exports = { start, newer, assetFor, sumFor };
+module.exports = { start, justUpdated, newer, assetFor, sumFor };
