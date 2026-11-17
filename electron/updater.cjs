@@ -182,11 +182,13 @@ async function install(version) {
   try {
     // the next launch reopens every open file, Restore open files or not. Written now and in a file, not
     // browser storage (it reaches disk late) or argv (on Windows the installer opens Falcon, not us)
-    fs.writeFileSync(marker(), '');
+    const mark = () => fs.writeFileSync(marker(), '');
     if (process.platform === 'darwin') {
       await swapMac();
+      mark();
       app.relaunch();
     } else {
+      mark(); // before the installer starts: it closes Falcon itself
       // the NSIS installer: silent, as an update, and it opens Falcon again when it's done
       const child = spawn(file, ['--updated', '/S', '--force-run'], { detached: true, stdio: 'ignore' });
       await new Promise((res, rej) => { child.once('spawn', res); child.once('error', rej); }); // blocked or missing: stay open
