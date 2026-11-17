@@ -17,10 +17,12 @@ const results = [];
 const want = (ok, what) => { results.push(`${ok ? 'ok  ' : 'FAIL'} ${what}`); console.log(results.at(-1)); return ok; };
 const finish = () => { fs.writeFileSync(path.join(out, 'results.txt'), results.join('\n') + '\n'); process.exitCode = results.some((r) => r.startsWith('FAIL')) ? 1 : 0; };
 if (process.platform !== 'darwin') { want(false, 'Mac only: the Windows update runs the NSIS installer, which this journey cannot'); finish(); process.exit(); }
-let orphan = 0; // the relaunched app, which nothing else stops
-setTimeout(() => { want(false, 'timed out after the checks above'); finish(); try { process.kill(orphan, 'SIGTERM'); } catch { /* gone */ } process.exit(1); }, 600_000).unref();
+setTimeout(() => { want(false, 'timed out after the checks above'); finish(); process.exit(1); }, 600_000).unref();
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'falcon-update-restore-'));
+let orphan = 0; // the relaunched app, which nothing else stops
+// however the run ends: stop it, and drop the app copies and disk image (most of a gigabyte)
+process.on('exit', () => { try { process.kill(orphan, 'SIGTERM'); } catch { /* gone */ } fs.rmSync(tmp, { recursive: true, force: true }); });
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8' });
 // an app bundle of our own to swap: the dmg holds a copy of it, both ad-hoc signed so the updater's codesign check passes
 const bundle = path.join(tmp, 'apps/Electron.app'), exe = path.join(bundle, 'Contents/MacOS/Electron');
@@ -52,6 +54,8 @@ const editors = async (pages) => { const o = []; for (const p of pages) if (awai
 /** Every window's docs, one list, sorted: a doc open twice shows twice. */
 const allNames = async (pages) => (await Promise.all((await editors(pages)).map(names))).flat().sort();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** A read from the relaunched app, which fails naming itself instead of hanging the run. */
+const step = (what, p, ms = 20000) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`${what}: no answer in ${ms / 1000}s`)), ms))]);
 
 const launch = (userData, withFeed) => {
   const env = { ...process.env, FALCON_HEADLESS: '1', FALCON_USER_DATA: userData };
@@ -129,18 +133,21 @@ for (const fileWindows of [false, true]) {
   want(await update(app, first), `${how}: Install and Restart quits the app`);
   const next = await relaunched(userData, oldPort);
   if (!want(!!next, `${how}: the updater relaunched it`)) continue;
-  // every file back, and then no more (a late open of the active doc would make a copy)
-  await until(async () => same(await allNames(next.pages()), ALL), 20000);
-  await new Promise((r) => setTimeout(r, 2000));
-  const got = await allNames(next.pages());
-  want(same(got, ALL), `${how}: every file is back after the update, each once: ${got.join(', ')}`);
-  const one = await oneState(next.pages());
-  want(one.text.includes(EDIT) && one.unsaved, `${how}: the unsaved doc comes back with its edits, still unsaved (${one.unsaved ? 'unsaved' : 'saved'})`);
-  const [shot] = await editors(next.pages());
-  want(shot && await shot.evaluate(() => localStorage.getItem('falcon.reopen')) !== 'on', `${how}: Restore open files is still off`);
-  want(!fs.existsSync(path.join(userData, 'just-updated')), `${how}: the relaunch used up the update marker`);
-  if (shot) await shot.screenshot({ path: path.join(out, `${fileWindows ? 'windows' : 'tabs'}-after.png`), timeout: 15000 }).catch(() => {});
-  await next.stop();
+  try {
+    // every file back, and then no more (a late open of the active doc would make a copy)
+    await until(async () => same(await step('the file list', allNames(next.pages())), ALL), 20000);
+    await new Promise((r) => setTimeout(r, 2000));
+    const got = await step('the file list', allNames(next.pages()));
+    want(same(got, ALL), `${how}: every file is back after the update, each once: ${got.join(', ')}`);
+    const one = await step("One's text", oneState(next.pages()));
+    want(one.text.includes(EDIT) && one.unsaved, `${how}: the unsaved doc comes back with its edits, still unsaved (${one.unsaved ? 'unsaved' : 'saved'})`);
+    const [shot] = await step('the windows', editors(next.pages()));
+    want(shot && await step('the setting', shot.evaluate(() => localStorage.getItem('falcon.reopen'))) !== 'on', `${how}: Restore open files is still off`);
+    want(!fs.existsSync(path.join(userData, 'just-updated')), `${how}: the relaunch used up the update marker`);
+    if (shot) await shot.screenshot({ path: path.join(out, `${fileWindows ? 'windows' : 'tabs'}-after.png`), timeout: 15000 }).catch(() => {});
+  } catch (e) {
+    want(false, `${how}: the relaunched app: ${e.message}`);
+  } finally { await next.stop(); }
 }
 
 // a normal quit and relaunch, Restore open files off: only what crash recovery keeps
@@ -182,6 +189,5 @@ for (const fileWindows of [false, true]) {
 }
 
 feed.close();
-run('rm', ['-rf', tmp]);
 finish();
 console.log(`evidence: ${out}`);
