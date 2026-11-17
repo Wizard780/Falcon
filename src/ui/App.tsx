@@ -1683,7 +1683,7 @@ export function App() {
   useEffect(() => {
     if (!hasView || reopened.current) return;
     reopened.current = true;
-    if (pref(P.reopen) && bridge.openPath && !start.slot) queueOpens(lastSession, true); // moved or deleted since: skipped
+    if ((pref(P.reopen) || start.restore) && bridge.openPath && !start.slot) queueOpens(lastSession, true); // moved or deleted since: skipped
     if (start.path && !start.backup) {
       queueOpens([start.path], false);
       void pathQueue.current.then(() => {

@@ -22,7 +22,8 @@ export type CardIndexStatus = { files: number; cards: number; scanning: boolean;
 /** A place in a file, to jump to once it's open. */
 export type CardSpot = { tag: string; ordinal: number; file: string };
 export type WindowOpen = { path?: string; card?: CardSpot; alone?: boolean; backup?: string; speech?: string; inactive?: boolean; caretEnd?: boolean };
-export type WindowStart = { slot: string; alone?: boolean; path?: string; card?: CardSpot; backup?: string; caretEnd?: boolean };
+/** restore: this launch follows an update's restart, so last session's files come back whatever Restore open files says. */
+export type WindowStart = { slot: string; alone?: boolean; path?: string; card?: CardSpot; backup?: string; caretEnd?: boolean; restore?: boolean };
 export type SpeechAnswer = { ok: boolean; error?: string; docTitle?: string; undo?: string; note?: string };
 type FalconBridge = {
   readClipboardText?: () => Promise<string>;
