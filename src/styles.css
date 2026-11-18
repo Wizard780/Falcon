@@ -105,8 +105,6 @@ svg { flex: none; }
 .files-r:hover .files-x { opacity: 1; }
 .files-r:hover .dot { opacity: 0; }
 .files-x:hover { color: var(--u-tx); background: var(--u-ctl-on); }
-/* shift-clicked files, waiting for Join (right-click) */
-.doc-row[data-sel] .doc-nm, .files-r[data-sel] .files-b { background: var(--u-ctl-on); color: var(--u-tx); }
 /* joined files sit together in one capsule */
 .doc-row[data-join]::after, .files-r[data-join]::after { content: ''; position: absolute; z-index: -1; inset: -2px -4px; background: var(--u-hover); pointer-events: none; }
 .doc-row[data-join="first"]::after, .files-r[data-join="first"]::after { top: -4px; border-radius: 12px 12px 0 0; }
