@@ -40,6 +40,7 @@ import './display'; // the display settings (fonts, sizes, root classes) apply a
 import './theme'; // so does the saved theme (Settings and the command center, which also import it, load later)
 import { aiService, formatCite, reformatCites, reformatCount, usePreset } from '../editor/ai-cite';
 import { Confirm, nameList, type Ask } from './Confirm';
+import { SlotAsk, SlotStack } from './Slots';
 import { DiskPill, useDisk } from './DiskPill';
 import { ComparePanel } from './ComparePanel';
 import { SendCard, linkLine, useCollab } from './Collab';
@@ -297,6 +298,14 @@ export function App() {
   const groupRef = useRef(group);
   const setGroup = (g: number[] | null) => { groupRef.current = g; setGroupState(g); };
   const [splitOn, setSplitOn] = useState(false);
+  // Slots (Settings > Workspace): three slots, each a stack of open files, top first. The filled slots' top
+  // files show side by side (a lone one still gets its pane, for its name and stack button)
+  const slotsRef = useRef<number[][]>([[], [], []]);
+  const [slots, setSlotsState] = useState<number[][]>(slotsRef.current);
+  const slotsOnRef = useRef(false);
+  const slotWhere = useRef<number | null>(null); // the slot the next new file goes in (the Open into… answer)
+  const slotNew = useRef<number | null>(null); // a file just added in Slots: it goes on top, focused
+  const [slotAsk, setSlotAsk] = useState<{ name: string; done: (slot: number | null) => void } | null>(null);
   /** The editor holding doc `id` right now (the focused one or another pane), or null when it's put away. */
   const liveView = (id: number) => (id === activeRef.current ? viewRef.current : panes.current.get(id)?.view ?? null);
   const liveState = (id: number) => liveView(id)?.state ?? docsRef.current.find((d) => d.id === id)?.state ?? null;
@@ -713,9 +722,23 @@ export function App() {
     focusPane(panes.current.has(focus) ? focus : panes.current.keys().next().value!);
     setTestView(viewRef.current); // createView points it at the newest pane
   }, [focusPane]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Slots: keep `st` and show each filled slot's top file side by side, `focus` focused. The rail lists files slot by slot. */
+  const applySlots = useCallback((st: number[][], focus: number) => {
+    slotsRef.current = st;
+    setSlotsState(st);
+    const order = st.flat();
+    setDocs((ds) => (ds.length === order.length && ds.every((d) => order.includes(d.id)) ? order.map((id) => ds.find((d) => d.id === id)!) : ds));
+    const tops = st.filter((x) => x.length).map((x) => x[0]);
+    if (!tops.length) return;
+    setGroup(tops);
+    arrange(tops, tops.includes(focus) ? focus : tops[0]);
+  }, [arrange]);
 
   const switchTo = useCallback((id: number) => {
     if (id === activeRef.current) { setHomeOpen(false); setSdLit(null); viewRef.current?.focus(); return; }
+    // Slots: a file under another one comes to the top of its slot
+    const st = slotsRef.current, at = st.findIndex((x) => x.includes(id));
+    if (slotsOnRef.current && at >= 0 && st[at][0] !== id) { applySlots(st.map((x, i) => (i === at ? [id, ...x.filter((y) => y !== id)] : x)), id); return; }
     if (panes.current.has(id)) { focusPane(id); return; }
     const target = docsRef.current.find((d) => d.id === id);
     if (!target?.state) return;
@@ -725,13 +748,24 @@ export function App() {
     const out = stash(), cur = activeRef.current;
     setDocs((ds) => ds.map((d) => (d.id === cur ? { ...d, ...out } : d.id === id ? { ...d, state: null } : d)));
     show(id, target.state, target.scroll);
-  }, [show, arrange, focusPane]);
+  }, [show, arrange, focusPane, applySlots]);
 
   /** The window shows an untouched blank Untitled, which a new file takes the place of. */
   const isBlank = useCallback(() => {
     const v = viewRef.current!, cur = docsRef.current.find((d) => d.id === activeRef.current)!;
     return !panes.current.size && !cur.dirty && !cur.meta.path && !v.state.doc.textContent.trim() && v.state.doc.childCount <= 1 && cur.id !== speechRef.current;
   }, []);
+  /** An untouched blank Untitled, wherever it is showing. */
+  const slotBlank = (id: number) => {
+    const d = docsRef.current.find((x) => x.id === id), doc = liveState(id)?.doc;
+    return !!d && !!doc && !d.dirty && !d.meta.path && id !== speechRef.current && !doc.textContent.trim() && doc.childCount <= 1;
+  };
+  /** Slots: open into a slot, asking which when there's a choice (some slot has a file that isn't a blank Untitled). */
+  const intoSlot = (name: string, go: () => void) => {
+    const d = docsRef.current;
+    if (!slotsOnRef.current || !slotsRef.current.some((x) => x.length) || (d.length === 1 && slotBlank(d[0].id))) { go(); return; }
+    setSlotAsk({ name, done: (slot) => { setSlotAsk(null); if (slot === null) { viewRef.current?.focus(); return; } slotWhere.current = slot; go(); } });
+  };
   /** Open files in new windows is on, and this window has its file already. */
   const wantsWindow = useCallback(() => !!bridge.openWindow && pref(P.fileWindows) && !isBlank(), [isBlank]);
   /** A new tab for `doc`, after the current one. An untouched blank Untitled is replaced instead, unless `alongside`. */
@@ -743,6 +777,20 @@ export function App() {
     const id = blank ? cur.id : nextDocId++;
     const fresh: OpenDoc = { id, meta: m, dirty: false, state: null, scroll: 0 };
     savedDocs.current.set(id, doc);
+    if (slotsOnRef.current && split) {
+      // Slots: the new file waits in the list with its state, and the Slots effect puts it on top of a slot.
+      // An untouched blank Untitled, the only file open, makes way for it
+      const was = docsRef.current.length === 1 && !alongside && slotBlank(cur.id) ? cur.id : null;
+      const state = createState(doc);
+      if (was !== null) savedDocs.current.delete(was);
+      setDocs((ds) => [...ds.filter((d) => d.id !== was), { ...fresh, state }]);
+      slotNew.current = id;
+      const backedUp = doc.content.size <= (bridge.recovery ? DISK_MAX : AUTOSAVE_MAX);
+      warnedBig.current = !backedUp;
+      setHomeOpen(false);
+      setSdLit(null);
+      return backedUp;
+    }
     if (blank) setDocs((ds) => ds.map((d) => (d.id === id ? fresh : d)));
     else if (split) {
       const held = releasePanes(), g = groupRef.current ?? [];
@@ -766,6 +814,20 @@ export function App() {
     setSpeechId((s) => (s === id ? null : s));
     savedDocs.current.delete(id);
     const rest = list.filter((x) => x.id !== id);
+    if (slotsOnRef.current && panes.current.has(id)) {
+      // Slots: the next file down that slot shows in its place; an emptied slot goes, the others widen
+      const st = slotsRef.current.map((x) => x.filter((y) => y !== id)), at = slotsRef.current.findIndex((x) => x[0] === id);
+      dropPane(id);
+      if (st.some((x) => x.length)) {
+        if (!panes.current.size) { viewRef.current = mainView.current; scrollRef.current = mainScroll.current; }
+        setDocs(rest);
+        applySlots(st, id === activeRef.current ? (st[at]?.[0] ?? st.find((x) => x.length)![0]) : activeRef.current);
+        return;
+      }
+      slotsRef.current = [[], [], []]; // the last file: on as for any last file
+      releasePanes();
+      setGroup(null);
+    }
     // a joined file closing: the group shrinks, and comes apart below two
     const g = groupRef.current, left = g?.filter((x) => x !== id) ?? null;
     if (g?.includes(id)) setGroup(left!.length >= 2 ? left : null);
@@ -804,7 +866,7 @@ export function App() {
     if (ng?.includes(next.id)) { setDocs(rest); arrange(ng, next.id, false); return; }
     setDocs(rest.map((x) => (x.id === next.id ? { ...x, state: null } : x)));
     show(next.id, next.state!, next.scroll);
-  }, [show, arrange, focusPane]);
+  }, [show, arrange, focusPane, applySlots]);
   // dragging a file in the rail or the files panel moves it to slot `to`
   const moveDoc = useCallback((id: number, to: number) => {
     setDocs((ds) => {
@@ -907,7 +969,7 @@ export function App() {
   }, [arrange, flash]);
   /** Dragging a pane by its name onto another swaps the two, in the split and in the rail. */
   paneDrag.current = (id, e) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest('.pane-x')) return;
+    if (e.button !== 0 || (e.target as HTMLElement).closest('.pane-x, .pane-stk')) return;
     const src = panes.current.get(id)?.el, x0 = e.clientX, y0 = e.clientY;
     if (!src) return;
     let on = false, to: number | null = null;
@@ -933,6 +995,11 @@ export function App() {
       removeEventListener('keydown', key, true);
       document.documentElement.classList.remove('f-dragging');
       for (const p of panes.current.values()) { p.el.removeAttribute('data-drag'); p.el.removeAttribute('data-drop'); }
+      if (ok && to !== null && slotsOnRef.current) { // Slots: the two slots trade places, stacks and all
+        const st = [...slotsRef.current], a = st.findIndex((x) => x[0] === id), b = st.findIndex((x) => x[0] === to);
+        if (a >= 0 && b >= 0) { [st[a], st[b]] = [st[b], st[a]]; applySlots(st, activeRef.current); }
+        return;
+      }
       const g = groupRef.current;
       if (!ok || to === null || !g?.includes(id) || !g.includes(to)) return;
       if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to move files.'); return; }
@@ -953,11 +1020,12 @@ export function App() {
   };
   /** Shift-click on a file in the rail: it joins the files on screen, or leaves them if it's one of them. */
   const splitWith = useCallback((id: number) => {
+    if (slotsOnRef.current) { switchTo(id); return; } // Slots places files by slot, not by Shift-click
     const g = groupRef.current, showing = panes.current.size > 0 && !!g;
     if (showing && g.includes(id)) { leave(id); return; }
     join([...(showing ? g : [activeRef.current]), id]);
     if (panes.current.has(id)) focusPane(id); // the file you brought in is the one you're on
-  }, [join, leave, focusPane]);
+  }, [join, leave, focusPane, switchTo]);
   /** Unjoin: the files go back to one at a time, the focused one staying on screen. */
   const unjoin = useCallback(() => {
     if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to unjoin files.'); return; }
@@ -1023,14 +1091,17 @@ export function App() {
     if (elsewhere(r.meta.path)) return;
     const already = openedPath(r.meta.path);
     if (already) { switchTo(already.id); flash(`${r.meta.name} is already open`); return; }
-    if (source !== 'restore') track('doc_opened', { source }); // reopening last session's files isn't a user action
-    if (pref(P.openDepth)) setDepth(pref(P.openDepth));
-    flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${keyLabel('save')}).`);
-  }, [addDoc, switchTo, flash, elsewhere]);
+    const go = () => {
+      if (source !== 'restore') track('doc_opened', { source }); // reopening last session's files isn't a user action
+      if (pref(P.openDepth)) setDepth(pref(P.openDepth));
+      flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${keyLabel('save')}).`);
+    };
+    if (source === 'restore') go(); else intoSlot(r.meta.name, go);
+  }, [addDoc, switchTo, flash, elsewhere]); // eslint-disable-line react-hooks/exhaustive-deps
   const fileNew = useCallback(() => {
     track('doc_new');
-    if (wantsWindow()) bridge.openWindow!({ alone: true }); else addDoc(emptyDoc(), { name: 'Untitled' });
-  }, [addDoc, wantsWindow]);
+    if (wantsWindow()) bridge.openWindow!({ alone: true }); else intoSlot('Untitled', () => addDoc(emptyDoc(), { name: 'Untitled' }));
+  }, [addDoc, wantsWindow]); // eslint-disable-line react-hooks/exhaustive-deps
   /** New speech doc: a file that opens on a pocket with the speech's name, already marked as the speech doc. */
   const fileNewSpeech = useCallback(() => {
     if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to make a new speech doc.'); return; }
@@ -1766,6 +1837,32 @@ export function App() {
     }
     setDocs((ds) => ds.filter((d) => !moved.has(d.id)));
   }, [spreading, hasView, docs.length, group]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Slots: every open file sits in a slot. New files go on top (of the slot asked for, else the one you're in);
+  // turning Slots on puts the split's files in slots 1-3 and the rest under the file you're on
+  const slotsOn = pref(P.slots) && !spreading;
+  slotsOnRef.current = slotsOn;
+  useEffect(() => {
+    if (!hasView) return;
+    if (!slotsOn) {
+      if (!slotsRef.current.some((x) => x.length)) return;
+      slotsRef.current = [[], [], []];
+      setSlotsState(slotsRef.current);
+      setGroup(null);
+      if (panes.current.size) arrange(null, activeRef.current);
+      return;
+    }
+    const ids = docs.map((d) => d.id), was = slotsRef.current;
+    const st = was.map((x) => x.filter((y) => ids.includes(y)));
+    if (!st.some((x) => x.length) && groupRef.current && panes.current.size) groupRef.current.slice(0, 3).forEach((id, i) => st[i].push(id));
+    const fresh = slotNew.current, where = slotWhere.current;
+    slotNew.current = slotWhere.current = null;
+    const home = where ?? Math.max(0, st.findIndex((x) => x.includes(activeRef.current)));
+    const focus = fresh ?? activeRef.current;
+    for (const id of ids) if (!st.some((x) => x.includes(id))) { if (id === focus) st[home].unshift(id); else st[home].push(id); }
+    const shown = groupRef.current && panes.current.size ? groupRef.current.join() : '';
+    if (JSON.stringify(st) === JSON.stringify(was) && shown === st.filter((x) => x.length).map((x) => x[0]).join() && fresh === null) return;
+    applySlots(st, focus);
+  }, [slotsOn, hasView, docs]); // eslint-disable-line react-hooks/exhaustive-deps
   // the window list and Mission Control tell one file's window from another by its title
   const activeName = docs.find((d) => d.id === activeId)?.meta.name;
   useEffect(() => { if (bridge.openWindow) document.title = spreading && activeName ? activeName : 'Falcon'; }, [spreading, activeName]);
@@ -1836,7 +1933,7 @@ export function App() {
     <div ref={appRef} className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc} onMove={moveDoc}
-        group={group} onSplit={splitWith} onUnjoin={unjoin} flash={flash}
+        group={slotsOn ? null : group} onSplit={splitWith} onUnjoin={unjoin} flash={flash}
         sd={sdTabs.map((x) => ({ key: x.key, on: sdLit === x.key, name: x.info.room?.name ?? 'SpeechDrop', fresh: x.info.fresh }))} onSd={showSd} onSdClose={closeSd}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} cards={sharing.cards} invites={sharing.invites}
         onSharing={() => { if (locked()) return; setShareTab(!sharing.cards && sharing.invites ? 'live' : 'cards'); }} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
@@ -1880,8 +1977,12 @@ export function App() {
       <div ref={splitBox} className="split" />
       {splitOn && [...panes.current].map(([id, p]) => {
         const d = docs.find((x) => x.id === id);
-        return d && createPortal(<><span className="nm">{tidy(d.meta.name || 'Untitled')}</span>{d.dirty && <i className="dot" aria-label="unsaved" />}{id === speechId && <i className="spk" aria-hidden="true">S</i>}
-          <button className="pane-x" title="Take out of the split (the file stays open)" aria-label={`Take ${tidy(d.meta.name || 'Untitled')} out of the split`} onClick={() => leave(id)}><SvgIcon name="x" /></button></>, p.head, String(id));
+        if (!d) return null;
+        const stack = slotsOn ? slots.find((x) => x[0] === id) : undefined, name = tidy(d.meta.name || 'Untitled');
+        return createPortal(<>{stack && stack.length > 1 && <SlotStack files={stack.map((x) => ({ id: x, name: tidy(docs.find((y) => y.id === x)?.meta.name || 'Untitled') }))} onPick={switchTo} onClose={closeDoc} />}
+          <span className="nm">{name}</span>{d.dirty && <i className="dot" aria-label="unsaved" />}{id === speechId && <i className="spk" aria-hidden="true">S</i>}
+          {stack ? <button className="pane-x" title={titled('Close', 'close', 'close this file')} aria-label={`Close ${name}`} onClick={() => closeDoc(id)}><SvgIcon name="x" /></button>
+            : <button className="pane-x" title="Take out of the split (the file stays open)" aria-label={`Take ${name} out of the split`} onClick={() => leave(id)}><SvgIcon name="x" /></button>}</>, p.head, String(id));
       })}
       {findOpen && view && <FindBar view={view} inputRef={findRef} flash={flash} onClose={() => setFindOpen(false)} />}
 
@@ -1937,6 +2038,8 @@ export function App() {
       <SharingPanel tab={shareTab} onTab={setShareTab} onClose={closeSharing} flash={flash} confirm={confirmAsk} onInsert={insertReceived} onCopy={copyReceived} docName={name} />
       <SendCard label={sendLabel} onClose={closeSendCard} onSend={(c) => void sendCardTo(c)} onManage={() => { closeSendCard(); setShareTab('cards'); }} />
       <Confirm ask={ask} />
+      {slotAsk && <SlotAsk name={tidy(slotAsk.name)} done={slotAsk.done}
+        slots={slots.map((x) => ({ top: x.length ? tidy(docs.find((d) => d.id === x[0])?.meta.name || 'Untitled') : null, under: Math.max(0, x.length - 1) }))} />}
       <SaveAs name={saveAsName} onSave={saveCopy} onClose={closeSaveAs} />
       <ComparePanel open={compareWith} onClose={closeCompare} readSelection={readSelection} />
       <NewDoc open={newAsk} onBlank={() => { setNewAsk(false); fileNew(); }} onSpeech={() => { setNewAsk(false); fileNewSpeech(); }} onClose={closeNewDoc} />
