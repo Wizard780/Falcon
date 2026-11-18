@@ -227,4 +227,17 @@ await row(1).locator('.doc-nm').click({ modifiers: ['Shift'] });
 await away();
 await page.waitForTimeout(300);
 want(!(await joined()), 'Shift-click on a joined file takes it out (below two, the split comes apart)');
+
+// a doc with something wider than a pane (a long unbroken line) must not push the other pane off screen
+await row(1).locator('.doc-nm').click();
+await page.locator('.ProseMirror').first().click();
+await page.keyboard.press('End');
+await page.keyboard.type('x'.repeat(400));
+await row(0).locator('.doc-nm').click({ modifiers: ['Shift'] });
+await away();
+await page.waitForTimeout(400);
+const fit = await page.$$eval('.split .pane', (ps) => ps.map((p) => Math.round(p.getBoundingClientRect().right)));
+const winW = await page.evaluate(() => innerWidth);
+want(fit.length === 2 && fit.every((r) => r <= winW), `both panes fit in the window with a wide doc: right edges ${fit}, window ${winW}`);
+await f.shot('wide-doc');
 await f.done();
