@@ -51,7 +51,7 @@ import { COMPARE_EVENT, selectionText } from '../editor/doc-tools/compare';
 import { NewDoc, NewSpeech, SaveAs } from './SaveAs';
 import { copyName, docForMode, type SaveMode } from '../editor/save-modes';
 import { Tips, parseTip } from './Tips';
-import { OutlinePane } from './Outline';
+import { OutlinePane, type OutlineSectionData } from './Outline';
 import { FindBar } from './FindBar';
 import { outlineNumbers } from '../editor/nav/numbering';
 import { DOC_TOOLS } from '../editor/doc-tools';
@@ -305,6 +305,9 @@ export function App() {
   const [depth, setDepth] = useState(() => Number(localStorage.getItem('falcon.depth')) || 3);
   const depthRef = useRef(depth);
   depthRef.current = depth;
+  // split files: each file's outline has its own 1-4, starting from the usual depth (setting that resets them all)
+  const [paneDepth, setPaneDepth] = useState<Record<number, number>>({});
+  useEffect(() => setPaneDepth({}), [depth]);
   const [zoom, setZoom] = useState(() => Number(localStorage.getItem('falcon.zoom')) || 1);
   const [speechMin, setSpeechMin] = useState(() => Number(localStorage.getItem('falcon.speech')) || 8);
   const [docs, setDocs] = useState<OpenDoc[]>(() => [{ id: 1, meta: { name: 'Untitled' }, dirty: false, state: null, scroll: 0 }]);
@@ -461,7 +464,8 @@ export function App() {
       lastDocs.current.set(v, v.state.doc);
       const dirty = isDirty(id, v.state.doc);
       setDocs((ds) => (ds.some((d) => d.id === id && d.dirty !== dirty) ? ds.map((d) => (d.id === id ? { ...d, dirty } : d)) : ds));
-      if (focused) {
+      // split files each show an outline, so any of them changing refreshes it
+      if (focused || panes.current.has(id)) {
         // the outline and word count walk the whole doc: refresh them when typing pauses, not per keystroke
         window.clearTimeout(outlineTimer);
         outlineTimer = window.setTimeout(() => setDocVersion((n) => n + 1), 150);
@@ -946,6 +950,13 @@ export function App() {
     addEventListener('pointercancel', cancel);
     addEventListener('keydown', key, true);
   };
+  /** Shift-click on a file in the rail: it joins the files on screen, or leaves them if it's one of them. */
+  const splitWith = useCallback((id: number) => {
+    const g = groupRef.current, showing = panes.current.size > 0 && !!g;
+    if (showing && g.includes(id)) { leave(id); return; }
+    join([...(showing ? g : [activeRef.current]), id]);
+    if (panes.current.has(id)) focusPane(id); // the file you brought in is the one you're on
+  }, [join, leave, focusPane]);
   /** Unjoin: the files go back to one at a time, the focused one staying on screen. */
   const unjoin = useCallback(() => {
     if (viewRef.current && isReading(viewRef.current.state)) { flash('Leave read mode to unjoin files.'); return; }
@@ -1616,6 +1627,24 @@ export function App() {
     scrollToPos(v, item.pos);
   }, []);
   const getView = useCallback(() => viewRef.current, []);
+  // split files: the outline stacks one section per file, in the split's order
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sections = useMemo((): OutlineSectionData[] | null => {
+    if (!splitOn || !group) return null;
+    return group.filter((id) => panes.current.has(id)).map((id) => {
+      const v = panes.current.get(id)!.view, focused = id === activeId, d = docs.find((x) => x.id === id);
+      const items = focused ? outline : buildOutline(v.state.doc);
+      return {
+        active: id, name: tidy(d?.meta.name || 'Untitled'), focused, items, depth: paneDepth[id] ?? depth,
+        cur: focused ? cur : -1, // only the file you're in lights a row
+        numbers: outlineNumbers(v.state), getView: () => liveView(id),
+        onFocus: () => focusPane(id, false),
+        onDepth: (n: number) => setPaneDepth((p) => ({ ...p, [id]: n })),
+        onJump: (item: OutlineItem, i: number) => { if (activeRef.current !== id) focusPane(id, false); jump(item, i); },
+        onPeek: (item: OutlineItem) => { const pv = liveView(id); if (pv) scrollToPos(pv, item.pos); },
+      };
+    });
+  }, [splitOn, group, activeId, docs, outline, cur, depth, paneDepth, docVersion, jump, focusPane]);
   // outline search: Up/Down scroll the page to a match without leaving the search box
   const peek = useCallback((item: OutlineItem) => { const v = viewRef.current; if (v) scrollToPos(v, item.pos); }, []);
   // Find and Replace and find-by-position keys live in the editor keymap and ask for the bar here
@@ -1803,7 +1832,7 @@ export function App() {
     <div ref={appRef} className={`app${showOutline ? '' : ' no-outline'}`} style={{ '--ink': ink } as React.CSSProperties}>
       <div className="covered" inert={modal}>
       <Rail home={homeOpen} settings={settingsOpen} docs={docList} active={activeId} onSwitch={switchTo} onClose={closeDoc} onMove={moveDoc}
-        group={group} onJoin={join} onUnjoin={unjoin} flash={flash}
+        group={group} onSplit={splitWith} onUnjoin={unjoin} flash={flash}
         sd={sdTabs.map((x) => ({ key: x.key, on: sdLit === x.key, name: x.info.room?.name ?? 'SpeechDrop', fresh: x.info.fresh }))} onSd={showSd} onSdClose={closeSd}
         onHome={() => setHomeOpen((h) => !h)} onSettings={() => setSettingsOpen((s) => !s)} cards={sharing.cards} invites={sharing.invites}
         onSharing={() => { if (locked()) return; setShareTab(!sharing.cards && sharing.invites ? 'live' : 'cards'); }} update={update} onUpdate={installUpdate} checking={checking} onCheck={bridge.checkUpdate && checkUpdate} />
@@ -1835,7 +1864,7 @@ export function App() {
 
       <div className="covered" inert={homeOpen || sdOn || modal}>
 
-      <OutlinePane active={activeId}
+      <OutlinePane active={activeId} sections={sections}
         shown={showOutline} items={outline} depth={depth} cur={cur}
         numbers={view ? outlineNumbers(view.state) : []} getView={getView} onPeek={peek} flash={flash}
         onDepth={setDepth} onJump={jump} />
@@ -1943,7 +1972,7 @@ type DocRow = { id: number; name: string; path?: string; dirty: boolean; speech:
 /** A SpeechDrop tab's row: lit or not, the room's name, and how many files came that you haven't seen. */
 type SdRow = { key: number; on: boolean; name: string; fresh: number };
 function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active: number; onSwitch: (id: number) => void; onClose: (id: number) => void; onMove: (id: number, to: number) => void;
-  group: number[] | null; onJoin: (ids: number[]) => void; onUnjoin: () => void; flash: (m: string) => void; sd: SdRow[]; onSd: (key: number) => void; onSdClose: (key: number) => void; onHome: () => void; onSettings: () => void; cards: number; invites: number; onSharing: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
+  group: number[] | null; onSplit: (id: number) => void; onUnjoin: () => void; flash: (m: string) => void; sd: SdRow[]; onSd: (key: number) => void; onSdClose: (key: number) => void; onHome: () => void; onSettings: () => void; cards: number; invites: number; onSharing: () => void; update: UpdateInfo | null; onUpdate: () => void; checking: boolean; onCheck?: () => void }) {
   // hovering the file icons slides the files panel out beside the rail, its rows level with the
   // icons, so it reads as the rail widening to show every name
   const [open, setOpen] = useState(false);
@@ -2069,23 +2098,15 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
     resize(railWidth(to, railMax()));
   };
 
-  // Shift-click picks files without opening them; right-click a picked one to Join them side by side
-  const [sel, setSel] = useState<number[]>([]);
+  // Shift-click splits: the file joins what's on screen (side by side), and Shift-click on a joined one takes it out
   const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { setSel((s) => (s.every((id) => props.docs.some((d) => d.id === id)) ? s : s.filter((id) => props.docs.some((d) => d.id === id)))); }, [props.docs]);
   const pick = (id: number) => (e: React.MouseEvent) => {
-    if (!e.shiftKey) { setSel([]); props.onSwitch(id); return; }
+    const onDoc = props.docs.some((d) => d.id === props.active) && !props.home && !props.sd.some((s) => s.on);
+    if (!e.shiftKey || !onDoc) { props.onSwitch(id); return; }
     e.preventDefault();
-    if (sel.includes(id)) { setSel(sel.filter((x) => x !== id)); return; }
-    const max = pref(P.joinMax);
-    if (sel.length >= max) { props.flash(`You can join up to ${max} files. Change it in Settings > Appearance.`); return; }
-    setSel([...sel, id]);
+    props.onSplit(id);
   };
-  // right-clicking a file while others are picked counts it in, so pick two and right-click either
-  // and the open file counts in too when that alone would leave one, so pick one and right-click it or the open one
-  const joining = menu ? (sel.length ? [...new Set([...sel, menu.id])] : []) : [];
-  if (joining.length === 1 && props.docs.some((d) => d.id === props.active) && !props.home && !props.sd.some((s) => s.on) && !joining.includes(props.active)) joining.push(props.active);
   const member = !!menu && !!props.group?.includes(menu.id);
   const openMenu = (id: number) => (e: React.MouseEvent) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, id }); };
   useLayoutEffect(() => {
@@ -2096,17 +2117,16 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
     requestAnimationFrame(() => el.classList.add('in'));
   }, [menu]);
   useEffect(() => {
-    if (!menu && !sel.length) return;
+    if (!menu) return;
     const down = (e: PointerEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(null); };
-    // Esc shuts the menu, then lets go of the picked files
-    const key = (e: KeyboardEvent) => { if (e.key !== 'Escape') return; if (menu) setMenu(null); else setSel([]); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null); };
     const close = () => setMenu(null);
     document.addEventListener('pointerdown', down, true);
     addEventListener('keydown', key);
     addEventListener('resize', close);
     addEventListener('blur', close);
     return () => { document.removeEventListener('pointerdown', down, true); removeEventListener('keydown', key); removeEventListener('resize', close); removeEventListener('blur', close); };
-  }, [menu, sel.length]);
+  }, [menu]);
   // joined files read as one capsule in both lists, where they sit together
   const joinAt = (i: number) => {
     const g = props.group, d = props.docs;
@@ -2124,7 +2144,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
       <div ref={strip} className="fs-docs" role="tablist" aria-label="Open documents" onPointerEnter={wide ? undefined : show} onPointerLeave={wide ? undefined : hide}
         onScroll={(e) => { if (list.current) list.current.scrollTop = e.currentTarget.scrollTop; }}>
         {props.docs.map((d, i) => (
-          <div key={d.id} className="doc-row" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-drop={gap === i ? 'before' : gap === props.docs.length && i === props.docs.length - 1 ? 'after' : undefined} data-sel={sel.includes(d.id) || undefined} data-join={joinAt(i)}
+          <div key={d.id} className="doc-row" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-drop={gap === i ? 'before' : gap === props.docs.length && i === props.docs.length - 1 ? 'after' : undefined} data-join={joinAt(i)}
             onPointerDown={reorder(d.id)} onContextMenu={openMenu(d.id)}>
             <button className="fs-b doc-nm" role="tab" aria-selected={isOn(d)} aria-label={d.speech ? `${d.name} (speech doc)` : d.name} data-on={isOn(d) || undefined}
               onClick={pick(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
@@ -2150,7 +2170,7 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
         <div ref={list} className="files-l" style={{ top: at.list }}
           onScroll={(e) => { if (strip.current) strip.current.scrollTop = e.currentTarget.scrollTop; }}>
           {props.docs.map((d, i) => (
-            <div key={d.id} className="files-r" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-drop={gap === i ? 'before' : gap === props.docs.length && i === props.docs.length - 1 ? 'after' : undefined} data-sel={sel.includes(d.id) || undefined} data-join={joinAt(i)}
+            <div key={d.id} className="files-r" data-id={d.id} data-on={isOn(d) || undefined} data-drag={dragId === d.id || undefined} data-drop={gap === i ? 'before' : gap === props.docs.length && i === props.docs.length - 1 ? 'after' : undefined} data-join={joinAt(i)}
               onPointerDown={reorder(d.id)} onContextMenu={openMenu(d.id)}>
               <button tabIndex={-1} className="files-b" onClick={pick(d.id)} onAuxClick={(e) => { if (e.button === 1) props.onClose(d.id); }}>
                 <SvgIcon name="doc" /><span className="nm">{tidy(d.name)}</span>{d.speech && <i className="spk" aria-hidden="true">S</i>}{d.dirty && <i className="dot" />}
@@ -2168,13 +2188,9 @@ function Rail(props: { home: boolean; settings: boolean; docs: DocRow[]; active:
           ))}
         </div>
       </aside>
-      {menu && (joining.length >= 2 || member) && (
+      {menu && member && (
         <div ref={menuRef} className="pop menu rail-menu" role="menu" aria-label="File">
-          {joining.length >= 2 && <>
-            <div className="mn-h">{joining.length} files selected</div>
-            <button className="mn-i" role="menuitem" onClick={() => { setMenu(null); setSel([]); props.onJoin(joining); }}><span>Join</span></button>
-          </>}
-          {member && <button className="mn-i" role="menuitem" onClick={() => { setMenu(null); props.onUnjoin(); }}><span>Unjoin</span></button>}
+          <button className="mn-i" role="menuitem" onClick={() => { setMenu(null); props.onUnjoin(); }}><span>Unjoin</span></button>
         </div>
       )}
       <div className="grow" />

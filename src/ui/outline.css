@@ -47,3 +47,10 @@ div.findbar { flex-direction: column; align-items: stretch; gap: 2px; }
 .findbar .fb-sp { width: 16px; flex: none; }
 .findbar button.fb-txt { width: auto; padding: 0 8px; font: 12px var(--ui-font); white-space: nowrap; }
 .findbar button.fb-txt[aria-pressed="true"] { color: var(--u-tx); }
+
+/* ---- split files: one outline per file, stacked, a soft seam between them; the focused file's name glows ---- */
+.olp[data-stack] .ol-sec { position: relative; padding-bottom: 10px; }
+.olp[data-stack] .ol-sec + .ol-sec { padding-top: 8px; }
+.olp[data-stack] .ol-sec + .ol-sec::before { content: ''; position: absolute; left: 10px; right: 10px; top: 0; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--u-tx) 18%, transparent), transparent); }
+.olp[data-stack] .ol-head .sb-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color 200ms ease-out, text-shadow 200ms ease-out; }
+.olp[data-stack] .ol-sec[data-focus] .ol-head .sb-label { color: var(--ink); text-shadow: 0 0 10px color-mix(in srgb, var(--ink) 60%, transparent); }

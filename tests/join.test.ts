@@ -29,30 +29,60 @@ async function three() {
   return app;
 }
 const shiftClick = (app: App, i: number) => app.act(() => { tabBtn(app, i).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true })); });
+/** Shift-click the file whose text starts `text` (the rail regroups joined files, so slots move). */
+const shiftOn = (app: App, text: string) => app.act(() => {
+  const ids = [...app.el.querySelectorAll('.fs-docs .doc-row')].map((r) => Number((r as HTMLElement).dataset.id));
+  const i = ['Alpha', 'Beta', 'Gamma'].indexOf(text);
+  const row = app.el.querySelector(`.fs-docs .doc-row[data-id="${[...ids].sort((a, b) => a - b)[i]}"] .doc-nm`)!;
+  row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }));
+});
 const rightClick = (app: App, i: number) => app.act(() => { rows(app)[i].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 100 })); });
 const pickMenu = async (app: App, label: string) => app.click([...app.el.querySelectorAll('.rail-menu .mn-i')].find((b) => b.textContent === label) ?? null);
-async function joinRows(app: App, ...is: number[]) {
-  for (const i of is) await shiftClick(app, i);
-  await rightClick(app, is[0]);
-  await pickMenu(app, 'Join');
+/** Open the first file, then Shift-click the rest in: each one splits in beside it. */
+async function joinRows(app: App, first: number, ...rest: number[]) {
+  await app.click(tabBtn(app, first));
+  for (const i of rest) await shiftClick(app, i);
 }
 
 describe('Join', () => {
-  it('shift-click picks files without opening them, and right-click joins them side by side', async () => {
+  it('shift-click splits a file in beside the open one, and shift-click on a joined one takes it out', async () => {
     const app = await three();
-    await shiftClick(app, 0);
-    await shiftClick(app, 1);
-    expect(app.text()).toBe('Gamma'); // still on the file that was open
-    expect(rows(app).map((r) => r.hasAttribute('data-sel'))).toEqual([true, true, false]);
-    await rightClick(app, 1);
-    expect(app.el.querySelector('.rail-menu .mn-h')?.textContent).toBe('2 files selected');
-    expect(menuItems(app)).toEqual(['Join']);
-    await pickMenu(app, 'Join');
+    await shiftOn(app, 'Alpha');
     expect(split(app)).toBe(true);
-    expect(panes(app).map((p) => paneText(p))).toEqual(['Alpha', 'Beta']);
-    expect(panes(app).map((p) => p.querySelector('.pane-h .nm')?.textContent)).toEqual(['Untitled', 'Untitled']);
-    expect(rows(app).map((r) => r.dataset.join ?? null)).toEqual(['first', 'last', null]);
-    expect(rows(app).some((r) => r.hasAttribute('data-sel'))).toBe(false);
+    expect(panes(app).map((p) => paneText(p))).toEqual(['Alpha', 'Gamma']); // in rail order
+    expect(app.view().dom).toBe(pm(panes(app)[0])); // the file you shift-clicked has focus
+    await shiftOn(app, 'Beta');
+    // the joined files sit together in the rail, so Beta comes in after them
+    expect(panes(app).map((p) => paneText(p))).toEqual(['Alpha', 'Gamma', 'Beta']);
+    expect(app.view().dom).toBe(pm(panes(app)[2]));
+    expect(panes(app).map((p) => p.querySelector('.pane-h .nm')?.textContent)).toEqual(['Untitled', 'Untitled', 'Untitled']);
+    expect(rows(app).map((r) => r.dataset.join ?? null)).toEqual(['first', 'mid', 'last']);
+    // no right-click Join any more
+    await rightClick(app, 0);
+    expect(menuItems(app)).toEqual(['Unjoin']);
+    await app.press('Escape');
+    await shiftOn(app, 'Beta');
+    expect(panes(app).map((p) => paneText(p))).toEqual(['Alpha', 'Gamma']);
+    await shiftOn(app, 'Alpha');
+    expect(split(app)).toBe(false); // below two the split comes apart
+    expect(rows(app).every((r) => !r.dataset.join)).toBe(true);
+  });
+
+  it('the outline stacks one section per joined file, each with its own 1-4, the focused one marked', async () => {
+    const app = await three();
+    await joinRows(app, 0, 1);
+    const secs = () => [...app.el.querySelectorAll('.olp .ol-sec')] as HTMLElement[];
+    expect(app.el.querySelector('.olp')!.hasAttribute('data-stack')).toBe(true);
+    expect(secs().map((s) => s.querySelector('.sb-label')?.textContent)).toEqual(['Untitled', 'Untitled']);
+    expect(secs().map((s) => s.hasAttribute('data-focus'))).toEqual([false, true]);
+    expect(secs().map((s) => s.querySelectorAll('.lv button').length)).toEqual([4, 4]);
+    // one file's 1-4 leaves the other's alone
+    await app.click(secs()[0].querySelector('.lv button[data-lv="1"]'));
+    expect(secs().map((s) => s.querySelector('.lv button[data-on]')?.getAttribute('data-lv'))).toEqual(['1', '3']);
+    // back to one file: one outline, its usual name
+    await app.click(tabBtn(app, 2));
+    expect(secs()).toHaveLength(1);
+    expect(secs()[0].querySelector('.sb-label')?.textContent).toBe('Outline');
   });
 
   it('a click in a pane makes it the one the toolbar and keys act on, and an edit marks only that file unsaved', async () => {
@@ -103,6 +133,7 @@ describe('Join', () => {
   it('another file shows alone and the group stays joined; going back shows the group with its edits and undo', async () => {
     const app = await three();
     await joinRows(app, 0, 1);
+    await into(app, panes(app)[0]);
     await app.type(' one');
     await app.click(tabBtn(app, 2));
     expect(split(app)).toBe(false);
@@ -121,11 +152,10 @@ describe('Join', () => {
   it('stops at the max from Settings', async () => {
     await freshStorage({ 'falcon.joinMax': '2' });
     const app = await three();
-    await shiftClick(app, 0);
-    await shiftClick(app, 1);
-    await shiftClick(app, 2);
+    await shiftOn(app, 'Alpha');
+    await shiftOn(app, 'Beta');
     expect(app.toast()).toContain('You can join up to 2 files');
-    expect(rows(app).map((r) => r.hasAttribute('data-sel'))).toEqual([true, true, false]);
+    expect(panes(app).map((p) => paneText(p))).toEqual(['Alpha', 'Gamma']);
   });
 
   it('joins three by default', async () => {

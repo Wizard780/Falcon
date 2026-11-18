@@ -343,12 +343,8 @@ if (want('split')) {
   await s.open(SMALL);
   const row = (n) => page.locator('.fs-docs .doc-row', { has: page.locator(`.doc-nm[aria-label="${n}"]`) });
   const big = basename(BIG).replace(/\.docx$/, ''), small = basename(SMALL).replace(/\.docx$/, '');
-  await row(big).locator('.doc-nm').click({ modifiers: ['Shift'] });
+  await row(big).locator('.doc-nm').click();
   await row(small).locator('.doc-nm').click({ modifiers: ['Shift'] });
-  await page.mouse.move(900, 700);
-  await row(small).click({ button: 'right' });
-  await page.waitForTimeout(200);
-  await page.click('.rail-menu .mn-i:has-text("Join")');
   await page.mouse.move(900, 700);
   await page.waitForTimeout(800);
   const panes = await page.$$eval('.split .pane', (ps) => ps.map((p) => ({ name: p.querySelector('.pane-h .nm')?.textContent, w: Math.round(p.getBoundingClientRect().width), kids: p.querySelector('.ProseMirror').childElementCount })));

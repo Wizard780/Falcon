@@ -80,7 +80,7 @@ function guide(): [ParaStyle, ...Run[]][] {
     ['hat', 'Work with your team'],
     ['normal', 'Copy a card into Gmail, Google Docs or Word and it keeps its formatting. Cards pasted in from Word, Docs or CardMirror keep theirs.'],
     ['normal', 'Card sharing sends a card straight to a teammate\'s Falcon. Swap pairing codes once in Card sharing in the command center, then Send Card to… sends the card at your cursor. It arrives as a message, without taking their focus.'],
-    ['normal', 'To see files side by side, shift-click them in the rail, right-click one and choose Join.'],
+    ['normal', 'To see files side by side, Shift-click one in the rail: it splits in beside the file you have open.'],
 
     ['hat', 'Set it up your way'],
     ['normal', `Settings${k('settings')}, the gear at the bottom of the rail, changes every key, the theme, the fonts and how each style looks. With an Anthropic key in Settings > AI, ${kk('aiCite')} turns a pasted citation or link into a finished cite.`],

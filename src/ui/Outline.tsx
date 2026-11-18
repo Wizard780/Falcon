@@ -37,10 +37,28 @@ type Props = {
   onPeek: (item: OutlineItem) => void;
   flash: (msg: string) => void;
 };
+/** One file's outline in the stack the pane shows while files are split. */
+export type OutlineSectionData = Omit<Props, 'shown' | 'flash'> & { name: string; focused: boolean; onFocus: () => void };
+type SectionProps = Props & { label: string; focused: boolean; onFocus?: () => void };
 
 // ---------- the outline: attached to the document, docked on the page's left edge ----------
 
-export function OutlinePane(props: Props) {
+export function OutlinePane(props: Props & { sections: OutlineSectionData[] | null }) {
+  const { shown, sections } = props;
+  // hidden means gone: no strip on the page's edge, nothing to hover
+  return (
+    <aside className={`olp${shown ? ' shown' : ''}`} aria-hidden={!shown} data-stack={sections ? '' : undefined}>
+      <OutlineGrip />
+      <div className="sb-scroll">
+        {sections
+          ? sections.map((s) => <OutlineSection key={s.active} {...s} label={s.name} shown={shown} flash={props.flash} />)
+          : <OutlineSection {...props} label="Outline" focused />}
+      </div>
+    </aside>
+  );
+}
+
+function OutlineSection(props: SectionProps) {
   const { shown, items, cur } = props;
   const [query, setQuery] = useState<string | null>(null);
   const [level, setLevel] = useState(() => readSetting(outlineLevelSetting) as string);
@@ -87,15 +105,14 @@ export function OutlinePane(props: Props) {
     <button className="ol-tg" aria-pressed={on} title={title} onMouseDown={(e) => e.preventDefault()} onClick={() => { set(!on); save(spec, !on); }}>{label}</button>
   );
 
-  // hidden means gone: no strip on the page's edge, nothing to hover
   return (
-    <aside className={`olp${shown ? ' shown' : ''}`} aria-hidden={!shown}>
-      <OutlineGrip />
-      <div className="sb-scroll">
+      // a press in another file's outline focuses that file first, so what it does acts there
+      <section className="ol-sec" data-focus={props.focused || undefined} aria-label={props.label}
+        onPointerDownCapture={props.focused ? undefined : props.onFocus}>
         {/* the 1-4 buttons and the search box stay put while the list scrolls under them */}
         <div className="ol-top">
         <div className="ol-head">
-          <span className="sb-label">Outline</span>
+          <span className="sb-label" title={props.label}>{props.label}</span>
           <div ref={lvRef} className="lv" role="group" aria-label="Outline depth">
             <span ref={hlRef} className="lv-hl" />
             {[1, 2, 3, 4].map((l) => { const t = `Show ${['pockets', 'down to hats', 'down to blocks', 'down to tags'][l - 1]}`; return <button key={l} data-lv={l} data-on={props.depth === l || undefined} aria-label={t} title={`${t} (heading levels 1${l > 1 ? `–${l}` : ''})`} onClick={() => { props.onDepth(l); setRelevel((n) => n + 1); }}>{l}</button>; })}
@@ -120,19 +137,20 @@ export function OutlinePane(props: Props) {
         </>}
         </div>
         <OutlineRows key={props.active} items={items} depth={props.depth} relevel={relevel} cur={cur} hits={hits} hide={hide} step={hits && step >= 0 ? hits[step] : -1}
-          numbers={props.numbers} getView={props.getView} onJump={props.onJump} flash={props.flash} visible={shown} />
-      </div>
-    </aside>
+          numbers={props.numbers} getView={props.getView} onJump={props.onJump} flash={props.flash} visible={shown} follow={props.focused} />
+      </section>
   );
 }
 
 type RowsProps = {
   items: OutlineItem[]; depth: number; relevel: number; cur: number; hits: number[] | null; hide: boolean; step: number; numbers: string[];
   getView: () => EditorView | null; onJump: (item: OutlineItem, index: number) => void; flash: (msg: string) => void; visible: boolean;
+  /** the focused file's outline: it keeps its lit row in view and takes the numbering keys (the others in a split stack don't) */
+  follow: boolean;
 };
 type Drag = { heads: number[]; x: number; y: number; on: boolean; gap: number | null; raf: number; end?: (ok: boolean) => void };
 
-const OutlineRows = memo(function OutlineRows({ items, depth, relevel, cur, hits, hide, step, numbers, getView, onJump, flash, visible }: RowsProps) {
+const OutlineRows = memo(function OutlineRows({ items, depth, relevel, cur, hits, hide, step, numbers, getView, onJump, flash, visible, follow }: RowsProps) {
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const [sel, setSel] = useState<Set<number>>(new Set());
@@ -156,7 +174,7 @@ const OutlineRows = memo(function OutlineRows({ items, depth, relevel, cur, hits
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const outlineScope = useRef(() => (selRef.current.size > 1 ? [...selRef.current].map((i) => itemsRef.current[i]?.pos).filter((p) => p !== undefined) : [])).current;
-  useEffect(() => { setNavScope(outlineScope); return () => setNavScope(() => []); }, [outlineScope]);
+  useEffect(() => { if (!follow) return; setNavScope(outlineScope); return () => setNavScope(() => []); }, [outlineScope, follow]);
   // clicking in the page lets go of the outline's selection
   useEffect(() => {
     const down = (e: MouseEvent) => { if ((e.target as HTMLElement).closest?.('.ProseMirror')) setSel((s) => (s.size ? new Set() : s)); };
@@ -229,7 +247,7 @@ const OutlineRows = memo(function OutlineRows({ items, depth, relevel, cur, hits
     act.style.height = `${row.offsetHeight}px`;
     act.style.transform = `translateY(${row.offsetTop}px)`;
     act.style.opacity = '1';
-    if (!visible || dragRef.current?.on) return;
+    if (!visible || !follow || dragRef.current?.on) return;
     const s = list.closest('.sb-scroll') as HTMLElement | null;
     if (!s) return;
     const head = (s.querySelector('.ol-top') as HTMLElement | null)?.offsetHeight ?? 0; // the header that stays put covers the top
