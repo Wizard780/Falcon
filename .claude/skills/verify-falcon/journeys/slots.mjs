@@ -122,6 +122,41 @@ ps = await panes();
 want((await names()) === 'marked | media' && Math.abs(ps[0].w - ps[1].w) <= 2, `closing Untitled empties slot 3; two halves: ${await names()} ${ps.map((p) => p.w)}`);
 await f.shot('after-close');
 
+// a new speech doc is the speech doc (not the file you were on), on top of your slot, caret in it
+await page.locator('.split .pane').nth(0).locator('.ProseMirror').click();
+await page.click('.tools [aria-label="New document"]');
+await page.click('.cf .sa-mode:has-text("Speech Doc")');
+await page.waitForSelector('input[aria-label="Speech name"]');
+await page.keyboard.type('1AR');
+await page.keyboard.press('Enter');
+await settle();
+const spk = await page.$$eval('.fs-docs .doc-nm', (n) => n.filter((x) => x.querySelector('.spk')).map((x) => x.getAttribute('aria-label')));
+ps = await panes();
+want(spk.length === 1 && spk[0].startsWith('Speech 1AR') && ps[0].name.startsWith('Speech 1AR') && ps[0].on, `the new speech doc is the speech doc, on top of slot 1 and focused: ${JSON.stringify(spk)} ${await names()}`);
+want(await page.evaluate(() => window.__falconView.state.doc.textContent.startsWith('1AR')), 'the keys act on the new speech doc');
+await page.locator('.split .pane').nth(0).locator('.pane-x').click();
+await settle();
+
+// Cmd-1 while the question is up is not an answer
+await openAsk(SEED); // seed is closed by now: asks
+await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+1`);
+await page.waitForTimeout(200);
+want(await asking(), 'Cmd-1 leaves the question up');
+want((await page.locator('.slot-ask h2').textContent()).includes('seed'), 'the question still asks about seed');
+await page.keyboard.press('3');
+await settle();
+want((await names()).split(' | ').includes('seed') && !(await asking()), `3 opens seed: ${await names()}`);
+
+// the tutorial runs in Slots (its sample opens on top and stays)
+await page.click('.fstrip [aria-label="Settings"]');
+await page.waitForTimeout(300);
+await page.click('.st-row:has-text("Replay tutorial") button');
+await page.waitForTimeout(1500);
+want(await page.evaluate(() => !!document.querySelector('.tour-card h2')), 'Replay starts the tour in Slots');
+await f.shot('tour-in-slots');
+await page.keyboard.press('Escape');
+await settle();
+
 // Settings: the Workspace choice, and back to Tabs takes the slots down
 await page.click('.fstrip [aria-label="Settings"]');
 await page.waitForTimeout(300);
@@ -133,6 +168,6 @@ want(await page.evaluate(() => localStorage.getItem('falcon.slots')) === 'off', 
 await page.click('[aria-label="Close settings"]');
 await settle();
 want(!(await page.locator('.split .pane').count()), 'in Tabs the files show one at a time again');
-want((await docCount()) === 2, 'both files stay open');
+want((await docCount()) === 3, 'the files stay open');
 
 await f.done();
