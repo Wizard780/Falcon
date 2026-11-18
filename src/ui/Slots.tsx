@@ -6,13 +6,16 @@ type SlotInfo = { top: string | null; under: number };
 /** Slots: "Open X into…" Slot 1, 2 or 3. Each shows the screen after the pick and what the file goes on top of. */
 export function SlotAsk({ name, slots, done }: { name: string; slots: SlotInfo[]; done: (slot: number | null) => void }) {
   const box = useRef<HTMLDivElement>(null);
+  const doneRef = useRef(done); // the keys answer whichever question is showing
+  doneRef.current = done;
   useLayoutEffect(() => {
     const first = slots.findIndex((s) => !s.top);
     (box.current?.children[first >= 0 ? first : 0] as HTMLElement | undefined)?.focus();
     const key = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       const btns = [...(box.current?.children ?? [])] as HTMLElement[];
-      if (e.key === 'Escape') done(null);
-      else if (['1', '2', '3'].includes(e.key)) done(Number(e.key) - 1);
+      if (e.key === 'Escape') doneRef.current(null);
+      else if (['1', '2', '3'].includes(e.key)) doneRef.current(Number(e.key) - 1);
       else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') btns[(btns.indexOf(document.activeElement as HTMLElement) + (e.key === 'ArrowRight' ? 1 : 2)) % 3]?.focus();
       else return;
       e.preventDefault();

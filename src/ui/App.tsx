@@ -304,7 +304,6 @@ export function App() {
   const [slots, setSlotsState] = useState<number[][]>(slotsRef.current);
   const slotsOnRef = useRef(false);
   const slotWhere = useRef<number | null>(null); // the slot the next new file goes in (the Open into… answer)
-  const slotNew = useRef<number | null>(null); // a file just added in Slots: it goes on top, focused
   const [slotAsk, setSlotAsk] = useState<{ name: string; done: (slot: number | null) => void } | null>(null);
   /** The editor holding doc `id` right now (the focused one or another pane), or null when it's put away. */
   const liveView = (id: number) => (id === activeRef.current ? viewRef.current : panes.current.get(id)?.view ?? null);
@@ -760,12 +759,24 @@ export function App() {
     const d = docsRef.current.find((x) => x.id === id), doc = liveState(id)?.doc;
     return !!d && !!doc && !d.dirty && !d.meta.path && id !== speechRef.current && !doc.textContent.trim() && doc.childCount <= 1;
   };
-  /** Slots: open into a slot, asking which when there's a choice (some slot has a file that isn't a blank Untitled). */
-  const intoSlot = (name: string, go: () => void) => {
+  /** Slots: open into a slot, asking which when there's a choice (some slot has a file that isn't a blank Untitled).
+   *  Asks wait their turn, one dialog at a time. Resolves true once `go` has run, false on Cancel. */
+  const askQueue = useRef<{ name: string; go: () => void; settle: (ok: boolean) => void }[]>([]);
+  const nextAsk = () => {
+    const a = askQueue.current[0];
+    if (!a) { setSlotAsk(null); return; }
     const d = docsRef.current;
-    if (!slotsOnRef.current || !slotsRef.current.some((x) => x.length) || (d.length === 1 && slotBlank(d[0].id))) { go(); return; }
-    setSlotAsk({ name, done: (slot) => { setSlotAsk(null); if (slot === null) { viewRef.current?.focus(); return; } slotWhere.current = slot; go(); } });
+    if (!slotsOnRef.current || !slotsRef.current.some((x) => x.length) || (d.length === 1 && slotBlank(d[0].id))) { askQueue.current.shift(); a.go(); a.settle(true); nextAsk(); return; }
+    setSlotAsk({ name: a.name, done: (slot) => {
+      askQueue.current.shift();
+      if (slot === null) { a.settle(false); viewRef.current?.focus(); } else { slotWhere.current = slot; a.go(); a.settle(true); }
+      nextAsk();
+    } });
   };
+  const intoSlot = (name: string, go: () => void) => new Promise<boolean>((settle) => {
+    askQueue.current.push({ name, go, settle });
+    if (askQueue.current.length === 1) nextAsk();
+  });
   /** Open files in new windows is on, and this window has its file already. */
   const wantsWindow = useCallback(() => !!bridge.openWindow && pref(P.fileWindows) && !isBlank(), [isBlank]);
   /** A new tab for `doc`, after the current one. An untouched blank Untitled is replaced instead, unless `alongside`. */
@@ -778,13 +789,17 @@ export function App() {
     const fresh: OpenDoc = { id, meta: m, dirty: false, state: null, scroll: 0 };
     savedDocs.current.set(id, doc);
     if (slotsOnRef.current && split) {
-      // Slots: the new file waits in the list with its state, and the Slots effect puts it on top of a slot.
-      // An untouched blank Untitled, the only file open, makes way for it
+      // Slots: the new file goes on top of a slot (the one asked for, else the one you're in) and is the
+      // focused file before this returns, as show() leaves it. An untouched blank Untitled, the only file open, makes way for it
       const was = docsRef.current.length === 1 && !alongside && slotBlank(cur.id) ? cur.id : null;
-      const state = createState(doc);
+      const home = slotWhere.current ?? Math.max(0, slotsRef.current.findIndex((x) => x.includes(activeRef.current)));
+      slotWhere.current = null;
+      const st = slotsRef.current.map((x, i) => (i === home ? [id, ...x] : x).filter((y) => y !== was));
+      const added = { ...fresh, state: createState(doc) };
       if (was !== null) savedDocs.current.delete(was);
-      setDocs((ds) => [...ds.filter((d) => d.id !== was), { ...fresh, state }]);
-      slotNew.current = id;
+      docsRef.current = [...docsRef.current.filter((d) => d.id !== was), added]; // arrange reads it before the next render
+      setDocs((ds) => [...ds.filter((d) => d.id !== was), added]);
+      applySlots(st, id);
       const backedUp = doc.content.size <= (bridge.recovery ? DISK_MAX : AUTOSAVE_MAX);
       warnedBig.current = !backedUp;
       setHomeOpen(false);
@@ -805,7 +820,7 @@ export function App() {
       setDocs((ds) => { const i = ds.findIndex((d) => d.id === cur.id); const n = ds.map((d) => (d.id === cur.id ? { ...d, ...out } : d)); n.splice(i + 1, 0, fresh); return n; });
     }
     return show(id, createState(doc), 0);
-  }, [show, isBlank]);
+  }, [show, isBlank, applySlots]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dropDoc = useCallback((id: number) => {
     const list = docsRef.current, i = list.findIndex((d) => d.id === id);
@@ -1086,21 +1101,24 @@ export function App() {
   const openedPath = (p?: string) => (p ? docsRef.current.find((d) => d.meta.path === p) : undefined);
   /** `path` opens in another window: the one that has it, or a new one when Open files in new windows wants that. */
   const elsewhere = useCallback((path?: string, card?: CardSpot) => !!path && !openedPath(path) && !!bridge.openWindow?.({ path, card, alone: wantsWindow() }), [wantsWindow]);
-  const opened = useCallback((r: { doc: PMNode; meta: DocMeta }, source: DocSource) => {
+  /** Resolves false only when Slots' Open into… was cancelled. */
+  const opened = useCallback((r: { doc: PMNode; meta: DocMeta }, source: DocSource): Promise<boolean> => {
     setRecents((list) => noteRecent(list, r.doc, r.meta));
-    if (elsewhere(r.meta.path)) return;
+    if (elsewhere(r.meta.path)) return Promise.resolve(true);
     const already = openedPath(r.meta.path);
-    if (already) { switchTo(already.id); flash(`${r.meta.name} is already open`); return; }
+    if (already) { switchTo(already.id); flash(`${r.meta.name} is already open`); return Promise.resolve(true); }
     const go = () => {
       if (source !== 'restore') track('doc_opened', { source }); // reopening last session's files isn't a user action
       if (pref(P.openDepth)) setDepth(pref(P.openDepth));
       flash(addDoc(r.doc, r.meta) ? `Opened ${r.meta.name}` : `Opened ${r.meta.name}. It's too big for crash recovery, so save often (${keyLabel('save')}).`);
     };
-    if (source === 'restore') go(); else intoSlot(r.meta.name, go);
+    // a restore or a template's set of files stacks up without a question each
+    if (source === 'restore' || source === 'template') { go(); return Promise.resolve(true); }
+    return intoSlot(r.meta.name, go);
   }, [addDoc, switchTo, flash, elsewhere]); // eslint-disable-line react-hooks/exhaustive-deps
   const fileNew = useCallback(() => {
     track('doc_new');
-    if (wantsWindow()) bridge.openWindow!({ alone: true }); else intoSlot('Untitled', () => addDoc(emptyDoc(), { name: 'Untitled' }));
+    if (wantsWindow()) bridge.openWindow!({ alone: true }); else void intoSlot('Untitled', () => addDoc(emptyDoc(), { name: 'Untitled' }));
   }, [addDoc, wantsWindow]); // eslint-disable-line react-hooks/exhaustive-deps
   /** New speech doc: a file that opens on a pocket with the speech's name, already marked as the speech doc. */
   const fileNewSpeech = useCallback(() => {
@@ -1160,7 +1178,7 @@ export function App() {
     const already = openedPath(h.path);
     if (already) { switchTo(already.id); return true; }
     if (!h.path || !bridge.openPath) { void fileOpen(); return false; }
-    try { if (!elsewhere(h.path)) opened(await openPath(h.path), 'search'); return true; }
+    try { return elsewhere(h.path) || await opened(await openPath(h.path), 'search'); } // false: Open into… cancelled, so no jump
     catch (e) { openFailed(h.name, h.path, e); return false; }
   }, [opened, fileOpen, switchTo, openFailed, elsewhere]);
   /** Search blocks reads a file that's open (with its unsaved edits) or, on the desktop, any file by its path. */
@@ -1837,8 +1855,8 @@ export function App() {
     }
     setDocs((ds) => ds.filter((d) => !moved.has(d.id)));
   }, [spreading, hasView, docs.length, group]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Slots: every open file sits in a slot. New files go on top (of the slot asked for, else the one you're in);
-  // turning Slots on puts the split's files in slots 1-3 and the rest under the file you're on
+  // Slots: every open file sits in a slot. addDoc places new files itself; any other file that turns up
+  // (a send's new speech doc, a restore) goes under the one you're on. Turning Slots on puts the split's files in slots 1-3 and the rest under the file you're on
   const slotsOn = pref(P.slots) && !spreading;
   slotsOnRef.current = slotsOn;
   useEffect(() => {
@@ -1854,14 +1872,11 @@ export function App() {
     const ids = docs.map((d) => d.id), was = slotsRef.current;
     const st = was.map((x) => x.filter((y) => ids.includes(y)));
     if (!st.some((x) => x.length) && groupRef.current && panes.current.size) groupRef.current.slice(0, 3).forEach((id, i) => st[i].push(id));
-    const fresh = slotNew.current, where = slotWhere.current;
-    slotNew.current = slotWhere.current = null;
-    const home = where ?? Math.max(0, st.findIndex((x) => x.includes(activeRef.current)));
-    const focus = fresh ?? activeRef.current;
-    for (const id of ids) if (!st.some((x) => x.includes(id))) { if (id === focus) st[home].unshift(id); else st[home].push(id); }
+    const home = Math.max(0, st.findIndex((x) => x.includes(activeRef.current)));
+    for (const id of ids) if (!st.some((x) => x.includes(id))) { if (id === activeRef.current) st[home].unshift(id); else st[home].push(id); }
     const shown = groupRef.current && panes.current.size ? groupRef.current.join() : '';
-    if (JSON.stringify(st) === JSON.stringify(was) && shown === st.filter((x) => x.length).map((x) => x[0]).join() && fresh === null) return;
-    applySlots(st, focus);
+    if (JSON.stringify(st) === JSON.stringify(was) && shown === st.filter((x) => x.length).map((x) => x[0]).join()) return;
+    applySlots(st, activeRef.current);
   }, [slotsOn, hasView, docs]); // eslint-disable-line react-hooks/exhaustive-deps
   // the window list and Mission Control tell one file's window from another by its title
   const activeName = docs.find((d) => d.id === activeId)?.meta.name;
