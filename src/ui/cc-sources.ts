@@ -11,7 +11,7 @@ import { version } from '../../package.json';
 import '../editor/keymap'; // registers the editor's bindings
 import { fixedCommands } from '../editor/keymap';
 import { BINDINGS, keyOf, keyText } from '../editor/keybinds';
-import { P, pref, setPref, type Pref } from '../editor/prefs';
+import { P, pref, setPref, setWorkspace, workspace, type Pref, type Workspace } from '../editor/prefs';
 import { readSetting, type SettingSpec } from '../editor/tools';
 import { DOC_TOOLS, docToolSettings } from '../editor/doc-tools';
 import { CARD_TOOLS, cardToolSettings } from '../editor/card-tools';
@@ -200,7 +200,8 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     { id: P.openHome.key, label: 'Open on launch', page: 'general', hint: 'What Falcon shows when it starts.', options: [['home', 'Home'], ['doc', 'Last document']],
       get: () => (pref(P.openHome) ? 'home' : 'doc'), set: (v) => setPref(P.openHome, v === 'home') },
     tog(P.reopen, 'Restore open files', 'general', 'Reopen the files you had open when you quit.'),
-    tog(P.fileWindows, 'Open files in new windows', 'general', 'Each file and new document gets its own window instead of a tab.'),
+    { id: P.fileWindows.key, label: 'Workspace', page: 'general', hint: 'Windows: a window per file. Tabs: one window, files in the rail. Slots: three slots side by side; opening a file asks which.',
+      options: [['windows', 'Windows'], ['tabs', 'Tabs'], ['slots', 'Slots']], get: workspace, set: (v) => setWorkspace(v as Workspace) },
     pick(P.lowTime, 'Low time flash', 'general', [[0, 'Off'], [10, '10 s'], [30, '30 s'], [60, '1 min']], 'The running clock flashes red for its last seconds.'),
     tog(P.beep, 'Timer sound', 'general', 'Two short tones when a timer reaches zero.'),
     tog(P.confirmClose, 'Unsaved changes confirmation', 'general', 'Ask before closing a file or quitting with unsaved changes.'),

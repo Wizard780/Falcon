@@ -18,6 +18,7 @@ export const P = {
   openHome: def('openHome', true),
   reopen: def('reopen', false),
   fileWindows: def('fileWindows', false), // every file and new doc in a window of its own, instead of tabs
+  slots: def('slots', false), // Slots workspace: three slots side by side, each a stack of files; opening a file asks which slot
   confirmClose: def('confirmClose', true),
   crashRecovery: def('crashRecovery', true),
   recentCount: def('recentCount', 7), // how many files Home lists (1 to recents.ts MAX)
@@ -122,6 +123,11 @@ const cache = new Map<string, string | number | boolean>();
 const KEYS = new Set<string>(Object.values(P).map((p) => p.key));
 const EVENT = 'falcon-prefs';
 /** Transaction meta set when settings change, so plugins that draw from them redraw. */
+/** Settings > Workspace: Windows, Tabs or Slots, kept as the two toggles behind it. */
+export type Workspace = 'windows' | 'tabs' | 'slots';
+export const workspace = (): Workspace => (pref(P.fileWindows) ? 'windows' : pref(P.slots) ? 'slots' : 'tabs');
+export function setWorkspace(w: Workspace) { setPref(P.slots, w === 'slots'); setPref(P.fileWindows, w === 'windows'); }
+
 export const PREFS_META = 'falconPrefs';
 
 export function pref<T extends string | number | boolean>(p: Pref<T>): T {

@@ -18,7 +18,7 @@ import { BINDINGS, IS_MAC, keyOf, keyText } from '../editor/keybinds';
 import { KeyField, type KeyNote } from './KeyField';
 import { safeSet } from './storage';
 import { readSetting, type SettingSpec } from '../editor/tools';
-import { P, onPrefs, pref, resetPrefs, setPref, type Pref } from '../editor/prefs';
+import { P, onPrefs, pref, resetPrefs, setPref, setWorkspace, workspace, type Pref } from '../editor/prefs';
 import { newFileName, speechFileName } from './files';
 import { bridge, setActiveColor, type IndexFolder, type IndexedFile, type LinkedApp } from '../editor/host';
 import { collectHits, hiddenTest, rankHits, type FileHit } from './file-search';
@@ -400,7 +400,8 @@ export function Settings(props: Props) {
           select('Open on launch', pref(P.openHome) ? 'home' : 'doc', [['home', 'Home'], ['doc', 'Last document']], (o) => setPref(P.openHome, o === 'home')) },
         tog(P.reopen, 'Restore open files', 'Reopen the files you had open when you quit. Desktop app only.'),
         { label: 'Replay tutorial', hint: 'Walk through Falcon again, step by step, in a sample file.', control: <button className="st-btn" onClick={props.onReplay}>Replay</button> },
-        tog(P.fileWindows, 'Open files in new windows', 'Each file and new document gets its own window instead of a tab. Turning this on moves open tabs into windows; turning it off leaves windows as they are. Desktop app only.'),
+        { label: 'Workspace', hint: 'Windows: each file gets its own window (desktop app only); turning it on moves open tabs into windows. Tabs: one window, files in the rail; Shift-click one to put it beside the open file. Slots: one window with three slots side by side; opening a file asks which slot, and it goes on top of what\'s there. The button by a slot\'s name picks which of its files shows.', control:
+          seg('Workspace', ([['windows', 'Windows'], ['tabs', 'Tabs'], ['slots', 'Slots']] as const).map(([o, n]) => [n, workspace() === o, () => setWorkspace(o)] as [string, boolean, () => void])) },
       ]],
       ['Notifications', [
         pickNum(P.lowTime, 'Low time flash', 'The running clock flashes red for its last seconds.', [[0, 'Off'], [10, '10 s'], [30, '30 s'], [60, '1 min']]),

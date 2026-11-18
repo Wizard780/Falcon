@@ -113,7 +113,13 @@ describe('everything is reachable', () => {
   it('every setting Settings has is a row', () => {
     const { ctx } = fake(sample());
     const ids = new Set(settingDefs(ctx).map((d) => d.id));
-    for (const p of Object.values(P)) expect(ids.has(p.key), p.key).toBe(true);
+    // Slots is one of Workspace's three choices, which is fileWindows's row: that row has to set it
+    for (const p of Object.values(P)) if (p !== P.slots) expect(ids.has(p.key), p.key).toBe(true);
+    const ws = settingDefs(ctx).find((d) => d.id === P.fileWindows.key)!;
+    ws.set('slots');
+    expect([pref(P.slots), pref(P.fileWindows), ws.get()]).toEqual([true, false, 'slots']);
+    ws.set('tabs');
+    expect([pref(P.slots), pref(P.fileWindows)]).toEqual([false, false]);
     for (const s of [...navSettings, ...docToolSettings, ...cardToolSettings]) expect(ids.has(s.key), s.key).toBe(true);
   });
   it('a reading speed typed in Settings is one of its choices, in order', () => {
