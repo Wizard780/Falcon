@@ -81,7 +81,33 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run build
-      - run: npx electron-builder --publish never
+      # Mac: sign with Falcon's own self-signed certificate (free, no Apple account). An ad-hoc signature names the
+      # app by its build's hash, so every update looks like a new app to the keychain and it asks for the password
+      # again; one certificate across builds lets "Always Allow" stick. Without the secret (a fork's PR), ad-hoc as before.
+      - name: Mac signing certificate
+        if: runner.os == 'macOS'
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          if [ -z "$MAC_CERT_P12" ]; then echo "no certificate secret: ad-hoc signature"; exit 0; fi
+          kc="$RUNNER_TEMP/falcon-sign.keychain-db" p12="$RUNNER_TEMP/falcon.p12"
+          echo "$MAC_CERT_P12" | base64 --decode > "$p12"
+          security create-keychain -p ci "$kc"
+          security set-keychain-settings "$kc"
+          security unlock-keychain -p ci "$kc"
+          security import "$p12" -k "$kc" -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          # codesign only uses a certificate this machine trusts (the runner's sudo needs no password)
+          openssl pkcs12 -in "$p12" -clcerts -nokeys -passin env:MAC_CERT_PASSWORD -legacy -out "$RUNNER_TEMP/falcon-cert.pem" 2>/dev/null \
+            || openssl pkcs12 -in "$p12" -clcerts -nokeys -passin env:MAC_CERT_PASSWORD -out "$RUNNER_TEMP/falcon-cert.pem"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/falcon-cert.pem"
+          rm -f "$p12"
+          security find-identity -v -p codesigning "$kc"
+          echo "MAC_IDENTITY=Falcon Self-Signed" >> "$GITHUB_ENV"
+      - run: npx electron-builder --publish never ${MAC_IDENTITY:+"-c.mac.identity=$MAC_IDENTITY"}
+        shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           # electron-builder skips signing on PR builds to protect certificates; the Mac
@@ -90,7 +116,11 @@ jobs:
       # an unsealed signature makes macOS call the downloaded app "damaged"
       - name: Verify the Mac signature
         if: runner.os == 'macOS'
-        run: codesign --verify --deep --strict --verbose=2 release/mac*/Falcon.app
+        run: |
+          codesign --verify --deep --strict --verbose=2 release/mac*/Falcon.app
+          codesign -d -r- release/mac*/Falcon.app 2>&1 | tail -1
+          # signed with the certificate: the keychain knows the app by it, not by this build's hash
+          if [ -n "$MAC_IDENTITY" ]; then codesign -d -r- release/mac*/Falcon.app 2>&1 | grep -q 'certificate leaf'; fi
       # launch the packaged app (hidden window), type and format a card with the real keys, and check it
       - name: Smoke test the packaged app
         shell: bash
