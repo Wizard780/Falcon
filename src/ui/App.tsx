@@ -1729,7 +1729,9 @@ export function App() {
       const items = outlineOf(v.state.doc), nums = outlineNumbers(v.state);
       return {
         active: id, name: tidy(d?.meta.name || 'Untitled'), focused, items, depth: paneDepth[id] ?? depth,
-        cur: focused ? cur : -1, // only the file you're in lights a row
+        // only the file you're in lights a row. `cur` is clamped to `outline`, which catches up when typing pauses,
+        // but these items are read now: backspacing away the last heading leaves `cur` one past their end
+        cur: focused ? Math.min(cur, items.length - 1) : -1,
         numbers: nums.length ? nums : NO_NUMS, getView: paneView(id),
         onFocus: () => focusPane(id, false),
         onDepth: (n: number) => setPaneDepth((p) => ({ ...p, [id]: n })),
