@@ -66,6 +66,19 @@ await page.waitForTimeout(300);
 ss = await secs();
 want(ss[0].depth === '1' && ss[1].depth === '3', `seed's 1 leaves Speech at 3: ${ss.map((x) => x.depth)}`);
 await f.shot('outline-stacked');
+// numbering a card in a split file shows on its outline row right away (numbering changes no text)
+await page.locator('.split .pane').nth(1).locator('.ProseMirror').click();
+await page.waitForTimeout(200);
+await page.locator('.olp .ol-sec').nth(0).locator('.lv button[data-lv="4"]').click();
+await page.waitForTimeout(300);
+await page.locator('.olp .ol-sec').nth(0).locator('.sb-row.ol:has-text("Growth is slowing")').click({ button: 'right' });
+await page.waitForTimeout(200);
+await page.click('.mn-i:has-text("Number")');
+await page.waitForTimeout(400);
+const num = await page.locator('.olp .ol-sec').nth(0).locator('.sb-row.ol:has-text("Growth is slowing") .num').textContent().catch(() => '');
+want(num.trim() === '1.', `Number from a split file's outline shows on its row: ${JSON.stringify(num)}`);
+await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+await page.waitForTimeout(200);
 await page.locator('.olp .ol-sec').nth(0).locator('.lv button[data-lv="3"]').click();
 await page.waitForTimeout(200);
 

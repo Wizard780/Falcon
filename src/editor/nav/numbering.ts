@@ -163,6 +163,9 @@ export const numberMarks = (state: EditorState) => numberingKey.getState(state)?
 // the outline's multi-selection, when there is one, is what the numbering keys act on
 let navScope: () => number[] = () => [];
 export function setNavScope(f: () => number[]) { navScope = f; }
+export const getNavScope = () => navScope;
+/** Let go of the scope only if `f` still holds it (another outline section may have taken it since). */
+export function clearNavScope(f: () => number[]) { if (navScope === f) navScope = () => []; }
 
 /** Headings the numbering commands act on: the outline's selection, else the headings in the
  *  selection, else the card (or block) at the cursor. */

@@ -15,7 +15,7 @@ import { activeColors, bridge, setActiveColor, type CardHit, type CardSpot, type
 import { cardContent, findCard } from './card-search';
 import { ago, releaseNotes } from './update';
 import { HIGHLIGHTS, HIGHLIGHT_NAMES, SHADES, schema, type ParaStyle } from '../editor/schema';
-import { buildOutline, currentItem, readSeconds, readSplit, type OutlineItem, type ReadSplit } from '../editor/outline';
+import { buildOutline, outlineOf, currentItem, readSeconds, readSplit, type OutlineItem, type ReadSplit } from '../editor/outline';
 import { toggleColorMark } from '../editor/commands';
 import { fontSizeOf, setFontSize } from '../editor/font-size';
 import { FONT_COLORS } from './swatches';
@@ -89,6 +89,7 @@ const Palette = later(() => import('./Palette').then((m) => m.Palette));
 const CardSearch = later(() => import('./CardSearch').then((m) => m.CardSearch));
 export const prefetch = () => Promise.all([Settings.preload(), CommandCenter.preload(), Palette.preload(), CardSearch.preload(), import('../docx/import'), import('../docx/export')]).catch(() => {}); // a miss loads again when used
 
+const NO_ITEMS: OutlineItem[] = [], NO_NUMS: string[] = [];
 const MODE_NAME: Record<SaveMode, string> = { asis: '', send: 'send doc', read: 'read doc', marked: 'marked doc' };
 const MODE_PREFIX = { send: P.prefixSend, read: P.prefixRead, marked: P.prefixMarked };
 const AUTOSAVE_KEY = 'falcon.autosave.v2'; // [{ meta, doc, active, dirty, speech }]: the open doc and every unsaved one
@@ -1578,7 +1579,7 @@ export function App() {
 
   const sel = useMemo(() => (view ? selectionState(view.state) : null), [view, tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const outline = useMemo(() => (view ? buildOutline(view.state.doc) : []), [view, docVersion]);
+  const outline = useMemo(() => (view ? outlineOf(view.state.doc) : NO_ITEMS), [view, docVersion]);
   const outlineRef = useRef(outline);
   outlineRef.current = outline;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1627,24 +1628,27 @@ export function App() {
     scrollToPos(v, item.pos);
   }, []);
   const getView = useCallback(() => viewRef.current, []);
-  // split files: the outline stacks one section per file, in the split's order
+  // split files: the outline stacks one section per file, in the split's order. Each pane's items and
+  // getView keep their identity until its doc changes, so the other sections don't redraw as you scroll
+  const paneViews = useRef(new Map<number, () => EditorView | null>());
+  const paneView = (id: number) => { let f = paneViews.current.get(id); if (!f) paneViews.current.set(id, (f = () => liveView(id))); return f; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const sections = useMemo((): OutlineSectionData[] | null => {
     if (!splitOn || !group) return null;
     return group.filter((id) => panes.current.has(id)).map((id) => {
       const v = panes.current.get(id)!.view, focused = id === activeId, d = docs.find((x) => x.id === id);
-      const items = focused ? outline : buildOutline(v.state.doc);
+      const items = outlineOf(v.state.doc), nums = outlineNumbers(v.state);
       return {
         active: id, name: tidy(d?.meta.name || 'Untitled'), focused, items, depth: paneDepth[id] ?? depth,
         cur: focused ? cur : -1, // only the file you're in lights a row
-        numbers: outlineNumbers(v.state), getView: () => liveView(id),
+        numbers: nums.length ? nums : NO_NUMS, getView: paneView(id),
         onFocus: () => focusPane(id, false),
         onDepth: (n: number) => setPaneDepth((p) => ({ ...p, [id]: n })),
         onJump: (item: OutlineItem, i: number) => { if (activeRef.current !== id) focusPane(id, false); jump(item, i); },
         onPeek: (item: OutlineItem) => { const pv = liveView(id); if (pv) scrollToPos(pv, item.pos); },
       };
     });
-  }, [splitOn, group, activeId, docs, outline, cur, depth, paneDepth, docVersion, jump, focusPane]);
+  }, [splitOn, group, activeId, docs, cur, depth, paneDepth, docVersion, tick, jump, focusPane]); // tick: numbering changes without a doc change
   // outline search: Up/Down scroll the page to a match without leaving the search box
   const peek = useCallback((item: OutlineItem) => { const v = viewRef.current; if (v) scrollToPos(v, item.pos); }, []);
   // Find and Replace and find-by-position keys live in the editor keymap and ask for the bar here

@@ -5,7 +5,7 @@ import type { Command, Transaction } from 'prosemirror-state';
 import { searchOutline, type OutlineItem } from '../editor/outline';
 import { alphabetize, canDrop, deleteSections, moveSections, sectionsSlice, selectSections, topSections } from '../editor/nav/sections';
 import { copySlice } from '../editor/nav/clipboard';
-import { numberMarks, setNavScope, toggleRestart, toggleRole } from '../editor/nav/numbering';
+import { clearNavScope, getNavScope, numberMarks, setNavScope, toggleRestart, toggleRole } from '../editor/nav/numbering';
 import { copyModifier } from '../editor/nav/page-drag';
 import { readSetting, type SettingSpec } from '../editor/tools';
 import { onPrefs } from '../editor/prefs';
@@ -108,7 +108,7 @@ function OutlineSection(props: SectionProps) {
   return (
       // a press in another file's outline focuses that file first, so what it does acts there
       <section className="ol-sec" data-focus={props.focused || undefined} aria-label={props.label}
-        onPointerDownCapture={props.focused ? undefined : props.onFocus}>
+        onPointerDownCapture={props.focused ? undefined : props.onFocus} onFocusCapture={props.focused ? undefined : props.onFocus}>
         {/* the 1-4 buttons and the search box stay put while the list scrolls under them */}
         <div className="ol-top">
         <div className="ol-head">
@@ -174,7 +174,7 @@ const OutlineRows = memo(function OutlineRows({ items, depth, relevel, cur, hits
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const outlineScope = useRef(() => (selRef.current.size > 1 ? [...selRef.current].map((i) => itemsRef.current[i]?.pos).filter((p) => p !== undefined) : [])).current;
-  useEffect(() => { if (!follow) return; setNavScope(outlineScope); return () => setNavScope(() => []); }, [outlineScope, follow]);
+  useEffect(() => { if (!follow) return; setNavScope(outlineScope); return () => clearNavScope(outlineScope); }, [outlineScope, follow]);
   // clicking in the page lets go of the outline's selection
   useEffect(() => {
     const down = (e: MouseEvent) => { if ((e.target as HTMLElement).closest?.('.ProseMirror')) setSel((s) => (s.size ? new Set() : s)); };
@@ -250,7 +250,7 @@ const OutlineRows = memo(function OutlineRows({ items, depth, relevel, cur, hits
     if (!visible || !follow || dragRef.current?.on) return;
     const s = list.closest('.sb-scroll') as HTMLElement | null;
     if (!s) return;
-    const head = (s.querySelector('.ol-top') as HTMLElement | null)?.offsetHeight ?? 0; // the header that stays put covers the top
+    const head = (list.closest('.ol-sec')?.querySelector('.ol-top') as HTMLElement | null)?.offsetHeight ?? 0; // this section's header stays put over the top
     if (seenRelevel.current !== relevel) {
       seenRelevel.current = relevel;
       s.scrollTop = Math.max(0, row.getBoundingClientRect().top - s.getBoundingClientRect().top + s.scrollTop - head - 12); // clear of the "keep it in view" margin below
@@ -285,8 +285,9 @@ const OutlineRows = memo(function OutlineRows({ items, depth, relevel, cur, hits
     const h = headsOf(rowsIdx);
     if (!h) return;
     // the numbering commands act on the outline's scope: point it at these rows for the call
+    const was = getNavScope();
     setNavScope(() => h.heads);
-    try { cmd(h.v.state, h.v.dispatch, h.v); } finally { setNavScope(outlineScope); }
+    try { cmd(h.v.state, h.v.dispatch, h.v); } finally { setNavScope(was); }
     h.v.focus();
   };
   const act = async (what: string, rowsIdx: number[]) => {

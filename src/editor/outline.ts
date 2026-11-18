@@ -9,6 +9,14 @@ export type OutlineItem = { pos: number; level: number; text: string; style: Par
  * heading by its text and the headings above it (plus a count among same-named siblings), so a fold
  * follows "Answers under Link" and not every "Answers" in the file, and survives typing above it.
  */
+const outlines = new WeakMap<PMNode, OutlineItem[]>();
+/** buildOutline, once per doc: the same doc gives the same array, so lists keyed on it don't redraw. */
+export function outlineOf(doc: PMNode): OutlineItem[] {
+  let items = outlines.get(doc);
+  if (!items) outlines.set(doc, (items = buildOutline(doc)));
+  return items;
+}
+
 export function buildOutline(doc: PMNode): OutlineItem[] {
   const items: OutlineItem[] = [];
   const stack: OutlineItem[] = [];
