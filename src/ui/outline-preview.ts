@@ -2,6 +2,9 @@ import type { EditorView } from 'prosemirror-view';
 import { cardPreview, slideIn } from '../editor/card-links';
 import { P, pref } from '../editor/prefs';
 import { levelOf } from '../editor/schema';
+
+/** What scrolls a row's list: with files stacked, each file's own list; otherwise the whole pane. */
+export const scrollerOf = (el: Element) => (el.closest('.olp[data-stack]') ? el.closest('.ol-body') : el.closest('.sb-scroll')) as HTMLElement | null;
 import { reducedMotion } from './motion';
 
 /**
@@ -72,7 +75,7 @@ export function outlinePreview(list: HTMLElement, getView: () => EditorView | nu
   };
   // a row that was just clicked stays quiet till the pointer goes to another: the page went to that card, so don't cover it
   const press = (e: MouseEvent) => { const row = (e.target as HTMLElement).closest<HTMLElement>('.sb-row.ol'); used = row && posOf(row); hide(); };
-  const scroller = list.closest('.sb-scroll');
+  const scroller = scrollerOf(list);
   list.addEventListener('mousemove', move);
   list.addEventListener('mouseleave', hide);
   list.addEventListener('mousedown', press, true);

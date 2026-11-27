@@ -76,6 +76,9 @@ export const P = {
   spellcheck: def('spellcheck', true),
   condense: def<CondenseMode>('condense', 'integrity'),
   smallPilcrows: def('smallPilcrows', false),
+  // the lines Condense With Warning puts around what it merged ('' = the default)
+  condensePause: def('condense.pause', '[PARAGRAPH INTEGRITY PAUSES]'),
+  condenseResume: def('condense.resume', '[PARAGRAPH INTEGRITY RESUMES]'),
   pasteCondense: def('pasteCondense', false),
   shrinkMin: def('shrinkMin', 4),
   shrinkProtect: def('shrinkProtect', true),

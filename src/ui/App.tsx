@@ -107,7 +107,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['tutorial', 'aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'sendStarred', 'collab', 'live', 'liveStart', 'liveStop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['markSpeech', 'tutorial', 'aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'sendStarred', 'collab', 'live', 'liveStart', 'liveStop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -1549,6 +1549,7 @@ export function App() {
     else if (id === 'open') void fileOpen();
     else if (id === 'new') fileNew();
     else if (id === 'newSpeech') fileNewSpeech();
+    else if (id === 'markSpeech') { toggleSpeech(); flash(speechRef.current === activeRef.current ? `${docsRef.current.find((d) => d.id === activeRef.current)?.meta.name || 'Untitled'} is the speech doc now` : 'No speech doc now'); }
     else if (id === 'close') { if (sdOnRef.current) closeSd(); else closeDoc(activeRef.current); }
     else if (id === 'speechdrop') openSd();
     else if (id === 'aiCite') { if (viewRef.current) void formatCite(viewRef.current, flash); }

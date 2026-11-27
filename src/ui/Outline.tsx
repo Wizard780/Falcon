@@ -15,7 +15,7 @@ import { SvgIcon } from './icons';
 import { tidyHeading } from './recents';
 import { safeSet } from './storage';
 import { reducedMotion } from './motion';
-import { outlinePreview } from './outline-preview';
+import { outlinePreview, scrollerOf } from './outline-preview';
 import { OL_DEFAULT, OL_MAX, OL_MIN, loadOutlineWidth, outlineMax, outlineWidth, saveOutlineWidth } from './outline-width';
 import { IS_MAC } from '../editor/keybinds';
 import './outline.css';
@@ -136,8 +136,11 @@ function OutlineSection(props: SectionProps) {
           {hits && <div className="ol-count">{hits.length ? `${step >= 0 ? `${step + 1} of ` : ''}${hits.length} ${hits.length === 1 ? 'match' : 'matches'} · ↑↓ to step, Enter to go` : 'No matches'}</div>}
         </>}
         </div>
+        {/* with files stacked, each file's list scrolls in its own part of the pane */}
+        <div className="ol-body">
         <OutlineRows key={props.active} items={items} depth={props.depth} relevel={relevel} cur={cur} hits={hits} hide={hide} step={hits && step >= 0 ? hits[step] : -1}
           numbers={props.numbers} getView={props.getView} onJump={props.onJump} flash={props.flash} visible={shown} follow={props.focused} />
+        </div>
       </section>
   );
 }
@@ -248,9 +251,10 @@ const OutlineRows = memo(function OutlineRows({ items, depth, relevel, cur, hits
     act.style.transform = `translateY(${row.offsetTop}px)`;
     act.style.opacity = '1';
     if (!visible || !follow || dragRef.current?.on) return;
-    const s = list.closest('.sb-scroll') as HTMLElement | null;
+    const s = scrollerOf(list);
     if (!s) return;
-    const head = (list.closest('.ol-sec')?.querySelector('.ol-top') as HTMLElement | null)?.offsetHeight ?? 0; // this section's header stays put over the top
+    // the header stays put over the top of the pane's scroll; a stacked file's own list starts under its header
+    const head = s.classList.contains('ol-body') ? 0 : (list.closest('.ol-sec')?.querySelector('.ol-top') as HTMLElement | null)?.offsetHeight ?? 0;
     if (seenRelevel.current !== relevel) {
       seenRelevel.current = relevel;
       s.scrollTop = Math.max(0, row.getBoundingClientRect().top - s.getBoundingClientRect().top + s.scrollTop - head - 12); // clear of the "keep it in view" margin below
@@ -342,7 +346,7 @@ const OutlineRows = memo(function OutlineRows({ items, depth, relevel, cur, hits
     const d: Drag = { heads: h.heads, x: e.clientX, y: e.clientY, on: false, gap: null, raf: 0 };
     dragRef.current = d;
     const list = listRef.current!;
-    const scroller = list.closest('.sb-scroll') as HTMLElement;
+    const scroller = scrollerOf(list)!;
     const aim = () => {
       const v = getView();
       if (!v) return;

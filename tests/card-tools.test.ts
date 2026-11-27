@@ -78,6 +78,13 @@ describe('Condense With Warning', () => {
     ]);
     expect(run(s, undo).doc.eq(s0.doc)).toBe(true);
   });
+  it('uses the lines Settings gives it, and the default for a blank box', () => {
+    setPref(P.condensePause, '<<CONDENSED, NONE OMITTED>>');
+    setPref(P.condenseResume, '  ');
+    const s = run(select(card(), 'para  of', 'Second para'), condenseWithWarning(false));
+    expect(lines(s).slice(3, 6)).toEqual(['normal: <<CONDENSED, NONE OMITTED>>', 'normal: First para of text. Second para here.', 'normal: [PARAGRAPH INTEGRITY RESUMES]']);
+    resetPrefs();
+  });
   it('and Shrink shrinks the merged text but not the markers, still one undo step', () => {
     const s0 = select(mark(card(), 'para here', M.underline.create()), 'First', 'here');
     const s = run(s0, condenseWithWarning(true));
