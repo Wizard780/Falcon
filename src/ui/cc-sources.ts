@@ -259,6 +259,8 @@ export function settingDefs(ctx: Ctx): SettingDef[] {
     tog(P.markerTime, 'Marker shows the time', 'editor'),
     pick(P.condense, 'F3 condenses to', 'editor', [['integrity', 'Keep paragraphs'], ['merge', 'Merge'], ['pilcrows', 'Merge with ¶']]),
     tog(P.smallPilcrows, 'Small ¶ marks', 'editor'),
+    { id: P.condensePause.key, label: 'Condense With Warning: line before', page: 'editor', query: 'condense warning marker pauses', hint: 'Type it in Settings.', link: true, get: () => pref(P.condensePause), set: () => {} },
+    { id: P.condenseResume.key, label: 'Condense With Warning: line after', page: 'editor', query: 'condense warning marker resumes', hint: 'Type it in Settings.', link: true, get: () => pref(P.condenseResume), set: () => {} },
     tog(P.pasteCondense, 'Condense after Paste Text', 'editor'),
     tog(P.shrinkProtect, 'Keep omission notes full size', 'editor'),
     tog(P.smartShrink, 'Smart Shrink', 'editor', 'Mod-8 shrinks in one pass instead of cycling sizes.'),

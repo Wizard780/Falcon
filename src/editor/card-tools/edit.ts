@@ -2,6 +2,7 @@ import { Fragment, type Mark, type MarkType, type Node as PMNode } from 'prosemi
 import { EditorState, TextSelection, type Command, type Transaction } from 'prosemirror-state';
 import { cardAt, condense, shrink } from '../commands';
 import { HIGHLIGHTS, schema } from '../schema';
+import { P, pref } from '../prefs';
 import { readSetting, type SettingSpec } from '../tools';
 import { bodySelection, editing, posOf } from './scope';
 
@@ -14,8 +15,8 @@ function replay(cmd: Command, doc: PMNode, from: number, to: number, tr: Transac
   return cmd(s, (t) => t.steps.forEach((step) => tr.step(step)));
 }
 
-export const PAUSE = '[PARAGRAPH INTEGRITY PAUSES]';
-export const RESUME = '[PARAGRAPH INTEGRITY RESUMES]';
+// Settings can change both lines (CardMirror's condense markers), and a blank box means the default
+const marker = (p: typeof P.condensePause) => pref(p).trim() || p.default;
 
 /**
  * Condense With Warning: merge the body paragraphs the selection touches into one, between plain
@@ -32,7 +33,7 @@ export function condenseWithWarning(andShrink: boolean): Command {
     replay(condense('merge'), state.doc, a + 1, z - 1, tr);
     const from = tr.mapping.map(a), to = tr.mapping.map(z);
     if (andShrink && to - from > 2) replay(shrink, tr.doc, from + 1, to - 1, tr);
-    tr.insert(to, para('normal', RESUME)).insert(from, para('normal', PAUSE));
+    tr.insert(to, para('normal', marker(P.condenseResume))).insert(from, para('normal', marker(P.condensePause)));
     dispatch(tr);
     return true;
   });

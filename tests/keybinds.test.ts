@@ -79,6 +79,22 @@ describe('keybindings', () => {
     expect(m['Mod-Shift-t']).toBeUndefined();
   });
 
+  it('Bold, Italic, Underline as you type, Superscript and Select all can move to another key, like CardMirror', () => {
+    for (const id of ['bold', 'italic', 'underlineTyping', 'superscript', 'selectAll']) expect(BINDINGS.some((b) => b.id === id)).toBe(true);
+    expect(keyOf('bold')).toBe('Mod-b');
+    setKey('bold', 'Mod-Shift-b');
+    const m = liveKeys();
+    expect(m['Mod-Shift-b']).toBe(commandOf('bold'));
+    expect(m['Mod-b']).toBeUndefined();
+    expect(refusal('italic', 'Mod-b')).toBe(null); // Mod-b is free once Bold moves
+    resetKey('bold');
+    expect(liveKeys()['Mod-b']).toBe(commandOf('bold'));
+  });
+  it('has a key for making the open file the speech doc, off until you give it one', () => {
+    expect(BINDINGS.find((b) => b.id === 'markSpeech')).toMatchObject({ group: 'Files', key: '' });
+    expect(BINDINGS.find((b) => b.id === 'maxPane')).toMatchObject({ group: 'Files', key: '' });
+    expect(BINDINGS.find((b) => b.id === 'open')).toMatchObject({ group: 'Files', key: 'Mod-o' });
+  });
   it('can remove a shortcut, and Restore defaults brings every key back', () => {
     setKey('find', '');
     setKey('lockHighlighting', 'Mod-Alt-l');

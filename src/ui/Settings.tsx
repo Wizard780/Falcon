@@ -264,6 +264,10 @@ export function Settings(props: Props) {
     label, hint, control: <input type="color" className="st-color" aria-label={label} value={pref(p) || fallback} onChange={(e) => setPref(p, e.target.value)} />,
   });
 
+  const markerRow = (p: Pref<string>, label: string, hint: string): Row => ({
+    label, search: 'condense warning marker paragraph integrity pauses resumes condensed', hint: `${hint} Default ${p.default}. Leave it empty for the default.`,
+    control: <input className="st-text st-wide" aria-label={label} spellCheck={false} maxLength={120} placeholder={p.default} value={pref(p)} onChange={(e) => setPref(p, e.target.value)} />,
+  });
   const prefixRow = (p: Pref<string>, kind: string): Row => ({
     label: `${kind} filename prefix`, hint: `Prepended to ${kind} saves when the option above is on. Default ${p.default}. Leave empty for no prefix.`,
     control: <input className="st-text" aria-label={`${kind} filename prefix`} spellCheck={false} maxLength={40} value={pref(p)}
@@ -565,6 +569,8 @@ export function Settings(props: Props) {
       ['Condensing', [
         pick(P.condense, 'F3 condenses to', 'Merge joins paragraphs; with ¶ marks where they were.', [['integrity', 'Keep paragraphs'], ['merge', 'Merge'], ['pilcrows', 'Merge with ¶']]),
         tog(P.smallPilcrows, 'Small ¶ marks', 'Set the ¶ marks at 6 pt so they take less room.'),
+        markerRow(P.condensePause, 'Condense With Warning: line before', 'Goes above the paragraphs it merges.'),
+        markerRow(P.condenseResume, 'Condense With Warning: line after', 'Goes below them.'),
         tog(P.pasteCondense, 'Condense after Paste Text', 'F2 condenses what it pastes, the way F3 does.'),
         tog(P.shrinkProtect, 'Keep omission notes full size', 'Shrink leaves notes like [Table Omitted] alone.'),
         tog(P.smartShrink, 'Smart Shrink', 'Mod-8 shrinks in one pass: paragraphs you don\'t read drop to 5 pt, the words between read ones to 8 pt.'),

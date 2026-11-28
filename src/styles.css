@@ -305,6 +305,13 @@ button.b:active { transform: scale(.97); }
 /* the X takes the file out of the split; the name bar drags the pane onto another to swap them */
 .split .pane-x { flex: none; margin: 0 -8px 0 auto; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; color: var(--u-mut); cursor: pointer; opacity: .6; transition: opacity 150ms ease-out, color 150ms ease-out, background-color 150ms ease-out; }
 .split .pane-x svg { width: 12px; height: 12px; }
+/* full screen: one pane takes the window, the rest hide but stay joined */
+.split .pane-max { flex: none; margin-left: auto; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; color: var(--u-mut); cursor: pointer; opacity: .6; transition: opacity 150ms ease-out, color 150ms ease-out, background-color 150ms ease-out; }
+.split .pane-max svg { width: 12px; height: 12px; }
+.split .pane-max + .pane-x { margin-left: 2px; }
+.split .pane-h:hover .pane-max, .split .pane-max[aria-pressed="true"] { opacity: 1; }
+.split .pane-max:hover { color: var(--u-tx); background: var(--u-ctl-on); }
+.split .pane[data-hide] { display: none; }
 .split .pane-h:hover .pane-x { opacity: 1; }
 .split .pane-x:hover { color: var(--u-tx); background: var(--u-ctl-on); }
 .split .pane { transition: opacity 150ms ease-out; }

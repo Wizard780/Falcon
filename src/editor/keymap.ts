@@ -119,10 +119,6 @@ const shading: Command = (state, dispatch) => toggleColorMark(M.shading, activeC
 
 /** Keys that stay put: typing, undo, and the second keys that move by paragraph. Settings can't take them. */
 const FIXED: [key: string, label: string, run: Command][] = [
-  ['Mod-u', 'Underline as you type', toggleTypingMark(M.underline)],
-  ['Mod-b', 'Bold', toggleBold],
-  ['Mod-i', 'Italic', toggleTypingMark(M.italic)],
-  ['Mod-Shift-=', 'Superscript', toggleTypingMark(M.sup)],
   ['Mod-z', 'Undo', undo],
   ['Mod-Shift-z', 'Redo', redoOrRepeat],
   ['Mod-y', 'Redo', redoOrRepeat],
@@ -131,7 +127,6 @@ const FIXED: [key: string, label: string, run: Command][] = [
   ['Enter', 'New line', repeatable(enter)],
   ['Backspace', 'Delete back', repeatable(chainCommands(deleteWholeLines, deleteSelection, backspaceAtCardEdge, joinBackward))],
   ['Delete', 'Delete forward', repeatable(chainCommands(deleteWholeLines, deleteSelection, deleteAtCardEdge, joinForward))],
-  ['Mod-a', 'Select all', selectAll],
   ['Ctrl-ArrowUp', 'Previous paragraph', moveByParagraph(-1, false)],
   ['Ctrl-ArrowDown', 'Next paragraph', moveByParagraph(1, false)],
   ['Ctrl-Shift-ArrowUp', 'Select to the previous paragraph', moveByParagraph(-1, true)],
@@ -172,6 +167,14 @@ bind('Cutting', repeats([
   { id: 'shrink', label: 'Shrink card', key: 'Mod-8', run: shrink },
   { id: 'regrow', label: 'Undo shrink', key: 'Mod-Shift-8', run: regrow },
 ]));
+// were fixed keys; CardMirror lets you move them, so they're in Settings > Keybindings too
+bind('Formatting as you type', repeats([
+  { id: 'bold', label: 'Bold', key: 'Mod-b', run: toggleBold },
+  { id: 'italic', label: 'Italic', key: 'Mod-i', run: toggleTypingMark(M.italic) },
+  { id: 'underlineTyping', label: 'Underline as you type', key: 'Mod-u', run: toggleTypingMark(M.underline) },
+  { id: 'superscript', label: 'Superscript', key: 'Mod-Shift-=', run: toggleTypingMark(M.sup) },
+]));
+bind('Editing', [{ id: 'selectAll', label: 'Select all', key: 'Mod-a', run: selectAll }]);
 bind('Moving around', [
   { id: 'prevHeading', label: 'Previous heading', key: 'PageUp', run: moveByHeading(-1, false) },
   { id: 'nextHeading', label: 'Next heading', key: 'PageDown', run: moveByHeading(1, false) },

@@ -173,7 +173,10 @@ bind('App', [
   { id: 'tutorial', label: 'Replay tutorial' },
 ]);
 bind('Files', [
-  { id: 'new', label: 'New document', key: 'Mod-n' }, { id: 'newSpeech', label: 'New speech doc', key: 'Mod-Shift-n' }, { id: 'open', label: 'Open', key: 'Mod-o' },
+  { id: 'new', label: 'New document', key: 'Mod-n' }, { id: 'newSpeech', label: 'New speech doc', key: 'Mod-Shift-n' },
+  { id: 'open', label: 'Open', key: 'Mod-o' },
+  { id: 'markSpeech', label: 'Make this the speech doc, or stop' }, // CardMirror's Mark / Unmark Active Doc as the Speech Doc
+  { id: 'maxPane', label: 'Full screen this file in the split, or back' },
   { id: 'save', label: 'Save', key: 'Mod-s' }, { id: 'saveAs', label: 'Save As', key: 'Mod-Shift-s' }, { id: 'close', label: 'Close document', key: 'Mod-w' },
   // hold Ctrl and tap Tab to walk the switcher; let go to open the lit doc. A quick tap flips between the last two
   { id: 'recentDoc', label: 'Switch to recent document', key: 'Ctrl-Tab' }, { id: 'recentDocBack', label: 'Switch to recent document, backward', key: 'Ctrl-Shift-Tab' },

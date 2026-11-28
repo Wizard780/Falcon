@@ -54,3 +54,9 @@ div.findbar { flex-direction: column; align-items: stretch; gap: 2px; }
 .olp[data-stack] .ol-sec + .ol-sec::before { content: ''; position: absolute; left: 10px; right: 10px; top: 0; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--u-tx) 18%, transparent), transparent); }
 .olp[data-stack] .ol-head .sb-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color 200ms ease-out, text-shadow 200ms ease-out; }
 .olp[data-stack] .ol-sec[data-focus] .ol-head .sb-label { color: var(--ink); text-shadow: 0 0 10px color-mix(in srgb, var(--ink) 60%, transparent); }
+
+/* files stacked: each file's outline gets an even share of the pane and scrolls on its own, like CardMirror */
+.olp[data-stack] .sb-scroll { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.olp[data-stack] .ol-sec { flex: 1 1 0; min-height: 96px; display: flex; flex-direction: column; }
+.olp[data-stack] .ol-body { flex: 1; min-height: 0; overflow: auto; overflow-x: hidden; overscroll-behavior: contain; margin: 0 -12px; padding: 0 12px; }
+.olp[data-stack] .ol-body::-webkit-scrollbar { width: 0; }
