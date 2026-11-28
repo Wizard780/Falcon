@@ -92,6 +92,8 @@ describe('keybindings', () => {
   });
   it('has a key for making the open file the speech doc, off until you give it one', () => {
     expect(BINDINGS.find((b) => b.id === 'markSpeech')).toMatchObject({ group: 'Files', key: '' });
+    expect(BINDINGS.find((b) => b.id === 'maxPane')).toMatchObject({ group: 'Files', key: '' });
+    expect(BINDINGS.find((b) => b.id === 'open')).toMatchObject({ group: 'Files', key: 'Mod-o' });
   });
   it('can remove a shortcut, and Restore defaults brings every key back', () => {
     setKey('find', '');

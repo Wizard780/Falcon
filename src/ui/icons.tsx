@@ -58,6 +58,8 @@ const P16: Record<string, string> = {
   inbox: '<path d="M2.5 9.5h3l1 1.5h3l1-1.5h3"/><path d="M4.2 3.5h7.6l1.7 6v3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-3z"/>',
   copy: '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/>',
   check: '<path d="M3.5 8.5l3 3 6-7"/>',
+  expand: '<path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9.3 6.7M2.5 13.5l4.2-4.2"/>',
+  shrink: '<path d="M13.5 2.5 9.5 6.5M9.5 3.5v3h3M2.5 13.5l4-4M3.5 9.5h3v3"/>',
   moveUp: '<path d="M8 12.75v-9.5M4.25 7 8 3.25 11.75 7"/>',
   moveDown: '<path d="M8 3.25v9.5M4.25 9 8 12.75 11.75 9"/>',
   trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.1a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.1"/>',

@@ -107,7 +107,7 @@ function sendPressed(e: KeyboardEvent) {
   return pressed(e, k) || (k !== bindingOf('sendToSpeech')?.key && norm(recordKey(e) ?? '') === norm(k)) || (!!e.getModifierState?.('AltGraph') && e.key === k)
     || (k === '`' && e.key === 'Dead' && e.code === 'Backquote' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
 }
-const APP_IDS = ['markSpeech', 'tutorial', 'aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'sendStarred', 'collab', 'live', 'liveStart', 'liveStop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
+const APP_IDS = ['markSpeech', 'maxPane', 'tutorial', 'aiCite', 'reformatCites', ...Array.from({ length: 11 }, (_, i) => `aiPreset${i}`), 'search', 'searchCards', 'commands', 'save', 'saveAs', 'find', 'open', 'new', 'newSpeech', 'close', 'nextDoc', 'prevDoc', 'recentDoc', 'recentDocBack', 'speechdrop', 'sendCard', 'sendStarred', 'collab', 'live', 'liveStart', 'liveStop', 'home', 'settings', 'outline', 'zoomIn', 'zoomOut', 'zoomReset'];
 
 // Above this size the JSON copy takes tens of ms and won't fit in browser storage anyway.
 const AUTOSAVE_MAX = 400_000;
@@ -298,6 +298,10 @@ export function App() {
   const groupRef = useRef(group);
   const setGroup = (g: number[] | null) => { groupRef.current = g; setGroupState(g); };
   const [splitOn, setSplitOn] = useState(false);
+  // one split file blown up to the whole window (the others just hide, still joined), like CardMirror's full screen button
+  const [maxed, setMaxedState] = useState<number | null>(null);
+  const maxRef = useRef<number | null>(null);
+  const paneTops = useRef(new Map<number, number>());
   // Slots (Settings > Workspace): three slots, each a stack of open files, top first. The filled slots' top
   // files show side by side (a lone one still gets its pane, for its name and stack button)
   const slotsRef = useRef<number[][]>([[], [], []]);
@@ -613,10 +617,28 @@ export function App() {
   };
 
   // ---- joined files: one editor per file, side by side ----
+  /** Full screen pane `id` (null: back to side by side). */
+  const setMax = useCallback((id: number | null) => {
+    if (id !== null && !panes.current.has(id)) id = null;
+    if (maxRef.current === id) return;
+    // display:none loses a pane's scroll, so hold each one's spot till it comes back
+    for (const [k, p] of panes.current) if (!p.el.hasAttribute('data-hide')) paneTops.current.set(k, p.scroll.scrollTop);
+    maxRef.current = id;
+    setMaxedState(id);
+    splitBox.current?.toggleAttribute('data-max', id !== null);
+    for (const [k, p] of panes.current) {
+      const was = p.el.hasAttribute('data-hide');
+      p.el.toggleAttribute('data-hide', id !== null && k !== id);
+      p.el.toggleAttribute('data-max', k === id);
+      if (was && id !== k) p.scroll.scrollTop = paneTops.current.get(k) ?? 0;
+    }
+    measureRef.current();
+  }, []);
   /** Make pane `id` the one the toolbar, outline, find and keys act on; `take` moves the keyboard into it too. */
   const focusPane = useCallback((id: number, take = true) => {
     const p = panes.current.get(id);
     if (!p) return;
+    if (maxRef.current !== null && maxRef.current !== id) setMax(null);
     if (viewRef.current !== p.view) {
       const old = viewRef.current;
       if (old && !old.isDestroyed && findInfo(old.state)) clearFind(old); // find belongs to the file it searched
@@ -641,6 +663,8 @@ export function App() {
     if (!p) return null;
     if (findInfo(p.view.state)) clearFind(p.view);
     const held = { state: p.view.state, scroll: p.scroll.scrollTop };
+    if (maxRef.current !== null) setMax(null);
+    paneTops.current.delete(id);
     p.view.destroy();
     p.el.remove();
     panes.current.delete(id);
@@ -984,7 +1008,7 @@ export function App() {
   }, [arrange, flash]);
   /** Dragging a pane by its name onto another swaps the two, in the split and in the rail. */
   paneDrag.current = (id, e) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest('.pane-x, .pane-stk')) return;
+    if (e.button !== 0 || (e.target as HTMLElement).closest('.pane-x, .pane-max, .pane-stk')) return;
     const src = panes.current.get(id)?.el, x0 = e.clientX, y0 = e.clientY;
     if (!src) return;
     let on = false, to: number | null = null;
@@ -1549,6 +1573,7 @@ export function App() {
     else if (id === 'open') void fileOpen();
     else if (id === 'new') fileNew();
     else if (id === 'newSpeech') fileNewSpeech();
+    else if (id === 'maxPane') { if (panes.current.size > 1) setMax(maxRef.current === null ? activeRef.current : null); else flash('Full screen is for files side by side'); }
     else if (id === 'markSpeech') { toggleSpeech(); flash(speechRef.current === activeRef.current ? `${docsRef.current.find((d) => d.id === activeRef.current)?.meta.name || 'Untitled'} is the speech doc now` : 'No speech doc now'); }
     else if (id === 'close') { if (sdOnRef.current) closeSd(); else closeDoc(activeRef.current); }
     else if (id === 'speechdrop') openSd();
@@ -1999,6 +2024,7 @@ export function App() {
         const stack = slotsOn ? slots.find((x) => x[0] === id) : undefined, name = tidy(d.meta.name || 'Untitled');
         return createPortal(<>{stack && stack.length > 1 && <SlotStack files={stack.map((x) => ({ id: x, name: tidy(docs.find((y) => y.id === x)?.meta.name || 'Untitled') }))} onPick={switchTo} onClose={closeDoc} />}
           <span className="nm">{name}</span>{d.dirty && <i className="dot" aria-label="unsaved" />}{id === speechId && <i className="spk" aria-hidden="true">S</i>}
+          {panes.current.size > 1 && <button className="pane-max" aria-pressed={maxed === id} title={titled(maxed === id ? 'Back to side by side' : 'Full screen this file', 'maxPane', maxed === id ? 'show the split again' : 'hide the other files for now')} aria-label={maxed === id ? 'Back to side by side' : `Full screen ${name}`} onClick={() => { setMax(maxed === id ? null : id); focusPane(id); }}><SvgIcon name={maxed === id ? 'shrink' : 'expand'} /></button>}
           {stack ? <button className="pane-x" title={titled('Close', 'close', 'close this file')} aria-label={`Close ${name}`} onClick={() => closeDoc(id)}><SvgIcon name="x" /></button>
             : <button className="pane-x" title="Take out of the split (the file stays open)" aria-label={`Take ${name} out of the split`} onClick={() => leave(id)}><SvgIcon name="x" /></button>}</>, p.head, String(id));
       })}

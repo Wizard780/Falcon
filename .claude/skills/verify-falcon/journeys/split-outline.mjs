@@ -56,6 +56,28 @@ const head = await page.$eval('.olp .ol-sec:nth-child(2) .ol-head', (h) => { con
 want(head, 'its name and 1-4 stay at the top of its part');
 await f.shot('split-outline');
 
+// full screen one pane: the other two hide (still joined), and the button brings them back where they were
+const tops = await page.$$eval('.split .pane .f-scroll', (ss) => ss.map((s) => s.scrollTop));
+await page.click('.split .pane:nth-child(2) .pane-max');
+await page.waitForTimeout(250);
+let vis = await page.$$eval('.split .pane', (ps) => ps.map((p) => p.getBoundingClientRect().width));
+const full = await page.$eval('.split', (b) => b.getBoundingClientRect().width);
+want(vis[0] === 0 && vis[2] === 0 && vis[1] > full - 4, `only the middle file shows, full width: ${vis} of ${full}`);
+want((await page.$$('.olp .ol-sec')).length === 3, 'the outline still lists all three files');
+await f.shot('split-max');
+await page.click('.split .pane:nth-child(2) .pane-max');
+await page.waitForTimeout(250);
+vis = await page.$$eval('.split .pane', (ps) => ps.map((p) => p.getBoundingClientRect().width));
+const back = await page.$$eval('.split .pane .f-scroll', (ss) => ss.map((s) => s.scrollTop));
+want(vis.every((w) => w > 200) && back[0] === tops[0] && back[2] === tops[2], `back to three, each where it was: ${vis} ${tops} -> ${back}`);
+// clicking a hidden file in the rail brings the split back too
+await page.click('.split .pane:nth-child(1) .pane-max');
+await page.waitForTimeout(200);
+await rows.nth(2).locator('.doc-nm').click();
+await page.waitForTimeout(250);
+vis = await page.$$eval('.split .pane', (ps) => ps.map((p) => p.getBoundingClientRect().width));
+want(vis.every((w) => w > 200), `going to a hidden file shows the split again: ${vis}`);
+
 // the speech doc key, through the command center
 await page.keyboard.press('Meta+Shift+Space');
 await page.keyboard.type('speech doc, or stop');
